@@ -67,7 +67,11 @@ const savedRegions = (form: CheckoutForm | undefined, all: string[]): string[] =
   return Array.isArray(list) && list.length > 0 ? list.filter((r): r is string => typeof r === 'string') : all;
 };
 
-/** Keys the server sets on save; they are not part of what the admin edits. */
+/**
+ * Keys the server sets on save; they are not part of what the admin edits. The unsaved check drops them at every depth,
+ * so an item swapped for an identical one with a new id is not flagged as dirty. Do not give a future admin-editable
+ * field one of these names.
+ */
 const SERVER_KEYS = new Set(['id', 'createdAt', 'updatedAt', 'formId']);
 
 /** An upsell as the editor holds it: `quantity` is the UI copy of items.quantity. */

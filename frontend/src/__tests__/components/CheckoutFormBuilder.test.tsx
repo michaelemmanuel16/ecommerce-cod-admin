@@ -23,11 +23,11 @@ const PRODUCTS = [
 
 const onSave = vi.fn(async () => undefined);
 
-function renderBuilder(initialData?: CheckoutForm, products: Product[] = PRODUCTS, readOnly = false) {
+function renderBuilder(initialData?: CheckoutForm, products: Product[] = PRODUCTS, readOnly = false, onDirtyChange?: (dirty: boolean) => void) {
   const ref = createRef<CheckoutFormBuilderHandle>();
   render(
     <MemoryRouter>
-      <CheckoutFormBuilder ref={ref} initialData={initialData} products={products} onSave={onSave} readOnly={readOnly} />
+      <CheckoutFormBuilder ref={ref} initialData={initialData} products={products} onSave={onSave} readOnly={readOnly} onDirtyChange={onDirtyChange} />
     </MemoryRouter>,
   );
   return ref;
@@ -267,40 +267,32 @@ describe('CheckoutFormBuilder unsaved flag after a save (COD-37)', () => {
     packages: [{ id: 400, formId: 5, name: 'One', price: '249.00', quantity: 1, isDefault: true, sortOrder: 0, createdAt: '2026-10-23T17:12:13.917Z' }],
   } as unknown as CheckoutForm;
 
-  const renderWithDirty = () => {
-    const onDirtyChange = vi.fn();
-    const ref = createRef<CheckoutFormBuilderHandle>();
-    render(
-      <MemoryRouter>
-        <CheckoutFormBuilder ref={ref} initialData={saved} products={PRODUCTS} onSave={onSave} onDirtyChange={onDirtyChange} />
-      </MemoryRouter>,
-    );
-    const last = () => onDirtyChange.mock.calls.at(-1)?.[0];
-    return { ref, last };
-  };
+  const onDirtyChange = vi.fn();
+  const last = () => onDirtyChange.mock.calls.at(-1)?.[0];
+
+  beforeEach(() => {
+    onDirtyChange.mockReset();
+    window.alert = vi.fn();
+  });
 
   it('is clean after a successful save, although the server gave the packages new ids and dates', async () => {
-    window.alert = vi.fn();
     onSave.mockImplementationOnce(async () => afterSave as never);
-    const { ref, last } = renderWithDirty();
+    const ref = renderBuilder(saved, PRODUCTS, false, onDirtyChange);
     fireEvent.change(screen.getByLabelText('Form name'), { target: { value: 'F two' } });
     await waitFor(() => expect(last()).toBe(true));
 
     await act(async () => ref.current?.submit());
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
-    await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
-    expect(last()).toBe(false);
+    await waitFor(() => expect(last()).toBe(false));
   });
 
   it('shows unsaved again on an edit after the save', async () => {
-    window.alert = vi.fn();
     onSave.mockImplementationOnce(async () => afterSave as never);
-    const { ref, last } = renderWithDirty();
+    const ref = renderBuilder(saved, PRODUCTS, false, onDirtyChange);
     fireEvent.change(screen.getByLabelText('Form name'), { target: { value: 'F two' } });
     await act(async () => ref.current?.submit());
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
-    await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
-    expect(last()).toBe(false);
+    await waitFor(() => expect(last()).toBe(false));
 
     goTo('Packages');
     fireEvent.change(screen.getAllByDisplayValue('One')[0], { target: { value: 'One edited' } });
@@ -308,10 +300,9 @@ describe('CheckoutFormBuilder unsaved flag after a save (COD-37)', () => {
   });
 
   it('stays unsaved when the save is rejected', async () => {
-    window.alert = vi.fn();
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     onSave.mockImplementationOnce(async () => { throw new Error('400'); });
-    const { ref, last } = renderWithDirty();
+    const ref = renderBuilder(saved, PRODUCTS, false, onDirtyChange);
     fireEvent.change(screen.getByLabelText('Form name'), { target: { value: 'F two' } });
     await waitFor(() => expect(last()).toBe(true));
 
