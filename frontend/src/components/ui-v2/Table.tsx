@@ -8,6 +8,8 @@ export interface Column<T> {
   /** Right-aligned column (.r), for amounts. */
   right?: boolean;
   width?: string | number;
+  /** The cell of the total row (<tfoot>). The row shows when any column sets one. */
+  total?: ReactNode;
 }
 
 interface TableProps<T> {
@@ -59,6 +61,17 @@ export function Table<T>({ columns, rows, rowKey, onRowClick, label, className }
             </tr>
           ))}
         </tbody>
+        {columns.some((c) => c.total !== undefined) && (
+          <tfoot>
+            <tr className="tot">
+              {columns.map((c) => (
+                <td key={c.key} className={clsx(c.right && 'r')}>
+                  {c.total}
+                </td>
+              ))}
+            </tr>
+          </tfoot>
+        )}
       </table>
     </div>
   );

@@ -30,7 +30,7 @@ const Products = lazy(() => import('./pages/Products').then(m => ({ default: m.P
 const ProductForm = lazy(() => import('./pages/ProductForm').then(m => ({ default: m.ProductForm })));
 const Customers = lazy(() => import('./pages/Customers').then(m => ({ default: m.Customers })));
 const CustomerDetails = lazy(() => import('./pages/CustomerDetails').then(m => ({ default: m.CustomerDetails })));
-const DeliveryAgents = lazy(() => import('./pages/DeliveryAgents').then(m => ({ default: m.DeliveryAgents })));
+const Deliveries = lazy(() => import('./pages/Deliveries').then(m => ({ default: m.Deliveries })));
 const CustomerReps = lazy(() => import('./pages/CustomerReps').then(m => ({ default: m.CustomerReps })));
 const Financial = lazy(() => import('./pages/Financial').then(m => ({ default: m.Financial })));
 const Reports = lazy(() => import('./pages/Reports').then(m => ({ default: m.Reports })));
@@ -298,7 +298,7 @@ function App() {
               <Suspense fallback={<Loading />}><CustomerDetails /></Suspense>
             } />
             <Route path="delivery-agents" element={
-              <Suspense fallback={<Loading />}><DeliveryAgents /></Suspense>
+              <Suspense fallback={<Loading />}><Deliveries /></Suspense>
             } />
             <Route path="customer-reps" element={
               <Suspense fallback={<Loading />}><CustomerReps /></Suspense>

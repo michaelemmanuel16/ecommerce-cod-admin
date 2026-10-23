@@ -1,0 +1,54 @@
+/* Deliveries (M4-T30 to T33, F-700 to F-715). Copied from the style block of docs/mockups/v2/deliveries.html
+   (.kpis.k5 .dnote .dt .rate .bars .bar-row .note .who .tag), with the `.v2` scope added. Colours come from tokens.css only.
+   Rules with no mockup counterpart are marked "new". */
+
+.v2 .deliveries > * + *{margin-top:16px}
+.v2 .deliveries > .head{margin-bottom:22px}
+.v2 .deliveries > .head + *{margin-top:0}
+.v2 .kpis.k5{grid-template-columns:repeat(5,1fr)}
+@media (max-width:1100px){.v2 .kpis.k5{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:760px){.v2 .kpis.k5{grid-template-columns:1fr}}
+.v2 .kpi .tag{white-space:nowrap}
+
+/* partner table: the card scrolls it sideways instead of the page (new) */
+.v2 .dtwrap .tablewrap{overflow-x:auto}
+.v2 .dtwrap .tabs.ptabs{border-bottom:0;padding-bottom:6px}
+.v2 .dtwrap .dt th{white-space:nowrap}
+.v2 .dtwrap .dt th small{display:block;font-weight:500;color:var(--ink-3)}
+.v2 .dtwrap .dt td{white-space:nowrap}
+.v2 .dtwrap .dt .mut{color:var(--ink-3)}
+.v2 .dtwrap .dt .who{min-width:210px}
+.v2 .dtwrap .dt .who .tag{margin-left:4px;vertical-align:1px;white-space:nowrap}
+.v2 .dtwrap .dt .who b{font-weight:700}
+.v2 .dtwrap .dt tfoot td{border-top:1px solid var(--line);background:var(--hover)}
+.v2 .dtwrap .dt tbody tr:last-child td{border-bottom:0}
+.v2 .dtwrap .sw{position:relative}
+.v2 .rate{min-width:112px}
+.v2 .rate .prog{margin-top:6px}
+.v2 .rate .prog i.mint{background:var(--mint)}
+.v2 .dnote{padding:2px 20px 16px;color:var(--ink-3);font-size:12.5px}
+.v2 .dnote b{color:var(--ink-2)}
+.v2 .hd-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+/* reasons, waiting and out-for-delivery cards */
+.v2 .deliveries .two{align-items:start}
+.v2 .deliveries .stack > * + *{margin-top:16px}
+.v2 .reasonfig{display:flex;gap:22px;padding:12px 20px 0;color:var(--ink-3);font-size:13px}
+.v2 .reasonfig b{color:var(--ink);font-size:15px;margin-left:4px}
+/* new: a bar row that is a link to Orders */
+.v2 .bars a.bar-row{color:inherit;border-radius:10px;margin:-6px -8px;padding:6px 8px}
+.v2 .bars a.bar-row:hover{background:var(--hover)}
+.v2 .bars a.bar-row:focus-visible{outline:2px solid var(--pine);outline-offset:2px}
+.v2 .bars .outlink{grid-template-columns:170px 1fr 56px}
+.v2 .bars .outlink .who{gap:8px;min-width:0}
+.v2 .bars .outlink .who .a{width:26px;height:26px;font-size:11px}
+.v2 .bars .outlink .who span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:760px){.v2 .bars .outlink{grid-template-columns:120px 1fr 44px}}
+.v2 .waitlist{list-style:none;margin:0;padding:6px 20px 8px}
+.v2 .waitlist li{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)}
+.v2 .waitlist li:last-child{border-bottom:0}
+.v2 .waitlist small{display:block;color:var(--ink-3);font-size:12.5px;margin-top:2px}
+.v2 .waitlist a{color:var(--pine)}
+.v2 .waitlist .wl-main{min-width:0}
+.v2 .waitlist .wl-side{display:flex;flex-direction:column;align-items:flex-end;flex:none}
+.v2 .waitlist .wl-side small{margin-top:4px}

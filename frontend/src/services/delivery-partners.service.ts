@@ -1,0 +1,216 @@
+import apiClient from './api';
+import type { FailureReason, OrderStatus } from '../types';
+
+/** The Deliveries page API (backend deliveryPartnerRoutes.ts, M4-T18 to T20). Money arrives as strings, rates as numbers. */
+
+export type PartnerType = 'agent' | '3pl';
+export type PartnerTab = 'all' | 'agent' | '3pl';
+export type PartnerDataSource = 'app' | 'connector' | 'csv';
+export type PartnerKind = 'person' | 'company';
+
+/** A KPI result as the backend sends it. `value` is null when no order has closed yet. */
+export interface RateResult {
+  value: number | null;
+  detail?: { delivered: number; failed: number; returned: number; closed: number };
+}
+
+/** What we pay per outcome. A role without financial:view gets no `feeRule` at all. */
+export interface FeeRule {
+  delivered: string | null;
+  failed: string | null;
+  returned: string | null;
+}
+
+export interface PartnerRow {
+  partnerId: number;
+  name: string;
+  type: PartnerType;
+  isActive: boolean;
+  isAvailable: boolean;
+  isTrial: boolean;
+  baseTown: string | null;
+  assigned: number;
+  delivered: number;
+  failed: number;
+  returned: number;
+  failedOrReturned: number;
+  outNow: number;
+  notYetDispatched: number;
+  deliverySuccessRate: RateResult;
+  confirmedToDispatchedDays: number | null;
+  dispatchedToDeliveredDays: number | null;
+  dataSource: PartnerDataSource;
+  daysToPay: number | null;
+  feeRule?: FeeRule | null;
+  /** M5 (F-704): always null until then. */
+  cashHeld: string | null;
+  oldestUnpaidDays: number | null;
+}
+
+export interface PartnerTotal {
+  assigned: number;
+  delivered: number;
+  failed: number;
+  returned: number;
+  failedOrReturned: number;
+  outNow: number;
+  notYetDispatched: number;
+  deliverySuccessRate: RateResult;
+}
+
+export interface PartnerList {
+  from: string;
+  to: string;
+  type: PartnerTab;
+  /** Rows per tab, whatever tab is open. */
+  counts: { all: number; agent: number; '3pl': number };
+  rows: PartnerRow[];
+  total: PartnerTotal;
+}
+
+export interface PartnerSummary {
+  outNow: { orders: number; partners: number };
+  waiting: { orders: number; oldestDays: number | null };
+  delivered: { orders: number; revenue?: string; currency?: string };
+  deliverySuccess: { rate: RateResult; target: number; gapPoints: number | null };
+  cashWithPartners: { amount: string | null; overdueOrders: number | null };
+}
+
+export interface WaitingOrder {
+  orderId: number;
+  orderNumber: string | null;
+  status: OrderStatus;
+  customerName: string;
+  region: string | null;
+  area: string | null;
+  ageDays: number;
+  overdue: boolean;
+  partner: { id: number; name: string } | null;
+  total?: string;
+}
+
+export interface WaitingList {
+  orders: number;
+  oldestDays: number | null;
+  overdueAfterDays: number;
+  list: WaitingOrder[];
+}
+
+export interface FailureReasons {
+  total: number;
+  failed: number;
+  returned: number;
+  reasons: Array<{ reason: FailureReason; count: number; percent: number | null }>;
+}
+
+export interface PartnerDetail {
+  id: number;
+  name: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phoneNumber: string | null;
+  kind: PartnerKind;
+  type: PartnerType;
+  isActive: boolean;
+  isAvailable: boolean;
+  vehicleType: string | null;
+  vehicleId: string | null;
+  profile: { daysToPay: number; isTrial: boolean; dataSource: PartnerDataSource; baseTown: string | null };
+  stockLocation: { id: number; name: string; type: string; isActive: boolean } | null;
+  feeRule?: FeeRule;
+}
+
+/** Fields PATCH /api/delivery-partners/:id takes. */
+export interface PartnerPatch {
+  daysToPay?: number;
+  isTrial?: boolean;
+  dataSource?: PartnerDataSource;
+  baseTown?: string | null;
+  vehicleType?: string;
+  vehicleId?: string | null;
+}
+
+/** POST /api/delivery-partners. A person with a login sets a password; without one the account cannot sign in. */
+export interface NewPartner extends PartnerPatch {
+  kind: PartnerKind;
+  firstName: string;
+  lastName?: string;
+  email: string;
+  phoneNumber?: string;
+  password?: string;
+}
+
+export interface AttemptView {
+  id: number;
+  attemptedAt: string;
+  reason: string | null;
+  note: string | null;
+  partner: { id: number; name: string };
+}
+
+/** GET /api/deliveries/by-order/:orderId, the parts the drawer reads (F-711, F-713). */
+export interface OrderProof {
+  proof: {
+    recorded: boolean;
+    proofType: string | null;
+    recipientName: string | null;
+    time: string | null;
+    cashCollected: string | null;
+    /** A signed link that expires (10 minutes). Relative to the API host. */
+    photoUrl: string | null;
+  };
+  attempts: AttemptView[];
+}
+
+export interface RangeParams {
+  from: string;
+  to: string;
+}
+
+export const deliveryPartnersService = {
+  async list(range: RangeParams, type: PartnerTab, skipCache = false): Promise<PartnerList> {
+    const response = await apiClient.get('/api/delivery-partners', { params: { ...range, type }, skipCache, quiet: true });
+    return response.data;
+  },
+
+  async summary(range: RangeParams, skipCache = false): Promise<PartnerSummary> {
+    const response = await apiClient.get('/api/delivery-partners/summary', { params: range, skipCache, quiet: true });
+    return response.data;
+  },
+
+  async failureReasons(range: RangeParams, skipCache = false): Promise<FailureReasons> {
+    const response = await apiClient.get('/api/delivery-partners/failure-reasons', { params: range, skipCache, quiet: true });
+    return response.data;
+  },
+
+  async waiting(limit: number, skipCache = false): Promise<WaitingList> {
+    const response = await apiClient.get('/api/delivery-partners/waiting', { params: { limit }, skipCache, quiet: true });
+    return response.data;
+  },
+
+  async get(id: number): Promise<PartnerDetail> {
+    const response = await apiClient.get(`/api/delivery-partners/${id}`, { skipCache: true });
+    return response.data.partner;
+  },
+
+  async update(id: number, patch: PartnerPatch): Promise<PartnerDetail> {
+    const response = await apiClient.patch(`/api/delivery-partners/${id}`, patch);
+    return response.data.partner;
+  },
+
+  async create(body: NewPartner): Promise<PartnerDetail> {
+    const response = await apiClient.post('/api/delivery-partners', body);
+    return response.data.partner;
+  },
+
+  async setAvailability(id: number, isAvailable: boolean): Promise<void> {
+    await apiClient.patch(`/api/delivery-partners/${id}/availability`, { isAvailable });
+  },
+
+  /** Proof and attempts of one order. `quiet`: a failure shows in the drawer, not as a toast. */
+  async orderProof(orderId: number): Promise<OrderProof> {
+    const response = await apiClient.get(`/api/deliveries/by-order/${orderId}`, { quiet: true, skipCache: true });
+    return { proof: response.data.proof, attempts: response.data.attempts };
+  },
+};

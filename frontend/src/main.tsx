@@ -10,6 +10,7 @@ import './styles/dashboard.css';
 import './styles/auth.css';
 import './styles/orders.css';
 import './styles/customers.css';
+import './styles/deliveries.css';
 import './styles/onboarding.css';
 import './styles/reports.css';
 import './styles/checkoutForms.css';
