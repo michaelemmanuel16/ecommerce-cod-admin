@@ -22,6 +22,7 @@ import { createFakeProvider, FakeProvider } from '../../services/payments/fakePr
 import { onPaymentSettled, clearPaymentSettledSubscribers, PaymentSettledEvent } from '../../services/payments/settlementHooks';
 import { postPaymentToLedger, registerLedgerPoster } from '../../services/payments/ledgerPoster';
 import { GLAutomationService } from '../../services/glAutomationService';
+import glService from '../../services/glService';
 import { checkLedgerForTenant } from '../../services/ledgerCheckService';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
 import { bearer } from './helpers/superAdminToken';
@@ -249,6 +250,15 @@ describe('POST /api/financial/paystack-payouts', () => {
     expect((await prismaBase.journalEntry.findFirstOrThrow({ where: { tenantId: pair.a.id, sourceType: 'paystack_payout' } })).externalRef).toBe('PO-DUP');
 
     expect((await payout('b', { amount: '10', payoutDate: '2026-10-20', reference: 'PO-DUP' })).status).toBe(201);
+  });
+
+  it('a voided payout frees its reference: the corrected payout posts under it again', async () => {
+    await bookSale('a', '100', '0', 1);
+    const first = await payout('a', { amount: '15', payoutDate: '2026-10-20', reference: 'PO-FIX' });
+    expect(first.status).toBe(201);
+    await runInTenant(pair.a.id, () => glService.voidJournalEntry(String(first.body.entry.id), 'Wrong amount', { id: pair.a.users.admin.id } as any));
+    expect((await payout('a', { amount: '10', payoutDate: '2026-10-20', reference: 'PO-FIX' })).status).toBe(201);
+    expect(await prismaBase.journalEntry.count({ where: { tenantId: pair.a.id, sourceType: 'paystack_payout', externalRef: 'PO-FIX' } })).toBe(1);
   });
 
   it('two requests with the same reference at the same time post one entry', async () => {

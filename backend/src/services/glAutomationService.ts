@@ -1004,7 +1004,7 @@ export class GLAutomationService {
     // Mark both original and reversing entries as voided
     await tx.journalEntry.updateMany({
       where: { id: { in: [originalEntry.id, reversingEntry.id] } },
-      data: { isVoided: true }
+      data: { isVoided: true, externalRef: null }
     });
 
     logger.info(`Voided journal entry ${originalEntry.entryNumber} for ${sourceType} #${sourceId}`);
