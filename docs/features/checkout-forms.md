@@ -284,6 +284,18 @@ docs/
 - Tests: `PublicCheckoutPage`, `PublicScreens`, `PaymentCallback`, `placeOrder`, `paymentWebhook` (verify), `publicRoutesTenant`, `formStateLabelMigration`, `e2e/10-public-checkout.spec.ts`, `e2e/10b-public-checkout-mobile.spec.ts` (all public calls mocked)
 
 
+## COD-37 — M3b tests and close-out (T19–T25)
+
+Commits `423cbf7` (T19), `bc25074` (T20), `57d1a8a` (T21), `2477c70` (T22), `653e50d` and `12e71dd` (T24).
+- T19 pixel and CAPI regression: pixel helper unit tests; CAPI payload tests with a mocked Meta endpoint (hashed user data, store currency, no call without a token); the browser Purchase `eventID` equals the server `event_id` for a COD order, and the display number does not feed it; reload inside the 10-minute cooldown sends no second order or pixel.
+- T20 integration sweep: two-tenant checks for every new route group and `PaymentConnection`; webhook replay, bad signature, other tenant's reference and the old Paystack alias.
+- T21 Playwright: form editor and preview, public COD at 390 px, digital form paid online through the mocked callback, role checks (manager read-only editor; call rep and delivery agent get no access). All public calls mocked, tracking hosts blocked.
+- T22 milestone /simplify: manager editor read-only, `usePermissions().isAdmin`, `getFrontendUrl()`, one tenant resolver (`tenantLookupService`), `describeConnection()` without decrypting, neutral file names (`paymentController`, `paymentSettlementService`), dead provider methods removed, one `packageData` mapper and `respondFormError`, verify throttled to one provider call per 4 s, sweep capped at 50 rows per tenant in batches of 5, public form GET cached with the embed config cache.
+- T23 checks: full backend jest 2813 pass (1 timing flake in `glPerformance`, not M3b), vitest 1036/1036, builds and lint clean.
+- T24 browser: forms list fits at 1280 and 1440 px and has no page scroll at 760 (absolute switch checkbox escaped an unpositioned table wrapper); editor tab strip scrolls with a fade and brings the active tab into view; editor follows dark mode while the preview and public form stay light.
+- E2E sweep on `6bbcebb`: specs 10, 10b, 10c, 17, 18, 19, 20, 21 — 39 pass, 1 skipped in the file, 0 fail.
+- T25 owner review: milestone PR to `develop` and the owner's phone test in the Facebook in-app browser.
+
 ## COD-150 — Compact package rows and two-column desktop checkout (M3b, owner request 2026-10-23)
 
 Commits `8a80fe0`, `29dc88d`. Mockup: `docs/mockups/m3b-checkout-redesign.html` (owner picked option B, desktop two columns, today's buttons kept, no sticky bar).
