@@ -17,12 +17,15 @@ import { NewOrderSheet } from './orders/NewOrderSheet';
 import { RowStatus } from './orders/RowStatus';
 import { useOrderActions, type FocusSet } from './orders/useOrderActions';
 import { CLOSED, DELETABLE, orderNumber, tabCount, visibleTabs, type StatusTabId } from './orders/model';
+import { FAILURE_REASONS } from './orders/reasons';
 import { readPref, writePref } from './orders/prefs';
 import { DEFAULT_SIZE } from '../utils/urlState';
 import { DEFAULT_VIEW, MAX_IDS, PAGE_SIZES, listParams, parseView, rangeOf, rangePhrase, sizeOf, writeView, type ListView } from './orders/urlState';
 import { useColumnPrefs } from './orders/useColumnPrefs';
 import { useFilterOptions } from './orders/useFilterOptions';
 import { useOrderList } from './orders/useOrderList';
+
+const failureReasonLabel = (reason: string): string => FAILURE_REASONS.find(([id]) => id === reason)?.[1] ?? reason;
 
 interface OrdersProps {
   /** A row click calls this. The default goes to /orders/:id; the order drawer (M3-T46) plugs in here. */
@@ -180,6 +183,12 @@ export function Orders({ onOpen }: OrdersProps) {
             onDelete={() => actions.askDelete(selectedRows)}
             onClear={() => setSelected(new Set())}
           />
+        )}
+        {view.failure && (
+          <div className="shownote" role="status">
+            Showing failed and returned orders where the reason is {failureReasonLabel(view.failure).toLowerCase()}.
+            <Button size="mini" onClick={() => go({ ...view, failure: null, page: 1 })}>Show all orders</Button>
+          </div>
         )}
         {view.ids && (
           <div className="shownote" role="status">

@@ -52,6 +52,8 @@ export interface OrderListParams {
   deliveryAgentId?: number;
   customerRepId?: number;
   unassigned?: boolean;
+  /** Failed or returned orders with this reason (the Deliveries reasons card). */
+  failureReason?: FailureReason;
   flag?: 'any';
   /** Comma list of order ids (the orders an import made). */
   ids?: string;

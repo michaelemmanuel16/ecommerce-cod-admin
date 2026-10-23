@@ -38,6 +38,7 @@
     "set:operating-hours": "ts-node scripts/set-operating-hours.ts",
     "normalize:customer-phones": "ts-node scripts/normalize-customer-phones.ts",
     "seed:fixture": "ts-node scripts/seed-fixture.ts",
+    "e2e:fixture-setup": "ts-node scripts/e2e-fixture-setup.ts",
     "seed:targets": "ts-node scripts/seed-targets.ts"
   },
   "keywords": [

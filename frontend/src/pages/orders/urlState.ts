@@ -1,4 +1,5 @@
 import type { OrderListParams } from '../../services/orders.service';
+import type { FailureReason } from '../../types';
 import { positive } from '../../utils/urlState';
 import { isTabId, tabStatuses, type StatusTabId } from './model';
 import type { SortField, SortState } from './columns';
@@ -23,6 +24,8 @@ export interface ListView {
   /** A call rep id, or 'none' for orders with no call rep. */
   rep: number | 'none' | null;
   flagged: boolean;
+  /** Only failed or returned orders with this reason (the Deliveries reasons card links here). */
+  failure: FailureReason | null;
   /** Only these orders: the ones an import made (F-319). While set, the date range is not applied. */
   ids: number[] | null;
 }
@@ -32,12 +35,13 @@ const DEFAULT_SORT: SortState = { by: 'createdAt', dir: 'desc' };
 
 export const DEFAULT_VIEW: ListView = {
   tab: 'all', page: 1, q: '', sort: DEFAULT_SORT, size: null, from: null, to: null, basis: 'created',
-  product: null, agent: null, rep: null, flagged: false, ids: null,
+  product: null, agent: null, rep: null, flagged: false, failure: null, ids: null,
 };
 
 /** The import can make 2,000 orders; the API takes no more. */
 export const MAX_IDS = 2000;
 
+const FAILURE_REASONS: FailureReason[] = ['not_reachable', 'refused', 'wrong_address', 'rescheduled', 'other'];
 const SORT_FIELDS: SortField[] = ['id', 'customer', 'totalAmount', 'createdAt'];
 const DAY = 86_400_000;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -56,6 +60,7 @@ export function parseView(search: URLSearchParams): ListView {
   const from = search.get('from');
   const to = search.get('to');
   const rep = search.get('rep');
+  const failure = search.get('failure');
   const dated = from !== null && to !== null && DATE.test(from) && DATE.test(to);
   return {
     tab: isTabId(tab) ? tab : DEFAULT_VIEW.tab,
@@ -73,6 +78,7 @@ export function parseView(search: URLSearchParams): ListView {
     agent: positive(search.get('agent')),
     rep: rep === 'none' ? 'none' : positive(rep),
     flagged: search.get('flagged') === '1',
+    failure: FAILURE_REASONS.includes(failure as FailureReason) ? (failure as FailureReason) : null,
     ids: readIds(search.get('ids')),
   };
 }
@@ -95,6 +101,7 @@ export function writeView(view: ListView): URLSearchParams {
   if (view.agent !== null) out.set('agent', String(view.agent));
   if (view.rep !== null) out.set('rep', String(view.rep));
   if (view.flagged) out.set('flagged', '1');
+  if (view.failure) out.set('failure', view.failure);
   if (view.ids) out.set('ids', view.ids.join(','));
   return out;
 }
@@ -169,5 +176,6 @@ export function listParams(view: ListView, limit: number, now: Date = new Date()
     ...(view.rep === 'none' && { unassigned: true }),
     ...(typeof view.rep === 'number' && { customerRepId: view.rep }),
     ...(view.flagged && { flag: 'any' as const }),
+    ...(view.failure && { failureReason: view.failure }),
   };
 }

@@ -1,0 +1,100 @@
+/* Deliveries (M4-T30 to T33, F-700 to F-715). Copied from the style block of docs/mockups/v2/deliveries.html
+   (.kpis.k5 .dnote .dt .rate .bars .bar-row .note .who .tag), with the `.v2` scope added. Colours come from tokens.css only.
+   Rules with no mockup counterpart are marked "new". */
+
+.v2 .deliveries > * + *{margin-top:16px}
+.v2 .deliveries > .head{margin-bottom:22px}
+.v2 .deliveries > .head + *{margin-top:0}
+.v2 .kpis.k5{grid-template-columns:repeat(5,1fr)}
+@media (max-width:1100px){.v2 .kpis.k5{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:760px){.v2 .kpis.k5{grid-template-columns:1fr}}
+.v2 .kpi .tag{white-space:nowrap}
+
+/* partner table: the card scrolls it sideways instead of the page (new) */
+.v2 .dtwrap .tablewrap{overflow-x:auto}
+.v2 .dtwrap .tabs.ptabs{border-bottom:0;padding-bottom:6px}
+.v2 .dtwrap .dt th{white-space:nowrap}
+.v2 .dtwrap .dt th small{display:block;font-weight:500;color:var(--ink-3)}
+.v2 .dtwrap .dt td{white-space:nowrap}
+.v2 .dtwrap .dt .mut{color:var(--ink-3)}
+.v2 .dtwrap .dt .who{min-width:210px}
+.v2 .dtwrap .dt .who .tag{margin-left:4px;vertical-align:1px;white-space:nowrap}
+.v2 .dtwrap .dt .who b{font-weight:700}
+.v2 .dtwrap .dt tfoot td{border-top:1px solid var(--line);background:var(--hover)}
+.v2 .dtwrap .dt tbody tr:last-child td{border-bottom:0}
+.v2 .dtwrap .sw{position:relative}
+.v2 .rate{min-width:112px}
+.v2 .rate .prog{margin-top:6px}
+.v2 .rate .prog i.mint{background:var(--mint)}
+.v2 .dnote{padding:2px 20px 16px;color:var(--ink-3);font-size:12.5px}
+.v2 .dnote b{color:var(--ink-2)}
+.v2 .hd-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+/* reasons, waiting and out-for-delivery cards */
+.v2 .deliveries .two{align-items:start}
+.v2 .deliveries .stack > * + *{margin-top:16px}
+.v2 .reasonfig{display:flex;gap:22px;padding:12px 20px 0;color:var(--ink-3);font-size:13px}
+.v2 .reasonfig b{color:var(--ink);font-size:15px;margin-left:4px}
+/* new: a bar row that is a link to Orders */
+.v2 .bars a.bar-row{color:inherit;border-radius:10px;margin:-6px -8px;padding:6px 8px}
+.v2 .bars a.bar-row:hover{background:var(--hover)}
+.v2 .bars a.bar-row:focus-visible{outline:2px solid var(--pine);outline-offset:2px}
+.v2 .bars .outlink{grid-template-columns:170px 1fr 56px}
+.v2 .bars .outlink .who{gap:8px;min-width:0}
+.v2 .bars .outlink .who .a{width:26px;height:26px;font-size:11px}
+.v2 .bars .outlink .who span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:760px){.v2 .bars .outlink{grid-template-columns:120px 1fr 44px}}
+.v2 .waitlist{list-style:none;margin:0;padding:6px 20px 8px}
+.v2 .waitlist li{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)}
+.v2 .waitlist li:last-child{border-bottom:0}
+.v2 .waitlist small{display:block;color:var(--ink-3);font-size:12.5px;margin-top:2px}
+.v2 .waitlist a{color:var(--pine)}
+.v2 .waitlist .wl-main{min-width:0}
+.v2 .waitlist .wl-side{display:flex;flex-direction:column;align-items:flex-end;flex:none}
+.v2 .waitlist .wl-side small{margin-top:4px}
+
+/* partner drawer (new: no mockup; built from the order drawer's blocks) */
+.v2 .sheet .dtabs{border-bottom:1px solid var(--line);padding:0 0 12px;margin-bottom:-4px}
+.v2 .sheet .dhead{display:flex;align-items:center;gap:12px;margin-left:auto;flex-wrap:wrap;justify-content:flex-end}
+.v2 .sheet .dtags{display:inline-flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.v2 .sheet h4{font-size:13.5px;font-weight:700;margin-bottom:8px}
+.v2 .sheet .mut{color:var(--ink-3);font-size:13px}
+.v2 .dsummary,.v2 .dfees,.v2 .dorders{display:flex;flex-direction:column;gap:18px}
+.v2 .dfig{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.v2 .dfig > div{border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:4px}
+.v2 .dfig span{color:var(--ink-3);font-size:12px}
+.v2 .dfig b{font-size:17px}
+.v2 .dfig .wide{grid-column:1/-1}
+@media (max-width:760px){.v2 .dfig{grid-template-columns:repeat(2,1fr)}}
+.v2 .kv{display:grid;grid-template-columns:repeat(2,1fr);gap:10px 18px}
+.v2 .kv dt{color:var(--ink-3);font-size:12px}
+.v2 .kv dd{font-weight:600;overflow-wrap:anywhere}
+@media (max-width:760px){.v2 .kv{grid-template-columns:1fr}}
+.v2 .dolist{list-style:none;margin:0;padding:0}
+.v2 .dolist > li{border-bottom:1px solid var(--line);padding:10px 0}
+.v2 .dolist > li:last-child{border-bottom:0}
+.v2 .dorow{display:flex;align-items:center;gap:12px}
+.v2 .domain{flex:1;min-width:0}
+.v2 .domain a{color:var(--pine)}
+.v2 .domain small{display:block;color:var(--ink-3);font-size:12.5px;margin-top:2px}
+.v2 .doside{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex:none}
+.v2 .dothumb{width:44px;height:44px;flex:none}
+.v2 .linkbtn{color:var(--pine);font-weight:600;font-size:12.5px;text-decoration:underline}
+.v2 .domore{display:flex;align-items:center;justify-content:space-between;color:var(--ink-3);font-size:13px}
+.v2 .proofthumb{width:44px;height:44px;object-fit:cover;border-radius:8px;border:1px solid var(--line);display:block}
+.v2 .proofbig{max-width:100%;max-height:70vh;border-radius:10px;display:block;margin:0 auto}
+.v2 .proofbtn{display:block;padding:0;border-radius:8px}
+.v2 .proofbtn:focus-visible{outline:2px solid var(--pine);outline-offset:2px}
+.v2 .proofph{display:grid;place-items:center;width:44px;height:44px;border-radius:8px;background:var(--hover);color:var(--ink-3);font-size:10px;text-align:center}
+.v2 .proofblock{margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--hover);display:flex;flex-direction:column;gap:8px}
+.v2 .proofrow{display:flex;gap:12px;align-items:flex-start}
+.v2 .proofrow .proofthumb{width:72px;height:72px}
+.v2 .proofrow dl{display:grid;gap:4px;flex:1}
+.v2 .proofrow dt{display:inline;color:var(--ink-3);font-size:12.5px}
+.v2 .proofrow dt::after{content:": "}
+.v2 .proofrow dd{display:inline;font-weight:600}
+.v2 .attempts{margin:0;padding-left:18px;font-size:12.5px;display:grid;gap:4px}
+.v2 .dfees section > * + *{margin-top:0}
+.v2 .dfees .cform .chk{padding-top:4px}
+.v2 .dfees .dfoot{display:flex;justify-content:flex-end}
+.v2 .dorders .psel{align-self:flex-start;min-width:200px}
