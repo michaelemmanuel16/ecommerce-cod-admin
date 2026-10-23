@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArchiveRestore, CopyPlus, ExternalLink, FileText, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArchiveRestore, CopyPlus, Eye, FileText, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useV2Page } from '../components/shell/useV2Page';
 import { Button, Card, ConfirmDialog, EmptyState, Skeleton, Table, Tag, Tooltip, useToast, type Column } from '../components/ui-v2';
 import { checkoutFormsService } from '../services/checkout-forms.service';
@@ -10,6 +10,7 @@ import { formatNumber } from '../utils/format';
 import { copyText } from '../hooks/useCopyToClipboard';
 import type { CheckoutForm } from '../types/checkout-form';
 import { CopyFallbackModal } from './checkoutForms/CopyFallbackModal';
+import { PreviewModal } from './checkoutForms/PreviewModal';
 import { LinkCell, type CopyText } from './checkoutForms/LinkCell';
 
 /** The delete sentence: a form with orders is archived and can come back; an empty one is removed (F-408). */
@@ -45,6 +46,7 @@ export function CheckoutForms() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<CheckoutForm | null>(null);
+  const [previewing, setPreviewing] = useState<CheckoutForm | null>(null);
   const [busy, setBusy] = useState(false);
   const [manual, setManual] = useState<{ title: string; text: string } | null>(null);
   const latest = useRef(0);
@@ -182,7 +184,7 @@ export function CheckoutForms() {
           ? [edit, <RowAction key="restore" verb="Restore" form={f} icon={<ArchiveRestore />} disabled={busy} onClick={() => void restore(f)} />]
           : [
               <RowAction key="clone" verb="Clone" form={f} icon={<CopyPlus />} disabled={busy} onClick={() => void clone(f)} />,
-              <RowAction key="preview" verb="Preview" form={f} icon={<ExternalLink />} onClick={() => window.open(`/form/${f.slug}`, '_blank')} />,
+              <RowAction key="preview" verb="Preview" form={f} icon={<Eye />} onClick={() => setPreviewing(f)} />,
               edit,
               <RowAction key="delete" verb="Delete" form={f} icon={<Trash2 />} danger disabled={busy} onClick={() => setDeleting(f)} />,
             ];
@@ -256,6 +258,8 @@ export function CheckoutForms() {
       >
         {deleting ? deleteText(deleting) : null}
       </ConfirmDialog>
+
+      <PreviewModal form={previewing} onClose={() => setPreviewing(null)} />
 
       {manual && <CopyFallbackModal title={manual.title} text={manual.text} onClose={() => setManual(null)} />}
     </section>

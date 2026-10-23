@@ -309,6 +309,32 @@ describe('Checkout forms list (F-408)', () => {
     });
   });
 
+  describe('preview modal (F-419)', () => {
+    it('Preview opens the preview route in a modal at 390 px, with a Mobile / Desktop switch, and opens no new tab', async () => {
+      const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+      asRole('super_admin');
+      await renderLoaded();
+      await userEvent.click(screen.getByRole('button', { name: 'Preview Magic Groove copybook set' }));
+      const dialog = screen.getByRole('dialog');
+      const frame = within(dialog).getByTitle('Checkout preview');
+      expect(frame).toHaveAttribute('src', '/checkout-forms/1/preview');
+      expect(frame.getAttribute('data-width')).toBe('390');
+      await userEvent.click(within(dialog).getByRole('button', { name: /Desktop/ }));
+      expect(frame.getAttribute('data-width')).toBe('1024');
+      expect(open).not.toHaveBeenCalled();
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+      expect(screen.queryByRole('dialog')).toBeNull();
+      open.mockRestore();
+    });
+
+    it('a manager can open it', async () => {
+      asRole('manager');
+      await renderLoaded();
+      await userEvent.click(screen.getByRole('button', { name: 'Preview Home study guide' }));
+      expect(within(screen.getByRole('dialog')).getByTitle('Checkout preview')).toHaveAttribute('src', '/checkout-forms/2/preview');
+    });
+  });
+
   describe('roles', () => {
     it('a manager reads the list: no New form, switch, Clone, Edit, Delete; Preview and Copy stay', async () => {
       asRole('manager');

@@ -9,6 +9,7 @@ import { ToastProvider } from './components/ui-v2';
 import { UpdatePrompt } from './components/pwa/UpdatePrompt';
 import { AccessGate } from './components/shell/AccessGate';
 import { canOpenPath, isManagerUp } from './components/shell/navModel';
+import { ManagerUpOnly } from './components/shell/ManagerUpOnly';
 import { useConfigStore } from './stores/configStore';
 import { isPlatformDomain, platformLoginPath } from './utils/platformDomain';
 import { SaasRoute } from './components/auth/SaasRoute';
@@ -221,7 +222,9 @@ function App() {
               enforced by the backend /preview-config endpoint. */}
           <Route path="/checkout-forms/:id/preview" element={
             <ProtectedRoute>
-              <Suspense fallback={<Loading />}><CheckoutFormPreview /></Suspense>
+              <ManagerUpOnly>
+                <Suspense fallback={<Loading />}><CheckoutFormPreview /></Suspense>
+              </ManagerUpOnly>
             </ProtectedRoute>
           } />
           {/* Mobile routes for delivery agents */}
