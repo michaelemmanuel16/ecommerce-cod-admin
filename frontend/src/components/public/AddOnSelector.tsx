@@ -47,7 +47,7 @@ export const AddOnSelector: React.FC<AddOnSelectorProps> = ({
       <h2 className="text-lg font-semibold text-gray-900">
         Add-ons <span className="text-gray-500 font-normal text-base">(Optional)</span>
       </h2>
-      <div className="space-y-3">
+      <div className="space-y-2">
         {upsells.map((addon) => {
           const isSelected = selectedAddons.has(addon.id);
           const isExpanded = expandedAddons.has(addon.id);
@@ -63,7 +63,7 @@ export const AddOnSelector: React.FC<AddOnSelectorProps> = ({
                   : 'border-gray-200 bg-white'
               )}
             >
-              <div className="p-4 flex items-center justify-between">
+              <div className="min-h-[52px] px-3.5 py-2 flex items-center justify-between">
                 {/* Checkbox — only toggles selection */}
                 <button
                   type="button"
@@ -110,9 +110,9 @@ export const AddOnSelector: React.FC<AddOnSelectorProps> = ({
                         <span className="ml-2 px-2 py-0.5 bg-gray-900 text-white text-xs font-medium rounded align-middle">Popular</span>
                       )}
                     </h3>
-                    <p className="text-sm text-gray-600 mt-1">
-                      Quantity: {addon.items?.quantity || 1}
-                    </p>
+                    {(addon.items?.quantity || 1) > 1 && (
+                      <p className="text-sm text-gray-600">Qty {addon.items?.quantity}</p>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2 ml-4">
@@ -133,7 +133,7 @@ export const AddOnSelector: React.FC<AddOnSelectorProps> = ({
 
               {/* Expanded content */}
               {isExpanded && expandable && (
-                <div className="px-4 pb-4 border-t border-gray-200">
+                <div className="px-3.5 pb-4 border-t border-gray-200">
                   <div className={cn(
                     'mt-4',
                     addon.imageUrl && addon.description

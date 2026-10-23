@@ -46,6 +46,9 @@ interface OrderSummaryProps {
   /** COD is one of the buttons: the terms say you pay on delivery. */
   hasCod?: boolean;
   supportWhatsapp?: string | null;
+  /** Hosted page, desktop only: the product thumbnail and name at the top of the card. */
+  productImageUrl?: string;
+  productName?: string;
 }
 
 const SHAPE_CLASS: Record<NonNullable<OrderSummaryProps['buttonShape']>, string> = {
@@ -123,6 +126,8 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
   isDigital = false,
   hasCod = true,
   supportWhatsapp,
+  productImageUrl,
+  productName,
 }) => {
   const hasDiscount = selectedPackage?.originalPrice && selectedPackage.originalPrice > selectedPackage.price && selectedPackage.showDiscount !== false;
   const packageOriginalPrice = hasDiscount ? selectedPackage.originalPrice! : selectedPackage?.price || 0;
@@ -142,6 +147,12 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 sm:p-6">
+      {productImageUrl && (
+        <div className="hidden lg:flex items-center gap-3 mb-4" data-testid="summary-product">
+          <img src={productImageUrl} alt="" className="w-16 h-16 rounded-lg border border-gray-200 object-cover flex-none" />
+          {productName && <p className="font-semibold text-gray-900 min-w-0">{productName}</p>}
+        </div>
+      )}
       {showSummary && (
         <>
       <h2 className="text-lg font-semibold text-gray-900 mb-4" style={textColor ? { color: textColor } : undefined}>Order summary</h2>

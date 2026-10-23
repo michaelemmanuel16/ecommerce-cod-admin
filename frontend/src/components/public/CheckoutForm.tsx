@@ -205,7 +205,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
   const fieldStyle = { ['--tw-ring-color' as string]: primaryColor } as React.CSSProperties;
 
   const fieldBase = (hasError: boolean) => {
-    const base = 'w-full px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:border-transparent transition-colors';
+    const base = 'w-full min-h-[48px] px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:border-transparent transition-colors';
     if (inputStyle === 'flat') {
       return cn(base, 'border-0 border-b-2 rounded-none bg-transparent px-1', hasError ? 'border-red-500' : 'border-gray-300');
     }
@@ -481,39 +481,44 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
       data-testid="public-form-root"
       style={{ colorScheme: 'light', ...(pageBackground ? { backgroundColor: pageBackground } : {}) }}
     >
-      <div className="max-w-xl mx-auto">
-        {banner && <img src={banner} alt="" className="w-full max-h-64 object-cover rounded-2xl mb-5" data-testid="form-banner" />}
-        {/* Product header (hideable) */}
-        {!formData.design?.page?.hideProductDisplay && (
-          <div className="mb-5" data-testid="section-header">
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1" style={textColor ? { color: textColor } : undefined}>
-              {formData.product?.name || formData.name || 'Product Order'}
-            </h1>
-            {formData.description && (
-              <p className="text-gray-600">{formData.description}</p>
-            )}
-          </div>
-        )}
-
+      <div className={embedded ? 'max-w-xl mx-auto' : 'max-w-xl lg:max-w-[1080px] mx-auto'}>
         <form onSubmit={preview ? (e) => { e.preventDefault(); setPreviewNotice(true); } : handleSubmit(onFormSubmit)}>
-          {/* One column on every screen: offer (packages, add-ons) and "Your information" in the owner's order, then the summary. */}
-          <div className="space-y-4">
-            {offerOnTop ? (
-              <>
-                {packageSection}
-                {addOnSection}
-                {informationSection}
-              </>
-            ) : (
-              <>
-                {informationSection}
-                {packageSection}
-                {addOnSection}
-              </>
-            )}
+          {/* One column below lg and always when embedded; the hosted page splits into the offer and a sticky summary from lg up. */}
+          <div className={embedded ? undefined : 'lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-6 lg:items-start'} data-testid="checkout-layout">
+            <div>
+              {banner && <img src={banner} alt="" className="w-full max-h-64 object-cover rounded-2xl mb-5" data-testid="form-banner" />}
+              {/* Product header (hideable) */}
+              {!formData.design?.page?.hideProductDisplay && (
+                <div className="mb-5" data-testid="section-header">
+                  <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1" style={textColor ? { color: textColor } : undefined}>
+                    {formData.product?.name || formData.name || 'Product Order'}
+                  </h1>
+                  {formData.description && (
+                    <p className="text-gray-600">{formData.description}</p>
+                  )}
+                </div>
+              )}
+
+              {/* The offer (packages, add-ons) and "Your information" in the owner's order. */}
+              <div className="space-y-4">
+                {offerOnTop ? (
+                  <>
+                    {packageSection}
+                    {addOnSection}
+                    {informationSection}
+                  </>
+                ) : (
+                  <>
+                    {informationSection}
+                    {packageSection}
+                    {addOnSection}
+                  </>
+                )}
+              </div>
+            </div>
 
             {/* Order summary: the price breakdown hides when the toggle is off, but the buttons always render. */}
-            <div>
+            <div className={embedded ? 'mt-4' : 'mt-4 lg:mt-0 lg:sticky lg:top-6'} data-testid="summary-column">
               <OrderSummary
                 selectedPackage={selectedPackage}
                 selectedAddons={selectedAddons}
@@ -535,6 +540,8 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
                 isDigital={isDigital}
                 hasCod={paymentMethods.some((o) => o.method === 'cod')}
                 supportWhatsapp={formData.supportWhatsapp}
+                productImageUrl={embedded ? undefined : formData.product?.imageUrl}
+                productName={formData.product?.name}
               />
               {previewNotice && <p role="status" className="mt-3 text-center text-sm font-medium text-gray-700">Preview only.</p>}
             </div>

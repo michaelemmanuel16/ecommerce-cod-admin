@@ -53,17 +53,74 @@ describe('public checkout page sections (F-420)', () => {
 
   it('package selector: Most popular badge, original price, discount and highlight text', () => {
     render(<CheckoutForm formData={form()} onSubmit={vi.fn()} />);
-    const family = screen.getByRole('button', { name: /Family/ });
+    const family = screen.getByRole('radio', { name: /Family/ });
     expect(within(family).getByText('Most popular')).toBeInTheDocument();
     expect(within(family).getByText('GH₵600')).toBeInTheDocument();
     expect(within(family).getByText('Save 10%')).toBeInTheDocument();
+  });
+
+  it('package rows: Qty line, edge tag, saving pill under the price, radiogroup roles', () => {
+    render(<CheckoutForm formData={form()} onSubmit={vi.fn()} />);
+    const group = screen.getByRole('radiogroup', { name: 'Choose your package' });
+    const [starter, family] = within(group).getAllByRole('radio');
+    expect(starter).toHaveAttribute('aria-checked', 'true');
+    expect(family).toHaveAttribute('aria-checked', 'false');
+    expect(within(family).getByText('Qty 3')).toBeInTheDocument();
+    expect(screen.queryByText(/Quantity:/)).toBeNull();
+    // the edge tag sits on the row's top border; the starter row has none
+    expect(within(family).getByTestId('package-edge-tag')).toHaveTextContent('Most popular');
+    expect(within(family).getByTestId('package-edge-tag')).toHaveClass('absolute');
+    expect(within(starter).queryByTestId('package-edge-tag')).toBeNull();
+    // old price, price, saving pill: in that order inside the right column
+    const price = within(family).getByText('GH₵540');
+    const saving = within(family).getByTestId('package-saving');
+    expect(within(family).getByText('GH₵600').compareDocumentPosition(price) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(price.compareDocumentPosition(saving) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(price.parentElement).toBe(saving.parentElement);
+  });
+
+  it('add-ons show Qty only when the quantity is above one', () => {
+    const f = form({ upsells: [
+      { id: 21, name: 'Refill pens', price: 40, items: { quantity: 1 }, isPopular: false },
+      { id: 22, name: 'Pen pack', price: 60, items: { quantity: 3 }, isPopular: false },
+    ] as never });
+    render(<CheckoutForm formData={f} onSubmit={vi.fn()} />);
+    const addons = screen.getByTestId('section-addons');
+    expect(within(addons).getByText('Qty 3')).toBeInTheDocument();
+    expect(within(addons).queryByText('Qty 1')).toBeNull();
+    expect(within(addons).queryByText(/Quantity:/)).toBeNull();
+  });
+
+  it('hosted page uses the two-column grid from lg; embedded stays one column', () => {
+    const { unmount } = render(<CheckoutForm formData={form()} onSubmit={vi.fn()} />);
+    expect(screen.getByTestId('checkout-layout').className).toContain('lg:grid-cols-[minmax(0,1fr)_360px]');
+    expect(screen.getByTestId('summary-column').className).toContain('lg:sticky');
+    unmount();
+    render(<CheckoutForm formData={form()} onSubmit={vi.fn()} embedded />);
+    expect(screen.getByTestId('checkout-layout').className).not.toContain('grid');
+    expect(screen.getByTestId('summary-column').className).not.toContain('sticky');
+  });
+
+  it('inputs are at least 48 px tall', () => {
+    render(<CheckoutForm formData={form()} onSubmit={vi.fn()} />);
+    expect(screen.getByPlaceholderText('Enter full name').className).toContain('min-h-[48px]');
+    expect(screen.getByPlaceholderText('Enter phone').className).toContain('min-h-[48px]');
+  });
+
+  it('the summary card shows the product image on the hosted page only', () => {
+    const f = form({ product: { name: 'Copybook', price: 200, productType: 'physical', imageUrl: 'https://img.test/p.png' } as never });
+    const { unmount } = render(<CheckoutForm formData={f} onSubmit={vi.fn()} />);
+    expect(screen.getByTestId('summary-product').querySelector('img')).toHaveAttribute('src', 'https://img.test/p.png');
+    unmount();
+    render(<CheckoutForm formData={f} onSubmit={vi.fn()} embedded />);
+    expect(screen.queryByTestId('summary-product')).toBeNull();
   });
 
   it('shows a highlight text instead of Most popular when the owner set one', () => {
     const f = form();
     f.packages[1] = { ...f.packages[1], showHighlight: true, highlightText: 'Best value' };
     render(<CheckoutForm formData={f} onSubmit={vi.fn()} />);
-    const family = screen.getByRole('button', { name: /Family/ });
+    const family = screen.getByRole('radio', { name: /Family/ });
     expect(within(family).getByText('Best value')).toBeInTheDocument();
     expect(within(family).queryByText('Most popular')).toBeNull();
   });
@@ -218,8 +275,8 @@ describe('digital form (F-422)', () => {
 describe('locked package (?package=)', () => {
   it('shows only that package', () => {
     render(<CheckoutForm formData={form()} onSubmit={vi.fn()} lockedPackageId={12} />);
-    expect(screen.getByRole('button', { name: /Family/ })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Starter/ })).toBeNull();
+    expect(screen.getByRole('radio', { name: /Family/ })).toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: /Starter/ })).toBeNull();
     expect(screen.getByTestId('order-total')).toHaveTextContent('GH₵540');
   });
 });

@@ -9,6 +9,8 @@ test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
 
 const SHOTS = '/private/tmp/claude-501/-Users-mac-work/ebcbec70-6a74-4e2c-b2aa-47a7b4897b50/scratchpad/shots';
 const SLUG = 'mobile-copybooks';
+// Top of the "Your information" heading with the offer on top, measured before COD-150 (tall package cards).
+const BASELINE_INFO_TOP = 669;
 
 const FIELDS = [
   { id: 'fullName', label: 'Full Name', type: 'text', required: true, enabled: true, standardKey: 'fullName' },
@@ -91,6 +93,14 @@ test.describe('public checkout at 390 px', () => {
     // no horizontal scroll at 390 px
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
+    // COD-150: compact package rows (option B), so the form starts higher up the page
+    const rows = page.getByRole('radio');
+    await expect(rows).toHaveCount(2);
+    for (let i = 0; i < 2; i++) expect((await rows.nth(i).boundingBox())!.height).toBeLessThanOrEqual(80);
+    await expect(rows.nth(1).getByText('Qty 3')).toBeVisible();
+    await expect(rows.nth(1).getByTestId('package-edge-tag')).toHaveText('Most popular');
+    await page.screenshot({ path: `${SHOTS}/cod150-390-full.png`, fullPage: true });
+
     await fillCod(page);
     await page.getByRole('checkbox', { name: 'Add Refill pens' }).click();
     await expect(page.getByTestId('order-total')).toHaveText('GH₵289');
@@ -115,6 +125,15 @@ test.describe('public checkout at 390 px', () => {
     expect(hits.orders).toHaveLength(1);
   });
 
+  test('offer on top: compact rows put "Your information" higher up the page', async ({ page }) => {
+    await mockApi(page, { form: { ...FORM, design: { page: { offerPosition: 'top' } } } });
+    await page.goto(`/form/${SLUG}`);
+    await expect(page.getByRole('radio')).toHaveCount(2);
+    const infoTop = (await page.getByRole('heading', { name: 'Your information' }).boundingBox())!.y;
+    expect(infoTop).toBeLessThan(BASELINE_INFO_TOP);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+
   test('a double tap places one order and the sold-out answer shows above the button', async ({ page }) => {
     const hits = await mockApi(page, { order: { status: 400, body: { message: 'This product is sold out', error: 'This product is sold out' } } });
     await page.goto(`/form/${SLUG}`);
@@ -130,8 +149,8 @@ test.describe('public checkout at 390 px', () => {
   test('?package= locks the form to one package', async ({ page }) => {
     await mockApi(page);
     await page.goto(`/form/${SLUG}?package=2`);
-    await expect(page.getByRole('button', { name: /Family/ })).toBeVisible();
-    await expect(page.getByRole('button', { name: /Starter/ })).toHaveCount(0);
+    await expect(page.getByRole('radio', { name: /Family/ })).toBeVisible();
+    await expect(page.getByRole('radio', { name: /Starter/ })).toHaveCount(0);
     await expect(page.getByTestId('order-total')).toHaveText('GH₵649.50');
   });
 
