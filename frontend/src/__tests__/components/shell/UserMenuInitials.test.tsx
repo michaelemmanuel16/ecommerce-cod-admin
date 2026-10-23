@@ -11,7 +11,7 @@ describe('one initials rule (F7c)', () => {
     const me = { firstName: 'Ama Kofi', lastName: 'Mensah' };
     useAuthStore.setState({ user: { id: 1, role: 'admin', photoUrl: null, ...me } as never, roles: null });
     render(<MemoryRouter><UserMenu /></MemoryRouter>);
-    expect(initials(personName(me))).toBe('AK');
-    expect(screen.getByRole('button', { name: /account|menu|profile/i })).toHaveTextContent('AK');
+    expect(initials(personName(me))).toBe('AM');
+    expect(screen.getByRole('button', { name: /account|menu|profile/i })).toHaveTextContent('AM');
   });
 });
