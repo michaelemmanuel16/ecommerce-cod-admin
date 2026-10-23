@@ -239,6 +239,9 @@ describe('GET /api/orders', () => {
     // a reason that is not in the list is ignored, not an error
     const all = await list(tokens.admin, { failureReason: 'bogus' });
     expect(all.body.pagination.total).toBe(1445);
+    const inherited = await list(tokens.admin, { failureReason: 'constructor' });
+    expect(inherited.status).toBe(200);
+    expect(inherited.body.pagination.total).toBe(1445);
   });
 
   it('include=flags,reminder,threadCount adds the three keys; reminder and thread are null until M9', async () => {

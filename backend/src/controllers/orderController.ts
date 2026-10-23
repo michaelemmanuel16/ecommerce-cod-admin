@@ -20,7 +20,7 @@ const readOrderFilters = (query: AuthRequest['query']): OrderFilters => {
     customerRepId: customerRepId ? Number(customerRepId) : undefined,
     unassigned: unassigned === 'true',
     deliveryAgentId: deliveryAgentId ? Number(deliveryAgentId) : undefined,
-    failureReason: typeof query.failureReason === 'string' && query.failureReason in FailureReason ? query.failureReason as FailureReason : undefined,
+    failureReason: (Object.values(FailureReason) as string[]).includes(query.failureReason as string) ? query.failureReason as FailureReason : undefined,
     // `productId=1&productId=2` and `productId[]=1` both arrive as an array
     productIds: many(query.productId).map(Number).filter(Number.isInteger),
     area: area as string | undefined,
