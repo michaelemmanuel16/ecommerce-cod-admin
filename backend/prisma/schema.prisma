@@ -33,51 +33,57 @@ model Tenant {
   currentPlan Plan? @relation(fields: [currentPlanId], references: [id])
 
   // Reverse relations for tenant-scoped models
-  users               User[]
-  customers           Customer[]
-  products            Product[]
-  orders              Order[]
-  deliveries          Delivery[]
-  transactions        Transaction[]
-  expenses            Expense[]
-  accounts            Account[]
-  journalEntries      JournalEntry[]
-  accountTransactions AccountTransaction[]
-  workflows           Workflow[]
-  workflowExecutions  WorkflowExecution[]
-  webhookConfigs      WebhookConfig[]
-  notifications       Notification[]
-  checkoutForms       CheckoutForm[]
-  inventoryShipments  InventoryShipment[]
-  agentBalances       AgentBalance[]
-  inventoryTransfers  InventoryTransfer[]
-  agentStocks         AgentStock[]
-  messageLogs         MessageLog[]
-  systemConfigs       SystemConfig[]
-  mcpApiKeys          McpApiKey[]
-  roles               Role[]
-  roleAssignments     RoleAssignment[]
-  userSessions        UserSession[]
-  paymentConnections  PaymentConnection[]
-  webhookEvents       WebhookEvent[]
-  emailTemplates      EmailTemplate[]
-  emailCampaigns      EmailCampaign[]
-  agentCollections    AgentCollection[]
-  agentDeposits       AgentDeposit[]
-  agentAgingBuckets   AgentAgingBucket[]
-  payouts             Payout[]
-  calls               Call[]
-  orderHistories      OrderHistory[]
-  auditLogs           AuditLog[]
-  webhookLogs         WebhookLog[]
-  smsTemplates        SmsTemplate[]
-  downloadTokens      DownloadToken[]
-  formSubmissions     FormSubmission[]
-  productCostEntries  product_cost_entries[]
-  targets             Target[]
-  findings            Finding[]
-  feeRules            FeeRule[]
-  fxRates             FxRate[]
+  users                   User[]
+  customers               Customer[]
+  products                Product[]
+  orders                  Order[]
+  deliveries              Delivery[]
+  transactions            Transaction[]
+  expenses                Expense[]
+  accounts                Account[]
+  journalEntries          JournalEntry[]
+  accountTransactions     AccountTransaction[]
+  workflows               Workflow[]
+  workflowExecutions      WorkflowExecution[]
+  webhookConfigs          WebhookConfig[]
+  notifications           Notification[]
+  checkoutForms           CheckoutForm[]
+  inventoryShipments      InventoryShipment[]
+  agentBalances           AgentBalance[]
+  inventoryTransfers      InventoryTransfer[]
+  agentStocks             AgentStock[]
+  stockLocations          StockLocation[]
+  stockLevels             StockLevel[]
+  stockCounts             StockCount[]
+  stockCountLines         StockCountLine[]
+  deliveryPartnerProfiles DeliveryPartnerProfile[]
+  deliveryAttempts        DeliveryAttempt[]
+  messageLogs             MessageLog[]
+  systemConfigs           SystemConfig[]
+  mcpApiKeys              McpApiKey[]
+  roles                   Role[]
+  roleAssignments         RoleAssignment[]
+  userSessions            UserSession[]
+  paymentConnections      PaymentConnection[]
+  webhookEvents           WebhookEvent[]
+  emailTemplates          EmailTemplate[]
+  emailCampaigns          EmailCampaign[]
+  agentCollections        AgentCollection[]
+  agentDeposits           AgentDeposit[]
+  agentAgingBuckets       AgentAgingBucket[]
+  payouts                 Payout[]
+  calls                   Call[]
+  orderHistories          OrderHistory[]
+  auditLogs               AuditLog[]
+  webhookLogs             WebhookLog[]
+  smsTemplates            SmsTemplate[]
+  downloadTokens          DownloadToken[]
+  formSubmissions         FormSubmission[]
+  productCostEntries      product_cost_entries[]
+  targets                 Target[]
+  findings                Finding[]
+  feeRules                FeeRule[]
+  fxRates                 FxRate[]
 
   @@index([paystackCustomerCode])
   @@index([paystackSubscriptionCode])
@@ -117,68 +123,74 @@ model PlatformAnnouncement {
 }
 
 model User {
-  id                    Int                 @id @default(autoincrement())
-  email                 String              @unique
+  id                    Int                     @id @default(autoincrement())
+  email                 String                  @unique
   password              String
-  phoneNumber           String?             @map("phone_number")
+  phoneNumber           String?                 @map("phone_number")
   role                  UserRole
-  isActive              Boolean             @default(true) @map("is_active")
-  isPlatformAdmin       Boolean             @default(false) @map("is_platform_admin")
-  isAvailable           Boolean             @default(true) @map("is_available")
-  lastLogin             DateTime?           @map("last_login")
-  refreshToken          String?             @map("refresh_token")
-  passwordResetToken    String?             @unique @map("password_reset_token")
-  passwordResetExpires  DateTime?           @map("password_reset_expires")
-  commissionAmount      Decimal?            @default(0) @map("commission_amount") @db.Decimal(19, 4) /// Fixed commission amount per delivery (GHS)
+  isActive              Boolean                 @default(true) @map("is_active")
+  isPlatformAdmin       Boolean                 @default(false) @map("is_platform_admin")
+  isAvailable           Boolean                 @default(true) @map("is_available")
+  lastLogin             DateTime?               @map("last_login")
+  refreshToken          String?                 @map("refresh_token")
+  passwordResetToken    String?                 @unique @map("password_reset_token")
+  passwordResetExpires  DateTime?               @map("password_reset_expires")
+  commissionAmount      Decimal?                @default(0) @map("commission_amount") @db.Decimal(19, 4) /// Fixed commission amount per delivery (GHS)
   country               String?
   preferences           Json?
-  vehicleType           String?             @map("vehicle_type")
-  vehicleId             String?             @map("vehicle_id")
-  deliveryRate          Float?              @default(0) @map("delivery_rate")
-  totalEarnings         Decimal?            @default(0) @map("total_earnings") @db.Decimal(19, 4)
-  totalCollected        Decimal             @default(0) @map("total_collected") @db.Decimal(19, 4)
+  vehicleType           String?                 @map("vehicle_type")
+  vehicleId             String?                 @map("vehicle_id")
+  deliveryRate          Float?                  @default(0) @map("delivery_rate")
+  totalEarnings         Decimal?                @default(0) @map("total_earnings") @db.Decimal(19, 4)
+  totalCollected        Decimal                 @default(0) @map("total_collected") @db.Decimal(19, 4)
   location              String?
-  createdAt             DateTime            @default(now()) @map("created_at")
-  updatedAt             DateTime            @updatedAt @map("updated_at")
-  firstName             String              @map("first_name")
-  lastName              String              @map("last_name")
-  displayName           String?             @map("display_name")
-  photoUrl              String?             @map("photo_url")
-  calls                 Call[]              @relation("CallSalesRep")
+  createdAt             DateTime                @default(now()) @map("created_at")
+  updatedAt             DateTime                @updatedAt @map("updated_at")
+  firstName             String                  @map("first_name")
+  lastName              String                  @map("last_name")
+  displayName           String?                 @map("display_name")
+  photoUrl              String?                 @map("photo_url")
+  calls                 Call[]                  @relation("CallSalesRep")
   deliveries            Delivery[]
   expenses              Expense[]
   notifications         Notification[]
-  createdOrders         Order[]             @relation("OrderCreatedBy")
-  assignedOrdersAsRep   Order[]             @relation("OrderCustomerRep")
-  assignedOrdersAsAgent Order[]             @relation("OrderDeliveryAgent")
+  createdOrders         Order[]                 @relation("OrderCreatedBy")
+  assignedOrdersAsRep   Order[]                 @relation("OrderCustomerRep")
+  assignedOrdersAsAgent Order[]                 @relation("OrderDeliveryAgent")
   payouts               Payout[]
   auditLogs             AuditLog[]
-  journalEntriesCreated JournalEntry[]      @relation("JournalEntryCreator")
-  journalEntriesVoided  JournalEntry[]      @relation("VoidedByUser")
-  collections           AgentCollection[]   @relation("AgentCollections")
-  verifiedCollections   AgentCollection[]   @relation("VerifiedCollections")
-  approvedCollections   AgentCollection[]   @relation("ApprovedCollections")
+  journalEntriesCreated JournalEntry[]          @relation("JournalEntryCreator")
+  journalEntriesVoided  JournalEntry[]          @relation("VoidedByUser")
+  collections           AgentCollection[]       @relation("AgentCollections")
+  verifiedCollections   AgentCollection[]       @relation("VerifiedCollections")
+  approvedCollections   AgentCollection[]       @relation("ApprovedCollections")
   balance               AgentBalance?
-  deposits              AgentDeposit[]      @relation("AgentDeposits")
-  verifiedDeposits      AgentDeposit[]      @relation("VerifiedDeposits")
+  deposits              AgentDeposit[]          @relation("AgentDeposits")
+  verifiedDeposits      AgentDeposit[]          @relation("VerifiedDeposits")
   agingBucket           AgentAgingBucket?
-  blockedBalances       AgentBalance[]      @relation("BlockedBy")
-  agentStock            AgentStock[]        @relation("AgentStockHoldings")
-  transfersFrom         InventoryTransfer[] @relation("TransferFrom")
-  transfersTo           InventoryTransfer[] @relation("TransferTo")
-  transfersCreated      InventoryTransfer[] @relation("TransferCreator")
-  shipmentsCreated      InventoryShipment[] @relation("ShipmentCreator")
-  confirmedOrders       Order[]             @relation("OrderConfirmedBy")
-  targetsAsOwner        Target[]            @relation("TargetUser")
-  feeRules              FeeRule[]           @relation("FeeRulePartner")
-  fxRatesCreated        FxRate[]            @relation("FxRateCreator")
-  kind                  UserKind            @default(person)
-  roleAssignments       RoleAssignment[]    @relation("RoleAssignmentHolder")
+  blockedBalances       AgentBalance[]          @relation("BlockedBy")
+  agentStock            AgentStock[]            @relation("AgentStockHoldings")
+  transfersFrom         InventoryTransfer[]     @relation("TransferFrom")
+  transfersTo           InventoryTransfer[]     @relation("TransferTo")
+  transfersCreated      InventoryTransfer[]     @relation("TransferCreator")
+  shipmentsCreated      InventoryShipment[]     @relation("ShipmentCreator")
+  shipmentsReceived     InventoryShipment[]     @relation("ShipmentReceiver")
+  transfersReceived     InventoryTransfer[]     @relation("TransferReceiver")
+  stockLocations        StockLocation[]         @relation("StockLocationHolder")
+  stockCountsMade       StockCount[]            @relation("StockCountCounter")
+  partnerProfile        DeliveryPartnerProfile? @relation("PartnerProfileUser")
+  deliveryAttempts      DeliveryAttempt[]       @relation("DeliveryAttemptPartner")
+  confirmedOrders       Order[]                 @relation("OrderConfirmedBy")
+  targetsAsOwner        Target[]                @relation("TargetUser")
+  feeRules              FeeRule[]               @relation("FeeRulePartner")
+  fxRatesCreated        FxRate[]                @relation("FxRateCreator")
+  kind                  UserKind                @default(person)
+  roleAssignments       RoleAssignment[]        @relation("RoleAssignmentHolder")
   sessions              UserSession[]
-  customersCreated      Customer[]          @relation("CustomerCreatedBy")
-  mcpApiKeys            McpApiKey[]         @relation("McpApiKeyUser")
-  tenantId              String?             @map("tenant_id")
-  tenant                Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customersCreated      Customer[]              @relation("CustomerCreatedBy")
+  mcpApiKeys            McpApiKey[]             @relation("McpApiKeyUser")
+  tenantId              String?                 @map("tenant_id")
+  tenant                Tenant?                 @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([role, isActive])
   @@index([role, isActive, isAvailable])
@@ -242,6 +254,8 @@ model Product {
   price                   Decimal                @db.Decimal(19, 4)
   stockQuantity           Int                    @map("stock_quantity")
   lowStockThreshold       Int                    @default(10) @map("low_stock_threshold")
+  // Days of cover that count as low stock (F-601). Null reads as the default.
+  lowStockDays            Int?                   @map("low_stock_days")
   imageUrl                String?                @map("image_url")
   weight                  Float?
   dimensions              Json?
@@ -262,6 +276,8 @@ model Product {
   agentStock              AgentStock[]
   inventoryTransfers      InventoryTransfer[]
   inventoryShipments      InventoryShipment[]
+  stockLevels             StockLevel[]
+  stockCountLines         StockCountLine[]
   tenantId                String?                @map("tenant_id")
   tenant                  Tenant?                @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -336,6 +352,8 @@ model Order {
   declineReason      DeclineReason?      @map("decline_reason")
   failureReason      FailureReason?      @map("failure_reason")
   nextAttemptDate    DateTime?           @map("next_attempt_date")
+  // Cost of the units at delivery time, set once (F-611). Null until delivered.
+  landedCostTotal    Decimal?            @map("landed_cost_total") @db.Decimal(19, 4)
   calls              Call[]
   delivery           Delivery?
   formSubmissions    FormSubmission[]
@@ -351,6 +369,7 @@ model Order {
   glJournalEntry     JournalEntry?       @relation(fields: [glJournalEntryId], references: [id])
   agentCollection    AgentCollection?
   inventoryTransfers InventoryTransfer[]
+  deliveryAttempts   DeliveryAttempt[]
   messageLogs        MessageLog[]
   downloadTokens     DownloadToken[]
   tenantId           String?             @map("tenant_id")
@@ -558,15 +577,16 @@ model JournalEntry {
   createdAt        DateTime          @default(now()) @map("created_at")
   updatedAt        DateTime          @updatedAt @map("updated_at")
 
-  transactions AccountTransaction[]
-  reversedBy   JournalEntry?        @relation("ReversalRelation", fields: [reversingEntryId], references: [id])
-  reverses     JournalEntry?        @relation("ReversalRelation")
-  creator      User                 @relation("JournalEntryCreator", fields: [createdBy], references: [id])
-  voider       User?                @relation("VoidedByUser", fields: [voidedBy], references: [id])
-  orders       Order[]
-  shipments    InventoryShipment[]
-  tenantId     String?              @map("tenant_id")
-  tenant       Tenant?              @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  transactions   AccountTransaction[]
+  reversedBy     JournalEntry?        @relation("ReversalRelation", fields: [reversingEntryId], references: [id])
+  reverses       JournalEntry?        @relation("ReversalRelation")
+  creator        User                 @relation("JournalEntryCreator", fields: [createdBy], references: [id])
+  voider         User?                @relation("VoidedByUser", fields: [voidedBy], references: [id])
+  orders         Order[]
+  shipments      InventoryShipment[]
+  claimShipments InventoryShipment[]  @relation("ShipmentClaimEntry")
+  tenantId       String?              @map("tenant_id")
+  tenant         Tenant?              @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([tenantId, entryNumber])
   @@unique([tenantId, sourceType, externalRef])
@@ -988,40 +1008,75 @@ model product_cost_entries {
 }
 
 model InventoryShipment {
-  id                  Int            @id @default(autoincrement())
-  productId           Int            @map("product_id")
-  supplier            String?
-  quantity            Int
-  unitCost            Decimal        @default(0) @map("unit_cost") @db.Decimal(10, 2)
-  shippingCost        Decimal        @default(0) @map("shipping_cost") @db.Decimal(10, 2)
-  customsDuties       Decimal        @default(0) @map("customs_duties") @db.Decimal(10, 2)
-  otherCosts          Decimal        @default(0) @map("other_costs") @db.Decimal(10, 2)
-  totalCost           Decimal        @default(0) @map("total_cost") @db.Decimal(10, 2)
-  status              ShipmentStatus @default(pending)
-  expectedArrivalDate DateTime?      @map("expected_arrival_date")
-  arrivedAt           DateTime?      @map("arrived_at")
-  glJournalEntryId    Int?           @map("gl_journal_entry_id")
-  notes               String?
-  createdById         Int            @map("created_by_id")
-  createdAt           DateTime       @default(now()) @map("created_at")
-  updatedAt           DateTime       @updatedAt @map("updated_at")
+  id                    Int            @id @default(autoincrement())
+  productId             Int            @map("product_id")
+  supplier              String?
+  quantity              Int
+  unitCost              Decimal        @default(0) @map("unit_cost") @db.Decimal(19, 4)
+  shippingCost          Decimal        @default(0) @map("shipping_cost") @db.Decimal(19, 4)
+  customsDuties         Decimal        @default(0) @map("customs_duties") @db.Decimal(19, 4)
+  otherCosts            Decimal        @default(0) @map("other_costs") @db.Decimal(19, 4)
+  totalCost             Decimal        @default(0) @map("total_cost") @db.Decimal(19, 4)
+  status                ShipmentStatus @default(pending)
+  expectedArrivalDate   DateTime?      @map("expected_arrival_date")
+  arrivedAt             DateTime?      @map("arrived_at")
+  glJournalEntryId      Int?           @map("gl_journal_entry_id")
+  notes                 String?
+  createdById           Int            @map("created_by_id")
+  createdAt             DateTime       @default(now()) @map("created_at")
+  updatedAt             DateTime       @updatedAt @map("updated_at")
+  // F-605: the cost columns above are in `currency`; null reads as the store currency.
+  currency              String?        @db.VarChar(3)
+  fxRate                Decimal?       @map("fx_rate") @db.Decimal(19, 8)
+  fxRateSource          FxSource?      @map("fx_rate_source")
+  // F-606 / F-611: set when the shipment is received. landedCostPerUnit = totalCostStore / quantityCounted.
+  totalCostStore        Decimal?       @map("total_cost_store") @db.Decimal(19, 4)
+  landedCostPerUnit     Decimal?       @map("landed_cost_per_unit") @db.Decimal(19, 4)
+  receivedAt            DateTime?      @map("received_at")
+  receivedById          Int?           @map("received_by_id")
+  quantityCounted       Int?           @map("quantity_counted")
+  shortQuantity         Int?           @map("short_quantity")
+  destinationLocationId Int?           @map("destination_location_id")
+  // F-608: supplier claim for the short units.
+  claimStatus           ClaimStatus    @default(none) @map("claim_status")
+  claimAmount           Decimal        @default(0) @map("claim_amount") @db.Decimal(19, 4)
+  claimRecovered        Decimal?       @map("claim_recovered") @db.Decimal(19, 4)
+  claimNote             String?        @map("claim_note")
+  // Entry posted when a claim is settled (DR 1010 / CR 1200 for the amount recovered).
+  claimJournalEntryId   Int?           @map("claim_journal_entry_id")
 
-  product        Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
-  createdBy      User          @relation("ShipmentCreator", fields: [createdById], references: [id])
-  glJournalEntry JournalEntry? @relation(fields: [glJournalEntryId], references: [id])
-  tenantId       String?       @map("tenant_id")
-  tenant         Tenant?       @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  product             Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdBy           User                @relation("ShipmentCreator", fields: [createdById], references: [id])
+  receivedBy          User?               @relation("ShipmentReceiver", fields: [receivedById], references: [id])
+  glJournalEntry      JournalEntry?       @relation(fields: [glJournalEntryId], references: [id])
+  claimJournalEntry   JournalEntry?       @relation("ShipmentClaimEntry", fields: [claimJournalEntryId], references: [id])
+  destinationLocation StockLocation?      @relation("ShipmentDestination", fields: [destinationLocationId], references: [id])
+  inventoryTransfers  InventoryTransfer[]
+  tenantId            String?             @map("tenant_id")
+  tenant              Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([productId])
   @@index([status])
   @@index([expectedArrivalDate])
   @@index([tenantId])
+  @@index([receivedById])
+  @@index([destinationLocationId])
+  @@index([claimJournalEntryId])
   @@map("inventory_shipments")
 }
 
+// `arrived` is the old name of `received`. Old rows keep it and old code still reads it until M4-T12 moves to `received`.
 enum ShipmentStatus {
   pending
   arrived
+  received
+}
+
+enum ClaimStatus {
+  none
+  open
+  settled
+  written_off
 }
 
 model AuditLog {
@@ -1383,27 +1438,72 @@ enum TransferType {
   agent_transfer
   return_to_warehouse
   adjustment
+  receipt
+  opening
+  order_reversal
+  count_adjustment
 }
 
-model InventoryTransfer {
-  id           Int          @id @default(autoincrement())
-  productId    Int          @map("product_id")
-  quantity     Int
-  transferType TransferType @map("transfer_type")
-  fromAgentId  Int?         @map("from_agent_id")
-  toAgentId    Int?         @map("to_agent_id")
-  orderId      Int?         @map("order_id")
-  notes        String?
-  createdById  Int          @map("created_by_id")
-  createdAt    DateTime     @default(now()) @map("created_at")
-  tenantId     String?      @map("tenant_id")
+enum TransferStatus {
+  in_transit
+  received
+  disputed
+  cancelled
+}
 
-  product   Product @relation(fields: [productId], references: [id])
-  fromAgent User?   @relation("TransferFrom", fields: [fromAgentId], references: [id])
-  toAgent   User?   @relation("TransferTo", fields: [toAgentId], references: [id])
-  order     Order?  @relation(fields: [orderId], references: [id])
-  createdBy User    @relation("TransferCreator", fields: [createdById], references: [id])
-  tenant    Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+// Reasons for disputes (F-654), returns and adjustments (F-655), and count adjustments (F-653).
+enum TransferReason {
+  short_in_package
+  damaged
+  not_received
+  failed_deliveries
+  customer_refused
+  agent_stopped_delivering
+  physical_count_correction
+  lost_or_stolen
+  found_extra_stock
+  short_on_arrival
+  other
+}
+
+// One row per stock movement (F-651). fromAgentId and toAgentId are for old rows only; new rows use the location columns.
+model InventoryTransfer {
+  id               Int             @id @default(autoincrement())
+  productId        Int             @map("product_id")
+  quantity         Int
+  transferType     TransferType    @map("transfer_type")
+  fromAgentId      Int?            @map("from_agent_id")
+  toAgentId        Int?            @map("to_agent_id")
+  orderId          Int?            @map("order_id")
+  notes            String?
+  createdById      Int             @map("created_by_id")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  tenantId         String?         @map("tenant_id")
+  fromLocationId   Int?            @map("from_location_id")
+  toLocationId     Int?            @map("to_location_id")
+  shipmentId       Int?            @map("shipment_id")
+  // Old rows are finished moves, so they read as received.
+  status           TransferStatus  @default(received)
+  receivedQuantity Int?            @map("received_quantity")
+  receivedAt       DateTime?       @map("received_at")
+  receivedById     Int?            @map("received_by_id")
+  reason           TransferReason?
+  reversedAt       DateTime?       @map("reversed_at")
+  // Identifies one order line, so one order line takes stock out once. Written by stockService (M4-T07).
+  // The partial unique index on (order_id, product_id, item_key) for active order_fulfillment rows is raw SQL in the migration; Prisma cannot express it.
+  itemKey          String?         @map("item_key")
+
+  product           Product            @relation(fields: [productId], references: [id])
+  fromAgent         User?              @relation("TransferFrom", fields: [fromAgentId], references: [id])
+  toAgent           User?              @relation("TransferTo", fields: [toAgentId], references: [id])
+  order             Order?             @relation(fields: [orderId], references: [id])
+  createdBy         User               @relation("TransferCreator", fields: [createdById], references: [id])
+  receivedBy        User?              @relation("TransferReceiver", fields: [receivedById], references: [id])
+  fromLocation      StockLocation?     @relation("TransferFromLocation", fields: [fromLocationId], references: [id])
+  toLocation        StockLocation?     @relation("TransferToLocation", fields: [toLocationId], references: [id])
+  shipment          InventoryShipment? @relation(fields: [shipmentId], references: [id])
+  appliedCountLines StockCountLine[]
+  tenant            Tenant?            @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([productId])
   @@index([fromAgentId])
@@ -1412,6 +1512,11 @@ model InventoryTransfer {
   @@index([createdAt])
   @@index([orderId])
   @@index([tenantId])
+  @@index([fromLocationId])
+  @@index([toLocationId])
+  @@index([shipmentId])
+  @@index([receivedById])
+  @@index([tenantId, status])
   @@map("inventory_transfers")
 }
 
@@ -1439,6 +1544,152 @@ model AgentStock {
   @@index([productId])
   @@index([tenantId])
   @@map("agent_stock")
+}
+
+enum StockLocationType {
+  own_store
+  partner_3pl
+  agent
+  in_transit
+}
+
+/// A place that holds stock (F-650). agent and partner_3pl link to one User; in_transit is one system location per tenant.
+model StockLocation {
+  id        Int               @id @default(autoincrement())
+  type      StockLocationType
+  name      String
+  userId    Int?              @map("user_id")
+  address   String?
+  isActive  Boolean           @default(true) @map("is_active")
+  createdAt DateTime          @default(now()) @map("created_at")
+  tenantId  String            @map("tenant_id")
+  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user      User?             @relation("StockLocationHolder", fields: [userId], references: [id])
+
+  levels            StockLevel[]
+  counts            StockCount[]
+  transfersFrom     InventoryTransfer[] @relation("TransferFromLocation")
+  transfersTo       InventoryTransfer[] @relation("TransferToLocation")
+  shipmentsReceived InventoryShipment[] @relation("ShipmentDestination")
+
+  @@unique([tenantId, name])
+  @@unique([tenantId, userId])
+  @@index([tenantId])
+  @@index([userId])
+  @@map("stock_locations")
+}
+
+/// On-hand quantity of one product at one location (F-651). May be negative (F-657). Written only by stockService.
+model StockLevel {
+  id         Int           @id @default(autoincrement())
+  locationId Int           @map("location_id")
+  productId  Int           @map("product_id")
+  quantity   Int           @default(0)
+  updatedAt  DateTime      @updatedAt @map("updated_at")
+  tenantId   String        @map("tenant_id")
+  tenant     Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  location   StockLocation @relation(fields: [locationId], references: [id])
+  product    Product       @relation(fields: [productId], references: [id])
+
+  @@unique([locationId, productId])
+  @@index([tenantId])
+  @@index([productId])
+  @@map("stock_levels")
+}
+
+enum StockCountSource {
+  own_count
+  three_pl_dashboard
+  agent_count
+}
+
+/// A count of stock at one location against our records (F-653).
+model StockCount {
+  id          Int              @id @default(autoincrement())
+  locationId  Int              @map("location_id")
+  countDate   DateTime         @map("count_date") @db.Date
+  source      StockCountSource
+  countedById Int              @map("counted_by_id")
+  note        String?
+  createdAt   DateTime         @default(now()) @map("created_at")
+  tenantId    String           @map("tenant_id")
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  location    StockLocation    @relation(fields: [locationId], references: [id])
+  countedBy   User             @relation("StockCountCounter", fields: [countedById], references: [id])
+  lines       StockCountLine[]
+
+  @@index([tenantId])
+  @@index([locationId, countDate])
+  @@index([countedById])
+  @@map("stock_counts")
+}
+
+/// One product in a count. systemQuantity is frozen at count start; difference = countedQuantity - systemQuantity.
+/// findingId is the stock_gap Finding a gap opens; appliedMovementId is the count_adjustment movement written by "Apply count".
+model StockCountLine {
+  id                Int                @id @default(autoincrement())
+  countId           Int                @map("count_id")
+  productId         Int                @map("product_id")
+  systemQuantity    Int                @map("system_quantity")
+  countedQuantity   Int                @map("counted_quantity")
+  difference        Int
+  findingId         Int?               @map("finding_id")
+  appliedMovementId Int?               @map("applied_movement_id")
+  tenantId          String             @map("tenant_id")
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  count             StockCount         @relation(fields: [countId], references: [id], onDelete: Cascade)
+  product           Product            @relation(fields: [productId], references: [id])
+  finding           Finding?           @relation(fields: [findingId], references: [id])
+  appliedMovement   InventoryTransfer? @relation(fields: [appliedMovementId], references: [id])
+
+  @@unique([countId, productId])
+  @@index([tenantId])
+  @@index([productId])
+  @@index([findingId])
+  @@index([appliedMovementId])
+  @@map("stock_count_lines")
+}
+
+enum PartnerDataSource {
+  app
+  connector
+  csv
+}
+
+/// Delivery settings of one partner user (F-700). No coverage and no fallback flag (decision O4).
+model DeliveryPartnerProfile {
+  id         Int               @id @default(autoincrement())
+  userId     Int               @unique @map("user_id")
+  daysToPay  Int               @default(0) @map("days_to_pay")
+  isTrial    Boolean           @default(false) @map("is_trial")
+  dataSource PartnerDataSource @default(app) @map("data_source")
+  baseTown   String?           @map("base_town")
+  createdAt  DateTime          @default(now()) @map("created_at")
+  tenantId   String            @map("tenant_id")
+  tenant     Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user       User              @relation("PartnerProfileUser", fields: [userId], references: [id])
+
+  @@index([tenantId])
+  @@map("delivery_partner_profiles")
+}
+
+/// One failed or rescheduled delivery attempt on an order (F-713).
+model DeliveryAttempt {
+  id            Int            @id @default(autoincrement())
+  orderId       Int            @map("order_id")
+  partnerUserId Int            @map("partner_user_id")
+  attemptedAt   DateTime       @map("attempted_at")
+  reason        FailureReason?
+  note          String?
+  tenantId      String         @map("tenant_id")
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  order         Order          @relation(fields: [orderId], references: [id])
+  partner       User           @relation("DeliveryAttemptPartner", fields: [partnerUserId], references: [id])
+
+  @@index([tenantId])
+  @@index([orderId])
+  @@index([partnerUserId])
+  @@map("delivery_attempts")
 }
 
 model DownloadToken {
@@ -1625,16 +1876,17 @@ model Target {
 /// Minimal shape from M1; extended in M5/M6. Money or stock gaps found by the nightly jobs (F-905).
 /// subjectId is text because subjects are not all integer rows (a ledger gap is a day, a cash gap a partner).
 model Finding {
-  id          Int           @id @default(autoincrement())
-  type        FindingType
-  status      FindingStatus @default(open)
-  subjectType String        @map("subject_type")
-  subjectId   String        @map("subject_id")
-  amount      Decimal?      @db.Decimal(19, 4)
-  note        String?
-  createdAt   DateTime      @default(now()) @map("created_at")
-  tenantId    String        @map("tenant_id")
-  tenant      Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id              Int              @id @default(autoincrement())
+  type            FindingType
+  status          FindingStatus    @default(open)
+  subjectType     String           @map("subject_type")
+  subjectId       String           @map("subject_id")
+  amount          Decimal?         @db.Decimal(19, 4)
+  note            String?
+  createdAt       DateTime         @default(now()) @map("created_at")
+  tenantId        String           @map("tenant_id")
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  stockCountLines StockCountLine[]
 
   @@index([tenantId])
   @@index([tenantId, type, status])
