@@ -551,7 +551,7 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
                 <>
                   Fields{' '}
                   {fields.length > 0 && (
-                    <span className="ml-1 text-xs bg-gray-200 rounded-full px-2">{fields.length}</span>
+                    <span>{fields.length}</span>
                   )}
                 </>
               ),
@@ -563,7 +563,7 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
                 <>
                   Packages{' '}
                   {packages.length > 0 && (
-                    <span className="ml-1 text-xs bg-gray-200 rounded-full px-2">{packages.length}</span>
+                    <span>{packages.length}</span>
                   )}
                 </>
               ),
@@ -575,7 +575,7 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
                 <>
                   Upsells{' '}
                   {upsells.length > 0 && (
-                    <span className="ml-1 text-xs bg-gray-200 rounded-full px-2">{upsells.length}</span>
+                    <span>{upsells.length}</span>
                   )}
                 </>
               ),

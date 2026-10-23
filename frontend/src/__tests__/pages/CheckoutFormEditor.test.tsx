@@ -70,6 +70,7 @@ vi.mock('../../components/forms/CheckoutFormPreviewPane', () => ({
 // Now import the editor.
 import { CheckoutFormEditor } from '../../pages/CheckoutFormEditor';
 import { useAuthStore } from '../../stores/authStore';
+import { V2PageContext } from '../../components/shell/useV2Page';
 
 const renderEditor = () =>
   render(
@@ -165,5 +166,23 @@ describe('CheckoutFormEditor, who may change the form (COD-37)', () => {
     expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Create form' })).toBeNull();
     expect(screen.getByRole('button', { name: /Preview/ })).toBeEnabled();
+  });
+});
+
+describe('CheckoutFormEditor, dark mode (COD-37)', () => {
+  it('registers as a v2 page, so the shell does not wrap it in .legacy-light', async () => {
+    useAuthStore.setState({ user: { role: 'admin' } as never });
+    const setV2 = vi.fn();
+    render(
+      <V2PageContext.Provider value={setV2}>
+        <MemoryRouter initialEntries={['/checkout-forms/123/edit']}>
+          <Routes>
+            <Route path="/checkout-forms/:id/edit" element={<CheckoutFormEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </V2PageContext.Provider>,
+    );
+    await screen.findByTestId('builder-stub');
+    expect(setV2).toHaveBeenCalledWith(true);
   });
 });

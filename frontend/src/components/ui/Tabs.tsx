@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { cn } from '../../utils/cn';
 
@@ -13,7 +13,7 @@ interface TabsProps {
   defaultTab?: string;
   /** When set, persists the active tab in URL search params under this key */
   persistKey?: string;
-  /** Closer tabs that scroll sideways when they still do not fit (the form editor has seven in a narrow column). */
+  /** Closer tabs in the v2 colours that scroll sideways when they still do not fit (the form editor has seven in a narrow column). */
   compact?: boolean;
 }
 
@@ -40,13 +40,65 @@ export const Tabs: React.FC<TabsProps> = ({ tabs, defaultTab, persistKey, compac
     }
   };
 
+  // Compact strip (the form editor): token colours, scrolls sideways when the tabs do not fit, shows a fade on the side
+  // that has more, and keeps the active tab in view.
+  const navRef = useRef<HTMLElement>(null);
+  const [more, setMore] = useState({ left: false, right: false });
+  const measure = useCallback(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const next = { left: nav.scrollLeft > 2, right: nav.scrollLeft + nav.clientWidth < nav.scrollWidth - 2 };
+    setMore((prev) => (prev.left === next.left && prev.right === next.right ? prev : next));
+  }, []);
+  useEffect(() => {
+    if (!compact) return;
+    const nav = navRef.current;
+    if (!nav) return;
+    measure();
+    const active = nav.querySelector<HTMLElement>('[aria-current="page"]');
+    if (active && active.offsetLeft + active.offsetWidth > nav.scrollLeft + nav.clientWidth) nav.scrollLeft = active.offsetLeft + active.offsetWidth - nav.clientWidth;
+    else if (active && active.offsetLeft < nav.scrollLeft) nav.scrollLeft = active.offsetLeft;
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(nav);
+    return () => observer.disconnect();
+  }, [compact, activeTab, measure]);
+
   const activeTabDef = tabs.find((tab) => tab.id === activeTab);
   const activeContent = typeof activeTabDef?.content === 'function' ? activeTabDef.content() : activeTabDef?.content;
+
+  if (compact) {
+    return (
+      <div>
+        <nav
+          ref={navRef}
+          className="etabs"
+          aria-label="Form sections"
+          data-more-left={more.left || undefined}
+          data-more-right={more.right || undefined}
+          onScroll={measure}
+        >
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={cn('etab', activeTab === tab.id && 'on')}
+              aria-current={activeTab === tab.id ? 'page' : undefined}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+        <div className="py-4" key={activeTab}>{activeContent}</div>
+      </div>
+    );
+  }
 
   return (
     <div>
       <div className="border-b border-gray-200">
-        <nav className={cn('flex', compact ? 'space-x-3 overflow-x-auto' : 'space-x-8')}>
+        <nav className="flex space-x-8">
           {tabs.map((tab) => (
             <button
               key={tab.id}
