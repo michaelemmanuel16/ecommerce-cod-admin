@@ -1,6 +1,16 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import { checkoutFormDesignSchema } from '../checkoutFormDesignSchema';
 import { BRAND_PALETTE } from '../../lib/checkoutPalette';
+
+const STORAGE = 'https://img.example.com';
+const originalStorage = process.env.R2_PUBLIC_URL;
+beforeAll(() => {
+  process.env.R2_PUBLIC_URL = STORAGE;
+});
+afterAll(() => {
+  if (originalStorage === undefined) delete process.env.R2_PUBLIC_URL;
+  else process.env.R2_PUBLIC_URL = originalStorage;
+});
 
 describe('checkoutFormDesignSchema', () => {
   const paletteHex = BRAND_PALETTE[0].hex; // #0f172a
@@ -139,16 +149,34 @@ describe('checkoutFormDesignSchema', () => {
   });
 
   describe('page.productBanner', () => {
-    it('accepts an https URL', () => {
+    it('accepts an https URL on the storage host', () => {
       const result = checkoutFormDesignSchema.safeParse({
-        page: { productBanner: 'https://cdn.example.com/banner.png' },
+        page: { productBanner: `${STORAGE}/products/t1/banner-1.png` },
       });
       expect(result.success).toBe(true);
     });
 
+    it('refuses an https URL on any other host, with the upload message', () => {
+      for (const url of ['https://cdn.example.com/banner.png', 'https://img.example.com.evil.org/b.png', 'https://evil.org/img.example.com/b.png']) {
+        const result = checkoutFormDesignSchema.safeParse({ page: { productBanner: url } });
+        expect(result.success).toBe(false);
+        if (!result.success) expect(result.error.issues[0].message).toBe('Upload the banner here; links to other sites are not used.');
+      }
+    });
+
+    it('refuses every banner while image storage is not configured', () => {
+      delete process.env.R2_PUBLIC_URL;
+      try {
+        const result = checkoutFormDesignSchema.safeParse({ page: { productBanner: `${STORAGE}/b.png` } });
+        expect(result.success).toBe(false);
+      } finally {
+        process.env.R2_PUBLIC_URL = STORAGE;
+      }
+    });
+
     it('rejects an http URL', () => {
       const result = checkoutFormDesignSchema.safeParse({
-        page: { productBanner: 'http://cdn.example.com/banner.png' },
+        page: { productBanner: 'http://img.example.com/banner.png' },
       });
       expect(result.success).toBe(false);
     });
@@ -219,7 +247,7 @@ describe('checkoutFormDesignSchema', () => {
       input: { style: 'outlined', labelColor: paletteHex, priceColor: '#dc2626' },
       page: {
         background: 'transparent',
-        productBanner: 'https://cdn.example.com/banner.png',
+        productBanner: `${STORAGE}/banner.png`,
         hideProductDisplay: false,
         offerPosition: 'top',
       },

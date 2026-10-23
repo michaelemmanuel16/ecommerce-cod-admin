@@ -9,6 +9,7 @@ import { AddOnSelector } from './AddOnSelector';
 import { OrderSummary, PaymentMethodOption } from './OrderSummary';
 import { cn } from '../../utils/cn';
 import { TownSelect } from '../forms/TownSelect';
+import { isStorageUrl } from '../../lib/storageHost';
 
 interface CheckoutFormProps {
   formData: PublicCheckoutForm;
@@ -19,6 +20,9 @@ interface CheckoutFormProps {
   // Rendered inside the embed widget on a host page — drops the full-screen page
   // chrome (min-h-screen / page background / outer padding) so it fits inline.
   embedded?: boolean;
+  // The editor's preview: "Place order" says "Preview only." and no order is sent. Pixels and server events live in the
+  // pages around this component (PublicCheckout, EmbedCheckout), which the preview route never renders.
+  preview?: boolean;
 }
 
 export interface CheckoutFormData {
@@ -87,10 +91,11 @@ function FieldWrapper({ fieldKey, label, required, error, children, labelColor, 
   );
 }
 
-export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, lockedPackageId, embedded }) => {
+export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, lockedPackageId, embedded, preview }) => {
   const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
   const [selectedAddonIds, setSelectedAddonIds] = useState<Set<number>>(new Set());
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [previewNotice, setPreviewNotice] = useState(false);
   const isDigital = formData.formType === 'digital' || formData.product?.productType === 'digital';
 
   // Deep-link lock: when the page resolves a `?package=<id>`, show only that package
@@ -154,6 +159,11 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
   const surfaceColor = colors.surface || '#f97316';
   const primaryColor = colors.primary || ctaColor;
   const textColor = colors.text;
+  const labelColor = design.input?.labelColor || textColor;
+  const priceColor = design.input?.priceColor || undefined;
+  const pageBackground = design.page?.background && design.page.background !== 'transparent' ? design.page.background : undefined;
+  // The banner must sit on our image storage; the server sends that host with the form.
+  const banner = isStorageUrl(design.page?.productBanner, formData.storageHost) ? design.page?.productBanner : undefined;
   const inputStyle = design.input?.style || 'outlined';
   const buttonShape = design.button?.shape || 'rounded';
   const buttonSize = design.button?.size || 'md';
@@ -310,7 +320,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
     }
 
     return (
-      <FieldWrapper key={wrapKey} fieldKey={formKey} label={field.label} required={isRequired} error={error} labelColor={textColor} widthPercent={field.widthPercent}>
+      <FieldWrapper key={wrapKey} fieldKey={formKey} label={field.label} required={isRequired} error={error} labelColor={labelColor} widthPercent={field.widthPercent}>
         {control}
       </FieldWrapper>
     );
@@ -361,6 +371,10 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
   };
 
   const onFormSubmit = async (data: Partial<CheckoutFormData>) => {
+    if (preview) {
+      setPreviewNotice(true);
+      return;
+    }
     if (!selectedPackageId) {
       alert('Please select a package');
       return;
@@ -384,13 +398,23 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
   // Captures which payment button was pressed, then runs validation + submit
   // (react-hook-form's handleSubmit doesn't carry the click target through).
   const submitWithMethod = (method: PaymentMethod) => {
+    if (preview) {
+      setPreviewNotice(true);
+      return;
+    }
     pendingMethodRef.current = method;
     handleSubmit(onFormSubmit)();
   };
 
   return (
-    <div className={embedded ? 'w-full' : 'min-h-screen bg-gray-50 py-8 px-4'}>
+    // The public form keeps its own colours: it never reads the admin theme, so the admin's dark mode cannot change it.
+    <div
+      className={embedded ? 'w-full' : 'min-h-screen bg-gray-50 py-8 px-4'}
+      data-testid="public-form-root"
+      style={{ colorScheme: 'light', ...(pageBackground ? { backgroundColor: pageBackground } : {}) }}
+    >
       <div className="max-w-2xl mx-auto">
+        {banner && <img src={banner} alt="" className="w-full max-h-64 object-cover rounded-lg mb-6" data-testid="form-banner" />}
         {/* Header */}
         {!formData.design?.page?.hideProductDisplay && (
           <div className="mb-8">
@@ -419,6 +443,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
                     primaryColor={primaryColor}
                     accentColor={surfaceColor}
                     textColor={textColor}
+                    priceColor={priceColor}
                   />
                 </div>
               )}
@@ -445,6 +470,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
                     primaryColor={primaryColor}
                     accentColor={surfaceColor}
                     textColor={textColor}
+                    priceColor={priceColor}
                   />
                 </div>
               )}
@@ -457,6 +483,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
                     selectedAddons={selectedAddonIds}
                     currency={formData.currency}
                     onToggleAddon={toggleAddon}
+                    priceColor={priceColor}
                   />
                 </div>
               )}
@@ -470,7 +497,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
                 selectedAddons={selectedAddons}
                 currency={formData.currency}
                 isSubmitting={isSubmitting}
-                onSubmit={handleSubmit(onFormSubmit)}
+                onSubmit={() => (preview ? setPreviewNotice(true) : handleSubmit(onFormSubmit)())}
                 buttonColor={ctaColor}
                 accentColor={surfaceColor}
                 textColor={textColor}
@@ -481,7 +508,9 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
                 paymentMethods={paymentMethods}
                 onSelectMethod={submitWithMethod}
                 showRefundPolicy={showRefundPolicy}
+                priceColor={priceColor}
               />
+              {previewNotice && <p role="status" className="mt-3 text-center text-sm font-medium text-gray-700">Preview only.</p>}
             </div>
           </div>
         </form>

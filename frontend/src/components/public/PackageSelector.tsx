@@ -13,6 +13,7 @@ interface PackageSelectorProps {
   primaryColor?: string;
   accentColor?: string;
   textColor?: string;
+  priceColor?: string;
 }
 
 export const PackageSelector: React.FC<PackageSelectorProps> = ({
@@ -23,6 +24,7 @@ export const PackageSelector: React.FC<PackageSelectorProps> = ({
   primaryColor,
   accentColor,
   textColor,
+  priceColor,
 }) => {
   return (
     <div className="space-y-4">
@@ -89,7 +91,7 @@ export const PackageSelector: React.FC<PackageSelectorProps> = ({
                     <p className="text-sm text-gray-500 line-through">
                       {currency} {pkg.originalPrice.toFixed(2)}
                     </p>
-                    <p className="text-xl font-bold text-green-600">
+                    <p className="text-xl font-bold text-green-600" style={priceColor ? { color: priceColor } : undefined}>
                       {currency} {pkg.price.toFixed(2)}
                     </p>
                     {pkg.discountType === 'percentage' && pkg.discountValue && (
@@ -104,7 +106,7 @@ export const PackageSelector: React.FC<PackageSelectorProps> = ({
                     )}
                   </>
                 ) : (
-                  <p className="text-xl font-bold text-gray-900">
+                  <p className="text-xl font-bold text-gray-900" style={priceColor ? { color: priceColor } : undefined}>
                     {currency} {pkg.price.toFixed(2)}
                   </p>
                 )}

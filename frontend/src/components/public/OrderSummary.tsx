@@ -36,6 +36,7 @@ interface OrderSummaryProps {
   // Renders a short refund-policy note above the CTAs (Paystack dispute defense),
   // shown whenever an online-payment method is offered.
   showRefundPolicy?: boolean;
+  priceColor?: string;
 }
 
 const SHAPE_CLASS: Record<NonNullable<OrderSummaryProps['buttonShape']>, string> = {
@@ -66,6 +67,7 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
   paymentMethods,
   onSelectMethod,
   showRefundPolicy = false,
+  priceColor,
 }) => {
   const hasDiscount = selectedPackage?.originalPrice && selectedPackage.originalPrice > selectedPackage.price && selectedPackage.showDiscount !== false;
   const packageOriginalPrice = hasDiscount ? selectedPackage.originalPrice! : selectedPackage?.price || 0;
@@ -103,12 +105,12 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
                     <p className="text-sm text-gray-500 line-through">
                       {currency} {packageOriginalPrice.toFixed(2)}
                     </p>
-                    <p className="font-semibold text-green-600">
+                    <p className="font-semibold text-green-600" style={priceColor ? { color: priceColor } : undefined}>
                       {currency} {packageFinalPrice.toFixed(2)}
                     </p>
                   </>
                 ) : (
-                  <p className="font-semibold text-gray-900">
+                  <p className="font-semibold text-gray-900" style={priceColor ? { color: priceColor } : undefined}>
                     {currency} {packageFinalPrice.toFixed(2)}
                   </p>
                 )}
@@ -137,7 +139,7 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
                   <p className="text-sm font-medium text-gray-900">{addon.name}</p>
                   <p className="text-xs text-gray-600">Qty: {addon.items?.quantity || 1}</p>
                 </div>
-                <p className="text-sm font-semibold text-gray-900">
+                <p className="text-sm font-semibold text-gray-900" style={priceColor ? { color: priceColor } : undefined}>
                   {currency} {addon.price.toFixed(2)}
                 </p>
               </div>
@@ -148,7 +150,7 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
 
       <div className="flex justify-between items-center mb-6 pt-3 border-t-2 border-gray-300">
         <span className="text-lg font-semibold text-gray-900" style={textColor ? { color: textColor } : undefined}>Total</span>
-        <span className="text-2xl font-bold" style={{ color: accentColor }}>
+        <span className="text-2xl font-bold" style={{ color: priceColor || accentColor }}>
           {currency} {total.toFixed(2)}
         </span>
       </div>

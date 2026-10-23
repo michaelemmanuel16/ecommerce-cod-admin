@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { PALETTE_HEX_VALUES, isValidHex, nearestPaletteHex } from '../lib/checkoutPalette';
+import { storageHost } from '../config/r2';
 
 const paletteHexEnum = z.enum(PALETTE_HEX_VALUES as [string, ...string[]]);
 
@@ -18,12 +19,27 @@ const backgroundSchema = z.preprocess((val) => {
   return normalized;
 }, z.union([z.literal('transparent'), paletteHexEnum]));
 
+export const BANNER_HOST_MESSAGE = 'Upload the banner here; links to other sites are not used.';
+
+/** True when `value` is an https address on our image storage host. False while storage is not configured. */
+const onStorageHost = (value: string): boolean => {
+  const host = storageHost();
+  if (!host) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.host.toLowerCase() === host;
+  } catch {
+    return false;
+  }
+};
+
 const httpsUrlSchema = z
   .string()
   .max(500, 'Banner URL must be at most 500 characters')
   .refine((v) => v.startsWith('https://'), {
     message: 'Banner URL must start with https://',
-  });
+  })
+  .refine(onStorageHost, { message: BANNER_HOST_MESSAGE });
 
 export const checkoutFormDesignSchema = z
   .object({

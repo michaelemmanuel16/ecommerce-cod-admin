@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { describe, it, expect } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { checkoutFormsService } from '../../services/checkout-forms.service';
 import { DesignTab } from '../../components/forms/builder/DesignTab';
 import { CheckoutBuilderContext, CheckoutBuilderContextValue } from '../../components/forms/builder/checkoutBuilderContextValue';
 import { CheckoutFormDesign } from '../../types/checkout-form';
@@ -50,25 +51,28 @@ const Harness: React.FC<{ initial?: CheckoutFormDesign }> = ({ initial = {} }) =
 const readSnapshot = (): CheckoutFormDesign =>
   JSON.parse(screen.getByTestId('design-snapshot').textContent || '{}');
 
+afterEach(() => vi.restoreAllMocks());
+
 describe('DesignTab', () => {
-  it('renders the four colour fields (Primary, CTA, Surface, Text) — no Background', () => {
+  it('renders the colour fields, including label colour, price colour and page background', () => {
     render(<Harness />);
     expect(screen.getByText('Primary')).toBeInTheDocument();
     expect(screen.getByText('CTA / Button')).toBeInTheDocument();
     expect(screen.getByText('Surface / Accent')).toBeInTheDocument();
     expect(screen.getByText('Text')).toBeInTheDocument();
-    // Page background control was removed.
-    expect(screen.queryByText('Background')).toBeNull();
+    expect(screen.getByText('Label colour')).toBeInTheDocument();
+    expect(screen.getByText('Price colour')).toBeInTheDocument();
+    expect(screen.getByText('Page background')).toBeInTheDocument();
   });
 
   it('exposes exactly 5 preset swatches per colour field', () => {
     render(<Harness />);
-    // 5 presets × 4 fields. Each preset button is named by its swatch name.
+    // 5 presets × 7 colour fields. Each preset button is named by its swatch name.
     BRAND_PALETTE.forEach((swatch) => {
       const matches = screen
         .getAllByRole('button', { name: swatch.name })
         .filter((b) => b.getAttribute('title') === swatch.name);
-      expect(matches.length).toBe(4);
+      expect(matches.length).toBe(7);
     });
   });
 
@@ -120,12 +124,61 @@ describe('DesignTab', () => {
     expect(input.maxLength).toBe(60);
   });
 
-  it('renders the Layout controls (hide product + offer position) and no banner field', () => {
+  it('renders the Layout controls (hide product, offer position, banner upload) and no banner URL box', () => {
     render(<Harness />);
     expect(screen.getByText(/Hide product name/i)).toBeInTheDocument();
     expect(screen.getByText('Offer position')).toBeInTheDocument();
-    // Product banner URL control was removed.
+    expect(screen.getByRole('button', { name: /Upload banner/i })).toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/cdn\.example\.com\/banner\.png/i)).toBeNull();
+  });
+
+  it('names the input style control "Field style"', () => {
+    render(<Harness />);
+    expect(screen.getByText('Field style')).toBeInTheDocument();
+  });
+
+  it('label colour, price colour and page background save into design.input and design.page', () => {
+    render(<Harness />);
+    const hex = (label: string) => screen.getByLabelText(`${label} hex`);
+    fireEvent.change(hex('Label colour'), { target: { value: '#dc2626' } });
+    fireEvent.change(hex('Price colour'), { target: { value: '#059669' } });
+    fireEvent.change(hex('Page background'), { target: { value: '#2563eb' } });
+    const snap = readSnapshot();
+    expect(snap.input?.labelColor).toBe('#dc2626');
+    expect(snap.input?.priceColor).toBe('#059669');
+    expect(snap.page?.background).toBe('#2563eb');
+  });
+
+  it('warns when the button colour is too light for white text, and not for a dark one', () => {
+    const { unmount } = render(<Harness initial={{ colors: { cta: '#fde047' } }} />);
+    expect(screen.getByText('Button text may be hard to read on this colour.')).toBeInTheDocument();
+    unmount();
+    render(<Harness initial={{ colors: { cta: '#0f172a' } }} />);
+    expect(screen.queryByText('Button text may be hard to read on this colour.')).toBeNull();
+  });
+
+  describe('product banner', () => {
+    const file = (type: string, size: number) => new File([new Uint8Array(size)], 'b.img', { type });
+    const choose = (f: File) => fireEvent.change(screen.getByLabelText('Product banner file'), { target: { files: [f] } });
+
+    it('refuses a type or a size outside the rule, before any upload', () => {
+      const upload = vi.spyOn(checkoutFormsService, 'uploadImage');
+      render(<Harness />);
+      choose(file('image/gif', 100));
+      expect(screen.getByText('Use a JPEG, PNG or WebP image up to 1 MB.')).toBeInTheDocument();
+      choose(file('image/png', 1024 * 1024 + 1));
+      expect(screen.getByText('Use a JPEG, PNG or WebP image up to 1 MB.')).toBeInTheDocument();
+      expect(upload).not.toHaveBeenCalled();
+    });
+
+    it('uploads a good image, saves its address in design.page.productBanner, and Remove clears it', async () => {
+      vi.spyOn(checkoutFormsService, 'uploadImage').mockResolvedValue('https://img.example.com/products/t/b.webp');
+      render(<Harness />);
+      choose(file('image/webp', 5000));
+      await waitFor(() => expect(readSnapshot().page?.productBanner).toBe('https://img.example.com/products/t/b.webp'));
+      fireEvent.click(screen.getByRole('button', { name: /Remove banner/i }));
+      expect(readSnapshot().page?.productBanner).toBeUndefined();
+    });
   });
 
   it('clicking an offer-position pill updates design.page.offerPosition', () => {
