@@ -52,6 +52,7 @@ import productRoutes from './routes/productRoutes';
 import orderRoutes from './routes/orderRoutes';
 import deliveryRoutes from './routes/deliveryRoutes';
 import deliveryPartnerRoutes from './routes/deliveryPartnerRoutes';
+import { getProofPhoto } from './controllers/deliveryProofPhotoController';
 import financialRoutes from './routes/financialRoutes';
 import workflowRoutes from './routes/workflowRoutes';
 import webhookRoutes from './routes/webhookRoutes';
@@ -253,6 +254,8 @@ app.use('/api/users', apiLimiter, userRoutes);
 app.use('/api/customers', apiLimiter, customerRoutes);
 app.use('/api/products', apiLimiter, productRoutes);
 app.use('/api/orders', apiLimiter, orderRoutes);
+// Signed photo link (M4-T20): no bearer token, so it is registered before the authenticated delivery routes
+app.get('/api/deliveries/proof-photo/:deliveryId', apiLimiter, getProofPhoto);
 app.use('/api/deliveries', apiLimiter, deliveryRoutes);
 app.use('/api/delivery-partners', apiLimiter, deliveryPartnerRoutes);
 app.use('/api/financial', apiLimiter, financialRoutes);

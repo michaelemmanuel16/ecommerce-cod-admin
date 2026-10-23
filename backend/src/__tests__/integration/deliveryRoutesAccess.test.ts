@@ -88,9 +88,9 @@ describe('delivery route access', () => {
     expect(res.body.deliveries.map((d: any) => d.id)).toEqual([T.dA.id]);
   });
 
-  it('agent route of another agent is 403, own route is 200', async () => {
-    expect((await request(app).get(`/api/deliveries/routes/${T.agentB.id}`).set(auth(T.agentA))).status).toBe(403);
-    expect((await request(app).get(`/api/deliveries/routes/${T.agentA.id}`).set(auth(T.agentA))).status).toBe(200);
+  it('the agent route is gone (M4-T20): both the own route and another agent route are 404', async () => {
+    expect((await request(app).get(`/api/deliveries/routes/${T.agentB.id}`).set(auth(T.agentA))).status).toBe(404);
+    expect((await request(app).get(`/api/deliveries/routes/${T.agentA.id}`).set(auth(T.agentA))).status).toBe(404);
   });
 
   it('agent A cannot upload proof for or complete agent B delivery', async () => {
@@ -117,7 +117,6 @@ describe('delivery route access', () => {
     const h = auth(T.rep);
     expect((await request(app).get('/api/deliveries').set(h)).status).toBe(403);
     expect((await request(app).get(`/api/deliveries/${T.dA.id}`).set(h)).status).toBe(403);
-    expect((await request(app).get(`/api/deliveries/routes/${T.agentA.id}`).set(h)).status).toBe(403);
     expect((await request(app).patch(`/api/deliveries/${T.dA.id}/proof`).set(h).send({})).status).toBe(403);
     expect((await request(app).patch(`/api/deliveries/${T.dA.id}/complete`).set(h).send({})).status).toBe(403);
   });

@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../types';
 import deliveryService from '../services/deliveryService';
-import { AppError } from '../middleware/errorHandler';
+import { proofAndAttempts } from '../services/deliveryProofService';
 
 const isAgent = (req: AuthRequest) => req.user!.role === 'delivery_agent';
 const requesterOf = (req: AuthRequest) => ({ id: req.user!.id, role: req.user!.role });
@@ -70,26 +70,9 @@ export const getAgentOrders = async (req: AuthRequest, res: Response): Promise<v
 };
 
 export const getDeliveryByOrderId = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { orderId } = req.params;
-  const delivery = await deliveryService.getDeliveryByOrderId(
-    parseInt(orderId, 10),
-    isAgent(req) ? req.user!.id : undefined
-  );
-  res.json({ delivery });
-};
-
-export const getAgentRoute = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { agentId } = req.params;
-  const { date } = req.query;
-
-  if (isAgent(req) && String(req.user!.id) !== agentId) {
-    throw new AppError('Forbidden: you can only view your own route', 403);
-  }
-
-  const route = await deliveryService.getAgentRoute(
-    agentId,
-    date ? new Date(date as string) : undefined
-  );
-
-  res.json({ route });
+  const id = parseInt(req.params.orderId, 10);
+  const delivery = await deliveryService.getDeliveryByOrderId(id, isAgent(req) ? req.user!.id : undefined);
+  // F-711, F-713: the proof block (photo by a signed link that expires) and the attempts. The stored photo address is not sent to admin roles.
+  const { proof, attempts } = await proofAndAttempts(id);
+  res.json({ delivery: isAgent(req) ? delivery : { ...delivery, proofImageUrl: null }, proof, attempts });
 };

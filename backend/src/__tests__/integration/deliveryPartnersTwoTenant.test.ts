@@ -9,6 +9,7 @@ import request from 'supertest';
 import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
+import { signedProofPhotoUrl } from '../../services/deliveryProofService';
 
 const WIDE = 'from=2020-01-01&to=2100-01-01';
 let pair: TwoTenants;
@@ -96,5 +97,20 @@ describe('tenant A never reaches tenant B (T19 writes)', () => {
     expect(JSON.stringify(review.body)).not.toContain(b.marker);
     const bReview = await request(app).get('/api/delivery-partners/region-review').set(auth(b.users.admin.token));
     expect(bReview.body.regions.map((r: any) => r.value)).toContain(`Region ${b.marker}`);
+  });
+});
+
+describe('tenant A never reaches tenant B (T20 proof and attempts)', () => {
+  it('by-order shows A attempts only; a B order is 404; a photo link of B does not open under A', async () => {
+    const { a, b } = pair;
+    const own = await request(app).get(`/api/deliveries/by-order/${a.ids.order}`).set(auth(a.users.admin.token));
+    expect(own.status).toBe(200);
+    expect(own.body.attempts.map((x: any) => x.note)).toContain(`attempt ${a.marker}`);
+    expect(JSON.stringify(own.body)).not.toContain(b.marker);
+    expect((await request(app).get(`/api/deliveries/by-order/${b.ids.order}`).set(auth(a.users.admin.token))).status).toBe(404);
+
+    await prismaBase.delivery.update({ where: { id: b.ids.delivery }, data: { proofImageUrl: '/uploads/none.png' } });
+    const link = signedProofPhotoUrl({ id: b.ids.delivery, tenantId: b.id });
+    expect((await request(app).get(link.replace(`t=${b.id}`, `t=${a.id}`))).status).toBe(403);
   });
 });
