@@ -24,9 +24,12 @@ jest.mock('../../services/orderSideEffects', () => ({
   afterCommitEffects: jest.fn(),
 }));
 jest.mock('../../middleware/auth', () => ({ __esModule: true, hasPermission: jest.fn() }));
+// The attempt row has its own integration test (deliveryProofAttempts.test.ts); here only the call is checked
+jest.mock('../../services/deliveryAttemptHook', () => ({ recordDeliveryAttempt: jest.fn(async () => undefined) }));
 
 import { transitionOrder, allowedTransitions, OrderTransitionError, TransitionActor } from '../../services/orderStateMachine';
 import { hasPermission } from '../../middleware/auth';
+import { recordDeliveryAttempt } from '../../services/deliveryAttemptHook';
 
 const S: OrderStatus[] = [
   'pending_confirmation', 'payment_pending', 'payment_failed', 'confirmed', 'preparing', 'ready_for_pickup',
@@ -401,6 +404,16 @@ describe('side effects', () => {
     setOrder({ status: 'out_for_delivery' });
     await transitionOrder(5, 'failed_delivery', ADMIN, { failureReason: 'other' });
     expect(tx.order.updateMany.mock.calls[0][0].data.nextAttemptDate).toBeUndefined();
+  });
+  it('every changed move calls the delivery attempt hook once, in the move transaction; a same-status call does not', async () => {
+    setOrder({ status: 'out_for_delivery' });
+    await transitionOrder(5, 'failed_delivery', ADMIN, { failureReason: 'refused', note: 'Brother refused' });
+    expect(recordDeliveryAttempt).toHaveBeenCalledTimes(1);
+    expect(recordDeliveryAttempt).toHaveBeenCalledWith(tx, expect.objectContaining({ id: 5, deliveryAgentId: 30 }), 'failed_delivery', expect.objectContaining({ failureReason: 'refused', note: 'Brother refused' }));
+    (recordDeliveryAttempt as jest.Mock).mockClear();
+    setOrder({ status: 'failed_delivery' });
+    expect((await transitionOrder(5, 'failed_delivery', ADMIN)).changed).toBe(false);
+    expect(recordDeliveryAttempt).not.toHaveBeenCalled();
   });
   it('cancelled stores declineReason', async () => {
     await transitionOrder(5, 'cancelled', ADMIN, { declineReason: 'changed_mind' });
