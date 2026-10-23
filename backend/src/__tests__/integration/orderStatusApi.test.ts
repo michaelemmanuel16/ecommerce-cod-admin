@@ -11,6 +11,7 @@ import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import { generateAccessToken } from '../../utils/jwt';
 import { runInTenant } from '../../utils/tenantContext';
 import { transitionOrder } from '../../services/orderStateMachine';
+import { stockUp } from './helpers/stock';
 import orderService from '../../services/orderService';
 
 jest.mock('../../utils/socketInstance', () => ({
@@ -56,13 +57,14 @@ beforeAll(async () => {
     data: { firstName: 'Ama', lastName: 'Mensah', phoneNumber: `+2332${String(SUFFIX).slice(-8)}`, address: '3 Test Rd', state: 'Greater Accra', area: 'Accra', tenantId },
   })).id;
   productId = (await prismaBase.product.create({
-    data: { sku: `OSA-${SUFFIX}`, name: 'OSA Product', category: 'test', price: 10, cogs: 4, stockQuantity: 50, tenantId },
+    data: { sku: `OSA-${SUFFIX}`, name: 'OSA Product', category: 'test', price: 10, cogs: 4, stockQuantity: 0, tenantId },
   })).id;
   U.admin = await mkUser('admin', 'admin');
   U.superAdmin = await mkUser('super', 'super_admin');
   U.rep = await mkUser('rep', 'sales_rep');
   U.agent = await mkUser('agent', 'delivery_agent');
   U.inventory = await mkUser('inventory', 'inventory_manager');
+  await stockUp(tenantId, productId, 50, { name: 'Agent location', type: 'agent', userId: U.agent.id });
 }, 30000);
 
 afterAll(async () => {
@@ -231,7 +233,7 @@ describe('completeDelivery through the machine', () => {
     const order = await prismaBase.order.findUniqueOrThrow({ where: { id } });
     expect(order).toMatchObject({ status: 'delivered', paymentStatus: 'collected', revenueRecognized: true });
     expect(order.glJournalEntryId).not.toBeNull();
-    expect(await stock()).toBe(stockBefore); // D8: completeDelivery does no stock work
+    expect(await stock()).toBe(stockBefore - 2); // F-657: completeDelivery goes through the machine, so the 2 units leave once
 
     const counts = async () => ({
       history: await prismaBase.orderHistory.count({ where: { orderId: id } }),

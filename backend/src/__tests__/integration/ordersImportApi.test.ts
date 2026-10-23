@@ -23,7 +23,7 @@ jest.mock('../../middleware/bulkRateLimiter', () => {
 jest.setTimeout(240_000);
 
 const SUFFIX = Date.now();
-const HEADER = 'customer_name,phone,address,region,product,quantity,price,status,date,assigned rep';
+const HEADER = 'customer_name,phone,address,region,product,quantity,price,status,date,assigned rep,delivery agent';
 let tenantId: string;
 let otherTenantId: string;
 let productId: number;
@@ -39,10 +39,10 @@ const mkUser = async (label: string, role: any, first = label, last = 'Import') 
 
 /** A unique Ghana number per call: 024 + four digits of the run + three digits of the call. */
 const phone = () => `024${String(SUFFIX).slice(-4)}${String(seq++).padStart(3, '0')}`;
-const line = (over: Partial<Record<'name' | 'phone' | 'address' | 'region' | 'product' | 'qty' | 'price' | 'status' | 'date' | 'rep', string>> = {}) => {
+const line = (over: Partial<Record<'name' | 'phone' | 'address' | 'region' | 'product' | 'qty' | 'price' | 'status' | 'date' | 'rep' | 'agent', string>> = {}) => {
   const n = over.phone ?? phone();
-  const f = { name: `Buyer ${n}`, phone: n, address: `${n} Import Road`, region: 'Ashanti', product: 'Copybook Set', qty: '2', price: '50', status: 'pending_confirmation', date: '', rep: '', ...over };
-  return [f.name, f.phone, f.address, f.region, f.product, f.qty, f.price, f.status, f.date, f.rep].join(',');
+  const f = { name: `Buyer ${n}`, phone: n, address: `${n} Import Road`, region: 'Ashanti', product: 'Copybook Set', qty: '2', price: '50', status: 'pending_confirmation', date: '', rep: '', agent: '', ...over };
+  return [f.name, f.phone, f.address, f.region, f.product, f.qty, f.price, f.status, f.date, f.rep, f.agent].join(',');
 };
 const file = (lines: string[]) => Buffer.from([HEADER, ...lines].join('\n') + '\n');
 const validate = (who: string, buf: Buffer, name = 'orders.csv') =>
@@ -74,7 +74,7 @@ describe('42-row file: 40 ready, 2 bad', () => {
     ...Array.from({ length: 36 }, () => line()),
     line({ status: 'confirmed' }),
     line({ status: 'cancelled' }),
-    line({ status: 'delivered', date: '03/10/2026', rep: 'Adwoa Darko' }),
+    line({ status: 'delivered', date: '03/10/2026', rep: 'Adwoa Darko', agent: 'Kofi Mensah' }), // F-305: a delivered row needs a partner
     line({ status: 'out_for_delivery' }),
     line({ region: 'Ashante' }), // bad: near match
     line({ phone: '12345' }), // bad: phone too short
