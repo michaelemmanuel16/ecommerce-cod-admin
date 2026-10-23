@@ -160,6 +160,16 @@ describe('CommandPalette (M3-T35)', () => {
     expect(screen.queryByRole('option', { name: /#24114/ })).not.toBeInTheDocument();
   });
 
+  it('a customer phone reads as the lists write it, 024 555 0182, not +233 (QA-10)', async () => {
+    vi.mocked(searchService.search).mockResolvedValue(results({ orders: [], customers: [{ id: 9, firstName: 'Amaka', lastName: 'Obi', phoneNumber: '+233245550182', area: null, state: null, totalOrders: 1 }] }));
+    renderPalette();
+    await userEvent.keyboard('{Meta>}k{/Meta}');
+    await screen.findByRole('dialog');
+    await userEvent.keyboard('amaka');
+    expect(await screen.findByText('024 555 0182')).toBeInTheDocument();
+    expect(screen.queryByText(/\+233/)).not.toBeInTheDocument();
+  });
+
   it('selecting an order opens it; selecting a customer opens the customer', async () => {
     vi.mocked(searchService.search).mockResolvedValue(results());
     renderPalette();

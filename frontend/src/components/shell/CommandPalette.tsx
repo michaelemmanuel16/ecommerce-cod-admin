@@ -5,7 +5,7 @@ import clsx from 'clsx';
 import { useAuthStore } from '../../stores/authStore';
 import { useShellStore } from '../../stores/shellStore';
 import { searchService, type SearchResults } from '../../services/search.service';
-import { formatCurrency } from '../../utils/format';
+import { formatCurrency, formatPhoneLocal } from '../../utils/format';
 import { ORDER_STATUS_LABELS } from '../../utils/orderStatus';
 import { useLayer } from '../ui-v2/useLayer';
 import { useToast } from '../ui-v2';
@@ -185,7 +185,7 @@ function Panel({ pages, menu, actions, onClose }: PanelProps) {
           id: `customer-${c.id}`,
           icon: User,
           label: `${c.firstName} ${c.lastName}`.trim(),
-          hint: c.phoneNumber,
+          hint: formatPhoneLocal(c.phoneNumber),
           run: go(`/customers/${c.id}`),
         })),
       });
