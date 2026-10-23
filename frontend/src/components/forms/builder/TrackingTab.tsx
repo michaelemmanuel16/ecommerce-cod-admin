@@ -4,7 +4,7 @@ import { Button, Input, Tag } from '../../ui-v2';
 import { useCheckoutBuilder } from './checkoutBuilderContextValue';
 import { checkoutFormsService, type TestEventResult } from '../../../services/checkout-forms.service';
 import { CAPI_MASK, trackingIdError } from '../../../lib/trackingRules';
-import { useAuthStore } from '../../../stores/authStore';
+import { usePermissions } from '../../../hooks/usePermissions';
 import { apiErrorMessage } from '../../../utils/apiError';
 import type { PixelConfig } from '../../../types/checkout-form';
 
@@ -22,8 +22,7 @@ const replyText = (r: TestEventResult): string => {
  */
 export const TrackingTab: React.FC = () => {
   const ctx = useCheckoutBuilder();
-  const role = useAuthStore((s) => s.user?.role);
-  const canTest = role === 'super_admin' || role === 'admin';
+  const { isAdmin: canTest } = usePermissions();
   const [result, setResult] = useState<TestEventResult | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [sending, setSending] = useState(false);

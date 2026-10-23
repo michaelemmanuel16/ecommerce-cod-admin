@@ -56,6 +56,8 @@ interface CheckoutFormBuilderProps {
    * Shape mirrors the public-checkout payload subset that the preview needs.
    */
   onDraftChange?: (draft: Record<string, any>) => void;
+  /** Shows every tab with its inputs disabled (a role that may read the form but not change it). */
+  readOnly?: boolean;
 }
 
 /** The regions a saved form offers: `regions.available`, or every region of its country when none are stored. */
@@ -106,6 +108,7 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
   onDirtyChange,
   onSubmittingChange,
   onDraftChange,
+  readOnly = false,
 }, ref) => {
   const { register, handleSubmit, watch, setValue, reset, formState: { errors } } = useForm<BuilderFormValues>({
     defaultValues: initialValues(initialData),
@@ -528,6 +531,9 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
     handleRemoveUpsellImage,
   };
 
+  // A disabled fieldset disables every input and button inside a tab; the tab buttons themselves stay usable.
+  const tab = (node: React.ReactNode) => (readOnly ? <fieldset disabled className="m-0 min-w-0 border-0 p-0">{node}</fieldset> : node);
+
   return (
     <CheckoutBuilderProvider value={ctx}>
       <form
@@ -538,7 +544,7 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
         <Tabs
           compact
           tabs={[
-            { id: 'basics', label: 'Basics', content: <BasicsTab /> },
+            { id: 'basics', label: 'Basics', content: tab(<BasicsTab />) },
             {
               id: 'fields',
               label: (
@@ -549,7 +555,7 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
                   )}
                 </>
               ),
-              content: <FieldsTab />,
+              content: tab(<FieldsTab />),
             },
             {
               id: 'packages',
@@ -561,7 +567,7 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
                   )}
                 </>
               ),
-              content: <PackagesTab />,
+              content: tab(<PackagesTab />),
             },
             {
               id: 'upsells',
@@ -573,11 +579,11 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
                   )}
                 </>
               ),
-              content: <UpsellsTab />,
+              content: tab(<UpsellsTab />),
             },
-            { id: 'payment', label: 'Payment', content: <PaymentTab /> },
-            { id: 'tracking', label: 'Tracking', content: <TrackingTab /> },
-            { id: 'design', label: 'Design', content: <DesignTab /> },
+            { id: 'payment', label: 'Payment', content: tab(<PaymentTab />) },
+            { id: 'tracking', label: 'Tracking', content: tab(<TrackingTab />) },
+            { id: 'design', label: 'Design', content: tab(<DesignTab />) },
           ]}
           defaultTab="basics"
         />

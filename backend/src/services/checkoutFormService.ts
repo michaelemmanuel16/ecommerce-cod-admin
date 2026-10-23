@@ -361,28 +361,13 @@ export class CheckoutFormService {
 
   /**
    * Get PUBLIC checkout form by slug (for public form page)
-   * Only returns active forms with minimal data
+   * Only returns active forms with minimal data. Reads through the embed config cache (same 5 minutes, same invalidation
+   * on save) and drops the server-only fields, so the page and the widget never disagree about what a form looks like.
    */
   async getCheckoutFormBySlug(slug: string) {
-    // The request's tenant is known (the route resolved it from the slug), so the support number is read alongside the form.
-    const tenantId = getTenantId();
-    const [form, supportWhatsapp] = await Promise.all([
-      prisma.checkoutForm.findUnique({
-        where: {
-          slug,
-          isActive: true
-        },
-        select: PUBLIC_FORM_SELECT
-      }),
-      tenantId ? supportWhatsappForTenant(tenantId) : null,
-    ]);
-
-    if (!form) {
-      throw new AppError('Checkout form not found or inactive', 404);
-    }
-
-    // Sanitize product data: hide exact stock quantity, return status
-    return { ...sanitizePublicForm(form), supportWhatsapp };
+    const { tenantId: _tenantId, allowedOrigins: _allowedOrigins, paymentProvider: _paymentProvider, ...publicForm } =
+      await this.getCheckoutFormConfigBySlug(slug);
+    return publicForm;
   }
 
   /**

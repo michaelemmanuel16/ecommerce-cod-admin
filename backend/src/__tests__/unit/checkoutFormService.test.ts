@@ -174,6 +174,8 @@ describe('CheckoutFormService', () => {
 
   // ───────────────────────────── getCheckoutFormBySlug ─────────────────────────────
   describe('getCheckoutFormBySlug', () => {
+    beforeEach(() => clearCheckoutFormConfigCache()); // the page reads through the config cache, keyed by slug
+
     it('returns sanitized form when found (hides stock quantity)', async () => {
       const form = {
         ...makeForm(),

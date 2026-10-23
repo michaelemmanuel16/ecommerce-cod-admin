@@ -63,7 +63,7 @@ test.describe.serial('M3b checkout forms list', () => {
     await cleanUp(request);
   });
 
-  test('clone makes an inactive copy named "<name> (copy)"; its public link shows "Form not found"; delete removes it', async ({ page }) => {
+  test('clone makes an inactive copy named "<name> (copy)"; its public link shows "This form is not available."; delete removes it', async ({ page }) => {
     await signIn(page, 'admin@codadmin.com');
     await page.goto('/checkout-forms');
 
@@ -80,11 +80,11 @@ test.describe.serial('M3b checkout forms list', () => {
     await expect(copy.getByRole('checkbox', { name: `Active: ${formName} (copy)` })).not.toBeChecked();
     await expect(original.getByRole('checkbox', { name: `Active: ${formName}` })).toBeChecked();
 
-    // Its public link answers "Form not found" (an inactive form takes the same path as an archived one)
+    // Its public link answers "This form is not available." (an inactive form takes the same path as an archived one)
     const slug = (await copy.getByText(/^\/form\//).innerText()).replace('/form/', '').trim();
     expect(slug).not.toBe('');
     await page.goto(`/form/${slug}`);
-    await expect(page.getByRole('heading', { name: /form not found/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /this form is not available/i })).toBeVisible();
 
     // Delete the copy: it has no orders, so it is removed, not archived
     await page.goto('/checkout-forms');

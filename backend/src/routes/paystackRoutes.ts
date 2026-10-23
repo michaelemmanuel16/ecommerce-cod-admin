@@ -5,7 +5,7 @@ import {
   handleWebhook,
   verifyPayment,
   publicVerifyPayment,
-} from '../controllers/paystackController';
+} from '../controllers/paymentController';
 import { handlePlatformWebhook } from '../controllers/platformBillingWebhookController';
 
 const router = Router();

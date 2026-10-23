@@ -14,7 +14,7 @@ import { runInTenant } from '../../utils/tenantContext';
 import { encryptProviderSecrets, isEncryptedString } from '../../utils/providerCrypto';
 import { getPaymentProvider, clearPaymentConfigCache } from '../../services/payments';
 import { clearTenantFeaturesCache } from '../../services/tenantFeatures';
-import { unsupportedCurrencyMessage } from '../../services/payments/connectionConfig';
+import { loadProviderConfig, unsupportedCurrencyMessage } from '../../services/payments/connectionConfig';
 import * as Money from '../../utils/money';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
 import { bearer } from './helpers/superAdminToken';
@@ -221,7 +221,7 @@ describe('fallback to SystemConfig.paystackProvider', () => {
 
     const paystack = getPaymentProvider('paystack');
     await runInTenant(pair.b.id, async () => {
-      expect(await paystack.isConfigured(pair.b.id)).toBe(true);
+      expect(await loadProviderConfig(pair.b.id, 'paystack')).not.toBeNull();
       expect(await paystack.getPublicKey(pair.b.id)).toBe('pk_test_OLD');
 
       global.fetch = jest.fn().mockResolvedValue({
@@ -245,7 +245,7 @@ describe('fallback to SystemConfig.paystackProvider', () => {
     expect(put.body.connection.hasSecret).toBe(true);
     clearPaymentConfigCache(pair.b.id);
     await runInTenant(pair.b.id, async () => {
-      expect(await getPaymentProvider('paystack').isConfigured(pair.b.id)).toBe(true);
+      expect(await loadProviderConfig(pair.b.id, 'paystack')).not.toBeNull();
     });
   });
 

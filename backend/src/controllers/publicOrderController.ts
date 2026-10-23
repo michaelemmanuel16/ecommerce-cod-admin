@@ -16,6 +16,7 @@ import * as Money from '../utils/money';
 import { cleanText, deliveryAddressOf, slotRule, CheckoutSlot } from '../utils/checkoutLocation';
 import { isUpsellAvailable } from '../utils/checkoutFormRules';
 import { formatOrderNumber } from '../utils/orderNumber';
+import { getFrontendUrl } from '../utils/url';
 
 // Buyer-selectable payment methods (F-402). `cod` settles on delivery; the two online methods charge through the
 // form's payment provider on the tenant's own account: `online_full` for the whole total, `online_deposit` for a
@@ -205,7 +206,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       }
       paymentMethod = requested;
     }
-    const isPaystack = isOnlineMethod(paymentMethod);
+    const isOnline = isOnlineMethod(paymentMethod);
 
     // Validate required fields — digital products don't need address/state
     // Address, town and landmark follow the form's own field config (COD-138): a field the seller turned off
@@ -229,7 +230,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
 
     // Paystack orders settle into the form's tenant Paystack account; without
     // a tenant we'd create an orphaned unpaid order. Fail fast before any DB write.
-    if (isPaystack && !formTenantId) {
+    if (isOnline && !formTenantId) {
       reject('This checkout form is not attached to a tenant; Paystack cannot be initialized.');
       return;
     }
@@ -258,8 +259,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
     // Package price is the total bundle price (what customer pays); quantity is
     // what they receive. unitPrice is the effective per-item price.
     const packageQuantity = selectedDbPackage.quantity || 1;
-    const packagePrice = Money.parse(selectedDbPackage.price);
-    const packageTotal = packagePrice; // NOT price * quantity
+    const packagePrice = Money.parse(selectedDbPackage.price); // NOT price * quantity
     const unitPrice = Money.roundHalfUp(Money.div(packagePrice, packageQuantity), 4);
 
     // Resolve each selected upsell against the form's DB upsells (by id) and sum
@@ -298,10 +298,10 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
 
     const upsellsTotal = Money.sum(resolvedUpsells.map((u) => u.price));
 
-    const subtotal = Money.add(packageTotal, upsellsTotal);
+    const subtotal = Money.add(packagePrice, upsellsTotal);
     const shippingCost = Money.ZERO; // Checkout orders carry no shipping charge; the price includes delivery (F-423)
     const discount = Money.ZERO;
-    const finalTotal = Money.sub(Money.add(subtotal, shippingCost), discount);
+    const finalTotal = subtotal; // no shipping and no discount at checkout
 
     // Duplicate guard (F-420): the same buyer, package and server total within 30 minutes gets the order already placed.
     // The total is the one computed above, never the client's. No new order, no CAPI event.
@@ -405,12 +405,12 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
     // units (pesewas/kobo): PendingCheckout.paystackChargeMinor, converted at this
     // boundary. For a deposit, the buyer pays `depositPercent` of the total online
     // now and the remaining balance is collected on delivery (COD-style).
-    let paystackCharge = finalTotal;
+    let onlineCharge = finalTotal;
     let balanceDue = Money.ZERO;
     if (paymentMethod === 'online_deposit') {
       const pct = form.depositPercent ?? 0;
-      paystackCharge = Money.roundHalfUp(Money.div(Money.mul(finalTotal, pct), 100), 2);
-      balanceDue = Money.sub(finalTotal, paystackCharge);
+      onlineCharge = Money.roundHalfUp(Money.div(Money.mul(finalTotal, pct), 100), 2);
+      balanceDue = Money.sub(finalTotal, onlineCharge);
     }
 
     // Prepare order items array: main package + upsells
@@ -421,7 +421,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       productId: form.productId,
       quantity: packageQuantity,
       unitPrice: unitPrice,
-      totalPrice: packageTotal,
+      totalPrice: packagePrice,
       itemType: 'package',
       metadata: {
         packageId: selectedDbPackage.id,
@@ -462,7 +462,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
     // is materialized only when payment is confirmed (webhook or callback verify),
     // so abandoned/failed payments never enter the system as orders, and a new
     // Paystack order never appears as "payment pending".
-    if (isPaystack) {
+    if (isOnline) {
       // formTenantId guaranteed non-null here — guarded at the top before any DB write.
       const currency = form.currency || 'GHS';
       // Paystack requires an email; synthesize a stable one from the phone when
@@ -472,13 +472,13 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       // The provider appends reference (and trxref) to the callback URL on redirect; the PaymentCallback page settles by
       // that reference. The form slug is in the path, not the query, so the URL has no query string for the provider to
       // append to, and the page can show the store's colours and support number even when the reference is unknown.
-      const callbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/checkout/payment/callback/${encodeURIComponent(slug)}`;
+      const callbackUrl = `${getFrontendUrl()}/checkout/payment/callback/${encodeURIComponent(slug)}`;
 
       const provider = getPaymentProvider(form.paymentProvider ?? DEFAULT_PAYMENT_PROVIDER);
       // PendingCheckout stores the charge in the provider's minor units (legacy column, replaced in M3b-T06); the provider owns the conversion.
-      const paystackChargeMinor = provider.toMinor(paystackCharge, currency);
+      const paystackChargeMinor = provider.toMinor(onlineCharge, currency);
       const paymentResult = await provider.initialize(formTenantId as string, {
-        amount: paystackCharge,
+        amount: onlineCharge,
         currency,
         customer: { email: buyerEmail, firstName: customer.firstName, lastName: customer.lastName, phone: formData.phoneNumber },
         callbackUrl,
@@ -600,7 +600,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
 
     // COD orders are "purchased" at creation (payment settles on delivery), so
     // fire the server-side Meta Purchase event now. Best-effort + idempotent;
-    // Paystack orders fire instead on settlement (see paystackSettlementService).
+    // Paystack orders fire instead on settlement (see paymentSettlementService).
     metaCapiService.fireCapiPurchaseEvent(order.id).catch((err) => {
       console.error('Meta CAPI fire failed for COD order:', err);
     });

@@ -3,7 +3,8 @@ import { AuthRequest } from '../types';
 import { Prisma } from '@prisma/client';
 import prisma, { prismaBase } from '../utils/prisma';
 import { withSoftDeleted } from '../utils/prismaExtensions';
-import { withoutTenant } from '../utils/tenantContext';
+import { takenFormSlugs } from '../services/tenantLookupService';
+import { describeConnection } from '../services/paymentConnectionService';
 import { randomBytes } from 'crypto';
 import { slugify } from '../utils/slugify';
 import checkoutFormService, { clearCheckoutFormConfigCache } from '../services/checkoutFormService';
@@ -411,6 +412,46 @@ export const previewCheckoutForm = async (req: AuthRequest, res: Response): Prom
   }
 };
 
+/** The columns of one package row, from a request body. One place for create and update. */
+const packageData = (pkg: any, index: number) => ({
+  name: pkg.name || '',
+  description: pkg.description || null,
+  price: Money.tryParse(pkg.price) ?? Money.ZERO,
+  quantity: parseInt(pkg.quantity) || 1,
+  discountType: pkg.discountType || 'none',
+  discountValue: Money.tryParse(pkg.discountValue) ?? Money.ZERO,
+  originalPrice: Money.tryParse(pkg.originalPrice),
+  isPopular: Boolean(pkg.isPopular),
+  isDefault: Boolean(pkg.isDefault),
+  showHighlight: Boolean(pkg.showHighlight),
+  highlightText: pkg.highlightText || null,
+  showDiscount: pkg.showDiscount !== false,
+  sortOrder: pkg.sortOrder !== undefined ? parseInt(pkg.sortOrder) : index,
+});
+
+/** The answer for a failed create or update: the same Prisma error codes, the same words. Anything else is a 500 for `verb`. */
+const respondFormError = (res: Response, error: unknown, verb: 'create' | 'update'): void => {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    if (error.code === 'P2002') {
+      res.status(400).json({ error: 'A checkout form with this slug already exists' });
+      return;
+    }
+    if (error.code === 'P2003') {
+      res.status(400).json({ error: 'Referenced product does not exist' });
+      return;
+    }
+    if (error.code === 'P2025') {
+      res.status(404).json({ error: 'Checkout form not found' });
+      return;
+    }
+  }
+  if (error instanceof Prisma.PrismaClientValidationError) {
+    res.status(400).json({ error: 'Invalid data provided for checkout form' });
+    return;
+  }
+  res.status(500).json({ error: `Failed to ${verb} checkout form. Please try again.` });
+};
+
 export const createCheckoutForm = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const {
@@ -449,9 +490,13 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
     }
 
     // The form type follows the product's type (F-422); the payment rules below depend on it.
-    const productForType = await prisma.product.findUnique({ where: { id: productId } });
-    const formType = productForType?.productType === 'digital' ? 'digital' : 'physical';
-    if (req.body.formType !== undefined && productForType && req.body.formType !== formType) {
+    const product = await prisma.product.findUnique({ where: { id: productId } });
+    if (!product) {
+      res.status(404).json({ error: 'Product not found' });
+      return;
+    }
+    const formType = product.productType === 'digital' ? 'digital' : 'physical';
+    if (req.body.formType !== undefined && req.body.formType !== formType) {
       fail400(res, TYPE_MISMATCH);
       return;
     }
@@ -498,32 +543,8 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
       return;
     }
 
-    // Check if product exists
-    const product = await prisma.product.findUnique({
-      where: { id: productId }
-    });
-
-    if (!product) {
-      res.status(404).json({ error: 'Product not found' });
-      return;
-    }
-
     // Validate and normalize data before Prisma
-    const normalizedPackages = packages?.map((pkg: any, index: number) => ({
-      name: pkg.name || '',
-      description: pkg.description || null,
-      price: Money.tryParse(pkg.price) ?? Money.ZERO,
-      quantity: parseInt(pkg.quantity) || 1,
-      discountType: pkg.discountType || 'none',
-      discountValue: Money.tryParse(pkg.discountValue) ?? Money.ZERO,
-      originalPrice: Money.tryParse(pkg.originalPrice),
-      isPopular: Boolean(pkg.isPopular),
-      isDefault: Boolean(pkg.isDefault),
-      showHighlight: Boolean(pkg.showHighlight),
-      highlightText: pkg.highlightText || null,
-      showDiscount: pkg.showDiscount !== false,
-      sortOrder: pkg.sortOrder !== undefined ? parseInt(pkg.sortOrder) : index
-    }));
+    const normalizedPackages = packages?.map(packageData);
 
     const normalizedUpsells = upsells?.map(upsellData);
 
@@ -580,30 +601,7 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
       return;
     }
 
-    // Handle Prisma-specific errors
-    if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      if (error.code === 'P2002') {
-        res.status(400).json({ error: 'A checkout form with this slug already exists' });
-        return;
-      }
-      if (error.code === 'P2003') {
-        res.status(400).json({ error: 'Referenced product does not exist' });
-        return;
-      }
-      if (error.code === 'P2025') {
-        res.status(404).json({ error: 'Record not found' });
-        return;
-      }
-    }
-
-    // Handle validation errors
-    if (error instanceof Prisma.PrismaClientValidationError) {
-      res.status(400).json({ error: 'Invalid data provided for checkout form' });
-      return;
-    }
-
-    // Generic error response
-    res.status(500).json({ error: 'Failed to create checkout form. Please try again.' });
+    respondFormError(res, error, 'create');
   }
 };
 
@@ -774,22 +772,7 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
       });
 
       await prisma.formPackage.createMany({
-        data: packages.map((pkg: any, index: number) => ({
-          formId: formId,
-          name: pkg.name,
-          description: pkg.description,
-          price: pkg.price,
-          quantity: pkg.quantity,
-          discountType: pkg.discountType || 'none',
-          discountValue: pkg.discountValue || 0,
-          originalPrice: pkg.originalPrice || null,
-          isPopular: pkg.isPopular || false,
-          isDefault: pkg.isDefault || false,
-          showHighlight: pkg.showHighlight || false,
-          highlightText: pkg.highlightText || null,
-          showDiscount: pkg.showDiscount !== false,
-          sortOrder: pkg.sortOrder !== undefined ? pkg.sortOrder : index
-        }))
+        data: packages.map((pkg: any, index: number) => ({ ...packageData(pkg, index), formId })),
       });
     }
 
@@ -822,30 +805,7 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
   } catch (error) {
     console.error('Error updating checkout form:', error);
 
-    // Handle Prisma-specific errors
-    if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      if (error.code === 'P2002') {
-        res.status(400).json({ error: 'A checkout form with this slug already exists' });
-        return;
-      }
-      if (error.code === 'P2003') {
-        res.status(400).json({ error: 'Referenced product does not exist' });
-        return;
-      }
-      if (error.code === 'P2025') {
-        res.status(404).json({ error: 'Checkout form not found' });
-        return;
-      }
-    }
-
-    // Handle validation errors
-    if (error instanceof Prisma.PrismaClientValidationError) {
-      res.status(400).json({ error: 'Invalid data provided for checkout form' });
-      return;
-    }
-
-    // Generic error response
-    res.status(500).json({ error: 'Failed to update checkout form. Please try again.' });
+    respondFormError(res, error, 'update');
   }
 };
 
@@ -930,11 +890,7 @@ const CLONE_SLUG_TRIES = 50;
 // First free slug of base, base-2 ... base-50 (slugs are unique across tenants and archived forms keep theirs); past that a short random suffix.
 const freeSlug = async (base: string): Promise<string> => {
   const candidates = [base, ...Array.from({ length: CLONE_SLUG_TRIES - 1 }, (_, i) => `${base}-${i + 2}`)];
-  const taken = new Set(
-    (await withoutTenant('clone slug check', () => withSoftDeleted(() =>
-      prisma.checkoutForm.findMany({ where: { slug: { in: candidates } }, select: { slug: true } }),
-    ))).map((f) => f.slug),
-  );
+  const taken = await takenFormSlugs(candidates);
   return candidates.find((c) => !taken.has(c)) ?? `${base}-${randomBytes(3).toString('hex')}`;
 };
 
@@ -993,23 +949,7 @@ export const getPaymentOptions = async (req: AuthRequest, res: Response): Promis
     const tenantId = resolveTenantId(req);
     const provider = DEFAULT_PAYMENT_PROVIDER;
     const features = await getTenantFeatures(tenantId);
-    // One read of the safe columns only: nothing here decrypts a key. A usable row has a secret stored (checked in the filter, not read).
-    const row = tenantId
-      ? await prisma.paymentConnection.findFirst({
-          where: { tenantId, provider, secretKey: { not: null } },
-          select: { mode: true, isEnabled: true, supportedCurrencies: true, lastCheckedAt: true },
-        })
-      : null;
-    // Tenants that never re-saved their keys still have the old SystemConfig JSON (same fallback as loadProviderConfig, minus the decrypt).
-    const legacy =
-      !row && tenantId && provider === 'paystack'
-        ? ((await prisma.systemConfig.findUnique({ where: { tenantId }, select: { paystackProvider: true } }))?.paystackProvider as Record<string, unknown> | null)
-        : null;
-    const connection = row
-      ? { provider, mode: row.mode === 'live' ? 'live' : 'test', isEnabled: row.isEnabled, supportedCurrencies: row.supportedCurrencies, lastCheckedAt: row.lastCheckedAt }
-      : legacy?.secretKey
-        ? { provider, mode: legacy.mode === 'live' ? 'live' : 'test', isEnabled: legacy.isEnabled !== false, supportedCurrencies: [], lastCheckedAt: null }
-        : null;
+    const connection = tenantId ? await describeConnection(tenantId, provider) : null;
     res.json({ prepaidPhysical: features.prepaidPhysical, connection });
   } catch (error) {
     console.error('Error loading payment options:', error);

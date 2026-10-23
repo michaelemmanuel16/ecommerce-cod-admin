@@ -40,18 +40,18 @@ Epic status:
 **Date:** 2026-05-29 | **Type:** feat | **Branch:** feature/man-55-webhook-idempotency | **Commit:** 69454b5
 
 ### Summary
-Adds a `WebhookEvent` dedup table with a unique constraint on `(provider, event_type, reference)` and an INSERT-or-bail gate at the top of `paystackController.handleWebhook`. Duplicate webhook deliveries from Paystack (replays, retries, double-fires) are caught at the DB layer, acknowledged with `200 + duplicate:true`, and never re-trigger side effects. The pre-existing atomic `UPDATE ... WHERE payment_status != 'paid'` inside `handleChargeSuccess` is kept as a second-line defense (belt + suspenders).
+Adds a `WebhookEvent` dedup table with a unique constraint on `(provider, event_type, reference)` and an INSERT-or-bail gate at the top of `paymentController.handleWebhook`. Duplicate webhook deliveries from Paystack (replays, retries, double-fires) are caught at the DB layer, acknowledged with `200 + duplicate:true`, and never re-trigger side effects. The pre-existing atomic `UPDATE ... WHERE payment_status != 'paid'` inside `handleChargeSuccess` is kept as a second-line defense (belt + suspenders).
 
 ### Changes
-- **Backend:** New `WebhookEvent` Prisma model with unique constraint on `(provider, event_type, reference)`, nullable `tenant_id` FK to `Tenant`, SHA-256 `payload_hash` reserved for forensic audit. Gate inserted in `paystackController.handleWebhook` after HMAC verify, before any side effect: best-effort tenant resolution from `metadata.orderId`, then `prisma.webhookEvent.create`. P2002 catch returns duplicate ACK; non-P2002 errors re-throw to the existing 200-on-error stance.
+- **Backend:** New `WebhookEvent` Prisma model with unique constraint on `(provider, event_type, reference)`, nullable `tenant_id` FK to `Tenant`, SHA-256 `payload_hash` reserved for forensic audit. Gate inserted in `paymentController.handleWebhook` after HMAC verify, before any side effect: best-effort tenant resolution from `metadata.orderId`, then `prisma.webhookEvent.create`. P2002 catch returns duplicate ACK; non-P2002 errors re-throw to the existing 200-on-error stance.
 - **Frontend:** No changes (no UI surface).
 - **Database:** Migration `20260529130600_add_webhook_event_idempotency` adds `webhook_events` table with `SERIAL` PK, unique index on `(provider, event_type, reference)`, indices on `tenant_id` and `received_at`, and `CASCADE` FK to `tenants(id)`.
 
 ### Key Files
 - `backend/prisma/schema.prisma` — new `WebhookEvent` model + `Tenant.webhookEvents` back-reference
 - `backend/prisma/migrations/20260529130600_add_webhook_event_idempotency/migration.sql` — hand-rolled SQL matching project SERIAL/CASCADE convention
-- `backend/src/controllers/paystackController.ts` — idempotency gate (lines 40–64) + `resolveTenantFromEvent` helper (lines 89–98) with `Number.isInteger && > 0` guard
-- `backend/src/__tests__/unit/paystackController.test.ts` — 2 tests: triplet dedup across 3 replays + distinct-reference independence
+- `backend/src/controllers/paymentController.ts` — idempotency gate (lines 40–64) + `resolveTenantFromEvent` helper (lines 89–98) with `Number.isInteger && > 0` guard
+- `backend/src/__tests__/unit/paymentController.test.ts` — 2 tests: triplet dedup across 3 replays + distinct-reference independence
 
 ### Verification
 - Replay the same `charge.success` payload 3× → 1st returns `{received:true}`, 2nd + 3rd return `{received:true, duplicate:true}`, `verifyTransaction` called once, atomic `UPDATE` runs once.
@@ -77,14 +77,14 @@ Each tenant now configures their own Paystack public + secret keys in Settings �
 - `backend/prisma/schema.prisma` — `WebhookEvent.tenantId` NOT NULL + new unique tuple
 - `backend/prisma/migrations/20260601190000_per_tenant_paystack/migration.sql` — backfill → constraint swap
 - `backend/src/services/paystackService.ts` — per-tenant scoping for all three methods
-- `backend/src/controllers/paystackController.ts` — tenant slug resolution + tenant-scoped HMAC + dedup
+- `backend/src/controllers/paymentController.ts` — tenant slug resolution + tenant-scoped HMAC + dedup
 - `backend/src/routes/paystackRoutes.ts` — new `/:tenantSlug` route + legacy 410
 - `backend/src/controllers/publicOrderController.ts` — passes `form.tenantId` into Paystack init
 - `backend/src/controllers/authController.ts` — refresh endpoint JWT error wrapping
 - `frontend/src/services/api.ts` — `handleSessionExpired` + deduped toasts
 - `frontend/src/components/settings/integrations/PaystackIntegration.tsx` — per-tenant webhook URL block
 - `backend/src/__tests__/unit/paystackService.test.ts` — per-tenant scoping coverage
-- `backend/src/__tests__/unit/paystackController.test.ts` — tenant slug 404, HMAC against tenant secret, cross-tenant dedup, legacy 410
+- `backend/src/__tests__/unit/paymentController.test.ts` — tenant slug 404, HMAC against tenant secret, cross-tenant dedup, legacy 410
 - `frontend/src/__tests__/components/PaystackIntegration.test.tsx` — masked secret, webhook URL render, mode persistence
 
 ### Verification
@@ -151,14 +151,14 @@ The public checkout previously hardcoded payment by product type (digital → Pa
 ### Key Files
 - `backend/prisma/schema.prisma` + `migrations/20260609065935_add_payment_method_toggles_and_deposit/`
 - `backend/src/controllers/publicOrderController.ts` — paymentMethod resolution, deposit math, server toggle enforcement
-- `backend/src/controllers/paystackController.ts` — deposit-aware settlement in `handleChargeSuccess`
+- `backend/src/controllers/paymentController.ts` — deposit-aware settlement in `handleChargeSuccess`
 - `backend/src/controllers/checkoutFormController.ts` — `validatePaymentConfig`, `paymentTogglePatch`
 - `backend/src/services/checkoutFormService.ts` — `PUBLIC_FORM_SELECT` adds the toggle fields
 - `frontend/src/types/checkout-form.ts` — shared `PaymentMethod` type + matrix fields
 - `frontend/src/components/public/OrderSummary.tsx`, `CheckoutForm.tsx` — multi-button CTA
 - `frontend/src/components/forms/builder/SettingsTab.tsx` — Payment Methods section + max-2 guard
 - `frontend/src/lib/orderPayload.ts` — `paymentMethod` in payload
-- `backend/src/controllers/__tests__/checkoutFormController.test.ts`, `publicOrderController.test.ts` (new); extended `paystackController.test.ts`
+- `backend/src/controllers/__tests__/checkoutFormController.test.ts`, `publicOrderController.test.ts` (new); extended `paymentController.test.ts`
 
 ### Verification
 - Backend build + lint pass; `npm test` (`--runInBand`) 965/965, touched suites 43/43. Frontend build + lint pass. Workflow validation passes.
@@ -179,7 +179,7 @@ Adds server-side Meta Conversions API `Purchase` events so ad attribution surviv
 - **Schema:** `CheckoutForm` + `metaCapiAccessToken String?` (encrypted at rest), `metaCapiTestEventCode String?`. `Order` + `capiEventFired Boolean @default(false)`. Migration `20260609072352_add_meta_capi_and_capi_event_fired`.
 - **Backend (service, new):** `metaCapiService.fireCapiPurchaseEvent(orderId)` — one `order.findUnique` with nested latest `formSubmissions → form` + customer; shared `sha256` helper; `hash`/`hashPhone`/`compact`; `COUNTRY_ISO` map (ghana→gh etc.); pixel id from `pixelConfig.facebookPixelId`; honors `metaCapiTestEventCode`; sets `capiEventFired` only **after** a successful POST; swallows all errors.
 - **Backend (encryption):** Extracted reusable `encryptString`/`decryptString`/`isEncryptedString` in `providerCrypto.ts` (AES-256-GCM, `enc:v1:` prefix, plaintext back-compat) for the CAPI token.
-- **Backend (fire sites + no-leak):** Fired from `publicOrderController` (COD create) and `paystackController.handleChargeSuccess` (settlement). `getPublicFormConfig` strips `metaCapiAccessToken` + `metaCapiTestEventCode`; `maskCapiToken` masks the token at every admin read (`getAllCheckoutForms`, `getCheckoutForm`, `updateCheckoutForm`); `metaCapiPatch` encrypts on write and skips re-encrypt on the mask sentinel.
+- **Backend (fire sites + no-leak):** Fired from `publicOrderController` (COD create) and `paymentController.handleChargeSuccess` (settlement). `getPublicFormConfig` strips `metaCapiAccessToken` + `metaCapiTestEventCode`; `maskCapiToken` masks the token at every admin read (`getAllCheckoutForms`, `getCheckoutForm`, `updateCheckoutForm`); `metaCapiPatch` encrypts on write and skips re-encrypt on the mask sentinel.
 - **Frontend (admin):** Meta CAPI access-token (masked/write-only) + test-event-code inputs in `SettingsTab`.
 - **Frontend (thank-you params):** `buildRedirectUrl` now also appends `reference` + `package` alongside `order_id`/`total`/`currency`; `PublicCheckout` passes them through.
 
@@ -187,7 +187,7 @@ Adds server-side Meta Conversions API `Purchase` events so ad attribution surviv
 - `backend/src/services/metaCapiService.ts` (new)
 - `backend/src/utils/providerCrypto.ts` — `encryptString`/`decryptString`/`isEncryptedString`
 - `backend/src/controllers/publicOrderController.ts` — COD-path fire + public-config strip
-- `backend/src/controllers/paystackController.ts` — settlement-path fire
+- `backend/src/controllers/paymentController.ts` — settlement-path fire
 - `backend/src/controllers/checkoutFormController.ts` — `metaCapiPatch`, `maskCapiToken`
 - `backend/prisma/schema.prisma` + `migrations/20260609072352_add_meta_capi_and_capi_event_fired/`
 - `frontend/src/components/forms/builder/SettingsTab.tsx` — CAPI inputs
@@ -238,8 +238,8 @@ Providers now call one neutral webhook, `POST /api/payments/webhook/:provider/:t
 - **Seed:** 1030 named Paystack Receivable.
 
 ### Key Files
-- `backend/src/routes/paymentRoutes.ts` (new), `backend/src/controllers/paystackController.ts`, `backend/src/utils/webhookDedup.ts`
-- `backend/src/services/paystackSettlementService.ts`, `backend/src/queues/pendingCheckoutCleanupQueue.ts`
+- `backend/src/routes/paymentRoutes.ts` (new), `backend/src/controllers/paymentController.ts`, `backend/src/utils/webhookDedup.ts`
+- `backend/src/services/paymentSettlementService.ts`, `backend/src/queues/pendingCheckoutCleanupQueue.ts`
 - `backend/src/services/payments/settlementHooks.ts`, `backend/src/services/payments/ledgerPoster.ts` (new)
 - `backend/src/services/paystackPayoutService.ts`, `backend/src/services/findingService.ts` (new), `backend/src/services/ledgerCheckService.ts`, `backend/src/services/glAutomationService.ts`, `backend/src/services/glService.ts`
 - `backend/src/__tests__/integration/paymentWebhook.test.ts`, `paymentHooks.test.ts`, `helpers/paymentTestKit.ts`, `unit/settlementHooks.test.ts` (new)

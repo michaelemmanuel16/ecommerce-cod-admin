@@ -301,6 +301,8 @@ describe('verify API', () => {
     expect(row?.status).toBe('pending');
     expect(row?.lastCheckedAt).not.toBeNull();
 
+    // the callback page is not let ask the provider twice within 4 seconds: age the last check
+    await prismaBase.pendingCheckout.update({ where: { reference: ref }, data: { lastCheckedAt: new Date(Date.now() - 10_000) } });
     fake.setPayment(ref, { status: 'success', amount: '50' });
     const done = await request(app).get(`/api/payments/verify/${ref}`).set('X-Forwarded-For', ip());
     expect(done.status).toBe(200);
@@ -314,6 +316,28 @@ describe('verify API', () => {
     // the old path, now that the order exists
     const old = await request(app).get(`/api/paystack/verify/${ref}`).set('X-Forwarded-For', ip());
     expect(old.body).toEqual(done.body);
+  });
+
+  it('two verify calls a second apart ask the provider once; a webhook still asks it', async () => {
+    const ref = newRef('throttle');
+    await seedPending('a', ref);
+    const spy = jest.spyOn(fake, 'verify');
+    try {
+      const one = await request(app).get(`/api/payments/verify/${ref}`).set('X-Forwarded-For', ip());
+      await new Promise((r) => setTimeout(r, 1000));
+      const two = await request(app).get(`/api/payments/verify/${ref}`).set('X-Forwarded-For', ip());
+      expect(one.body.status).toBe('pending');
+      expect(two.body.status).toBe('pending');
+      expect(spy).toHaveBeenCalledTimes(1);
+
+      // a webhook for the same reference is not throttled
+      fake.setPayment(ref, { status: 'success', amount: '50' });
+      await webhook('a', ref);
+      expect(spy).toHaveBeenCalledTimes(2);
+      expect(await ordersFor(ref)).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('a failed payment answers failed with the form to go back to', async () => {
@@ -352,6 +376,7 @@ describe('verify API', () => {
       await prismaBase.pendingCheckout.update({ where: { reference: ref }, data: { selectedPackage: { id: 7, name: 'One' } } });
       const waiting = await request(app).get(`/api/payments/verify/${ref}`).set('X-Forwarded-For', ip());
       expect(waiting.body.redirectUrl).toBeUndefined();
+      await prismaBase.pendingCheckout.update({ where: { reference: ref }, data: { lastCheckedAt: new Date(Date.now() - 10_000) } }); // past the 4 s re-check guard
       fake.setPayment(ref, { status: 'success', amount: '50' });
       const done = await request(app).get(`/api/payments/verify/${ref}`).set('X-Forwarded-For', ip());
       const [order] = await ordersFor(ref);
@@ -502,6 +527,19 @@ describe('pending-checkout sweep (every 10 minutes)', () => {
     expect(checkedJustNow(staleCheck)).toBe(true);
     expect(checkedJustNow(neverChecked)).toBe(true);
     expect(checkedJustNow(youngChecked)).toBe(true); // under an hour old: every run
+  });
+
+  it('a run handles more rows than the pool size: 12 old checkouts are all checked', async () => {
+    global.fetch = (async () => { throw new Error('no network in tests'); }) as never;
+    const refs = Array.from({ length: 12 }, (_, i) => newRef(`swmany${i}`));
+    for (const ref of refs) {
+      await seedPending('a', ref, { ageMinutes: 25 });
+      fake.setPayment(ref, { status: 'failed', amount: '50' });
+    }
+    await processSweepPendingCheckouts().catch(() => undefined);
+    const rows = await prismaBase.pendingCheckout.findMany({ where: { reference: { in: refs } } });
+    expect(rows).toHaveLength(12);
+    expect(rows.every((r) => r.status === 'failed' && r.lastCheckedAt !== null)).toBe(true);
   });
 
   it('the sweep and a webhook for the same checkout still make one order', async () => {

@@ -200,14 +200,6 @@ export const paystackService = {
   },
 
   /**
-   * Whether the tenant has configured + enabled Paystack.
-   */
-  async isConfigured(tenantId: string): Promise<boolean> {
-    const config = await loadTenantPaystackConfig(tenantId);
-    return !!(config && config.isEnabled && config.secretKey);
-  },
-
-  /**
    * Check the tenant's keys against Paystack. `GET /balance` needs a valid secret key and lists one
    * balance per currency the account holds, which is what we keep as the currencies it can take (F-401).
    * A rejected key is a result (ok false), not an error; the secret never goes into the message or the log.

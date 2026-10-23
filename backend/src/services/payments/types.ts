@@ -74,12 +74,8 @@ export interface PaymentProvider {
   /** True when the signature on a webhook is valid for this tenant's account. */
   verifyWebhook(tenantId: string, rawBody: string | Buffer, headers: Record<string, unknown>): Promise<boolean>;
   parseWebhook(rawBody: string | Buffer): ParsedWebhook;
-  /** The provider fee of a verified payment, major units. */
-  fee(verified: VerifyResult): Money;
   /** The key the browser may see. Empty when none. */
   getPublicKey(tenantId: string): Promise<string>;
-  /** True when the tenant has an enabled connection with a secret. */
-  isConfigured(tenantId: string): Promise<boolean>;
   /** Refuses keys that cannot belong to this mode (a live key in test mode). Throws a 400 AppError. Optional. */
   validateCredentials?(mode: string, secretKey: string): void;
   /** Calls the provider with the stored keys. Never throws for a bad key: it reports ok false. */

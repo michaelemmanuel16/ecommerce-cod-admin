@@ -79,6 +79,9 @@ const updateFormValidation = [
   body('styling.showDescription').optional().isBoolean().withMessage('showDescription must be a boolean'),
   body('regions').optional().isObject().withMessage('Regions must be an object'),
   body('packages').optional().isArray().withMessage('Packages must be an array'),
+  body('packages.*.name').optional().notEmpty().withMessage('Package name is required'),
+  body('packages.*.price').optional().isFloat({ min: 0 }).withMessage('Package price must be positive'),
+  body('packages.*.quantity').optional().isInt({ min: 1 }).withMessage('Package quantity must be at least 1'),
   body('upsells').optional().isArray().withMessage('Upsells must be an array'),
   body('upsells.*.description').optional().trim().isLength({ max: 500 }).withMessage('Description must be less than 500 characters'),
   body('upsells.*.imageUrl').optional().custom((value) => {

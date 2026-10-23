@@ -13,11 +13,13 @@ import { CheckoutForm } from '../types/checkout-form';
 import { Product } from '../types';
 import { checkoutFormsService } from '../services/checkout-forms.service';
 import { productsService } from '../services/products.service';
+import { usePermissions } from '../hooks/usePermissions';
 
 const UNSAVED_PROMPT = 'You have unsaved changes. Discard them?';
 
 export const CheckoutFormEditor: React.FC = () => {
   const navigate = useNavigate();
+  const { isAdmin: canEdit } = usePermissions();
   const { id: idParam } = useParams<{ id: string }>();
   const isCreateMode = !idParam || idParam === 'new';
   const formId = isCreateMode ? null : Number(idParam);
@@ -166,14 +168,16 @@ export const CheckoutFormEditor: React.FC = () => {
             )}
             Preview
           </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => builderRef.current?.submit()}
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? 'Saving…' : isCreateMode ? 'Create form' : 'Save'}
-          </Button>
+          {canEdit && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => builderRef.current?.submit()}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? 'Saving…' : isCreateMode ? 'Create form' : 'Save'}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -186,7 +190,11 @@ export const CheckoutFormEditor: React.FC = () => {
       >
         {/* Editor column scrolls independently of the preview. */}
         <div className="min-w-0 overflow-y-auto pr-1">
+          {!canEdit && (
+            <p className="mb-3 text-sm text-gray-600" role="status">Only the owner or an admin can change this form.</p>
+          )}
           <CheckoutFormBuilder
+            readOnly={!canEdit}
             ref={builderRef}
             initialData={initialForm}
             products={products}

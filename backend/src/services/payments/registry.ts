@@ -23,10 +23,6 @@ export function getPaymentProvider(id: string = DEFAULT_PAYMENT_PROVIDER): Payme
   return provider;
 }
 
-export function listPaymentProviders(): PaymentProvider[] {
-  return [...providers.values()];
-}
-
 /** Drops cached credentials of every provider for one tenant, after a settings change. */
 export function clearPaymentConfigCache(tenantId?: string): void {
   for (const provider of providers.values()) provider.clearConfigCache(tenantId);

@@ -23,11 +23,11 @@ const PRODUCTS = [
 
 const onSave = vi.fn(async () => undefined);
 
-function renderBuilder(initialData?: CheckoutForm, products: Product[] = PRODUCTS) {
+function renderBuilder(initialData?: CheckoutForm, products: Product[] = PRODUCTS, readOnly = false) {
   const ref = createRef<CheckoutFormBuilderHandle>();
   render(
     <MemoryRouter>
-      <CheckoutFormBuilder ref={ref} initialData={initialData} products={products} onSave={onSave} />
+      <CheckoutFormBuilder ref={ref} initialData={initialData} products={products} onSave={onSave} readOnly={readOnly} />
     </MemoryRouter>,
   );
   return ref;
@@ -125,6 +125,21 @@ describe('CheckoutFormBuilder, Basics (F-411, F-422)', () => {
     await act(async () => ref.current?.submit());
     await waitFor(() => expect(toastError).toHaveBeenCalledWith('Thank-you page must start with https://'));
     expect(onSave).not.toHaveBeenCalled();
+  });
+});
+
+describe('CheckoutFormBuilder, read-only (COD-37)', () => {
+  it('disables the inputs of every tab and keeps the tabs usable', () => {
+    renderBuilder({ id: 5, name: 'F', slug: 'f', productId: 1, isActive: true } as CheckoutForm, PRODUCTS, true);
+    expect(screen.getByLabelText('Form name')).toBeDisabled();
+    expect(screen.getByLabelText('Product')).toBeDisabled();
+    goTo('Packages');
+    expect(screen.getByRole('button', { name: 'Add package' })).toBeDisabled();
+  });
+
+  it('leaves the inputs on when the role may edit', () => {
+    renderBuilder();
+    expect(screen.getByLabelText('Form name')).toBeEnabled();
   });
 });
 

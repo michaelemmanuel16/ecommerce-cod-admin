@@ -25,7 +25,7 @@ import * as paystackServiceModule from '../../services/paystackService';
 import workflowService from '../../services/workflowService';
 import { metaCapiService } from '../../services/metaCapiService';
 import { digitalDeliveryService } from '../../services/digitalDeliveryService';
-import { settlePayment } from '../../services/paystackSettlementService';
+import { settlePayment } from '../../services/paymentSettlementService';
 import { transitionOrder } from '../../services/orderStateMachine';
 import { tenantStorage, getTenantId } from '../../utils/tenantContext';
 import * as Money from '../../utils/money';

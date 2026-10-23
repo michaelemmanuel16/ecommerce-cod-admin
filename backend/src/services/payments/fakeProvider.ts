@@ -77,14 +77,9 @@ export function createFakeProvider(id = 'fake'): FakeProvider {
       };
     },
 
-    fee: (verified) => verified.fee,
 
     async getPublicKey() {
       return `pk_${id}_public`;
-    },
-
-    async isConfigured() {
-      return true;
     },
 
     async testConnection() {

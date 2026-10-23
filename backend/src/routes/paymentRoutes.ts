@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authenticate, requireRole } from '../middleware/auth';
 import { publicVerifyLimiter } from '../middleware/rateLimiter';
-import { handleWebhook, verifyPayment, publicVerifyPayment } from '../controllers/paystackController';
+import { handleWebhook, verifyPayment, publicVerifyPayment } from '../controllers/paymentController';
 
 const router = Router();
 

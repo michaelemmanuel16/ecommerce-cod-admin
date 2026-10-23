@@ -509,6 +509,34 @@ describe('order fields: city, region and notes', () => {
   });
 });
 
+describe('packages: one mapper for create and update (COD-37)', () => {
+  const pkgs = [{ name: 'Strings', price: '12.50', quantity: '3', discountValue: '2.5', originalPrice: '15' }, { name: 'Plain', price: 4, quantity: 1 }];
+  const view = (rows: Array<{ name: string; price: unknown; quantity: number; discountValue: unknown; originalPrice: unknown; sortOrder: number }>) =>
+    rows.map((r) => ({ name: r.name, price: String(r.price), quantity: r.quantity, discountValue: String(r.discountValue), originalPrice: r.originalPrice === null ? null : String(r.originalPrice), sortOrder: r.sortOrder }));
+
+  it('update stores string prices parsed, and bad input gets the answer create gives', async () => {
+    const created = await create(formBody({ packages: pkgs }));
+    expect(created.status).toBe(201);
+    const id = created.body.form.id;
+    const fromCreate = view((await stored(id)).packages);
+    expect(fromCreate).toEqual([
+      { name: 'Strings', price: '12.5', quantity: 3, discountValue: '2.5', originalPrice: '15', sortOrder: 0 },
+      { name: 'Plain', price: '4', quantity: 1, discountValue: '0', originalPrice: null, sortOrder: 1 },
+    ]);
+
+    const updated = await put(id, { packages: pkgs });
+    expect(updated.status).toBe(200);
+    expect(view((await stored(id)).packages)).toEqual(fromCreate);
+
+    // a bad price is refused by the route the same way on both
+    const bad = [{ name: 'Bad', price: 'abc', quantity: 1 }];
+    const badCreate = await create(formBody({ packages: bad }));
+    const badUpdate = await put(id, { packages: bad });
+    expect([badCreate.status, badUpdate.status]).toEqual([400, 400]);
+    expect(view((await stored(id)).packages)).toEqual(fromCreate);
+  });
+});
+
 describe('static check: one regions list', () => {
   const GH = ['Greater Accra', 'Ashanti', 'Western', 'Eastern', 'Volta', 'Central', 'Northern', 'Upper East', 'Upper West', 'Bono', 'Oti', 'Savannah', 'Ahafo', 'North East', 'Western North', 'Bono East'];
   const walk = (dir: string, out: string[] = []): string[] => {

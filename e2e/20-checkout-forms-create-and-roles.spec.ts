@@ -97,7 +97,7 @@ test.describe.serial('M3b owner makes and edits a form', () => {
     expect(posts.filter((u) => /\/api\/public\/|\/orders|initiate-checkout/.test(u)), 'order or tracking posts').toEqual([]);
   });
 
-  test('a manager reads the list: Preview shows, nothing that changes a form does', async ({ page, request }) => {
+  test('a manager reads the list and the editor: Preview shows, nothing that changes a form does', async ({ page, request }) => {
     test.skip(!(await tokenFor(request, MANAGER)), `${MANAGER} cannot sign in on this dev stack`);
     await signIn(page, MANAGER);
     await page.goto('/checkout-forms');
@@ -117,7 +117,13 @@ test.describe.serial('M3b owner makes and edits a form', () => {
     await expect(page.getByText(NO_ACCESS)).toHaveCount(0);
     await expect(page.locator('iframe, form').first()).toBeVisible();
 
-    // the editor route is open to a manager (it shows Save), but the server refuses every write from that role
+    // the editor opens read-only for a manager: a line says why, there is no Save, the inputs are off, Preview stays
+    await page.goto(`/checkout-forms/${formId}/edit`);
+    await expect(page.getByText('Only the owner or an admin can change this form.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
+    await expect(page.getByLabel('Form name')).toBeDisabled();
+    await expect(page.getByRole('button', { name: /Preview/ })).toBeEnabled();
+    // and the server refuses every write from that role
     const managerToken = (await tokenFor(request, MANAGER)) as string;
     const put = await request.put(`${API_URL}/api/checkout-forms/${formId}`, { headers: auth(managerToken), data: { name: `${formName} by manager` } });
     expect(put.status()).toBe(403);

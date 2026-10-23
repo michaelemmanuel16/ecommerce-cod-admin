@@ -1,7 +1,8 @@
 import { Request, Response } from 'express';
 import { createHash } from 'crypto';
 import { getPaymentProvider, type PaymentProvider } from '../services/payments';
-import { findReferenceOwner, settlePayment } from '../services/paystackSettlementService';
+import { settlePayment } from '../services/paymentSettlementService';
+import { findReferenceOwner, tenantIdBySlug } from '../services/tenantLookupService';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { runInTenant } from '../utils/tenantContext';
@@ -40,17 +41,14 @@ export async function handleWebhook(req: Request, res: Response): Promise<void> 
       return;
     }
 
-    const tenant = await prisma.tenant.findUnique({
-      where: { slug: tenantSlug },
-      select: { id: true },
-    });
-    if (!tenant) {
+    const tenantId = await tenantIdBySlug(tenantSlug);
+    if (!tenantId) {
       res.status(404).json({ error: 'Tenant not found' });
       return;
     }
 
     // Everything below runs inside the URL tenant's context
-    await runInTenant(tenant.id, () => processTenantWebhook(req, res, provider, tenant.id));
+    await runInTenant(tenantId, () => processTenantWebhook(req, res, provider, tenantId));
   } catch (error: any) {
     logger.error('Payment webhook error', { error: error.message });
     // Still return 200 to prevent retries for processing errors
@@ -130,6 +128,9 @@ async function handleChargeSuccess(tenantId: string, reference: string | null): 
   return result.status;
 }
 
+/** The callback page polls every 5 seconds; two opens of it must not each call the provider. */
+const VERIFY_MIN_RECHECK_MS = 4_000;
+
 /**
  * Verify a payment by reference (admin use, authenticated). Settles the payment
  * if it's confirmed but not yet materialized into an order.
@@ -178,7 +179,7 @@ export async function publicVerifyPayment(req: Request, res: Response): Promise<
       return;
     }
 
-    const result = await settlePayment(reference);
+    const result = await settlePayment(reference, { publicRead: { minRecheckMs: VERIFY_MIN_RECHECK_MS } });
     if (result.status === 'not_found') {
       res.json({ status: 'not_found', orderType: null, formSlug: null });
       return;
@@ -188,9 +189,7 @@ export async function publicVerifyPayment(req: Request, res: Response): Promise<
     const where = result.tenantId
       ? await runInTenant(result.tenantId, () => describeOutcome(reference, result.status === 'success' ? order : null))
       : { orderType: null, formSlug: null, redirectUrl: null };
-    const email = result.status === 'success' && where.orderType === 'digital'
-      ? (order as { customer?: { email?: string | null } } | null | undefined)?.customer?.email
-      : null;
+    const email = result.status === 'success' && where.orderType === 'digital' ? order?.customer?.email : null;
 
     res.json({
       status: result.status,

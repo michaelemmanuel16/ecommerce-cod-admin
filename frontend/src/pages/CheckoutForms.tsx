@@ -4,7 +4,7 @@ import { ArchiveRestore, CopyPlus, Eye, FileText, Pencil, Plus, Trash2 } from 'l
 import { useV2Page } from '../components/shell/useV2Page';
 import { Button, Card, ConfirmDialog, EmptyState, Skeleton, Table, Tag, Tooltip, useToast, type Column } from '../components/ui-v2';
 import { checkoutFormsService } from '../services/checkout-forms.service';
-import { useAuthStore } from '../stores/authStore';
+import { usePermissions } from '../hooks/usePermissions';
 import { apiErrorMessage } from '../utils/apiError';
 import { formatNumber } from '../utils/format';
 import { copyText } from '../hooks/useCopyToClipboard';
@@ -38,8 +38,7 @@ export function CheckoutForms() {
   useV2Page();
   const navigate = useNavigate();
   const say = useToast();
-  const role = useAuthStore((s) => s.user?.role);
-  const canEdit = role === 'super_admin' || role === 'admin';
+  const { isAdmin: canEdit } = usePermissions();
 
   const [showArchived, setShowArchived] = useState(false);
   const [forms, setForms] = useState<CheckoutForm[]>([]);

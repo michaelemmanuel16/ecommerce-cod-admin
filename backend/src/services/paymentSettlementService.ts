@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
-import { getTenantId, resolveTenantId, runInTenant, withoutTenant } from '../utils/tenantContext';
+import { getTenantId, resolveTenantId, runInTenant } from '../utils/tenantContext';
+import { findReferenceOwner } from './tenantLookupService';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { getPaymentProvider, normalizeMethod } from './payments';
@@ -16,11 +17,25 @@ import { cleanText, deliveryAddressOf } from '../utils/checkoutLocation';
 
 export type SettlementStatus = 'success' | 'failed' | 'pending' | 'not_found';
 
+/** What the public verify page needs of an order; the full row when the caller did not ask for the narrow read. */
+export interface SettledOrder {
+  id: number;
+  orderType?: string | null;
+  currency?: string | null;
+  customer?: { email: string | null } | null;
+}
+
 export interface SettlementResult {
   status: SettlementStatus;
   /** The tenant that owns the reference (absent when it is unknown to every tenant). */
   tenantId?: string;
-  order?: Awaited<ReturnType<typeof prisma.order.findFirst>>;
+  order?: SettledOrder | null;
+}
+
+export interface SettleOptions {
+  webhookTenantId?: string;
+  /** The public callback page: read the order narrowly, and do not ask the provider again inside this many ms of the last check. */
+  publicRead?: { minRecheckMs: number };
 }
 
 /**
@@ -44,7 +59,7 @@ export interface SettlementResult {
  */
 export async function settlePayment(
   reference: string,
-  opts: { webhookTenantId?: string } = {},
+  opts: SettleOptions = {},
 ): Promise<SettlementResult> {
   // Settlement always runs scoped to one tenant: the webhook's tenant, the signed-in
   // caller's tenant, or (public verify, no context) the tenant that owns the
@@ -58,16 +73,6 @@ export async function settlePayment(
   }
   const result = await runInTenant(tenantId, () => settleInTenant(reference, opts));
   return { ...result, tenantId };
-}
-
-/** The tenant that owns a payment reference: its pending checkout, else its order. Unscoped, so it sees every tenant. */
-export async function findReferenceOwner(reference: string): Promise<string | null> {
-  return withoutTenant('payment-reference-owner', async () => {
-    const pendingRow = await prisma.pendingCheckout.findUnique({ where: { reference }, select: { tenantId: true } });
-    if (pendingRow) return pendingRow.tenantId;
-    const orderRow = await prisma.order.findFirst({ where: { paymentReference: reference }, select: { tenantId: true } });
-    return orderRow?.tenantId ?? null;
-  });
 }
 
 /** Keep the pending row for a human and open one `payment_unmatched` Finding for the reference. */
@@ -85,7 +90,7 @@ async function flagNeedsReview(reference: string, tenantId: string, paid: Money.
 
 async function settleInTenant(
   reference: string,
-  opts: { webhookTenantId?: string },
+  opts: SettleOptions,
 ): Promise<SettlementResult> {
   // Reference lookups are scoped to the webhook's tenant when we have one, so a
   // cross-account reference collision can never resolve another tenant's order.
@@ -95,10 +100,9 @@ async function settleInTenant(
   };
 
   // Fast path: already settled (also the loser-of-race path).
-  const existing = await prisma.order.findFirst({
-    where: orderWhere,
-    include: { customer: true, orderItems: { include: { product: true } } },
-  });
+  const existing = opts.publicRead
+    ? await prisma.order.findFirst({ where: orderWhere, select: { id: true, orderType: true, currency: true, customer: { select: { email: true } } } })
+    : await prisma.order.findFirst({ where: orderWhere, include: { customer: true, orderItems: { include: { product: true } } } });
   if (existing) {
     return { status: 'success', order: existing };
   }
@@ -117,6 +121,11 @@ async function settleInTenant(
       pendingTenantId: pending.tenantId,
     });
     return { status: 'not_found' };
+  }
+
+  // The callback page polls: a row the provider answered a moment ago is not asked again (the sweep and the webhook still ask).
+  if (opts.publicRead && pending.lastCheckedAt && Date.now() - pending.lastCheckedAt.getTime() < opts.publicRead.minRecheckMs) {
+    return { status: pending.status === 'failed' ? 'failed' : 'pending' };
   }
 
   // Verify with the provider that holds this payment, using the tenant's keys.
@@ -175,7 +184,7 @@ async function settleInTenant(
   }
 
   // Order money is in major units (F-405); the adapter already converted the provider's amounts.
-  const providerFee = provider.fee(verification);
+  const providerFee = verification.fee;
   const paidAt = verification.paidAt ?? new Date();
   // Pending rows saved before the neutral names shipped still say paystack_*; the order gets the neutral name.
   const method = normalizeMethod(pending.paymentMethod) ?? 'online_full';
@@ -257,8 +266,6 @@ async function settleInTenant(
         metadata: {
           currency: verification.currency,
           fees: Money.toApi(providerFee),
-          paystackReference: reference, // old key, kept for readers of past rows
-          providerReference: reference,
         },
       },
     });

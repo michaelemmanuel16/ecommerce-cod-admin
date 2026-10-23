@@ -26,7 +26,7 @@ jest.mock('../../utils/logger', () => ({
 import { prismaMock } from '../mocks/prisma.mock';
 import { clearTenantFeaturesCache } from '../../services/tenantFeatures';
 import { createPublicOrder } from '../../controllers/publicOrderController';
-import { settlePayment } from '../../services/paystackSettlementService';
+import { settlePayment } from '../../services/paymentSettlementService';
 import { registerPaymentProvider, unregisterPaymentProvider } from '../../services/payments';
 import { createFakeProvider } from '../../services/payments/fakeProvider';
 import { metaCapiService } from '../../services/metaCapiService';

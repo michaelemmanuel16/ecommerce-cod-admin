@@ -136,3 +136,29 @@ export async function testConnection(id: number): Promise<{ connection: Connecti
   });
   return { connection: toView(updated), ok: check.ok, message: check.message };
 }
+
+/** The safe view of a tenant's usable connection for one provider (the editor's Payment tab), or null. */
+export interface ConnectionSummary {
+  provider: string;
+  mode: 'test' | 'live';
+  isEnabled: boolean;
+  supportedCurrencies: string[];
+  lastCheckedAt: Date | null;
+}
+
+/**
+ * Safe columns only: nothing here decrypts a key. A usable row has a secret stored (checked in the filter, not read). A
+ * Paystack tenant that never re-saved its keys still has the old SystemConfig JSON, same fallback as loadProviderConfig.
+ */
+export async function describeConnection(tenantId: string, provider: string): Promise<ConnectionSummary | null> {
+  const row = await prisma.paymentConnection.findFirst({
+    where: { tenantId, provider, secretKey: { not: null } },
+    select: { mode: true, isEnabled: true, supportedCurrencies: true, lastCheckedAt: true },
+  });
+  if (row) return { provider, mode: row.mode === 'live' ? 'live' : 'test', isEnabled: row.isEnabled, supportedCurrencies: row.supportedCurrencies, lastCheckedAt: row.lastCheckedAt };
+
+  if (provider !== 'paystack') return null;
+  const legacy = (await prisma.systemConfig.findUnique({ where: { tenantId }, select: { paystackProvider: true } }))?.paystackProvider as Record<string, unknown> | null | undefined;
+  if (!legacy?.secretKey) return null;
+  return { provider, mode: legacy.mode === 'live' ? 'live' : 'test', isEnabled: legacy.isEnabled !== false, supportedCurrencies: [], lastCheckedAt: null };
+}

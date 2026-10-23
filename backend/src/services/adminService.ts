@@ -20,7 +20,8 @@ import {
 } from '../utils/providerCrypto';
 import { getTenantId, resolveTenantId, withoutTenant } from '../utils/tenantContext';
 import { HUMAN_USERS_WHERE } from './systemUserService';
-import { tenantIdForFormSlug } from './tenantLookupService';
+import { formTenantBySlug } from './tenantLookupService';
+import { clearCheckoutFormConfigCache } from './checkoutFormService';
 import { currencyOfTenant, getCurrency } from '../utils/currency';
 import { changeStoreCurrency } from './fxService';
 import { parseOperatingHours } from './kpi/workingTime';
@@ -174,7 +175,8 @@ export const adminService = {
     } as const;
     const tenant = await withoutTenant('public-config-slug', async () => {
       if (slugs.tenant) return prisma.tenant.findUnique({ where: { slug: slugs.tenant }, select });
-      const tenantId = slugs.form ? await tenantIdForFormSlug(slugs.form) : null;
+      const form = slugs.form ? await formTenantBySlug(slugs.form) : null;
+      const tenantId = form?.isActive ? form.tenantId : null;
       return tenantId ? prisma.tenant.findUnique({ where: { id: tenantId }, select }) : null;
     });
     if (!tenant) throw new AppError('Not found', 404);
@@ -319,12 +321,13 @@ export const adminService = {
           isEnabled: pp.isEnabled !== false,
         });
       }
-      // Only clear the specific tenant's cache entry — passing undefined would
-      // wipe every tenant's cached secret and stampede the DB on the next request.
-      if (config.tenantId) {
-        clearPaymentConfigCache(config.tenantId);
-      }
+      // saveConnection clears the tenant's cached keys itself. Clearing the JSON (pp null) skips it, so clear here.
+      // Only this tenant's entry: passing undefined would wipe every tenant's cached secret and stampede the DB.
+      if (!pp && config.tenantId) clearPaymentConfigCache(config.tenantId);
     }
+
+    // The public form page caches the support number with the form (5 minutes): a changed number shows at once.
+    if (data.supportWhatsapp !== undefined) clearCheckoutFormConfigCache();
 
     await this.createAuditLog(requester, 'update', 'system_config', config.id.toString(), { changes: Object.keys(data) });
 

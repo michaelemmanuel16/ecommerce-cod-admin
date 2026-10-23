@@ -108,7 +108,7 @@ describe.each([paystack, fakeHarness])('PaymentProvider contract: $name', (h) =>
     expect(v.status).toBe('success');
     expect(Money.toApi(v.amount)).toBe('249.00');
     expect(v.currency).toBe('GHS');
-    expect(Money.toApi(h.provider.fee(v))).toBe('3.70');
+    expect(Money.toApi(v.fee)).toBe('3.70');
     expect(v.feeKnown).toBe(true);
     expect(v.channel).toBe('card');
   });

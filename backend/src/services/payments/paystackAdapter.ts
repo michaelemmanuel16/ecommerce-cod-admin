@@ -98,11 +98,9 @@ export const paystackAdapter: PaymentProvider = {
     }
   },
 
-  fee: (verified) => verified.fee,
 
   getPublicKey: (tenantId) => paystackService.getPublicKey(tenantId),
 
-  isConfigured: (tenantId) => paystackService.isConfigured(tenantId),
 
   testConnection: (tenantId) => paystackService.testConnection(tenantId),
 

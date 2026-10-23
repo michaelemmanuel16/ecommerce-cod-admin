@@ -11,8 +11,8 @@ const src = path.join(__dirname, '..', '..');
 const files = [
   'controllers/publicOrderController.ts',
   'controllers/checkoutFormController.ts',
-  'controllers/paystackController.ts', // thin route layer: webhook, verify, admin verify
-  'services/paystackSettlementService.ts',
+  'controllers/paymentController.ts', // thin route layer: webhook, verify, admin verify
+  'services/paymentSettlementService.ts',
   'services/adminService.ts', // seller payment settings (cache invalidation)
   'routes/paystackRoutes.ts',
   'routes/paymentRoutes.ts',

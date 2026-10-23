@@ -44,6 +44,7 @@ const baseCreateBody = {
 
 describe('checkoutFormController — payment-method toggle validation (MAN-58)', () => {
   beforeEach(() => {
+    (prismaMock.product.findUnique as any).mockResolvedValue({ id: 1, productType: 'physical' });
     jest.clearAllMocks();
     connection(true);
     prepaidPhysical(true);

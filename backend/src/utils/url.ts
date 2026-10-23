@@ -11,3 +11,8 @@ export function getBackendUrl(): string {
     'http://localhost:3000'
   );
 }
+
+/** Public base URL of the SPA (checkout pages). FRONTEND_URL, else localhost. */
+export function getFrontendUrl(): string {
+  return process.env.FRONTEND_URL || 'http://localhost:5173';
+}

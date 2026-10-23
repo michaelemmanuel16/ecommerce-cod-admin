@@ -10,6 +10,7 @@ import app from '../../server';
 import prisma, { prismaBase } from '../../utils/prisma';
 import { createTenant, deleteTenantRows } from './helpers/twoTenants';
 import { runInTenant, withoutTenant } from '../../utils/tenantContext';
+import { clearCheckoutFormConfigCache } from '../../services/checkoutFormService';
 
 jest.mock('../../utils/socketInstance', () => ({
   setSocketInstance: jest.fn(),
@@ -127,6 +128,7 @@ describe('public forms by slug', () => {
 
   it("carries the store's public support WhatsApp, and null when it has none (F-421)", async () => {
     await prismaBase.systemConfig.update({ where: { tenantId: ids.A.tenantId }, data: { supportWhatsapp: '+233245550103' } });
+    clearCheckoutFormConfigCache(); // a direct write skips the save that clears the page cache
     const a = await request(app).get(`/api/public/forms/pub-form-a-${SUFFIX}`);
     expect(a.body.form.supportWhatsapp).toBe('+233245550103');
     const b = await request(app).get(`/api/public/forms/pub-form-b-${SUFFIX}`);
