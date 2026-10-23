@@ -13,7 +13,9 @@ import { uploadDir } from '../src/config/multer';
 //      would read 5 / 5 / 0 instead of 5 / 3 / 2.
 // It never edits the fixture itself and can run again (same result).
 // Refuses unless DATABASE_URL is a local database whose name contains `_test_`, and when NODE_ENV=production.
-// Run: npm run e2e:fixture-setup
+// `--undo` removes the rows this script added (deliveries and partner profiles of the fixture tenant). The fixture re-seed and the
+// integration suites that seed it cannot delete a tenant while those rows exist, so run `--undo` before them on the same database.
+// Run: npm run e2e:fixture-setup [-- --undo]
 
 export const FIXTURE_SLUG = 'fixture-numbers';
 export const FIXTURE_ADMIN_EMAIL = 'fixture-admin@fixture-numbers.test';
@@ -59,6 +61,13 @@ async function main() {
   try {
     const tenant = await prisma.tenant.findUnique({ where: { slug: FIXTURE_SLUG }, select: { id: true } });
     if (!tenant) throw new Error(`Tenant ${FIXTURE_SLUG} not found. Run npm run seed:fixture first.`);
+
+    if (process.argv.includes('--undo')) {
+      const deliveries = await prisma.delivery.deleteMany({ where: { tenantId: tenant.id } });
+      const profiles = await prisma.deliveryPartnerProfile.deleteMany({ where: { tenantId: tenant.id } });
+      console.log(`Removed ${deliveries.count} deliveries and ${profiles.count} partner profiles of ${FIXTURE_SLUG}.`);
+      return;
+    }
 
     const hash = await bcrypt.hash(FIXTURE_PASSWORD, 10);
     const admin = await prisma.user.updateMany({ where: { tenantId: tenant.id, email: FIXTURE_ADMIN_EMAIL }, data: { password: hash } });

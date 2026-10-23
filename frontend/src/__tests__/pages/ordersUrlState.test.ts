@@ -12,7 +12,7 @@ describe('Orders URL state (M3-T43)', () => {
   it('round trips every field', () => {
     const view = {
       tab: 'payment_issues' as const, page: 3, q: '#24118', sort: { by: 'customer' as const, dir: 'asc' as const }, size: 75,
-      from: '2026-09-01', to: '2026-09-30', basis: 'delivery' as const, product: 4, agent: 5, rep: 'none' as const, flagged: true, ids: [7, 8, 9],
+      from: '2026-09-01', to: '2026-09-30', basis: 'delivery' as const, product: 4, agent: 5, rep: 'none' as const, flagged: true, failure: 'refused' as const, ids: [7, 8, 9],
     };
     expect(parseView(writeView(view))).toEqual(view);
   });
@@ -30,6 +30,13 @@ describe('Orders URL state (M3-T43)', () => {
     expect(params.ids).toBe('5,6');
     expect(params.startDate).toBeUndefined();
     expect(listParams(DEFAULT_VIEW, 25, NOW).ids).toBeUndefined();
+  });
+
+  it('failure (from the Deliveries reasons card): a known reason only, sent to the API as failureReason', () => {
+    expect(parseView(new URLSearchParams('failure=not_reachable')).failure).toBe('not_reachable');
+    expect(parseView(new URLSearchParams('failure=hack')).failure).toBeNull();
+    expect(listParams(parseView(new URLSearchParams('failure=refused')), 25, NOW).failureReason).toBe('refused');
+    expect(listParams(DEFAULT_VIEW, 25, NOW).failureReason).toBeUndefined();
   });
 
   it('presets, in Africa/Accra (UTC) dates', () => {

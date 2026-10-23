@@ -7,6 +7,8 @@ import { formatCurrency } from '../utils/format';
 import { DateRange } from './orders/DateRange';
 import { presetOf, rangePhrase } from './orders/urlState';
 import { buildColumns } from './deliveries/columns';
+import { ReasonsCard } from './deliveries/ReasonsCard';
+import { OutNowCard, WaitingCard } from './deliveries/WaitingCards';
 import { count, PARTNER_TABS } from './deliveries/model';
 import { parseView, rangeOf, writeView, type DeliveriesView } from './deliveries/urlState';
 import { useDeliveries } from './deliveries/useDeliveries';
@@ -128,6 +130,14 @@ export function Deliveries() {
           <b>Delivery fee</b> is what we pay whoever delivers the order. Each partner has one fee rule. The partner keeps the fee from the cash it collects and hands in the rest, so expected cash = cash collected &minus; fees.
           Delivery success counts closed orders only: delivered &divide; (delivered + failed + returned).
         </p>
+      </div>
+
+      <div className="grid two">
+        <ReasonsCard reasons={data.reasons} phrase={phrase} range={range} />
+        <div className="stack">
+          {data.waiting && <WaitingCard waiting={data.waiting} />}
+          {list && <OutNowCard rows={list.rows} />}
+        </div>
       </div>
     </section>
   );

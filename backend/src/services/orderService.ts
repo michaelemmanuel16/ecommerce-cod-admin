@@ -104,6 +104,8 @@ export interface OrderFilters {
   /** Orders with no call rep. Wins over `customerRepId`. */
   unassigned?: boolean;
   deliveryAgentId?: number;
+  /** Failed or returned orders with this reason; `other` also takes the ones with no reason (the Deliveries reasons card, F-705). */
+  failureReason?: FailureReason;
   productIds?: number[];
   area?: string;
   flag?: OrderFlagCode | 'any';
@@ -137,6 +139,14 @@ function listWhere(filters: OrderFilters, requester: Requester | undefined, with
   if (filters.unassigned) and.push({ customerRepId: null });
   else if (filters.customerRepId) and.push({ customerRepId: filters.customerRepId });
   if (filters.deliveryAgentId) and.push({ deliveryAgentId: filters.deliveryAgentId });
+  if (filters.failureReason) {
+    and.push({
+      status: { in: ['failed_delivery', 'returned'] },
+      ...(filters.failureReason === 'other'
+        ? { OR: [{ failureReason: 'other' }, { failureReason: null }] }
+        : { failureReason: filters.failureReason }),
+    });
+  }
   if (filters.area) and.push({ deliveryArea: filters.area });
   if (filters.productIds?.length) and.push({ orderItems: { some: { productId: { in: filters.productIds } } } });
   if (filters.flag) and.push(orderFlagService.where(filters.flag));

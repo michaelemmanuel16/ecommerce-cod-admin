@@ -227,6 +227,20 @@ describe('GET /api/orders', () => {
     expect(combined.body.orders.every((o: any) => ['delivered', 'cancelled'].includes(o.status))).toBe(true);
   });
 
+  it('failureReason: failed and returned orders with that reason, the reasons card numbers (F-705)', async () => {
+    const byReason: Record<string, number> = {};
+    for (const reason of ['not_reachable', 'refused', 'wrong_address', 'rescheduled', 'other']) {
+      const res = await list(tokens.admin, { failureReason: reason });
+      expect(res.status).toBe(200);
+      byReason[reason] = res.body.pagination.total;
+      for (const o of res.body.orders) expect(['failed_delivery', 'returned']).toContain(o.status);
+    }
+    expect(byReason).toEqual({ not_reachable: 165, refused: 96, wrong_address: 84, rescheduled: 57, other: 0 });
+    // a reason that is not in the list is ignored, not an error
+    const all = await list(tokens.admin, { failureReason: 'bogus' });
+    expect(all.body.pagination.total).toBe(1445);
+  });
+
   it('include=flags,reminder,threadCount adds the three keys; reminder and thread are null until M9', async () => {
     const res = await list(tokens.admin, { limit: 5, include: 'flags,reminder,threadCount' });
     for (const row of res.body.orders) {

@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react';
 import { Tag, type Column } from '../../components/ui-v2';
-import type { PartnerRow, PartnerTotal, RateResult } from '../../services/delivery-partners.service';
+import type { PartnerRow, PartnerTotal } from '../../services/delivery-partners.service';
 import { initials } from '../../utils/people';
-import { count, DATA_SOURCE_LABEL, days, feeRuleText, rateTone, rowTags, toneOf, TYPE_LABEL, TYPE_TONE, wholePercent } from './model';
+import { count, DATA_SOURCE_LABEL, days, feeRuleText, rowTags, toneOf, TYPE_LABEL, TYPE_TONE } from './model';
+import { SuccessBar } from './SuccessBar';
 
 interface ColumnContext {
   /** Delivery success target in percent (the pace line on every bar). */
@@ -11,21 +12,6 @@ interface ColumnContext {
   /** The viewer may turn availability on and off (owner, admin, manager). */
   canSwitch: boolean;
   onSwitch: (row: PartnerRow, on: boolean) => void;
-}
-
-/** The success cell: the figure, and a bar with the target line. No closed order shows the sentence instead (F-702). */
-function SuccessBar({ rate, target }: { rate: RateResult; target: number }): ReactNode {
-  const text = wholePercent(rate);
-  if (text === null || rate.value === null) return <Tag>No closed orders yet</Tag>;
-  return (
-    <div className="rate">
-      <b className="num">{text}</b>
-      <div className="prog" role="img" aria-label={`${text} delivery success, target ${target}%`}>
-        <i className={rateTone(rate.value, target)} style={{ width: `${Math.min(100, Math.round(rate.value))}%` }} />
-        <span className="pace" style={{ left: `${target}%` }} />
-      </div>
-    </div>
-  );
 }
 
 const num = (n: number): ReactNode => <span className="num">{count(n)}</span>;

@@ -12,7 +12,7 @@ import { getSocket } from '../../services/socket';
 import { ORDER_EVENTS, SOCKET_REFRESH_MS } from '../orders/useOrderList';
 
 /** The waiting list is a short card on the page; the full list is in Orders. */
-const WAITING_LIMIT = 8;
+const WAITING_LIMIT = 5;
 const PARTNER_EVENTS = ['agent:availability_changed', 'agent:updated'] as const;
 
 interface DeliveriesState {

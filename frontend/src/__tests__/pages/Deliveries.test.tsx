@@ -55,7 +55,7 @@ beforeEach(() => {
 describe('Deliveries page (M4-T30)', () => {
   it('shows the five tiles from the summary', async () => {
     renderPage();
-    const tile = async (label: string) => (await screen.findByText(label)).closest('.kpi') as HTMLElement;
+    const tile = async (label: string) => (await screen.findByText(label, { selector: '.kpi .l' })).closest('.kpi') as HTMLElement;
     expect(await tile('Out for delivery now')).toHaveTextContent('148');
     expect(await tile('Waiting to dispatch')).toHaveTextContent('100');
     expect(await tile('Delivered this month')).toHaveTextContent('376');
@@ -92,5 +92,40 @@ describe('Deliveries page (M4-T30)', () => {
     list.mockRejectedValue(new Error('x'));
     renderPage();
     expect(await screen.findByText('The delivery partners could not load.')).toBeInTheDocument();
+  });
+});
+
+describe('Deliveries cards (M4-T31)', () => {
+  it('reasons card: failed and returned apart, a click opens Orders with the reason and the dates', async () => {
+    renderPage('/delivery-agents?from=2026-10-01&to=2026-10-17');
+    const card = (await screen.findByText('Failed and returned by reason')).closest('.card') as HTMLElement;
+    await within(card).findByText('165');
+    expect(within(card).getByText('354')).toBeInTheDocument();
+    expect(within(card).getByText('48')).toBeInTheDocument();
+    const counts = ['165', '96', '84', '57'].map((n) => Number(within(card).getByText(n).textContent));
+    expect(counts.reduce((a, b) => a + b, 0) + 0).toBe(402);
+    expect(within(card).getByText(/Not reachable is the biggest cause/)).toBeInTheDocument();
+    await userEvent.click(within(card).getByRole('link', { name: /Refused, 96 orders/ }));
+    expect(await screen.findByText('ORDERS PAGE')).toBeInTheDocument();
+    expect(screen.getByTestId('where')).toHaveTextContent('/orders?failure=refused&from=2026-10-01&to=2026-10-17');
+  });
+
+  it('waiting list marks old orders, and out-for-delivery groups by partner', async () => {
+    renderPage();
+    const waiting = (await screen.findByText('Waiting to dispatch', { selector: 'h3' })).closest('.card') as HTMLElement;
+    expect(await within(waiting).findByText('#24086')).toBeInTheDocument();
+    expect(within(waiting).getByText('No partner yet')).toBeInTheDocument();
+    expect(within(waiting).getByText('Esi Badu')).toBeInTheDocument();
+    expect(within(waiting).getByText('3 days')).toBeInTheDocument();
+    const out = (await screen.findByText('Out for delivery now', { selector: 'h3' })).closest('.card') as HTMLElement;
+    expect(within(out).getByText('142 orders across 4 partners')).toBeInTheDocument();
+    expect(within(out).getByRole('link', { name: /Logiswift, 100 orders/ })).toHaveAttribute('href', '/orders?status=out_for_delivery&agent=1');
+  });
+
+  it('a role that may not see the waiting list (403) still gets the page', async () => {
+    waiting.mockRejectedValue(new Error('403'));
+    renderPage();
+    await screen.findByRole('table', { name: 'Delivery partners' });
+    expect(screen.queryByText('Waiting to dispatch', { selector: 'h3' })).not.toBeInTheDocument();
   });
 });
