@@ -1,0 +1,57 @@
+import { Response } from 'express';
+import { AuthRequest } from '../types';
+import { hasPermission } from '../middleware/auth';
+import { resolveTenantId } from '../utils/tenantContext';
+import { invalidRange, readRange } from '../utils/kpiRequest';
+import { getStoreTimeZone, localDate, monthRange } from '../services/kpi/dates';
+import {
+  failureReasonBreakdown, listPartners, partnerSummary, waitingList, PartnerTypeFilter,
+} from '../services/deliveryPartnerService';
+
+/** Money (fee rules, revenue, order totals) shows only to a role with financial:view (the M3 permission matrix). */
+const canSeeMoney = (req: AuthRequest) => hasPermission(req.user!, 'financial', 'view');
+
+/** The range from `from` and `to` (store-zone days, `to` inclusive); both absent means this month (F-710). */
+function rangeOf(req: AuthRequest, tenantId: string): { from: Date; to: Date } {
+  if (req.query.from === undefined && req.query.to === undefined) {
+    const zone = getStoreTimeZone(tenantId);
+    const [year, month] = localDate(new Date(), zone).split('-').map(Number);
+    return monthRange(year, month, zone);
+  }
+  return readRange(req, tenantId);
+}
+
+/** GET /api/delivery-partners?from&to&type=all|agent|3pl */
+export const list = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = resolveTenantId();
+  const type = (req.query.type ?? 'all') as string;
+  if (!['all', 'agent', '3pl'].includes(type)) throw invalidRange('type must be all, agent or 3pl');
+  const { from, to } = rangeOf(req, tenantId);
+  res.json(await listPartners(tenantId, from, to, { type: type as PartnerTypeFilter, showMoney: await canSeeMoney(req) }));
+};
+
+/** GET /api/delivery-partners/summary?from&to */
+export const summary = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = resolveTenantId();
+  const { from, to } = rangeOf(req, tenantId);
+  res.json(await partnerSummary(tenantId, from, to, { showMoney: await canSeeMoney(req) }));
+};
+
+/** GET /api/delivery-partners/waiting */
+export const waiting = async (req: AuthRequest, res: Response): Promise<void> => {
+  const limit = req.query.limit === undefined ? undefined : Number(req.query.limit);
+  if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 500)) throw invalidRange('limit must be a whole number from 1 to 500');
+  res.json(await waitingList(resolveTenantId(), { limit, showMoney: await canSeeMoney(req) }));
+};
+
+/** GET /api/delivery-partners/failure-reasons?from&to&partnerId */
+export const failureReasons = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = resolveTenantId();
+  const { from, to } = rangeOf(req, tenantId);
+  let partnerId: number | undefined;
+  if (req.query.partnerId !== undefined) {
+    partnerId = Number(req.query.partnerId);
+    if (!Number.isInteger(partnerId) || partnerId <= 0) throw invalidRange('partnerId must be a positive integer');
+  }
+  res.json(await failureReasonBreakdown(tenantId, from, to, partnerId));
+};

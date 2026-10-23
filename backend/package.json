@@ -34,6 +34,7 @@
     "backfill:digital-delivery-date": "ts-node scripts/backfill-digital-delivery-date.ts",
     "backfill:order-timestamps": "ts-node scripts/backfill-order-timestamps.ts",
     "backfill:customer-stats": "ts-node scripts/backfill-customer-stats.ts",
+    "backfill:failure-reason": "ts-node scripts/backfill-failure-reason.ts",
     "set:operating-hours": "ts-node scripts/set-operating-hours.ts",
     "normalize:customer-phones": "ts-node scripts/normalize-customer-phones.ts",
     "seed:fixture": "ts-node scripts/seed-fixture.ts",
