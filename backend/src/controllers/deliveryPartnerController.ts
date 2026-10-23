@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { AuthRequest } from '../types';
+import { AppError } from '../middleware/errorHandler';
 import { hasPermission } from '../middleware/auth';
 import { resolveTenantId } from '../utils/tenantContext';
 import { invalidRange, readRange } from '../utils/kpiRequest';
@@ -7,6 +8,10 @@ import { getStoreTimeZone, localDate, monthRange } from '../services/kpi/dates';
 import {
   failureReasonBreakdown, listPartners, partnerSummary, waitingList, PartnerTypeFilter,
 } from '../services/deliveryPartnerService';
+import {
+  createPartner, getPartner, setPartnerAvailability, updatePartner,
+} from '../services/deliveryPartnerAdminService';
+import { unmappedRegions } from '../services/regionService';
 
 /** Money (fee rules, revenue, order totals) shows only to a role with financial:view (the M3 permission matrix). */
 const canSeeMoney = (req: AuthRequest) => hasPermission(req.user!, 'financial', 'view');
@@ -20,6 +25,12 @@ function rangeOf(req: AuthRequest, tenantId: string): { from: Date; to: Date } {
   }
   return readRange(req, tenantId);
 }
+
+const partnerIdOf = (req: AuthRequest): number => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) throw new AppError('Invalid partner ID', 400);
+  return id;
+};
 
 /** GET /api/delivery-partners?from&to&type=all|agent|3pl */
 export const list = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -54,4 +65,32 @@ export const failureReasons = async (req: AuthRequest, res: Response): Promise<v
     if (!Number.isInteger(partnerId) || partnerId <= 0) throw invalidRange('partnerId must be a positive integer');
   }
   res.json(await failureReasonBreakdown(tenantId, from, to, partnerId));
+};
+
+/** GET /api/delivery-partners/region-review: order regions that are not in the store country's list (O3). */
+export const regionReview = async (_req: AuthRequest, res: Response): Promise<void> => {
+  res.json({ regions: await unmappedRegions() });
+};
+
+/** GET /api/delivery-partners/:id */
+export const getOne = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.json({ partner: await getPartner(partnerIdOf(req), { showMoney: await canSeeMoney(req) }) });
+};
+
+/** POST /api/delivery-partners */
+export const create = async (req: AuthRequest, res: Response): Promise<void> => {
+  const created = await createPartner(req.user!, req.body);
+  res.status(201).json({ partner: await getPartner(created.user.id, { showMoney: await canSeeMoney(req) }) });
+};
+
+/** PATCH /api/delivery-partners/:id */
+export const update = async (req: AuthRequest, res: Response): Promise<void> => {
+  const id = partnerIdOf(req);
+  await updatePartner(req.user!, id, req.body);
+  res.json({ partner: await getPartner(id, { showMoney: await canSeeMoney(req) }) });
+};
+
+/** PATCH /api/delivery-partners/:id/availability */
+export const availability = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.json({ partner: await setPartnerAvailability(req.user!, partnerIdOf(req), req.body?.isAvailable) });
 };

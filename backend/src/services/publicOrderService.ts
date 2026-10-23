@@ -4,6 +4,7 @@ import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import { Prisma } from '@prisma/client';
 import * as Money from '../utils/money';
+import { normalizeOrderRegion } from './regionService';
 
 interface PublicOrderData {
   // Customer info
@@ -50,6 +51,9 @@ export class PublicOrderService {
     if (!form) {
       throw new AppError('Checkout form not found or inactive', 404);
     }
+
+    // O3: the region is a value of the store country's list; an unknown one stays as typed
+    orderData = { ...orderData, deliveryState: await normalizeOrderRegion(orderData.deliveryState, form.tenantId) };
 
     // Validate selected package
     const selectedPackage = form.packages.find(

@@ -67,3 +67,34 @@ describe('tenant A never sees tenant B (T18 reads)', () => {
     expect(other.body.total).toBe(0);
   });
 });
+
+describe('tenant A never reaches tenant B (T19 writes)', () => {
+  it('a partner created in A is not in B, and B ids are 404 for every A write', async () => {
+    const { a, b } = pair;
+    const ha = auth(a.users.admin.token);
+    const created = await request(app).post('/api/delivery-partners').set(ha).send({
+      kind: 'person', firstName: 'Tenant', lastName: `A${a.marker}`, email: `partner-${a.marker}@codadmin.test`,
+    });
+    expect(created.status).toBe(201);
+    const bList = await request(app).get(`/api/delivery-partners?${WIDE}`).set(auth(b.users.admin.token));
+    expect(JSON.stringify(bList.body)).not.toContain(`A${a.marker}`);
+    expect((await request(app).get(`/api/delivery-partners/${created.body.partner.id}`).set(auth(b.users.admin.token))).status).toBe(404);
+
+    const bId = b.users.deliveryAgent.id;
+    expect((await request(app).get(`/api/delivery-partners/${bId}`).set(ha)).status).toBe(404);
+    expect((await request(app).patch(`/api/delivery-partners/${bId}`).set(ha).send({ daysToPay: 1 })).status).toBe(404);
+    expect((await request(app).patch(`/api/delivery-partners/${bId}/availability`).set(ha).send({ isAvailable: false })).status).toBe(404);
+    const row = await prismaBase.user.findUniqueOrThrow({ where: { id: bId } });
+    const profile = await prismaBase.deliveryPartnerProfile.findUniqueOrThrow({ where: { userId: bId } });
+    expect([row.isAvailable, profile.daysToPay]).toEqual([true, 7]);
+  });
+
+  it('the region review lists the caller tenant only', async () => {
+    const { a, b } = pair;
+    const review = await request(app).get('/api/delivery-partners/region-review').set(auth(a.users.admin.token));
+    expect(review.status).toBe(200);
+    expect(JSON.stringify(review.body)).not.toContain(b.marker);
+    const bReview = await request(app).get('/api/delivery-partners/region-review').set(auth(b.users.admin.token));
+    expect(bReview.body.regions.map((r: any) => r.value)).toContain(`Region ${b.marker}`);
+  });
+});
