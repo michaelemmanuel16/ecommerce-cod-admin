@@ -105,18 +105,20 @@
 .v2 .pvbar{display:flex;align-items:center;justify-content:space-between;padding:0 0 10px;gap:8px;flex-wrap:wrap}
 .v2 .pvstage{background:var(--hover);border-radius:14px;overflow:hidden;flex:1;min-height:0;display:flex;justify-content:center;align-items:flex-start;border:1px solid var(--line)}
 .v2 .pvclip{overflow:hidden;position:relative}
-.v2 .pvclip iframe{border:0;transform-origin:top left;position:absolute;top:0;left:0}
+/* the live preview is a public page: it keeps its own light palette inside the dark editor */
+.v2 .pvclip iframe{border:0;transform-origin:top left;position:absolute;top:0;left:0;background:var(--white);color-scheme:light}
 
 /* M3b-T24: the list fits at 1280 and scrolls inside its card below that; the editor follows the theme. */
 .v2 .cforms{min-width:0}
-.v2 .cforms .tablewrap{overflow-x:auto;position:relative}
 /* the switch's hidden checkbox is position:absolute; without a positioned wrapper it escapes the scroll box and widens the page */
+.v2 .cforms .tablewrap{overflow-x:auto;position:relative}
+.v2 .cforms .tablewrap th{white-space:normal}
 .v2 .cforms .tablewrap td,.v2 .cforms .tablewrap th{padding-left:12px;padding-right:12px}
 .v2 .cforms .tablewrap th:first-child,.v2 .cforms .tablewrap td:first-child{padding-left:20px}
 .v2 .cforms .tablewrap th:last-child,.v2 .cforms .tablewrap td:last-child{padding-right:20px}
 .v2 .cforms .who{min-width:0}
 .v2 .cforms .lnkcell{max-width:100%}
-.v2 .cforms .lnkcell>span:first-child{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.v2 .cforms .lnkcell>span:first-child{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .v2 .edhead{border-bottom:1px solid var(--line)}
 .v2 .edtitle{font-size:18px;font-weight:700;color:var(--ink)}
 .v2 .ednote{font-size:13.5px;color:var(--ink-2)}
@@ -130,7 +132,3 @@
 .v2 .etab.on{color:var(--pine);border-bottom-color:var(--pine)}
 .v2 .etab:focus-visible{outline:2px solid var(--pine);outline-offset:-2px;border-radius:6px}
 .v2 .etab span{margin-left:6px;font-size:12px;padding:0 7px;border-radius:99px;background:var(--hover);color:var(--ink-2)}
-/* the live preview is a public page: it keeps its own light palette inside the dark editor */
-.v2 .pvclip iframe{background:var(--white);color-scheme:light}
-.v2 .cforms .tablewrap th{white-space:normal}
-.v2 .cforms .lnkcell>span:first-child{max-width:120px}
