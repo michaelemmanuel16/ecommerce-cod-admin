@@ -14,6 +14,7 @@ import {
   maskProviderSecrets,
   preserveMaskedSecrets,
   SENSITIVE_FIELDS,
+  decryptString,
 } from '../utils/providerCrypto';
 import { getTenantId, resolveTenantId, withoutTenant } from '../utils/tenantContext';
 import { HUMAN_USERS_WHERE } from './systemUserService';
@@ -314,6 +315,24 @@ export const adminService = {
       clearEmailConfigCache();
     }
     if (data.paystackProvider !== undefined) {
+      // Until the Connections page (M9) this panel is the only UI for Paystack keys. A tenant that already has a
+      // PaymentConnection row reads that row at checkout, so keep it in step. Never create one here.
+      const pp = data.paystackProvider as { mode?: string; publicKey?: string; secretKey?: string; isEnabled?: boolean } | null;
+      if (pp && config.tenantId) {
+        const row = await prisma.paymentConnection.findFirst({ where: { provider: 'paystack' } });
+        if (row) {
+          const secretChanged = !!pp.secretKey && decryptString(pp.secretKey) !== decryptString(row.secretKey);
+          await prisma.paymentConnection.update({
+            where: { id: row.id },
+            data: {
+              mode: pp.mode === 'live' ? 'live' : 'test',
+              publicKey: pp.publicKey ?? row.publicKey,
+              isEnabled: pp.isEnabled !== false,
+              ...(secretChanged ? { secretKey: pp.secretKey, supportedCurrencies: [], lastCheckedAt: null } : {}),
+            },
+          });
+        }
+      }
       const { clearPaymentConfigCache } = await import('./payments');
       // Only clear the specific tenant's cache entry — passing undefined would
       // wipe every tenant's cached secret and stampede the DB on the next request.

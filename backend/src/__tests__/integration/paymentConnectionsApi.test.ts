@@ -256,11 +256,42 @@ describe('fallback to SystemConfig.paystackProvider', () => {
   });
 });
 
+describe('old Settings → Integrations panel keeps the connection in step', () => {
+  const putSettings = (body: Record<string, unknown>) =>
+    request(app).put('/api/admin/settings').set(bearer(pair.a.users.admin.token)).send(body);
+
+  it('new keys saved through PUT /api/admin/settings reach checkout when a connection row exists', async () => {
+    await prismaBase.paymentConnection.updateMany({ where: { tenantId: pair.a.id }, data: { supportedCurrencies: ['GHS'], lastCheckedAt: new Date() } });
+    const res = await request(app).put('/api/admin/settings').set(bearer(await (await import('./helpers/superAdminToken')).superAdminToken(pair.a.id, pair.a.slug, 'panel-owner')))
+      .send({ paystackProvider: { publicKey: 'pk_test_PANEL', secretKey: 'sk_test_PANEL_secret', mode: 'test', isEnabled: true } });
+    expect(res.status).toBe(200);
+
+    await runInTenant(pair.a.id, async () => {
+      const { loadProviderConfig } = await import('../../services/payments/connectionConfig');
+      const cfg = await loadProviderConfig(pair.a.id, 'paystack');
+      expect(cfg).toMatchObject({ source: 'connection', publicKey: 'pk_test_PANEL', secretKey: 'sk_test_PANEL_secret', mode: 'test', supportedCurrencies: [] });
+      expect(await getPaymentProvider('paystack').getPublicKey(pair.a.id)).toBe('pk_test_PANEL');
+    });
+    const row = await prismaBase.paymentConnection.findFirstOrThrow({ where: { tenantId: pair.a.id, provider: 'paystack' } });
+    expect(isEncryptedString(row.secretKey)).toBe(true);
+    expect(row.lastCheckedAt).toBeNull();
+  });
+
+  it('does not create a row for a tenant that has none', async () => {
+    await prismaBase.paymentConnection.deleteMany({ where: { tenantId: pair.b.id } });
+    const owner = await (await import('./helpers/superAdminToken')).superAdminToken(pair.b.id, pair.b.slug, 'panel-owner');
+    const res = await request(app).put('/api/admin/settings').set(bearer(owner))
+      .send({ paystackProvider: { publicKey: 'pk_test_B2', secretKey: 'sk_test_B2_secret', mode: 'test', isEnabled: true } });
+    expect(res.status).toBe(200);
+    expect(await prismaBase.paymentConnection.count({ where: { tenantId: pair.b.id } })).toBe(0);
+  });
+});
+
 describe('secrets stay out of the public config and the logs', () => {
   it('the embed config carries the public key only', async () => {
     const res = await request(app).get(`/api/public/forms/${pair.a.formSlug}/config`);
     expect(res.status).toBe(200);
-    expect(res.body.config.paystackPublicKey).toBe('pk_test_AAAA');
+    expect(res.body.config.paystackPublicKey).toBe('pk_test_PANEL'); // set by the panel test above
     const text = JSON.stringify(res.body);
     expect(text).not.toContain(SECRET_A);
     expect(text).not.toContain('sk_test_');
@@ -268,7 +299,7 @@ describe('secrets stay out of the public config and the logs', () => {
 
   it('no log line from any of the calls above holds a secret', () => {
     const lines = allLogLines();
-    for (const secret of [SECRET_A, SECRET_B, 'sk_test_OLD_secret', 'sk_test_NEW_secret', 'sk_test_AAAA_rotated', 'sk_test_AAAA_new_account']) {
+    for (const secret of [SECRET_A, SECRET_B, 'sk_test_OLD_secret', 'sk_test_NEW_secret', 'sk_test_AAAA_rotated', 'sk_test_AAAA_new_account', 'sk_test_PANEL_secret', 'sk_test_B2_secret']) {
       expect(lines).not.toContain(secret);
     }
   });
