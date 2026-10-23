@@ -21,6 +21,17 @@ interface UseDashboardDataResult {
   refetch: () => Promise<void>;
 }
 
+/** Unpaid delivered orders x the rep's commission rate. Missing rate or count counts as 0. */
+export function computeRepEarnings(repPerformance: any, user: any) {
+  const unpaidCount = Number(repPerformance?.unpaidDeliveredOrders) || 0;
+  const rate = Number(user?.commissionAmount) || 0;
+  return {
+    myCommission: (unpaidCount * rate).toFixed(2),
+    commissionAmount: rate,
+    unpaidDeliveredCount: unpaidCount,
+  };
+}
+
 /**
  * Hook to fetch and manage dashboard data
  * @param config - Dashboard configuration
@@ -135,14 +146,9 @@ export function useDashboardData(
           ).toFixed(1);
         }
 
-        // Earnings (for sales reps)
-        if (dashboardData.repPerformance && (user as any)?.commissionAmount) {
-          const unpaidCount = (dashboardData.repPerformance as any).unpaidDeliveredOrders || 0;
-          calculated.myCommission = (
-            unpaidCount * (user as any).commissionAmount
-          ).toFixed(2);
-          calculated.commissionAmount = (user as any).commissionAmount;
-          calculated.unpaidDeliveredCount = unpaidCount;
+        // Earnings (for sales reps). A rep with no rate or no unpaid orders earns 0, not a blank card.
+        if (dashboardData.repPerformance) {
+          Object.assign(calculated, computeRepEarnings(dashboardData.repPerformance, user));
         }
 
         // Conversion rate (for sales reps)
