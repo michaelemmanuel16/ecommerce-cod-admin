@@ -2,7 +2,7 @@ import { Router } from 'express';
 import agentInventoryController from '../controllers/agentInventoryController';
 import { authenticate, requireRole } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
-import { body, param, query } from 'express-validator';
+import { param, query } from 'express-validator';
 import { validate } from '../middleware/validation';
 
 const router = Router();
@@ -11,62 +11,7 @@ const router = Router();
 router.use(authenticate);
 router.use(tenantRateLimiter);
 
-// --- Mutations (admin, manager, inventory_manager, super_admin) ---
-
-router.post(
-  '/allocate',
-  requireRole('super_admin', 'admin', 'manager', 'inventory_manager'),
-  [
-    body('productId').isInt({ min: 1 }).withMessage('Valid productId is required').toInt(),
-    body('agentId').isInt({ min: 1 }).withMessage('Valid agentId is required').toInt(),
-    body('quantity').isInt({ min: 1 }).withMessage('Quantity must be at least 1').toInt(),
-    body('notes').optional().trim().isLength({ max: 500 }),
-    validate,
-  ],
-  agentInventoryController.allocateStock
-);
-
-router.post(
-  '/transfer',
-  requireRole('super_admin', 'admin', 'manager', 'inventory_manager'),
-  [
-    body('productId').isInt({ min: 1 }).withMessage('Valid productId is required').toInt(),
-    body('fromAgentId').isInt({ min: 1 }).withMessage('Valid fromAgentId is required').toInt(),
-    body('toAgentId').isInt({ min: 1 }).withMessage('Valid toAgentId is required').toInt(),
-    body('quantity').isInt({ min: 1 }).withMessage('Quantity must be at least 1').toInt(),
-    body('notes').optional().trim().isLength({ max: 500 }),
-    validate,
-  ],
-  agentInventoryController.transferStock
-);
-
-router.post(
-  '/return',
-  requireRole('super_admin', 'admin', 'manager', 'inventory_manager'),
-  [
-    body('productId').isInt({ min: 1 }).withMessage('Valid productId is required').toInt(),
-    body('agentId').isInt({ min: 1 }).withMessage('Valid agentId is required').toInt(),
-    body('quantity').isInt({ min: 1 }).withMessage('Quantity must be at least 1').toInt(),
-    body('notes').optional().trim().isLength({ max: 500 }),
-    validate,
-  ],
-  agentInventoryController.returnStock
-);
-
-router.post(
-  '/adjust',
-  requireRole('super_admin', 'admin', 'manager', 'inventory_manager'),
-  [
-    body('productId').isInt({ min: 1 }).withMessage('Valid productId is required').toInt(),
-    body('agentId').isInt({ min: 1 }).withMessage('Valid agentId is required').toInt(),
-    body('newQuantity').isInt({ min: 0 }).withMessage('New quantity must be 0 or more').toInt(),
-    body('notes').trim().notEmpty().withMessage('Notes are required for adjustments').isLength({ max: 500 }),
-    validate,
-  ],
-  agentInventoryController.adjustStock
-);
-
-// --- Read endpoints (broader access) ---
+// Read endpoints only. The write routes moved to /api/inventory (M4-T10); these GETs stay as aliases for one release.
 
 router.get(
   '/product/:productId',

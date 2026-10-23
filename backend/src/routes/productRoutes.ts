@@ -16,7 +16,6 @@ router.get('/shipments', requireResourcePermission('products', 'view'), shipment
 router.post('/shipments', requireResourcePermission('products', 'update_stock'), shipmentController.createShipment);
 router.get('/shipments/:id', requireResourcePermission('products', 'view'), shipmentController.getShipment);
 router.patch('/shipments/:id', requireResourcePermission('products', 'update_stock'), shipmentController.updateShipment);
-router.patch('/shipments/:id/arrive', requireResourcePermission('products', 'update_stock'), shipmentController.markArrived);
 router.delete('/shipments/:id', requireResourcePermission('products', 'update_stock'), shipmentController.deleteShipment);
 
 // Allow access if user has products:view OR orders:create permission
@@ -30,6 +29,5 @@ router.get('/low-stock', requireResourcePermission('products', 'view'), productC
 router.get('/:id', requireResourcePermission('products', 'view'), productController.getProduct);
 router.put('/:id', requireResourcePermission('products', 'update'), productController.updateProduct);
 router.delete('/:id', requireResourcePermission('products', 'delete'), productController.deleteProduct);
-router.patch('/:id/stock', requireResourcePermission('products', 'update_stock'), productController.updateProductStock);
 
 export default router;

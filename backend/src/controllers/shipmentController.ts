@@ -2,7 +2,6 @@ import { Response } from 'express';
 import { Prisma } from '@prisma/client';
 import { AuthRequest } from '../types';
 import prisma from '../utils/prisma';
-import { GLAutomationService } from '../services/glAutomationService';
 import logger from '../utils/logger';
 import * as Money from '../utils/money';
 
@@ -192,114 +191,6 @@ export const updateShipment = async (req: AuthRequest, res: Response): Promise<v
   } catch (error) {
     logger.error('Failed to update shipment:', error);
     res.status(500).json({ error: 'Failed to update shipment' });
-  }
-};
-
-export const markArrived = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-
-    const { id } = req.params;
-    const shipmentId = parseInt(id);
-    if (isNaN(shipmentId)) {
-      res.status(400).json({ error: 'Invalid shipment ID' });
-      return;
-    }
-
-    // Pre-check outside transaction
-    const existing = await prisma.inventoryShipment.findUnique({
-      where: {
-        id: shipmentId,
-      }
-    });
-    if (!existing) {
-      res.status(404).json({ error: 'Shipment not found' });
-      return;
-    }
-    if (existing.status !== 'pending') {
-      res.status(400).json({ error: 'Shipment has already arrived' });
-      return;
-    }
-
-    const result = await prisma.$transaction(async (txClient) => {
-      // Cast needed: Prisma interactive transaction types don't align with extension types
-      const tx = txClient as any;
-
-      // Atomic status flip — prevents double-processing under concurrent requests
-      const flipped = await tx.inventoryShipment.updateMany({
-        where: {
-          id: shipmentId,
-          status: 'pending',
-    
-        },
-        data: { status: 'arrived', arrivedAt: new Date() },
-      });
-      if (flipped.count === 0) {
-        throw new Error('Shipment not found or already arrived');
-      }
-
-      // Re-read with product for GL entry
-      const shipment = await tx.inventoryShipment.findUnique({
-        where: { id: shipmentId },
-        include: { product: true },
-      });
-
-      // 1. Increment product stock + update COGS using weighted average
-      const currentStock = shipment.product.stockQuantity;
-      const currentCogs = Money.orZero(shipment.product.cogs);
-      const newQty = shipment.quantity;
-      const landedCostPerUnit = Money.div(shipment.totalCost, newQty);
-      const weightedCogs = Money.roundHalfUp(
-        currentStock + newQty > 0
-          ? Money.div(
-              Money.add(Money.mul(currentStock, currentCogs), Money.mul(newQty, landedCostPerUnit)),
-              currentStock + newQty
-            )
-          : landedCostPerUnit,
-        4
-      );
-
-      await tx.product.update({
-        where: {
-          id: shipment.productId,
-    
-        },
-        data: {
-          stockQuantity: { increment: newQty },
-          cogs: weightedCogs,
-        },
-      });
-
-      // 2. Create GL entry (DR Inventory, CR Cash in Hand)
-      const glEntry = await GLAutomationService.createInventoryPurchaseEntry(
-        tx,
-        shipment,
-        req.user!.id
-      );
-
-      // 3. Link GL entry to shipment
-      const updated = await tx.inventoryShipment.update({
-        where: {
-          id: shipmentId,
-    
-        },
-        data: { glJournalEntryId: glEntry.id },
-        include: SHIPMENT_INCLUDE,
-      });
-
-      return updated;
-    }, {
-      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-    });
-
-    res.json(result);
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : '';
-    if (msg.includes('already arrived') || msg.includes('not found')) {
-      res.status(409).json({ error: msg });
-      return;
-    }
-    logger.error('Failed to mark shipment as arrived:', error);
-    res.status(500).json({ error: 'Failed to mark shipment as arrived' });
   }
 };
 

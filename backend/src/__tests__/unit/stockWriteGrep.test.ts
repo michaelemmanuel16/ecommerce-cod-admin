@@ -24,12 +24,6 @@ const ALLOWED: Array<{ file: string; label: string; reason: string }> = [
   { file: 'scripts/seed-sample-data.ts', label: 'product.create sets stockQuantity', reason: 'dev seed data for an empty local database' },
   { file: 'scripts/seed-test-data.ts', label: 'product.upsert sets stockQuantity', reason: 'dev seed data for an empty local database' },
   { file: 'src/scripts/seed.ts', label: 'product.create sets stockQuantity', reason: 'dev seed data for an empty local database' },
-  // Legacy writers that the later COD-39 commits (M4-T07, M4-T10) delete. Each entry goes with its code.
-  { file: 'src/services/agentInventoryService.ts', label: 'product.update sets stockQuantity', reason: 'legacy allocate and return code, removed in M4-T10' },
-  { file: 'src/services/agentInventoryService.ts', label: 'stockQuantity increment, decrement or set', reason: 'legacy allocate and return code, removed in M4-T10' },
-  { file: 'src/controllers/shipmentController.ts', label: 'product.update sets stockQuantity', reason: 'markArrived, removed in M4-T10 (COD-40 builds receiving)' },
-  { file: 'src/controllers/shipmentController.ts', label: 'stockQuantity increment, decrement or set', reason: 'markArrived, removed in M4-T10 (COD-40 builds receiving)' },
-  { file: 'src/controllers/productController.ts', label: 'product.update sets stockQuantity', reason: 'PATCH /:id/stock, removed in M4-T10' },
 ];
 
 const STOCK_LEVEL_WRITE = /\.stockLevel\s*\.\s*(create|createMany|update|updateMany|upsert|delete|deleteMany)\s*\(/g;
