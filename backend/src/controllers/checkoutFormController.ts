@@ -202,6 +202,14 @@ const missingKeysError = (fields: unknown, formType: string): string | null => {
   return missing.length ? `This form can't take orders yet. Add: ${missing.join(', ')}.` : null;
 };
 
+const UPSELL_PRODUCT_NOT_FOUND = 'Upsell product not found';
+
+// Every product an add-on points at must be one of this tenant's (the scoped client only sees its own).
+const upsellProductsAreOwn = async (upsells: any[] | undefined): Promise<boolean> => {
+  const ids = [...new Set((upsells ?? []).map((u) => u?.productId).filter((id) => id !== undefined && id !== null).map(Number))];
+  return ids.length === 0 || (await withSoftDeleted(() => prisma.product.count({ where: { id: { in: ids } } }))) === ids.length;
+};
+
 // An upsell on a digital form that names a product must name a digital one (F-422).
 const digitalUpsellError = async (upsells: any[] | undefined): Promise<string | null> => {
   const ids = (upsells ?? []).map((u) => u?.productId).filter((id) => id !== undefined && id !== null).map(Number);
@@ -430,6 +438,10 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
       return;
     }
 
+    if (!(await upsellProductsAreOwn(upsells))) {
+      fail400(res, UPSELL_PRODUCT_NOT_FOUND);
+      return;
+    }
     const upsellError = formType === 'digital' ? await digitalUpsellError(upsells) : null;
     if (upsellError) {
       fail400(res, upsellError);
@@ -667,6 +679,10 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
       return;
     }
 
+    if (!(await upsellProductsAreOwn(upsells))) {
+      fail400(res, UPSELL_PRODUCT_NOT_FOUND);
+      return;
+    }
     const upsellError = formType === 'digital' && upsells ? await digitalUpsellError(upsells) : null;
     if (upsellError) {
       fail400(res, upsellError);
@@ -899,6 +915,11 @@ export const cloneCheckoutForm = async (req: AuthRequest, res: Response): Promis
     const source = await withSoftDeleted(() => prisma.checkoutForm.findUnique({ where: { id: formId }, include: { packages: true, upsells: true } }));
     if (!source) {
       res.status(404).json({ error: 'Checkout form not found' });
+      return;
+    }
+
+    if (!(await upsellProductsAreOwn(source.upsells))) {
+      fail400(res, UPSELL_PRODUCT_NOT_FOUND);
       return;
     }
 

@@ -172,6 +172,37 @@ describe('create: basics, country, regions, type', () => {
   });
 });
 
+describe('products must belong to the tenant', () => {
+  it('tenant A cannot save an add-on that points at tenant B\'s product, on create or update', async () => {
+    const foreign = [{ name: 'Extra', price: 5, productId: pair.b.ids.product }];
+    const bad = await create(formBody({ upsells: foreign }));
+    expect(bad.status).toBe(400);
+    expect(bad.body.error).toBe('Upsell product not found');
+    const id = (await create(formBody())).body.form.id;
+    const upd = await put(id, { upsells: foreign });
+    expect(upd.status).toBe(400);
+    expect(upd.body.error).toBe('Upsell product not found');
+    expect((await stored(id)).upsells).toHaveLength(0);
+    expect((await create(formBody({ upsells: [{ name: 'Mine', price: 5, productId: pair.a.ids.product }] }))).status).toBe(201);
+  });
+
+  it('a clone refuses add-ons that already point at another tenant\'s product', async () => {
+    const id = (await create(formBody())).body.form.id;
+    await prismaBase.formUpsell.create({ data: { formId: id, name: 'Planted', price: 1, productId: pair.b.ids.product } });
+    const res = await request(app).post(`/api/checkout-forms/${id}/clone`).set(bearer(ownerA));
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Upsell product not found');
+  });
+
+  it('the form\'s own product must be the tenant\'s too', async () => {
+    const create404 = await create(formBody({ productId: pair.b.ids.product }));
+    expect(create404.status).toBe(404);
+    const id = (await create(formBody())).body.form.id;
+    expect((await put(id, { productId: pair.b.ids.product })).status).toBe(404);
+    expect((await stored(id)).productId).toBe(pair.a.ids.product);
+  });
+});
+
 describe('required keys on activation', () => {
   it('a physical form without a street address cannot be active', async () => {
     const res = await create(formBody({ fields: NO_ADDRESS }));
