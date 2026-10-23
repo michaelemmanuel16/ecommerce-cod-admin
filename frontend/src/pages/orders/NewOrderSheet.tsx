@@ -10,6 +10,7 @@ import { ordersService } from '../../services/orders.service';
 import { productsService } from '../../services/products.service';
 import { useConfigStore } from '../../stores/configStore';
 import type { Product } from '../../types';
+import { apiErrorMessage } from '../../utils/apiError';
 import { getCountryByCurrency, getCurrencySymbol, getRegionsForCountry } from '../../utils/countries';
 import { formatCurrency, formatPhoneLocal } from '../../utils/format';
 import type { Option } from './useFilterOptions';
@@ -63,8 +64,7 @@ const EMPTY: Form = {
 let nextKey = 1;
 const blankLine = (): DraftLine => ({ key: nextKey++, productId: null, qty: '1', price: '' });
 const available = (p: Product | undefined): number => (p ? p.stockQuantity ?? p.stock ?? 0 : 0);
-const messageOf = (e: unknown): string =>
-  (axios.isAxiosError(e) && (e.response?.data?.error?.message || e.response?.data?.error || e.response?.data?.message)) || 'The order could not be created';
+const messageOf = (e: unknown): string => apiErrorMessage(e, 'The order could not be created');
 
 /**
  * The New order side sheet (M3-T45, F-317), built from docs/mockups/v2/index.html#sh-new. There is no status field:

@@ -7,6 +7,7 @@ import { useTowns } from '../../hooks/useTowns';
 import { customersService, type CustomerRow } from '../../services/customers.service';
 import { useAuthStore } from '../../stores/authStore';
 import { useConfigStore } from '../../stores/configStore';
+import { apiErrorMessage } from '../../utils/apiError';
 import { getCountryByCurrency, getRegionsForCountry } from '../../utils/countries';
 import { isManagerUp } from '../../components/shell/navModel';
 import { customerName, phoneProblem } from './model';
@@ -135,7 +136,7 @@ export function CustomerModal({ open, onClose, customer, onSaved }: CustomerModa
         setClash({ message: data.message, id: data.customerId, name: data.customerName, archived: data.code === 'CUSTOMER_ARCHIVED' });
         return;
       }
-      say(data?.message || data?.error || 'The customer could not be saved.');
+      say(apiErrorMessage(e, 'The customer could not be saved.'));
     }
   };
 

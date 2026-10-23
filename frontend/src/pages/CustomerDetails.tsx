@@ -6,6 +6,7 @@ import { useV2Page } from '../components/shell/useV2Page';
 import { Button, Card, ConfirmDialog, EmptyState, Skeleton, Table, Tabs, Tag, Tile, useToast, type Column } from '../components/ui-v2';
 import { usePermissions } from '../hooks/usePermissions';
 import { customersService, type CustomerDetail } from '../services/customers.service';
+import { apiErrorMessage } from '../utils/apiError';
 import { formatCurrency, formatPhoneLocal } from '../utils/format';
 import { ORDER_STATUS_LABELS } from '../utils/orderStatus';
 import type { OrderStatus } from '../types';
@@ -80,8 +81,7 @@ export function CustomerDetails() {
       navigate('/customers');
     } catch (e) {
       // 409: an order is out for delivery. The API's sentence says what to do.
-      const data = axios.isAxiosError(e) ? e.response?.data : undefined;
-      say(data?.message || data?.error || 'The customer could not be deleted.');
+      say(apiErrorMessage(e, 'The customer could not be deleted.'));
     }
   };
 

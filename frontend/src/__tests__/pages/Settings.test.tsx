@@ -176,7 +176,7 @@ describe('Profile tab (F-1221, F-1222)', () => {
   });
 
   it('a server error shows under the form and nothing changes in the header', async () => {
-    updateProfile.mockRejectedValue({ response: { data: { message: 'This email is already in use' } } });
+    updateProfile.mockRejectedValue(Object.assign(new Error('refused'), { isAxiosError: true, response: { status: 409, data: { message: 'This email is already in use' } } }));
     renderAt();
     await waitFor(() => expect(screen.getByLabelText('Phone')).toHaveValue('+233245550182'));
     await userEvent.click(screen.getByRole('button', { name: 'Save profile' }));

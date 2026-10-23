@@ -3,6 +3,7 @@ import { Button, Card, Input, useToast } from '../../components/ui-v2';
 import { accountService, type ProfileUser } from '../../services/account.service';
 import { authService } from '../../services/auth.service';
 import { useAuthStore } from '../../stores/authStore';
+import { apiErrorMessage } from '../../utils/apiError';
 import { initials, personName } from '../../utils/people';
 import { photoSrc } from '../../utils/photoSrc';
 
@@ -10,7 +11,6 @@ const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const PHOTO_MAX = 5 * 1024 * 1024;
 
 const joinName = (u: { firstName?: string; lastName?: string }) => [u.firstName, u.lastName].filter(Boolean).join(' ');
-const apiMessage = (e: unknown, fallback: string) => (e as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback;
 
 /** Profile (M3-T63, F-1221, F-1222). Full name is one input; the server splits it on the last space. */
 export function ProfileTab() {
@@ -68,7 +68,7 @@ export function ProfileTab() {
       setSavedEmail(saved.email);
       say('Profile saved');
     } catch (err) {
-      setError(apiMessage(err, 'The profile could not be saved'));
+      setError(apiErrorMessage(err, 'The profile could not be saved'));
     } finally {
       setSaving(false);
     }
@@ -82,7 +82,7 @@ export function ProfileTab() {
       apply(await accountService.uploadPhoto(file));
       say('Photo changed');
     } catch (err) {
-      say(apiMessage(err, 'The photo could not be uploaded'));
+      say(apiErrorMessage(err, 'The photo could not be uploaded'));
     } finally {
       setBusyPhoto(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -95,7 +95,7 @@ export function ProfileTab() {
       apply(await accountService.removePhoto());
       say('Photo removed');
     } catch (err) {
-      say(apiMessage(err, 'The photo could not be removed'));
+      say(apiErrorMessage(err, 'The photo could not be removed'));
     } finally {
       setBusyPhoto(false);
     }

@@ -5,6 +5,7 @@ import { Pencil, Bell } from 'lucide-react';
 import { Button, Drawer, EmptyState, Modal, Select, Skeleton, Tag, useToast } from '../../../components/ui-v2';
 import { ordersService, type OrderDetail, type OrderListRow, type TimelineEntry } from '../../../services/orders.service';
 import { callsService } from '../../../services/calls.service';
+import { apiErrorMessage } from '../../../utils/apiError';
 import { usePermissions } from '../../../hooks/usePermissions';
 import { useAuthStore } from '../../../stores/authStore';
 import { CallOutcome } from '../../../types';
@@ -27,7 +28,7 @@ interface OrderDrawerProps {
 }
 
 const reasonOf = (e: unknown): { status?: number; code?: string; message?: string; data?: Record<string, unknown> } =>
-  axios.isAxiosError(e) ? { status: e.response?.status, code: e.response?.data?.code, message: e.response?.data?.message ?? e.response?.data?.error, data: e.response?.data } : {};
+  axios.isAxiosError(e) ? { status: e.response?.status, code: e.response?.data?.code, message: apiErrorMessage(e, '') || undefined, data: e.response?.data } : {};
 
 /**
  * The order details drawer (M3-T46, T47; F-321, F-322, F-318). It opens over the Orders list at /orders/:id.
