@@ -5,6 +5,7 @@ import prisma from '../utils/prisma';
 import checkoutFormService, { clearCheckoutFormConfigCache } from '../services/checkoutFormService';
 import { checkoutFormDesignSchema } from '../validators/checkoutFormDesignSchema';
 import { getPaymentProvider, DEFAULT_PAYMENT_PROVIDER } from '../services/payments';
+import { loadProviderConfig, unsupportedCurrencyMessage } from '../services/payments/connectionConfig';
 import { encryptString, SECRET_MASK } from '../utils/providerCrypto';
 import * as Money from '../utils/money';
 import { readDateBound } from '../utils/kpiRequest';
@@ -38,6 +39,7 @@ interface PaymentToggleState {
   paystackFullEnabled?: boolean | null;
   depositPercent?: number | null;
   paymentProvider?: string | null;
+  currency?: string | null;
 }
 
 // True when the request touches any payment-method field, so we only validate
@@ -97,6 +99,28 @@ const validatePaymentConfig = async (
   }
 
   return null;
+};
+
+/**
+ * F-401: online payment cannot be on for a currency the connected account cannot take.
+ * Runs when the request touches the currency or an online method; the form's other values come from the stored row.
+ */
+const validateFormCurrency = async (
+  body: any,
+  existing: PaymentToggleState | null,
+  tenantId: string | null,
+): Promise<{ status: number; body: Record<string, unknown> } | null> => {
+  if (!tenantId) return null;
+  const touched = hasPaymentFields(body) || body.currency !== undefined;
+  const pick = (bodyVal: unknown, existingVal: boolean | null | undefined) =>
+    bodyVal !== undefined ? Boolean(bodyVal) : Boolean(existingVal);
+  const online = pick(body.paystackDepositEnabled, existing?.paystackDepositEnabled) || pick(body.paystackFullEnabled, existing?.paystackFullEnabled);
+  if (!touched || !online) return null;
+
+  const currency = String(body.currency ?? existing?.currency ?? 'GHS');
+  const config = await loadProviderConfig(tenantId, existing?.paymentProvider ?? DEFAULT_PAYMENT_PROVIDER);
+  const text = unsupportedCurrencyMessage(config, currency);
+  return text ? { status: 400, body: { error: text, message: text } } : null;
 };
 
 // Maps the three toggle fields + deposit percent from a request body into a
@@ -286,7 +310,9 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
       return;
     }
 
-    const paymentError = await validatePaymentConfig(req.body, null, resolveTenantId(req));
+    const paymentError =
+      (await validatePaymentConfig(req.body, null, resolveTenantId(req))) ||
+      (await validateFormCurrency(req.body, null, resolveTenantId(req)));
     if (paymentError) {
       res.status(paymentError.status).json(paymentError.body);
       return;
@@ -462,7 +488,9 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
       return;
     }
 
-    const paymentError = await validatePaymentConfig(req.body, existing, resolveTenantId(req));
+    const paymentError =
+      (await validatePaymentConfig(req.body, existing, resolveTenantId(req))) ||
+      (await validateFormCurrency(req.body, existing, resolveTenantId(req)));
     if (paymentError) {
       res.status(paymentError.status).json(paymentError.body);
       return;

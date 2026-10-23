@@ -27,6 +27,7 @@ interface Harness {
   signedWebhook: (body: string) => Record<string, string>;
   badWebhook: (body: string) => Record<string, string>;
   successBody: (reference: string) => string;
+  arrangeKeyCheck: (ok: boolean) => void;
   otherBody: () => string;
   setup: () => void;
 }
@@ -52,6 +53,13 @@ const paystack: Harness = {
   badWebhook: () => ({ 'x-paystack-signature': 'deadbeef' }),
   successBody: (reference) => JSON.stringify({ event: 'charge.success', data: { id: 77, reference } }),
   otherBody: () => JSON.stringify({ event: 'transfer.success', data: { reference: 'tr_1' } }),
+  arrangeKeyCheck: (ok) => {
+    (global.fetch as any) = jest.fn().mockResolvedValue(
+      ok
+        ? { ok: true, status: 200, json: async () => ({ status: true, data: [{ currency: 'ghs', balance: 0 }, { currency: 'NGN', balance: 0 }, { currency: 'NGN', balance: 0 }] }) }
+        : { ok: false, status: 401, json: async () => ({ status: false, message: 'Invalid key' }) },
+    );
+  },
 };
 
 const fake = createFakeProvider();
@@ -65,6 +73,7 @@ const fakeHarness: Harness = {
   badWebhook: () => ({ 'x-fake-signature': 'nope' }),
   successBody: (reference) => JSON.stringify({ type: 'payment.success', id: 'evt_1', reference }),
   otherBody: () => JSON.stringify({ type: 'refund.created', id: 'evt_2' }),
+  arrangeKeyCheck: () => {},
 };
 
 describe.each([paystack, fakeHarness])('PaymentProvider contract: $name', (h) => {
@@ -124,6 +133,14 @@ describe.each([paystack, fakeHarness])('PaymentProvider contract: $name', (h) =>
     expect(h.provider.parseWebhook(h.otherBody()).kind).toBe('other');
   });
 
+  it('testConnection reports ok with the currencies the account takes (upper case, no repeats)', async () => {
+    h.arrangeKeyCheck(true);
+    const check = await h.provider.testConnection('tenant-1');
+    expect(check.ok).toBe(true);
+    expect(check.supportedCurrencies).toEqual(expect.arrayContaining(['GHS']));
+    expect(new Set(check.supportedCurrencies).size).toBe(check.supportedCurrencies.length);
+  });
+
   it('getPublicKey never returns a secret', async () => {
     const key = await h.provider.getPublicKey('tenant-1');
     expect(key).not.toContain('sk_');
@@ -131,6 +148,14 @@ describe.each([paystack, fakeHarness])('PaymentProvider contract: $name', (h) =>
 });
 
 describe('PaymentProvider contract: paystack specifics', () => {
+  it('testConnection reports a rejected key as ok false, without the secret', async () => {
+    paystack.setup();
+    paystack.arrangeKeyCheck(false);
+    const check = await paystackAdapter.testConnection('tenant-1');
+    expect(check).toEqual({ ok: false, message: 'Invalid key', supportedCurrencies: [] });
+    expect(JSON.stringify(check)).not.toContain(SECRET);
+  });
+
   beforeEach(() => paystack.setup());
   afterEach(() => {
     global.fetch = originalFetch;

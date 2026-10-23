@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import { getTenantId, resolveTenantId, runInTenant, withoutTenant } from '../utils/tenantContext';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
-import { getPaymentProvider, fromMinor } from './payments';
+import { getPaymentProvider } from './payments';
 import { digitalDeliveryService } from './digitalDeliveryService';
 import { GLAutomationService } from './glAutomationService';
 import { transitionOrder } from './orderStateMachine';
@@ -110,17 +110,25 @@ async function settleInTenant(
     return { status: verification.status === 'failed' ? 'failed' : 'pending' };
   }
 
-  // SECURITY: the amount actually paid must cover the expected charge (deposit
-  // portion or full total). Stops an underpaid/tampered initialize from
-  // fulfilling — digital products auto-deliver.
+  // SECURITY: the provider must have charged in the currency we asked for, and the amount must cover the
+  // expected charge (deposit portion or full total). Stops an underpaid/tampered initialize from fulfilling —
+  // digital products auto-deliver. Minor against minor: the stored charge and the provider's figure use the provider's own unit.
+  if (verification.currency !== pending.currency) {
+    logger.warn('Payment currency mismatch — not creating order', {
+      reference,
+      provider: provider.id,
+      paidCurrency: verification.currency,
+      expectedCurrency: pending.currency,
+    });
+    return { status: 'failed' };
+  }
   const paid = verification.amount;
-  const expected = fromMinor(pending.paystackChargeMinor, pending.currency);
-  if (Money.lt(paid, expected)) {
+  if (verification.amountMinor < pending.paystackChargeMinor) {
     logger.warn('Payment underpayment — not creating order', {
       reference,
       provider: provider.id,
-      paid: Money.toApi(paid),
-      expected: Money.toApi(expected),
+      paidMinor: verification.amountMinor,
+      expectedMinor: pending.paystackChargeMinor,
     });
     return { status: 'failed' };
   }

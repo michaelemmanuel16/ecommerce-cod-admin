@@ -1,3 +1,4 @@
+import { assertKeyMatchesMode } from './payments/connectionConfig';
 import prisma from '../utils/prisma';
 import { sessionService } from './sessionService';
 import { withSoftDeleted } from '../utils/prismaExtensions';
@@ -268,20 +269,7 @@ export const adminService = {
     // money through their test account or vice versa.
     if (data.paystackProvider) {
       const pp = data.paystackProvider as any;
-      if (pp.mode === 'live' && pp.secretKey && !pp.secretKey.startsWith('sk_live_')) {
-        throw new AppError(
-          'Paystack mode is set to Live but the secret key is not a live key (sk_live_...). Match the mode to the key.',
-          400,
-          'PAYSTACK_MODE_KEY_MISMATCH',
-        );
-      }
-      if (pp.mode === 'test' && pp.secretKey && !pp.secretKey.startsWith('sk_test_')) {
-        throw new AppError(
-          'Paystack mode is set to Test but the secret key is not a test key (sk_test_...). Match the mode to the key.',
-          400,
-          'PAYSTACK_MODE_KEY_MISMATCH',
-        );
-      }
+      assertKeyMatchesMode('paystack', pp.mode, pp.secretKey);
     }
 
     // Encrypt sensitive fields before writing to DB

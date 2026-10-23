@@ -33,6 +33,8 @@ export interface VerifyResult {
   status: PaymentStatus;
   /** What was charged, major units. */
   amount: Money;
+  /** The same amount as the provider reported it, in its minor units. Settlement compares this to the stored charge. */
+  amountMinor: number;
   currency: string;
   /** Provider fee, major units. */
   fee: Money;
@@ -52,10 +54,19 @@ export interface ParsedWebhook {
   reference: string | null;
 }
 
+/** Result of testing a stored connection: whether the keys work and which currencies the account holds. */
+export interface ConnectionCheck {
+  ok: boolean;
+  message: string;
+  supportedCurrencies: string[];
+}
+
 export interface PaymentProvider {
   readonly id: string;
   /** Channels this provider offers for a currency. */
   supportedMethods(currency: string): PaymentChannel[];
+  /** The provider's own rule for major to minor units (the charge sent and stored). */
+  toMinor(amount: Money, currency: string): number;
   initialize(tenantId: string, input: InitializeInput): Promise<InitializeResult>;
   verify(tenantId: string, reference: string): Promise<VerifyResult>;
   /** True when the signature on a webhook is valid for this tenant's account. */
@@ -67,6 +78,8 @@ export interface PaymentProvider {
   getPublicKey(tenantId: string): Promise<string>;
   /** True when the tenant has an enabled connection with a secret. */
   isConfigured(tenantId: string): Promise<boolean>;
+  /** Calls the provider with the stored keys. Never throws for a bad key: it reports ok false. */
+  testConnection(tenantId: string): Promise<ConnectionCheck>;
   /** Drops cached credentials after a settings change. No tenant id drops all. */
   clearConfigCache(tenantId?: string): void;
 }

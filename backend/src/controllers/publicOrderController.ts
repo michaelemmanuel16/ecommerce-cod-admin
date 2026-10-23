@@ -9,7 +9,7 @@ import prisma from '../utils/prisma';
 import { findAndReactivateCustomerByPhone } from '../utils/customerLookup';
 import { normalizePhoneForStorage, phoneLookupVariants } from '../utils/phone';
 import logger from '../utils/logger';
-import { getPaymentProvider, toMinor, DEFAULT_PAYMENT_PROVIDER } from '../services/payments';
+import { getPaymentProvider, DEFAULT_PAYMENT_PROVIDER } from '../services/payments';
 import { metaCapiService } from '../services/metaCapiService';
 import * as Money from '../utils/money';
 import { cleanText, deliveryAddressOf, slotRule, CheckoutSlot } from '../utils/checkoutLocation';
@@ -379,8 +379,6 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       paystackCharge = Money.roundHalfUp(Money.div(Money.mul(finalTotal, pct), 100), 2);
       balanceDue = Money.sub(finalTotal, paystackCharge);
     }
-    // PendingCheckout still stores the charge in minor units (legacy column, replaced in M3b-T06); the provider adapter converts for itself.
-    const paystackChargeMinor = toMinor(paystackCharge, form.currency || 'GHS');
 
     // Prepare order items array: main package + upsells
     const orderItemsData = [];
@@ -442,6 +440,8 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       const callbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/checkout/payment/callback`;
 
       const provider = getPaymentProvider(form.paymentProvider ?? DEFAULT_PAYMENT_PROVIDER);
+      // PendingCheckout stores the charge in the provider's minor units (legacy column, replaced in M3b-T06); the provider owns the conversion.
+      const paystackChargeMinor = provider.toMinor(paystackCharge, currency);
       const paymentResult = await provider.initialize(formTenantId as string, {
         amount: paystackCharge,
         currency,

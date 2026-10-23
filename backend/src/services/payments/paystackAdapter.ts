@@ -1,6 +1,5 @@
 import * as Money from '../../utils/money';
 import { paystackService, clearPaystackConfigCache } from '../paystackService';
-import { fromMinor, toMinor } from './money';
 import type { ParsedWebhook, PaymentChannel, PaymentProvider, PaymentStatus } from './types';
 
 /** Paystack transaction statuses to ours (F-401). */
@@ -24,8 +23,13 @@ const header = (headers: Record<string, unknown>, name: string): string | undefi
   return typeof value === 'string' ? value : undefined;
 };
 
+/** Paystack takes amounts in the subunit: x100 for every currency we sell in (GHS, NGN). Kept exactly as the checkout always did it. */
+export const toMinor = (amount: Money.MoneyInput, _currency: string): number => Money.toMinor(amount);
+
 export const paystackAdapter: PaymentProvider = {
   id: 'paystack',
+
+  toMinor,
 
   supportedMethods(): PaymentChannel[] {
     // The hosted page offers whatever channels the Paystack account has; no channel list is forced (F-401).
@@ -51,9 +55,10 @@ export const paystackAdapter: PaymentProvider = {
     const rawFee = data.fees;
     return {
       status: mapPaystackStatus(data.status),
-      amount: fromMinor(Money.orZero(data.amount), currency),
+      amount: Money.fromMinor(Money.orZero(data.amount)),
+      amountMinor: Money.orZero(data.amount).toNumber(),
       currency,
-      fee: fromMinor(Money.orZero(rawFee), currency),
+      fee: Money.fromMinor(Money.orZero(rawFee)),
       feeKnown: rawFee !== undefined && rawFee !== null,
       channel: data.channel ?? null,
       paidAt: data.paid_at ? new Date(data.paid_at) : null,
@@ -84,6 +89,8 @@ export const paystackAdapter: PaymentProvider = {
   getPublicKey: (tenantId) => paystackService.getPublicKey(tenantId),
 
   isConfigured: (tenantId) => paystackService.isConfigured(tenantId),
+
+  testConnection: (tenantId) => paystackService.testConnection(tenantId),
 
   clearConfigCache: (tenantId) => clearPaystackConfigCache(tenantId),
 };

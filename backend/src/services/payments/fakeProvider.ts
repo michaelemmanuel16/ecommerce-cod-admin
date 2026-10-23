@@ -35,6 +35,8 @@ export function createFakeProvider(id = 'fake'): FakeProvider {
       payments.set(reference, payment);
     },
 
+    toMinor: (amount, _currency) => Money.toMinor(amount),
+
     supportedMethods(): PaymentChannel[] {
       return ['card'];
     },
@@ -50,6 +52,7 @@ export function createFakeProvider(id = 'fake'): FakeProvider {
       return {
         status: p.status,
         amount: Money.parse(p.amount),
+        amountMinor: Money.toMinor(p.amount),
         currency: p.currency ?? 'GHS',
         fee: Money.orZero(p.fee),
         feeKnown: p.fee !== undefined,
@@ -81,6 +84,10 @@ export function createFakeProvider(id = 'fake'): FakeProvider {
 
     async isConfigured() {
       return true;
+    },
+
+    async testConnection() {
+      return { ok: true, message: 'Fake keys accepted', supportedCurrencies: ['GHS', 'NGN'] };
     },
 
     clearConfigCache() {},

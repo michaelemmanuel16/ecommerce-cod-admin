@@ -113,4 +113,37 @@ describe('a second payment provider', () => {
     expect(result.status).toBe('failed');
     expect(prismaMock.order.create).not.toHaveBeenCalled();
   });
+
+  it('rejects a payment taken in another currency, even for a bigger number', async () => {
+    const pending = { reference: 'stub_ref_11', tenantId: 'tenant-1', provider: 'stub', currency: 'GHS', paystackChargeMinor: 25000 };
+    stub.setPayment('stub_ref_11', { status: 'success', amount: '9999.00', currency: 'NGN' });
+    (prismaMock.order.findFirst as any).mockResolvedValue(null);
+    (prismaMock.pendingCheckout.findUnique as any).mockResolvedValue(pending);
+
+    const result = await tenantStorage.run({ tenantId: 'tenant-1' }, () => settlePaystackPayment('stub_ref_11'));
+
+    expect(result.status).toBe('failed');
+    expect(prismaMock.pendingCheckout.delete).not.toHaveBeenCalled();
+    expect(prismaMock.order.create).not.toHaveBeenCalled();
+  });
+
+  it('compares minor against minor: one minor unit short fails, exact passes', async () => {
+    const pending = {
+      reference: 'r', tenantId: 'tenant-1', provider: 'stub', currency: 'GHS', paystackChargeMinor: 25000, customerId: 7, formId: 1,
+      paymentMethod: 'paystack_full', orderType: 'physical', subtotal: 250, shippingCost: 0, discount: 0, totalAmount: 250,
+      codAmount: 0, balanceDue: 0, orderItems: [], formData: { address: '12 St' }, selectedPackage: {}, selectedUpsells: null,
+    };
+    (prismaMock.order.findFirst as any).mockResolvedValue(null);
+    (prismaMock.pendingCheckout.findUnique as any).mockResolvedValue(pending);
+    stub.setPayment('r', { status: 'success', amount: '249.99' });
+    const short = await tenantStorage.run({ tenantId: 'tenant-1' }, () => settlePaystackPayment('r'));
+    expect(short.status).toBe('failed');
+    expect(prismaMock.pendingCheckout.delete).not.toHaveBeenCalled();
+
+    stub.setPayment('r', { status: 'success', amount: '250.00' });
+    (prismaMock.pendingCheckout.delete as any).mockResolvedValue(pending);
+    (prismaMock.order.create as any).mockResolvedValue({ id: 1, tenantId: 'tenant-1', orderType: 'physical', status: 'confirmed', customer: { id: 7 } });
+    const exact = await tenantStorage.run({ tenantId: 'tenant-1' }, () => settlePaystackPayment('r'));
+    expect(exact.status).toBe('success');
+  });
 });
