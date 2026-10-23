@@ -2,7 +2,7 @@ import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma } from '@prisma/client';
 import logger from '../utils/logger';
-import { customerScope, isManagerUp, Requester } from '../utils/authUtils';
+import { customerScope, isManagerUp, orderScope, Requester } from '../utils/authUtils';
 import { fullName } from '../utils/nameUtils';
 import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import { findCustomerByPhoneIncludingArchived } from '../utils/customerLookup';
@@ -349,12 +349,9 @@ export class CustomerService {
       throw new AppError('You do not have permission to view this customer details', 403);
     }
 
-    // A rep or agent sees only their own orders of this customer
-    const orderScope: Prisma.OrderWhereInput = !scope ? {}
-      : requester!.role === 'delivery_agent' ? { deliveryAgentId: requester!.id }
-      : { customerRepId: requester!.id };
+    // A rep or agent sees only their own orders of this customer; other roles see all
     const orders = await prisma.order.findMany({
-      where: { customerId: id, deletedAt: null, ...orderScope },
+      where: { customerId: id, deletedAt: null, ...orderScope(requester) },
       orderBy: { createdAt: 'desc' },
       take: 10,
       select: { id: true, status: true, totalAmount: true, createdAt: true },

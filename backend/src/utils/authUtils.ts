@@ -17,18 +17,18 @@ export function orderScope(requester?: Requester): Prisma.OrderWhereInput {
 }
 
 /**
- * Customer row scope (F-350): owner, admin and manager see all. A call rep sees customers they created or have an order with.
- * A delivery agent sees customers of their own deliveries. Any other role: customers with an order of theirs.
+ * Customer row scope (F-350): owner, admin and manager see all, and so do accountant and inventory manager (like orderScope).
+ * A call rep sees customers they created or have an order with; a delivery agent sees customers of their own deliveries.
  * Returns null when the requester is unscoped.
  */
 export function customerScope(requester?: Requester): Prisma.CustomerWhereInput | null {
-    if (!requester || isManagerUp(requester)) return null;
+    if (!requester) return null;
     const { id, role } = requester;
     if (role === 'sales_rep') {
         return { OR: [{ createdById: id }, { orders: { some: { customerRepId: id, deletedAt: null } } }] };
     }
     if (role === 'delivery_agent') return { orders: { some: { deliveryAgentId: id, deletedAt: null } } };
-    return { orders: { some: { OR: [{ customerRepId: id }, { deliveryAgentId: id }], deletedAt: null } } };
+    return null;
 }
 
 /**

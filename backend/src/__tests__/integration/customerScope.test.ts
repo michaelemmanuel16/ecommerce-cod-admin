@@ -1,6 +1,7 @@
 /**
- * COD-30 F7a: one customer row scope for the Customers page and the global search (`customerScope`).
+ * COD-30 F7a/F7b: one customer row scope for the Customers page and the global search (`customerScope`).
  * Rep: customers they created or have an order with. Delivery agent: customers of their deliveries.
+ * Accountant and inventory manager: all customers and all orders of a customer, like orderScope.
  */
 import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import request from 'supertest';
@@ -48,6 +49,7 @@ beforeAll(async () => {
   tenantId = (await createTenant('Customer Scope')).id;
   await Promise.all([
     mkUser('rep', 'sales_rep'), mkUser('otherRep', 'sales_rep'), mkUser('agent', 'delivery_agent'),
+    mkUser('accountant', 'accountant'), mkUser('inventory', 'inventory_manager'),
   ]);
   await mkCustomer('created', { createdById: U.rep.id });          // rep created it, no order
   await mkCustomer('repOrder');                                    // order of the rep
@@ -72,6 +74,12 @@ describe('global search customer scope', () => {
   it('a delivery agent finds only their delivery customers', async () => {
     expect(await searchCustomers('agent')).toEqual([C.agentOrder]);
   });
+
+  it('accountant and inventory manager find all customers', async () => {
+    const all = [C.created, C.repOrder, C.agentOrder, C.unrelated].sort();
+    expect(await searchCustomers('accountant')).toEqual(all);
+    expect(await searchCustomers('inventory')).toEqual(all);
+  });
 });
 
 describe('Customers page scope matches the search', () => {
@@ -79,9 +87,26 @@ describe('Customers page scope matches the search', () => {
     ((await request(app).get('/api/customers').query({ search: TAG, limit: 50 }).set(bearer(U[label].token))).body.customers as Array<{ id: number }>)
       .map((c) => c.id).sort();
 
-  it('same ids for rep and agent', async () => {
-    for (const label of ['rep', 'agent']) {
+  it('same ids for rep, agent, accountant and inventory manager', async () => {
+    for (const label of ['rep', 'agent', 'accountant', 'inventory']) {
       expect(await list(label)).toEqual(await searchCustomers(label));
     }
+  });
+});
+
+describe('customer details order list', () => {
+  const detail = async (label: string, id: number) => {
+    const res = await request(app).get(`/api/customers/${id}`).set(bearer(U[label].token));
+    expect(res.status).toBe(200);
+    return (res.body.customer ?? res.body).orders as Array<{ id: number }>;
+  };
+
+  it('accountant and inventory manager see every order of the customer', async () => {
+    expect(await detail('accountant', C.agentOrder)).toHaveLength(2);
+    expect(await detail('inventory', C.agentOrder)).toHaveLength(2);
+  });
+
+  it('a delivery agent still sees only their own order of the customer', async () => {
+    expect(await detail('agent', C.agentOrder)).toHaveLength(1);
   });
 });
