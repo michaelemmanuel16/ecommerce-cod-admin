@@ -6,6 +6,7 @@ import { accountService, type SessionRow } from '../../services/account.service'
 import { authService } from '../../services/auth.service';
 import { useAuthStore } from '../../stores/authStore';
 import { useConfigStore } from '../../stores/configStore';
+import { ipText } from '../../utils/ipText';
 
 const apiMessage = (e: unknown, fallback: string) => (e as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback;
 
@@ -115,7 +116,7 @@ function SessionsCard({ reloadKey }: { reloadKey: number }) {
               <span className="ico"><Icon aria-hidden="true" /></span>
               <div>
                 <b>{r.deviceLabel || 'Unknown device'}</b>
-                <small>{r.ip ? `IP ${r.ip} · ` : ''}{r.current ? 'Now' : lastSeen(r.lastSeenAt)}</small>
+                <small>{r.ip ? `IP ${ipText(r.ip)} · ` : ''}{r.current ? 'Now' : lastSeen(r.lastSeenAt)}</small>
               </div>
               {r.current ? <Tag tone="ok">This device</Tag> : <Button size="mini" onClick={() => signOut(r.id)}>Sign out</Button>}
             </div>

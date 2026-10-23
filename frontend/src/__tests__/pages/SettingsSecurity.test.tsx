@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { SecurityTab } from '../../pages/settings/SecurityTab';
+import { ipText } from '../../utils/ipText';
 import { ToastProvider } from '../../components/ui-v2';
 import { useAuthStore } from '../../stores/authStore';
 
@@ -194,5 +195,14 @@ describe('Session list length (owner G3)', () => {
     renderTab();
     expect(await screen.findByText('iPhone · Safari')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Show all/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('Session address (QA-09)', () => {
+  it('a loopback address reads "this computer" and an IPv4-in-IPv6 address loses its prefix', () => {
+    expect(ipText('::1')).toBe('this computer');
+    expect(ipText('::ffff:127.0.0.1')).toBe('this computer');
+    expect(ipText('::ffff:102.89.34.12')).toBe('102.89.34.12');
+    expect(ipText('154.160.7.88')).toBe('154.160.7.88');
   });
 });
