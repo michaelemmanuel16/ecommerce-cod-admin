@@ -3,7 +3,7 @@ import { AppError } from '../middleware/errorHandler';
 import { getTenantId } from '../utils/tenantContext';
 import { encryptString, decryptString, SECRET_MASK } from '../utils/providerCrypto';
 import { getPaymentProvider, clearPaymentConfigCache } from './payments';
-import { assertKeyMatchesMode, loadProviderConfig } from './payments/connectionConfig';
+import { loadProviderConfig } from './payments/connectionConfig';
 
 /**
  * Per-tenant payment provider accounts (F-400, F-401). The secret key is stored encrypted (`enc:v1:`) and
@@ -94,14 +94,16 @@ export async function saveConnection(input: SaveConnectionInput): Promise<Connec
   // The secret that ends up stored: the new one, the row's, or (first save of an old tenant) the one in the old JSON.
   let storedSecret: string | null = existing?.secretKey ?? null;
   if (!existing && !newSecret) {
-    const legacy = await prisma.systemConfig.findUnique({ where: { tenantId }, select: { paystackProvider: true } });
-    const legacySecret = (legacy?.paystackProvider as { secretKey?: string } | null)?.secretKey;
-    if (provider.id === 'paystack' && legacySecret) storedSecret = encryptString(legacySecret) as string;
+    const legacy = await loadProviderConfig(tenantId, provider.id);
+    if (legacy?.source === 'legacy') storedSecret = encryptString(legacy.secretKey) as string;
   }
   if (newSecret) storedSecret = encryptString(newSecret) as string;
+  // Sending the stored secret again is not a change (the old Settings panel does that on every save).
+  const secretChanged = !!newSecret && newSecret !== (existing?.secretKey ? decryptString(existing.secretKey) : null);
 
   // The mode must match the key: a live key in test mode (or the reverse) is refused.
-  assertKeyMatchesMode(provider.id, input.mode, newSecret ?? (storedSecret ? (decryptString(storedSecret) as string) : null));
+  const plainSecret = newSecret ?? (storedSecret ? (decryptString(storedSecret) as string) : null);
+  if (plainSecret) provider.validateCredentials?.(input.mode, plainSecret);
 
   const data = {
     mode: input.mode,
@@ -109,7 +111,7 @@ export async function saveConnection(input: SaveConnectionInput): Promise<Connec
     secretKey: storedSecret,
     isEnabled: input.isEnabled ?? existing?.isEnabled ?? true,
     // New keys may belong to another account: the old currency list is no longer known.
-    ...(newSecret ? { supportedCurrencies: [], lastCheckedAt: null } : {}),
+    ...(secretChanged ? { supportedCurrencies: [], lastCheckedAt: null } : {}),
   };
 
   const row = existing

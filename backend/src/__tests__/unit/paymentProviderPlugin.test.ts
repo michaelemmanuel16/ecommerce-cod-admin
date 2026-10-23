@@ -24,6 +24,7 @@ jest.mock('../../utils/logger', () => ({
 }));
 
 import { prismaMock } from '../mocks/prisma.mock';
+import { clearTenantFeaturesCache } from '../../services/tenantFeatures';
 import { createPublicOrder } from '../../controllers/publicOrderController';
 import { settlePaystackPayment } from '../../services/paystackSettlementService';
 import { registerPaymentProvider, unregisterPaymentProvider } from '../../services/payments';
@@ -49,7 +50,8 @@ describe('a second payment provider', () => {
     registerPaymentProvider(stub);
     // jest config has resetMocks:true, so re-arm the fire-and-forget mock each test.
     (metaCapiService.fireCapiPurchaseEvent as any).mockResolvedValue(undefined);
-    (prismaMock.systemConfig.findUnique as any).mockResolvedValue({ features: { prepaidPhysical: true } });
+    clearTenantFeaturesCache();
+  (prismaMock.systemConfig.findUnique as any).mockResolvedValue({ features: { prepaidPhysical: true } });
     (prismaMock.$transaction as any).mockImplementation(async (cb: any) => cb(prismaMock));
   });
   afterEach(() => unregisterPaymentProvider('stub'));

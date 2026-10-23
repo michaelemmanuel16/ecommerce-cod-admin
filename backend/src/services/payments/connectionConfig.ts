@@ -1,5 +1,4 @@
 import prisma from '../../utils/prisma';
-import { AppError } from '../../middleware/errorHandler';
 import { decryptProviderSecrets, decryptString } from '../../utils/providerCrypto';
 
 /** A tenant's keys for one provider, secret decrypted. Server side only; never send this to a client. */
@@ -45,25 +44,6 @@ export async function loadProviderConfig(tenantId: string, provider: string): Pr
     supportedCurrencies: [],
     source: 'legacy',
   };
-}
-
-/** The secret key of a Paystack account tells its mode: sk_live_ or sk_test_. Other providers have no rule yet. */
-export function assertKeyMatchesMode(provider: string, mode: string | undefined, secretKey: string | undefined | null): void {
-  if (provider !== 'paystack' || !secretKey) return;
-  if (mode === 'live' && !secretKey.startsWith('sk_live_')) {
-    throw new AppError(
-      'Paystack mode is set to Live but the secret key is not a live key (sk_live_...). Match the mode to the key.',
-      400,
-      'PAYSTACK_MODE_KEY_MISMATCH',
-    );
-  }
-  if (mode === 'test' && !secretKey.startsWith('sk_test_')) {
-    throw new AppError(
-      'Paystack mode is set to Test but the secret key is not a test key (sk_test_...). Match the mode to the key.',
-      400,
-      'PAYSTACK_MODE_KEY_MISMATCH',
-    );
-  }
 }
 
 /**

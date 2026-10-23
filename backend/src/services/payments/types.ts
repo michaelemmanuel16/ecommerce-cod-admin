@@ -63,6 +63,8 @@ export interface ConnectionCheck {
 
 export interface PaymentProvider {
   readonly id: string;
+  /** Name shown to the seller, for example `Paystack`. */
+  readonly displayName: string;
   /** Channels this provider offers for a currency. */
   supportedMethods(currency: string): PaymentChannel[];
   /** The provider's own rule for major to minor units (the charge sent and stored). */
@@ -78,6 +80,8 @@ export interface PaymentProvider {
   getPublicKey(tenantId: string): Promise<string>;
   /** True when the tenant has an enabled connection with a secret. */
   isConfigured(tenantId: string): Promise<boolean>;
+  /** Refuses keys that cannot belong to this mode (a live key in test mode). Throws a 400 AppError. Optional. */
+  validateCredentials?(mode: string, secretKey: string): void;
   /** Calls the provider with the stored keys. Never throws for a bad key: it reports ok false. */
   testConnection(tenantId: string): Promise<ConnectionCheck>;
   /** Drops cached credentials after a settings change. No tenant id drops all. */

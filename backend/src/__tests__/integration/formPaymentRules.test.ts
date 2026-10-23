@@ -9,6 +9,7 @@ import '../mocks/socketInstance.mock';
 import request from 'supertest';
 import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
+import { clearTenantFeaturesCache } from '../../services/tenantFeatures';
 import { clearPaymentConfigCache } from '../../services/payments';
 import { clearCheckoutFormConfigCache } from '../../services/checkoutFormService';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
@@ -24,8 +25,10 @@ let digitalFormSlug: string;
 let digitalFormId: number;
 let phoneSeq = 0;
 
-const setFlag = (on: boolean | null) =>
-  prismaBase.systemConfig.updateMany({ where: { tenantId: pair.a.id }, data: { features: on === null ? {} : { prepaidPhysical: on } } });
+const setFlag = async (on: boolean | null) => {
+  await prismaBase.systemConfig.updateMany({ where: { tenantId: pair.a.id }, data: { features: on === null ? {} : { prepaidPhysical: on } } });
+  clearTenantFeaturesCache();
+};
 const buyerPhone = () => `+23324${String(Date.now()).slice(-6)}${phoneSeq++ % 10}`;
 let ipSeq = 1;
 const order = (slug: string, extra: Record<string, unknown> = {}) =>

@@ -3,13 +3,10 @@
  *
  * New rows store `online_full` / `online_deposit` (the provider goes in Order.paymentProvider).
  * The old names `paystack`, `paystack_full`, `paystack_deposit` are still read and accepted on the public API
- * until LEGACY_METHOD_NAMES_SUNSET. After that date delete LEGACY_METHOD_NAMES and its use in normalizeMethod.
+ * until 2027-01-21 (90 days after the neutral names shipped on 2026-10-23). After that date delete LEGACY_METHOD_NAMES and its use in normalizeMethod.
  */
 
 export type PaymentMethodName = 'cod' | 'online_deposit' | 'online_full';
-
-/** 90 days after 2026-10-23, when the neutral names shipped. Remove the old names then. */
-export const LEGACY_METHOD_NAMES_SUNSET = '2027-01-21';
 
 const LEGACY_METHOD_NAMES: Record<string, PaymentMethodName> = {
   paystack: 'online_full',

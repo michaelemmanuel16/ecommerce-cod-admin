@@ -1,11 +1,5 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 
-jest.mock('../../services/paystackService', () => ({
-  paystackService: {
-    isConfigured: jest.fn(),
-  },
-}));
-
 jest.mock('../../services/checkoutFormService', () => ({
   __esModule: true,
   default: {},
@@ -13,12 +7,14 @@ jest.mock('../../services/checkoutFormService', () => ({
 }));
 
 import { prismaMock } from '../mocks/prisma.mock';
-import * as paystackServiceModule from '../../services/paystackService';
+import { clearTenantFeaturesCache } from '../../services/tenantFeatures';
 import { createCheckoutForm, updateCheckoutForm } from '../../controllers/checkoutFormController';
 
-const mockedPaystack = paystackServiceModule.paystackService as jest.Mocked<
-  typeof paystackServiceModule.paystackService
->;
+// The tenant's payment connection: with a secret the account counts as connected; null means no keys.
+const connection = (on: boolean) =>
+  (prismaMock.paymentConnection.findFirst as any).mockResolvedValue(
+    on ? { secretKey: 'sk_test_x', publicKey: 'pk', mode: 'test', isEnabled: true, supportedCurrencies: [] } : null,
+  );
 
 function buildReq(body: any, params: any = {}) {
   return { body, params, tenantId: 'tenant-1', user: { tenantId: 'tenant-1' } } as any;
@@ -32,8 +28,10 @@ function buildRes() {
 }
 
 // features.prepaidPhysical for the tenant (F-402); the matrix lets physical forms take online methods only when it is on.
-const prepaidPhysical = (on: boolean) =>
-  (prismaMock.systemConfig.findUnique as any).mockResolvedValue({ features: { prepaidPhysical: on } });
+const prepaidPhysical = (on: boolean) => {
+    clearTenantFeaturesCache();
+    (prismaMock.systemConfig.findUnique as any).mockResolvedValue({ features: { prepaidPhysical: on } });
+  };
 
 const baseCreateBody = {
   name: 'Form',
@@ -47,7 +45,7 @@ const baseCreateBody = {
 describe('checkoutFormController — payment-method toggle validation (MAN-58)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockedPaystack.isConfigured.mockResolvedValue(true);
+    connection(true);
     prepaidPhysical(true);
   });
 
@@ -104,11 +102,11 @@ describe('checkoutFormController — payment-method toggle validation (MAN-58)',
       expect.objectContaining({ error: expect.stringMatching(/deposit percent/i) }),
     );
     // Percent is validated before the Paystack-keys check.
-    expect(mockedPaystack.isConfigured).not.toHaveBeenCalled();
+    expect(prismaMock.paymentConnection.findFirst).not.toHaveBeenCalled();
   });
 
   it('rejects enabling a Paystack method when the tenant has no Paystack keys', async () => {
-    mockedPaystack.isConfigured.mockResolvedValue(false);
+    connection(false);
     const req = buildReq({
       ...baseCreateBody,
       codEnabled: true,
@@ -118,7 +116,7 @@ describe('checkoutFormController — payment-method toggle validation (MAN-58)',
 
     await createCheckoutForm(req, res);
 
-    expect(mockedPaystack.isConfigured).toHaveBeenCalledWith('tenant-1');
+    expect(prismaMock.paymentConnection.findFirst).toHaveBeenCalledWith({ where: { tenantId: 'tenant-1', provider: 'paystack' } });
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -155,7 +153,7 @@ describe('checkoutFormController — payment-method toggle validation (MAN-58)',
 
     await createCheckoutForm(req, res);
 
-    expect(mockedPaystack.isConfigured).not.toHaveBeenCalled();
+    expect(prismaMock.paymentConnection.findFirst).not.toHaveBeenCalled();
     // Falls straight through to the slug check.
     expect(prismaMock.checkoutForm.findUnique).toHaveBeenCalled();
   });

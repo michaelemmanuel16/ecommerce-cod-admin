@@ -1,16 +1,11 @@
 import crypto from 'crypto';
 import { safeEqual } from '../utils/crypto';
-import { loadProviderConfig } from './payments/connectionConfig';
+import { loadProviderConfig, ProviderConfig } from './payments/connectionConfig';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import type { ConnectionCheck } from './payments/types';
 
-interface PaystackConfig {
-  publicKey: string;
-  secretKey: string;
-  mode: 'test' | 'live';
-  isEnabled: boolean;
-}
+type PaystackConfig = ProviderConfig;
 
 interface InitializeResponse {
   authorization_url: string;
@@ -47,10 +42,7 @@ async function loadTenantPaystackConfig(tenantId: string): Promise<PaystackConfi
 
   try {
     // PaymentConnection first, the old SystemConfig.paystackProvider JSON as the fallback.
-    const loaded = await loadProviderConfig(tenantId, 'paystack');
-    const result: PaystackConfig | null = loaded
-      ? { publicKey: loaded.publicKey, secretKey: loaded.secretKey, mode: loaded.mode, isEnabled: loaded.isEnabled }
-      : null;
+    const result = await loadProviderConfig(tenantId, 'paystack');
 
     configCache.set(tenantId, { data: result, fetchedAt: now });
     return result;
@@ -228,6 +220,7 @@ export const paystackService = {
     try {
       const response = await fetch('https://api.paystack.co/balance', {
         headers: { Authorization: `Bearer ${config.secretKey}` },
+        signal: AbortSignal.timeout(10_000),
       });
       const body: any = await response.json();
       if (!response.ok) {
@@ -239,8 +232,13 @@ export const paystackService = {
         : [];
       return { ok: true, message: 'Paystack accepted the keys.', supportedCurrencies: currencies };
     } catch (error: any) {
+      const timedOut = error?.name === 'TimeoutError';
       logger.warn('Paystack connection test could not reach Paystack', { tenantId, error: error.message });
-      return { ok: false, message: 'Could not reach Paystack. Try again.', supportedCurrencies: [] };
+      return {
+        ok: false,
+        message: timedOut ? 'Paystack did not answer within 10 seconds. Try again.' : 'Could not reach Paystack. Try again.',
+        supportedCurrencies: [],
+      };
     }
   },
 };

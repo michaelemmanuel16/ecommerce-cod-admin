@@ -1,3 +1,4 @@
+import { AppError } from '../../middleware/errorHandler';
 import * as Money from '../../utils/money';
 import { paystackService, clearPaystackConfigCache } from '../paystackService';
 import type { ParsedWebhook, PaymentChannel, PaymentProvider, PaymentStatus } from './types';
@@ -28,6 +29,7 @@ export const toMinor = (amount: Money.MoneyInput, _currency: string): number => 
 
 export const paystackAdapter: PaymentProvider = {
   id: 'paystack',
+  displayName: 'Paystack',
 
   toMinor,
 
@@ -82,6 +84,18 @@ export const paystackAdapter: PaymentProvider = {
       kind: eventType === 'charge.success' ? 'payment_succeeded' : 'other',
       reference,
     };
+  },
+
+  /** A Paystack secret key says its mode: sk_live_ or sk_test_. A mode set against the key would route real money through the wrong account. */
+  validateCredentials(mode, secretKey) {
+    if (mode !== 'live' && mode !== 'test') return;
+    if (!secretKey.startsWith(`sk_${mode}_`)) {
+      throw new AppError(
+        `Paystack mode is set to ${mode === 'live' ? 'Live' : 'Test'} but the secret key is not a ${mode} key (sk_${mode}_...). Match the mode to the key.`,
+        400,
+        'PAYSTACK_MODE_KEY_MISMATCH',
+      );
+    }
   },
 
   fee: (verified) => verified.fee,

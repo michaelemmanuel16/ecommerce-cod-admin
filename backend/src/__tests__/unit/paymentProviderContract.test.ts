@@ -148,6 +148,22 @@ describe.each([paystack, fakeHarness])('PaymentProvider contract: $name', (h) =>
 });
 
 describe('PaymentProvider contract: paystack specifics', () => {
+  it('validateCredentials refuses a key that does not match the mode', () => {
+    const v = paystackAdapter.validateCredentials!;
+    expect(() => v('test', 'sk_test_abc')).not.toThrow();
+    expect(() => v('live', 'sk_live_abc')).not.toThrow();
+    expect(() => v('live', 'sk_test_abc')).toThrow(/Live but the secret key is not a live key \(sk_live_\.\.\.\)/);
+    expect(() => v('test', 'sk_live_abc')).toThrow(/Test but the secret key is not a test key \(sk_test_\.\.\.\)/);
+  });
+
+  it('testConnection times out after 10 seconds and says so', async () => {
+    paystack.setup();
+    (global.fetch as any) = jest.fn().mockRejectedValue(Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' }));
+    const check = await paystackAdapter.testConnection('tenant-1');
+    expect(check.ok).toBe(false);
+    expect(check.message).toMatch(/within 10 seconds/);
+    expect((global.fetch as jest.Mock).mock.calls[0][1].signal).toBeDefined();
+  });
   it('testConnection reports a rejected key as ok false, without the secret', async () => {
     paystack.setup();
     paystack.arrangeKeyCheck(false);

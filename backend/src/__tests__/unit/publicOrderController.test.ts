@@ -30,6 +30,7 @@ jest.mock('../../utils/logger', () => ({
 }));
 
 import { prismaMock } from '../mocks/prisma.mock';
+import { clearTenantFeaturesCache } from '../../services/tenantFeatures';
 import * as paystackServiceModule from '../../services/paystackService';
 import { createPublicOrder } from '../../controllers/publicOrderController';
 import logger from '../../utils/logger';
@@ -39,6 +40,7 @@ import { metaCapiService } from '../../services/metaCapiService';
 
 // features.prepaidPhysical on: physical forms may take online methods (F-402). Tests of the flag set it themselves.
 beforeEach(() => {
+  clearTenantFeaturesCache();
   (prismaMock.systemConfig.findUnique as any).mockResolvedValue({ features: { prepaidPhysical: true } });
 });
 

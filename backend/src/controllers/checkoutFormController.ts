@@ -53,19 +53,20 @@ const hasPaymentFields = (body: any): boolean =>
   body.depositPercent !== undefined;
 
 /**
- * Validates the COD / deposit / full-pay toggle matrix on form save. Resolves
- * each toggle from the request body, falling back to the existing row (on
- * update) or the schema default (on create). Rules: at least one method on, at
- * most two on (the public form renders max two buttons), a 1–99 deposit percent
- * when deposit is on, and a tenant Paystack account configured before any
- * Paystack method can be enabled. Returns an error response to send, or null.
+ * Validates the payment settings on form save. Resolves each toggle from the request body, falling back to the
+ * existing row (on update) or the schema default (on create). Rules: the method matrix (form type x tenant flag),
+ * at least one method on, at most two on (the public form renders max two buttons), a 1–99 deposit percent when
+ * deposit is on, a connected payment account before any online method can be enabled, and (F-401) a currency that
+ * account can take. A request that touches only the currency gets the currency check alone.
+ * Returns an error response to send, or null.
  */
 const validatePaymentConfig = async (
   body: any,
   existing: PaymentToggleState | null,
   tenantId: string | null,
 ): Promise<{ status: number; body: Record<string, unknown> } | null> => {
-  if (!hasPaymentFields(body)) return null;
+  const paymentTouched = hasPaymentFields(body);
+  if (!paymentTouched && body.currency === undefined) return null;
 
   const pick = (bodyVal: unknown, existingVal: boolean | null | undefined, def: boolean): boolean =>
     bodyVal !== undefined ? Boolean(bodyVal) : existing ? Boolean(existingVal) : def;
@@ -73,7 +74,6 @@ const validatePaymentConfig = async (
   const cod = pick(body.codEnabled, existing?.codEnabled, true);
   const deposit = pick(body.paystackDepositEnabled, existing?.paystackDepositEnabled, false);
   const full = pick(body.paystackFullEnabled, existing?.paystackFullEnabled, false);
-  const enabledCount = [cod, deposit, full].filter(Boolean).length;
 
   // Carry both `error` (API contract) and `message` (what the frontend axios
   // interceptor surfaces in the toast) so the admin sees the specific reason.
@@ -82,65 +82,51 @@ const validatePaymentConfig = async (
     body: { error: text, message: text, ...extra },
   });
 
-  // Method matrix (F-402): form type x tenant flag. A method the matrix forbids cannot be switched on. A toggle
-  // that is already stored on stays as it is, so turning the flag off never makes a saved form unsavable;
-  // the public checkout still refuses the method.
-  const formType = (body.formType ?? existing?.formType) === 'digital' ? 'digital' : 'physical';
-  const matrix = methodMatrix(formType, (await getTenantFeatures(tenantId)).prepaidPhysical);
-  const switchedOn = (now: boolean, was: boolean | null | undefined) => now && !was;
-  if (
-    (switchedOn(cod, existing?.codEnabled) && !matrix.cod) ||
-    (switchedOn(deposit, existing?.paystackDepositEnabled) && !matrix.online_deposit) ||
-    (switchedOn(full, existing?.paystackFullEnabled) && !matrix.online_full)
-  ) {
-    return fail(
-      formType === 'digital'
-        ? 'Digital products are paid online in full.'
-        : 'Online payment is paused for physical products.',
-    );
-  }
+  if (paymentTouched) {
+    const enabledCount = [cod, deposit, full].filter(Boolean).length;
 
-  if (enabledCount < 1) return fail('At least one payment method must be enabled');
-  if (enabledCount > 2) return fail('At most two payment methods can be enabled at once');
+    // Method matrix (F-402): form type x tenant flag. A method the matrix forbids cannot be switched on. A toggle
+    // that is already stored on stays as it is, so turning the flag off never makes a saved form unsavable;
+    // the public checkout still refuses the method.
+    const formType = (body.formType ?? existing?.formType) === 'digital' ? 'digital' : 'physical';
+    const matrix = methodMatrix(formType, (await getTenantFeatures(tenantId)).prepaidPhysical);
+    const switchedOn = (now: boolean, was: boolean | null | undefined) => now && !was;
+    if (
+      (switchedOn(cod, existing?.codEnabled) && !matrix.cod) ||
+      (switchedOn(deposit, existing?.paystackDepositEnabled) && !matrix.online_deposit) ||
+      (switchedOn(full, existing?.paystackFullEnabled) && !matrix.online_full)
+    ) {
+      return fail(
+        formType === 'digital'
+          ? 'Digital products are paid online in full.'
+          : 'Online payment is paused for physical products.',
+      );
+    }
 
-  if (deposit) {
-    const pct =
-      body.depositPercent !== undefined ? Number(body.depositPercent) : Number(existing?.depositPercent);
-    if (!Number.isInteger(pct) || pct < 1 || pct > 99) {
-      return fail('Deposit percent must be a whole number between 1 and 99');
+    if (enabledCount < 1) return fail('At least one payment method must be enabled');
+    if (enabledCount > 2) return fail('At most two payment methods can be enabled at once');
+
+    if (deposit) {
+      const pct =
+        body.depositPercent !== undefined ? Number(body.depositPercent) : Number(existing?.depositPercent);
+      if (!Number.isInteger(pct) || pct < 1 || pct > 99) {
+        return fail('Deposit percent must be a whole number between 1 and 99');
+      }
     }
   }
 
-  if (deposit || full) {
-    const configured = tenantId ? await getPaymentProvider(existing?.paymentProvider ?? DEFAULT_PAYMENT_PROVIDER).isConfigured(tenantId) : false;
-    if (!configured) {
-      return fail('Paystack disabled until you add keys', { link: '/settings/integrations' });
+  if ((deposit || full) && (paymentTouched || tenantId)) {
+    const provider = getPaymentProvider(existing?.paymentProvider ?? DEFAULT_PAYMENT_PROVIDER);
+    const config = tenantId ? await loadProviderConfig(tenantId, provider.id) : null;
+    if (paymentTouched && !(config && config.isEnabled && config.secretKey)) {
+      return fail(`${provider.displayName} disabled until you add keys`, { link: '/settings/integrations' });
     }
+    // F-401: the account must be able to take the form's currency.
+    const text = unsupportedCurrencyMessage(config, String(body.currency ?? existing?.currency ?? 'GHS'));
+    if (text) return fail(text);
   }
 
   return null;
-};
-
-/**
- * F-401: online payment cannot be on for a currency the connected account cannot take.
- * Runs when the request touches the currency or an online method; the form's other values come from the stored row.
- */
-const validateFormCurrency = async (
-  body: any,
-  existing: PaymentToggleState | null,
-  tenantId: string | null,
-): Promise<{ status: number; body: Record<string, unknown> } | null> => {
-  if (!tenantId) return null;
-  const touched = hasPaymentFields(body) || body.currency !== undefined;
-  const pick = (bodyVal: unknown, existingVal: boolean | null | undefined) =>
-    bodyVal !== undefined ? Boolean(bodyVal) : Boolean(existingVal);
-  const online = pick(body.paystackDepositEnabled, existing?.paystackDepositEnabled) || pick(body.paystackFullEnabled, existing?.paystackFullEnabled);
-  if (!touched || !online) return null;
-
-  const currency = String(body.currency ?? existing?.currency ?? 'GHS');
-  const config = await loadProviderConfig(tenantId, existing?.paymentProvider ?? DEFAULT_PAYMENT_PROVIDER);
-  const text = unsupportedCurrencyMessage(config, currency);
-  return text ? { status: 400, body: { error: text, message: text } } : null;
 };
 
 // Maps the three toggle fields + deposit percent from a request body into a
@@ -330,9 +316,7 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
       return;
     }
 
-    const paymentError =
-      (await validatePaymentConfig(req.body, null, resolveTenantId(req))) ||
-      (await validateFormCurrency(req.body, null, resolveTenantId(req)));
+    const paymentError = await validatePaymentConfig(req.body, null, resolveTenantId(req));
     if (paymentError) {
       res.status(paymentError.status).json(paymentError.body);
       return;
@@ -508,9 +492,7 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
       return;
     }
 
-    const paymentError =
-      (await validatePaymentConfig(req.body, existing, resolveTenantId(req))) ||
-      (await validateFormCurrency(req.body, existing, resolveTenantId(req)));
+    const paymentError = await validatePaymentConfig(req.body, existing, resolveTenantId(req));
     if (paymentError) {
       res.status(paymentError.status).json(paymentError.body);
       return;

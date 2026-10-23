@@ -13,6 +13,7 @@ import { prismaBase } from '../../utils/prisma';
 import { runInTenant } from '../../utils/tenantContext';
 import { encryptProviderSecrets, isEncryptedString } from '../../utils/providerCrypto';
 import { getPaymentProvider, clearPaymentConfigCache } from '../../services/payments';
+import { clearTenantFeaturesCache } from '../../services/tenantFeatures';
 import { unsupportedCurrencyMessage } from '../../services/payments/connectionConfig';
 import * as Money from '../../utils/money';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
@@ -194,6 +195,7 @@ describe('currency check on forms (F-401)', () => {
     await prismaBase.paymentConnection.updateMany({ where: { tenantId: pair.a.id }, data: { supportedCurrencies: ['GHS'] } });
     // physical forms take online methods only with the tenant flag on (M3b-T05)
     await prismaBase.systemConfig.updateMany({ where: { tenantId: pair.a.id }, data: { features: { prepaidPhysical: true } } });
+    clearTenantFeaturesCache();
     const formId = pair.a.ids.checkoutForm;
 
     const refused = await request(app).put(`/api/checkout-forms/${formId}`).set(tokenA())
@@ -277,13 +279,26 @@ describe('old Settings → Integrations panel keeps the connection in step', () 
     expect(row.lastCheckedAt).toBeNull();
   });
 
-  it('does not create a row for a tenant that has none', async () => {
+  it('creates the row for a tenant that has none, so checkout reads the new keys', async () => {
     await prismaBase.paymentConnection.deleteMany({ where: { tenantId: pair.b.id } });
     const owner = await (await import('./helpers/superAdminToken')).superAdminToken(pair.b.id, pair.b.slug, 'panel-owner');
     const res = await request(app).put('/api/admin/settings').set(bearer(owner))
       .send({ paystackProvider: { publicKey: 'pk_test_B2', secretKey: 'sk_test_B2_secret', mode: 'test', isEnabled: true } });
     expect(res.status).toBe(200);
-    expect(await prismaBase.paymentConnection.count({ where: { tenantId: pair.b.id } })).toBe(0);
+    const row = await prismaBase.paymentConnection.findFirstOrThrow({ where: { tenantId: pair.b.id, provider: 'paystack' } });
+    expect(row).toMatchObject({ publicKey: 'pk_test_B2', mode: 'test', isEnabled: true });
+    expect(isEncryptedString(row.secretKey)).toBe(true);
+  });
+
+  it('saving the panel again with the secret masked keeps the currencies and the secret', async () => {
+    const before = await prismaBase.paymentConnection.findFirstOrThrow({ where: { tenantId: pair.b.id, provider: 'paystack' } });
+    await prismaBase.paymentConnection.update({ where: { id: before.id }, data: { supportedCurrencies: ['GHS'] } });
+    const owner = await (await import('./helpers/superAdminToken')).superAdminToken(pair.b.id, pair.b.slug, 'panel-owner2');
+    const res = await request(app).put('/api/admin/settings').set(bearer(owner))
+      .send({ paystackProvider: { publicKey: 'pk_test_B2', secretKey: '••••••••', mode: 'test', isEnabled: true } });
+    expect(res.status).toBe(200);
+    const after = await prismaBase.paymentConnection.findFirstOrThrow({ where: { id: before.id } });
+    expect(after.supportedCurrencies).toEqual(['GHS']);
   });
 });
 

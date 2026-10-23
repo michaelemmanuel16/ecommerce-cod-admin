@@ -2,7 +2,7 @@
 import { describe, it, expect } from '@jest/globals';
 import fs from 'fs';
 import path from 'path';
-import { methodMatrix, normalizeMethod, isOnlineMethod, LEGACY_METHOD_NAMES_SUNSET } from '../../services/payments';
+import { methodMatrix, normalizeMethod, isOnlineMethod } from '../../services/payments';
 
 describe('methodMatrix', () => {
   // [form type, prepaidPhysical flag, cod, online_deposit, online_full]
@@ -33,12 +33,9 @@ describe('normalizeMethod', () => {
     for (const bad of ['', 'card', 'COD', undefined, null, 5, {}]) expect(normalizeMethod(bad)).toBeNull();
   });
 
-  it('knows which methods are online, and the old names end 90 days after 2026-10-23', () => {
+  it('knows which methods are online', () => {
     expect(isOnlineMethod('cod')).toBe(false);
     expect(isOnlineMethod('online_deposit')).toBe(true);
-    expect(LEGACY_METHOD_NAMES_SUNSET).toBe('2027-01-21');
-    const days = (Date.parse(LEGACY_METHOD_NAMES_SUNSET) - Date.parse('2026-10-23')) / 86_400_000;
-    expect(days).toBe(90);
   });
 });
 

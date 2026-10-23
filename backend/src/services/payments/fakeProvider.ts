@@ -29,6 +29,7 @@ export function createFakeProvider(id = 'fake'): FakeProvider {
 
   return {
     id,
+    displayName: id,
     initialized,
 
     setPayment(reference, payment) {

@@ -1,4 +1,6 @@
-import { assertKeyMatchesMode } from './payments/connectionConfig';
+import { getPaymentProvider, clearPaymentConfigCache } from './payments';
+import { saveConnection } from './paymentConnectionService';
+import { parseFeaturePatch, clearTenantFeaturesCache } from './tenantFeatures';
 import prisma from '../utils/prisma';
 import { sessionService } from './sessionService';
 import { withSoftDeleted } from '../utils/prismaExtensions';
@@ -200,7 +202,7 @@ export const adminService = {
     whatsappProvider?: any;
     paystackProvider?: any;
     notificationTemplates?: any;
-    features?: { prepaidPhysical?: boolean };
+    features?: Record<string, unknown>;
   }) {
     await this.checkAdminPrivilege(requester, 'super_admin');
     const tenantId = getTenantId();
@@ -232,18 +234,7 @@ export const adminService = {
 
     // Tenant feature switches (F-402): only the known boolean keys, merged over what is stored so one switch never wipes another.
     if (data.features !== undefined) {
-      const sent = data.features as Record<string, unknown> | null;
-      if (!sent || typeof sent !== 'object' || Array.isArray(sent)) {
-        throw new AppError('features must be an object', 400, 'INVALID_FEATURES');
-      }
-      if (sent.prepaidPhysical !== undefined && typeof sent.prepaidPhysical !== 'boolean') {
-        throw new AppError('features.prepaidPhysical must be true or false', 400, 'INVALID_FEATURES');
-      }
-      const stored = (config.features ?? {}) as Record<string, unknown>;
-      data.features = {
-        ...stored,
-        ...(sent.prepaidPhysical !== undefined ? { prepaidPhysical: sent.prepaidPhysical } : {}),
-      };
+      data.features = parseFeaturePatch(config.features, data.features);
     }
 
     // Operating hours drive the time-to-first-call clock (M1-T22, F-755): reject a bad shape now, not at read time.
@@ -287,7 +278,7 @@ export const adminService = {
     // money through their test account or vice versa.
     if (data.paystackProvider) {
       const pp = data.paystackProvider as any;
-      assertKeyMatchesMode('paystack', pp.mode, pp.secretKey);
+      if (pp.secretKey) getPaymentProvider('paystack').validateCredentials?.(pp.mode, decryptString(pp.secretKey) as string);
     }
 
     // Encrypt sensitive fields before writing to DB
@@ -303,6 +294,7 @@ export const adminService = {
     });
 
     // Invalidate provider config caches when settings change
+    if (data.features !== undefined && config.tenantId) clearTenantFeaturesCache(config.tenantId);
     if (data.whatsappProvider !== undefined) {
       clearWhatsAppConfigCache();
     }
@@ -315,25 +307,18 @@ export const adminService = {
       clearEmailConfigCache();
     }
     if (data.paystackProvider !== undefined) {
-      // Until the Connections page (M9) this panel is the only UI for Paystack keys. A tenant that already has a
-      // PaymentConnection row reads that row at checkout, so keep it in step. Never create one here.
+      // The PaymentConnection row is what checkout reads, so it follows every save here (created if missing). The JSON
+      // stays for the old Integrations panel until the Connections page (M9) and is display-only.
       const pp = data.paystackProvider as { mode?: string; publicKey?: string; secretKey?: string; isEnabled?: boolean } | null;
       if (pp && config.tenantId) {
-        const row = await prisma.paymentConnection.findFirst({ where: { provider: 'paystack' } });
-        if (row) {
-          const secretChanged = !!pp.secretKey && decryptString(pp.secretKey) !== decryptString(row.secretKey);
-          await prisma.paymentConnection.update({
-            where: { id: row.id },
-            data: {
-              mode: pp.mode === 'live' ? 'live' : 'test',
-              publicKey: pp.publicKey ?? row.publicKey,
-              isEnabled: pp.isEnabled !== false,
-              ...(secretChanged ? { secretKey: pp.secretKey, supportedCurrencies: [], lastCheckedAt: null } : {}),
-            },
-          });
-        }
+        await saveConnection({
+          provider: 'paystack',
+          mode: pp.mode === 'live' ? 'live' : 'test',
+          publicKey: pp.publicKey,
+          secretKey: pp.secretKey ? (decryptString(pp.secretKey) as string) : undefined,
+          isEnabled: pp.isEnabled !== false,
+        });
       }
-      const { clearPaymentConfigCache } = await import('./payments');
       // Only clear the specific tenant's cache entry — passing undefined would
       // wipe every tenant's cached secret and stampede the DB on the next request.
       if (config.tenantId) {

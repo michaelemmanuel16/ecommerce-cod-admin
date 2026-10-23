@@ -215,14 +215,15 @@ async function settleInTenant(
         orderId: order.id,
         type: 'payment',
         amount: paid,
-        paymentMethod: 'paystack',
+        paymentMethod: provider.id,
         provider: provider.id,
         status: 'paid',
         reference,
         metadata: {
           currency: verification.currency,
           fees: Money.toApi(providerFee),
-          paystackReference: reference,
+          paystackReference: reference, // old key, kept for readers of past rows
+          providerReference: reference,
         },
       },
     });
@@ -232,7 +233,7 @@ async function settleInTenant(
         tenantId: resolveTenantId(order.tenantId),
         orderId: order.id,
         status: 'confirmed',
-        notes: `Payment confirmed via ${provider.id === 'paystack' ? 'Paystack' : provider.id} (ref: ${reference})`,
+        notes: `Payment confirmed via ${provider.displayName} (ref: ${reference})`,
       },
     });
 
