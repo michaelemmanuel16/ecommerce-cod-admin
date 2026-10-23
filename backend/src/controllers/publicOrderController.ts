@@ -9,7 +9,7 @@ import prisma from '../utils/prisma';
 import { findAndReactivateCustomerByPhone } from '../utils/customerLookup';
 import { normalizePhoneForStorage, phoneLookupVariants } from '../utils/phone';
 import logger from '../utils/logger';
-import { paystackService } from '../services/paystackService';
+import { getPaymentProvider, toMinor, DEFAULT_PAYMENT_PROVIDER } from '../services/payments';
 import { metaCapiService } from '../services/metaCapiService';
 import * as Money from '../utils/money';
 import { cleanText, deliveryAddressOf, slotRule, CheckoutSlot } from '../utils/checkoutLocation';
@@ -56,9 +56,10 @@ export const getPublicFormConfig = async (req: Request, res: Response, next: Nex
     const { slug } = req.params;
     const form = await checkoutFormService.getCheckoutFormConfigBySlug(slug);
 
-    const { tenantId, allowedOrigins, ...publicForm } = form as typeof form & {
+    const { tenantId, allowedOrigins, paymentProvider, ...publicForm } = form as typeof form & {
       tenantId: string | null;
       allowedOrigins: string[];
+      paymentProvider: string | null;
     };
     // Defense-in-depth: never let the server-only Meta CAPI secrets reach a host
     // page, even if a future select change starts including them.
@@ -72,7 +73,10 @@ export const getPublicFormConfig = async (req: Request, res: Response, next: Nex
       return;
     }
 
-    const paystackPublicKey = tenantId ? await paystackService.getPublicKey(tenantId) : '';
+    // The form names its provider; none means the default (F-400).
+    const paystackPublicKey = tenantId
+      ? await getPaymentProvider(paymentProvider ?? DEFAULT_PAYMENT_PROVIDER).getPublicKey(tenantId)
+      : '';
 
     res.json({ config: { ...publicForm, paystackPublicKey } });
   } catch (error) {
@@ -375,7 +379,8 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       paystackCharge = Money.roundHalfUp(Money.div(Money.mul(finalTotal, pct), 100), 2);
       balanceDue = Money.sub(finalTotal, paystackCharge);
     }
-    const paystackChargeMinor = Money.toMinor(paystackCharge);
+    // PendingCheckout still stores the charge in minor units (legacy column, replaced in M3b-T06); the provider adapter converts for itself.
+    const paystackChargeMinor = toMinor(paystackCharge, form.currency || 'GHS');
 
     // Prepare order items array: main package + upsells
     const orderItemsData = [];
@@ -436,19 +441,19 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       // the PaymentCallback page settles by that reference.
       const callbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/checkout/payment/callback`;
 
-      const paystackResult = await paystackService.initializeTransaction(
-        formTenantId as string,
-        buyerEmail,
-        paystackChargeMinor,
+      const provider = getPaymentProvider(form.paymentProvider ?? DEFAULT_PAYMENT_PROVIDER);
+      const paymentResult = await provider.initialize(formTenantId as string, {
+        amount: paystackCharge,
         currency,
-        { formSlug: slug, paymentMethod },
+        customer: { email: buyerEmail, firstName: customer.firstName, lastName: customer.lastName, phone: formData.phoneNumber },
         callbackUrl,
-        { firstName: customer.firstName, lastName: customer.lastName, phone: formData.phoneNumber },
-      );
+        metadata: { formSlug: slug, paymentMethod },
+      });
 
       await prisma.pendingCheckout.create({
         data: {
-          reference: paystackResult.reference,
+          reference: paymentResult.providerReference,
+          provider: provider.id,
           tenantId: formTenantId as string,
           customerId: customer.id,
           formId: form.id,
@@ -484,8 +489,8 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
         paymentMethod,
         amount: paystackChargeMinor,
         currency,
-        authorization_url: paystackResult.authorization_url,
-        paymentReference: paystackResult.reference,
+        authorization_url: paymentResult.authorizationUrl,
+        paymentReference: paymentResult.providerReference,
         message: 'Order received — redirecting to payment',
       });
       return;

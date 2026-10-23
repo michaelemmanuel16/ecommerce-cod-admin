@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { createHash } from 'crypto';
-import { paystackService } from '../services/paystackService';
+import { getPaymentProvider } from '../services/payments';
 import { settlePaystackPayment } from '../services/paystackSettlementService';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
@@ -38,11 +38,8 @@ export async function handleWebhook(req: Request, res: Response): Promise<void> 
 }
 
 async function processTenantWebhook(req: Request, res: Response, tenantId: string): Promise<void> {
-  const signature = req.headers['x-paystack-signature'] as string;
-  if (!signature) {
-    res.status(400).json({ error: 'Missing signature' });
-    return;
-  }
+  // The legacy Paystack URL: the provider is fixed by the route. The neutral route (M3b-T06) takes it from the path.
+  const provider = getPaymentProvider('paystack');
 
   // Use rawBody preserved by the verify callback in server.ts (avoids express.json() parsing issue)
   const rawBody = (req as any).rawBody;
@@ -51,31 +48,29 @@ async function processTenantWebhook(req: Request, res: Response, tenantId: strin
     res.status(500).json({ error: 'Server configuration error' });
     return;
   }
-  const isValid = await paystackService.validateWebhookSignature(tenantId, rawBody, signature);
+  const isValid = await provider.verifyWebhook(tenantId, rawBody, req.headers);
   if (!isValid) {
     logger.warn('Invalid Paystack webhook signature', { tenantId });
     res.status(401).json({ error: 'Invalid signature' });
     return;
   }
 
-  // req.body is already parsed by express.json(); use it directly
-  const event = req.body;
-  logger.info('Paystack webhook received', { tenantId: tenantId, event: event.event });
+  const event = provider.parseWebhook(rawBody);
+  logger.info('Paystack webhook received', { tenantId: tenantId, event: event.eventType });
 
-  const reference: string | undefined = event?.data?.reference;
   await withWebhookDedup(
     res,
     {
-      provider: 'paystack',
-      eventType: event.event,
-      reference: event?.event ? reference : undefined,
+      provider: provider.id,
+      eventType: event.eventType,
+      reference: event.eventType ? event.reference ?? undefined : undefined,
       payloadHash: createHash('sha256').update(rawBody).digest('hex'),
       tenantId,
     },
     'Paystack',
     async () => {
-      if (event.event === 'charge.success') {
-        await handleChargeSuccess(tenantId, event.data);
+      if (event.kind === 'payment_succeeded') {
+        await handleChargeSuccess(tenantId, event.reference);
       }
     }
   );
@@ -87,8 +82,7 @@ async function processTenantWebhook(req: Request, res: Response, tenantId: strin
  * pending checkout the first time a confirmed payment arrives — here or via the
  * callback verify, whichever is first. Idempotent.
  */
-async function handleChargeSuccess(tenantId: string, data: { reference?: string }): Promise<void> {
-  const reference = data?.reference;
+async function handleChargeSuccess(tenantId: string, reference: string | null): Promise<void> {
   if (!reference) {
     logger.error('Paystack charge.success missing reference', { tenantId });
     return;

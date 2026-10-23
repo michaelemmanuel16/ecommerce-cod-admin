@@ -25,7 +25,9 @@ interface VerifyResponse {
     reference: string;
     amount: number; // in kobo/pesewas
     currency: string;
-    fees: number;
+    fees?: number | null;
+    channel?: string | null;
+    paid_at?: string | null;
     metadata: Record<string, any>;
     customer: { email: string };
   };

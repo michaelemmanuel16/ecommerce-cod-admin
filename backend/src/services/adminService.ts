@@ -309,11 +309,11 @@ export const adminService = {
       clearEmailConfigCache();
     }
     if (data.paystackProvider !== undefined) {
-      const { clearPaystackConfigCache } = await import('./paystackService');
+      const { clearPaymentConfigCache } = await import('./payments');
       // Only clear the specific tenant's cache entry — passing undefined would
       // wipe every tenant's cached secret and stampede the DB on the next request.
       if (config.tenantId) {
-        clearPaystackConfigCache(config.tenantId);
+        clearPaymentConfigCache(config.tenantId);
       }
     }
 

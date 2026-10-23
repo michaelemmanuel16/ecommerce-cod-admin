@@ -363,7 +363,7 @@ export class CheckoutFormService {
    * PUBLIC embed config by slug (for the embed widget's
    * GET /api/public/forms/:slug/config). Same render payload as
    * getCheckoutFormBySlug, plus `tenantId` and the per-form `allowedOrigins`
-   * allowlist — both consumed by the controller (tenant → Paystack public key,
+   * allowlist, and the form's `paymentProvider` — all consumed by the controller (tenant + provider → public key,
    * allowlist → Origin 403 gate) and stripped before the response reaches the
    * host page. The DB read is cached 5 min, invalidated on form save.
    */
@@ -376,7 +376,7 @@ export class CheckoutFormService {
 
     const form = await prisma.checkoutForm.findUnique({
       where: { slug, isActive: true },
-      select: { ...PUBLIC_FORM_SELECT, tenantId: true, allowedOrigins: true }
+      select: { ...PUBLIC_FORM_SELECT, tenantId: true, allowedOrigins: true, paymentProvider: true }
     });
 
     if (!form) {

@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import { getTenantId, resolveTenantId, runInTenant, withoutTenant } from '../utils/tenantContext';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
-import { paystackService } from './paystackService';
+import { getPaymentProvider, fromMinor } from './payments';
 import { digitalDeliveryService } from './digitalDeliveryService';
 import { GLAutomationService } from './glAutomationService';
 import { transitionOrder } from './orderStateMachine';
@@ -97,26 +97,30 @@ async function settleInTenant(
     return { status: 'not_found' };
   }
 
-  // Verify with Paystack using the tenant's secret.
-  const verification = await paystackService.verifyTransaction(pending.tenantId, reference);
-  if (verification.data.status !== 'success') {
-    logger.info('Paystack payment not successful — no order created', {
+  // Verify with the provider that holds this payment, using the tenant's keys.
+  const provider = getPaymentProvider(pending.provider);
+  const verification = await provider.verify(pending.tenantId, reference);
+  if (verification.status !== 'success') {
+    logger.info('Payment not successful — no order created', {
       reference,
+      provider: provider.id,
       tenantId: pending.tenantId,
-      status: verification.data.status,
+      status: verification.status,
     });
-    return { status: verification.data.status === 'failed' ? 'failed' : 'pending' };
+    return { status: verification.status === 'failed' ? 'failed' : 'pending' };
   }
 
   // SECURITY: the amount actually paid must cover the expected charge (deposit
   // portion or full total). Stops an underpaid/tampered initialize from
-  // fulfilling — digital products auto-deliver. Paystack amounts are minor units.
-  const paidMinor = Money.orZero(verification.data.amount);
-  if (Money.lt(paidMinor, pending.paystackChargeMinor)) {
-    logger.warn('Paystack underpayment — not creating order', {
+  // fulfilling — digital products auto-deliver.
+  const paid = verification.amount;
+  const expected = fromMinor(pending.paystackChargeMinor, pending.currency);
+  if (Money.lt(paid, expected)) {
+    logger.warn('Payment underpayment — not creating order', {
       reference,
-      paidMinor: paidMinor.toString(),
-      expectedMinor: pending.paystackChargeMinor,
+      provider: provider.id,
+      paid: Money.toApi(paid),
+      expected: Money.toApi(expected),
     });
     return { status: 'failed' };
   }
@@ -135,9 +139,8 @@ async function settleInTenant(
     throw err;
   }
 
-  // Order money is in major units (F-405). Paystack's amount is minor units: convert once here.
-  const paid = Money.fromMinor(paidMinor);
-  const paystackFee = Money.fromMinor(verification.data.fees ?? 0);
+  // Order money is in major units (F-405); the adapter already converted the provider's amounts.
+  const providerFee = provider.fee(verification);
   const isDeposit = pending.paymentMethod === 'paystack_deposit';
   const formData = pending.formData as Record<string, any>;
 
@@ -158,6 +161,7 @@ async function settleInTenant(
       balanceDue: pending.balanceDue,
       depositPaid: paid,
       paymentReference: reference,
+      paymentProvider: provider.id,
       deliveryAddress: deliveryAddressOf(formData.address, formData.landmark),
       deliveryState: formData.state || null,
       deliveryArea: cleanText(formData.town, 100) || null,
@@ -204,11 +208,12 @@ async function settleInTenant(
         type: 'payment',
         amount: paid,
         paymentMethod: 'paystack',
+        provider: provider.id,
         status: 'paid',
         reference,
         metadata: {
-          currency: verification.data.currency,
-          fees: Money.toApi(paystackFee),
+          currency: verification.currency,
+          fees: Money.toApi(providerFee),
           paystackReference: reference,
         },
       },
@@ -219,7 +224,7 @@ async function settleInTenant(
         tenantId: resolveTenantId(order.tenantId),
         orderId: order.id,
         status: 'confirmed',
-        notes: `Payment confirmed via Paystack (ref: ${reference})`,
+        notes: `Payment confirmed via ${provider.id === 'paystack' ? 'Paystack' : provider.id} (ref: ${reference})`,
       },
     });
 
@@ -230,7 +235,7 @@ async function settleInTenant(
           tx as any,
           order.id,
           paid,
-          paystackFee,
+          providerFee,
           order.customer?.id || 1,
         );
       } catch (glError: any) {
@@ -242,7 +247,7 @@ async function settleInTenant(
     }
   });
 
-  logger.info('Paystack payment settled — order created', {
+  logger.info('Payment settled — order created', {
     tenantId: pending.tenantId,
     orderId: order.id,
     reference,

@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import prisma from '../utils/prisma';
 import checkoutFormService, { clearCheckoutFormConfigCache } from '../services/checkoutFormService';
 import { checkoutFormDesignSchema } from '../validators/checkoutFormDesignSchema';
-import { paystackService } from '../services/paystackService';
+import { getPaymentProvider, DEFAULT_PAYMENT_PROVIDER } from '../services/payments';
 import { encryptString, SECRET_MASK } from '../utils/providerCrypto';
 import * as Money from '../utils/money';
 import { readDateBound } from '../utils/kpiRequest';
@@ -37,6 +37,7 @@ interface PaymentToggleState {
   paystackDepositEnabled?: boolean | null;
   paystackFullEnabled?: boolean | null;
   depositPercent?: number | null;
+  paymentProvider?: string | null;
 }
 
 // True when the request touches any payment-method field, so we only validate
@@ -89,7 +90,7 @@ const validatePaymentConfig = async (
   }
 
   if (deposit || full) {
-    const configured = tenantId ? await paystackService.isConfigured(tenantId) : false;
+    const configured = tenantId ? await getPaymentProvider(existing?.paymentProvider ?? DEFAULT_PAYMENT_PROVIDER).isConfigured(tenantId) : false;
     if (!configured) {
       return fail('Paystack disabled until you add keys', { link: '/settings/integrations' });
     }
