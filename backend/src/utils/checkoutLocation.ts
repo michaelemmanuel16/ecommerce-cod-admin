@@ -60,7 +60,8 @@ const GUARD_ALIASES: Record<string, string[]> = {
   email: ['email', 'e-mail', 'email address'],
   region: ['region', 'region/state', 'state', 'state/region', 'province'],
 };
-const GUARD_LABELS: Record<string, string> = { fullName: 'Name', phone: 'Phone number', streetAddress: 'Street address', region: 'State', email: 'Email' };
+// The words of the editor's "Sends to" list (frontend lib/standardFields STANDARD_FIELDS), so the 400 names what the owner sees.
+const GUARD_LABELS: Record<string, string> = { fullName: 'Customer name', phone: 'Phone', streetAddress: 'Street address', region: 'Region', email: 'Email' };
 const REQUIRED_KEYS = {
   physical: ['fullName', 'phone', 'streetAddress', 'region'],
   digital: ['fullName', 'phone', 'email'],

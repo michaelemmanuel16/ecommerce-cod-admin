@@ -8,7 +8,7 @@ import { useAuthStore } from '../../stores/authStore';
 
 // Menu keys as /api/auth/me returns them (backend navService MENU_RULES) for each base role.
 const MENU = {
-  manager: ['dashboard', 'inbox', 'orders', 'customers', 'messages', 'products', 'deliveries', 'reports', 'workflows', 'settings'],
+  manager: ['dashboard', 'inbox', 'orders', 'customers', 'checkoutForms', 'messages', 'products', 'deliveries', 'reports', 'workflows', 'settings'],
   accountant: ['inbox', 'finance', 'reports', 'settings'],
   inventory_manager: ['inbox', 'products', 'settings'],
   sales_rep: ['inbox', 'orders', 'customers', 'settings'],
@@ -35,6 +35,8 @@ function renderAt(path: string) {
           <Route path="orders/:id" element={<div>ORDER DETAIL PAGE</div>} />
           <Route path="finance" element={<div>FINANCE PAGE</div>} />
           <Route path="products" element={<div>PRODUCTS PAGE</div>} />
+          <Route path="checkout-forms" element={<div>FORMS PAGE</div>} />
+          <Route path="checkout-forms/:id/edit" element={<div>FORM EDITOR PAGE</div>} />
           <Route path="earnings-history" element={<div>EARNINGS PAGE</div>} />
           <Route path="agent-inventory" element={<div>AGENT STOCK PAGE</div>} />
         </Route>
@@ -65,6 +67,24 @@ describe('canOpenPath', () => {
   it('always opens the home route', () => {
     expect(canOpenPath('/', MENU.sales_rep, 'sales_rep', '/')).toBe(true);
     expect(canOpenPath('/finance', ['settings'], 'accountant', '/finance')).toBe(true);
+  });
+});
+
+describe('AccessGate: checkout forms (M3b-T10)', () => {
+  it('the manager opens the list and the editor', () => {
+    signIn('manager', '/');
+    renderAt('/checkout-forms');
+    expect(screen.getByText('FORMS PAGE')).toBeInTheDocument();
+  });
+  it.each(['accountant', 'inventory_manager', 'sales_rep', 'delivery_agent'] as const)('%s gets "no access" on the list and the editor', (role) => {
+    signIn(role, '/');
+    // even with the settings menu key, which no longer decides this page
+    const first = renderAt('/checkout-forms');
+    expect(screen.getByText('You do not have access to this page')).toBeInTheDocument();
+    expect(screen.queryByText('FORMS PAGE')).toBeNull();
+    first.unmount();
+    renderAt('/checkout-forms/5/edit');
+    expect(screen.getByText('You do not have access to this page')).toBeInTheDocument();
   });
 });
 

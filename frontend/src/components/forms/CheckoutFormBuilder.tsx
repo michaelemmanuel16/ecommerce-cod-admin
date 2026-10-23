@@ -17,8 +17,9 @@ import {
 import { Product } from '../../types';
 import apiClient from '../../services/api';
 import { getCountryByCurrency, getRegionsForCountry } from '../../utils/countries';
-import { domainLineErrors, slugFromName, thankYouError } from '../../lib/checkoutBasics';
+import { slugFromName, validateBasics } from '../../lib/checkoutBasics';
 import { missingKeysMessage } from '../../lib/standardFields';
+import { NEW_FORM_FIELDS } from '../../lib/defaultFields';
 import { useConfigStore } from '../../stores/configStore';
 import { CheckoutBuilderProvider } from './builder/CheckoutBuilderContext';
 import {
@@ -51,21 +52,6 @@ interface CheckoutFormBuilderProps {
    */
   onDraftChange?: (draft: Record<string, any>) => void;
 }
-
-// Destinations are pinned via standardKey so relabeling any of these (e.g.
-// "Street address" → "Delivery address") keeps the value flowing to the order.
-// Region, City or town, Street address and Nearest landmark are part of the default set because a
-// physical order without them is hard for a rider to find. The server refuses to switch a physical form on
-// without a street address (F-411), so it starts on. Email is off by default; a seller can turn it on.
-const defaultFields: FormField[] = [
-  { id: '1', label: 'Full Name', type: 'text', required: true, enabled: true, standardKey: 'fullName' },
-  { id: '2', label: 'Phone', type: 'phone', required: true, enabled: true, standardKey: 'phone' },
-  { id: '3', label: 'Region', type: 'state', required: true, enabled: true, standardKey: 'region' },
-  { id: '4', label: 'City or town', type: 'text', required: true, enabled: true, standardKey: 'town' },
-  { id: '5', label: 'Street address', type: 'textarea', required: true, enabled: true, standardKey: 'streetAddress' },
-  { id: '6', label: 'Nearest landmark', type: 'text', required: true, enabled: true, standardKey: 'landmark' },
-  { id: '7', label: 'Email Address', type: 'email', required: false, enabled: false, standardKey: 'email' },
-];
 
 /** The regions a saved form offers: `regions.available`, or every region of its country when none are stored. */
 const savedRegions = (form: CheckoutForm | undefined, all: string[]): string[] => {
@@ -103,7 +89,7 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
     defaultValues: initialValues(initialData),
   });
 
-  const [fields, setFields] = useState<FormField[]>(initialData?.fields || defaultFields);
+  const [fields, setFields] = useState<FormField[]>(initialData?.fields || NEW_FORM_FIELDS);
   const [packages, setPackages] = useState<ProductPackage[]>(initialData?.packages || []);
   const [upsells, setUpsells] = useState<Upsell[]>(
     initialData?.upsells?.map((u) => ({ ...u, quantity: u.items?.quantity || 1 })) || []
@@ -128,7 +114,7 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
     if (initialData) {
       reset(initialValues(initialData));
       setRegions(savedRegions(initialData, allRegions));
-      setFields(initialData.fields || defaultFields);
+      setFields(initialData.fields || NEW_FORM_FIELDS);
       setPackages(initialData.packages || []);
       setUpsells(initialData.upsells?.map((u) => ({ ...u, quantity: u.items?.quantity || 1 })) || []);
       setPixelConfig(initialData.pixelConfig || {});
@@ -312,14 +298,9 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
 
   const onSubmit = async (data: BuilderFormValues) => {
     // The server applies the same rules and answers 400; these fail fast, in the owner's words, before the request.
+    // A new form, or one that is on, cannot be saved without the fields an order needs (F-411).
     const problem =
-      (!data.name.trim() && 'Give the form a name.') ||
-      (!data.slug && 'The form name needs at least one letter or number.') ||
-      (!data.productId && 'Choose the product this form sells.') ||
-      thankYouError(data.redirectUrl) ||
-      domainLineErrors(data.allowedOrigins)[0]?.message ||
-      // A new form, or one that is on, cannot be saved without the fields an order needs (F-411).
-      (!initialData || initialData.isActive ? missingKeysMessage(fields, formType) : null);
+      validateBasics(data) ?? (!initialData || initialData.isActive ? missingKeysMessage(fields, formType) : null);
     if (problem) {
       setShowErrors(true);
       toast.error(problem);

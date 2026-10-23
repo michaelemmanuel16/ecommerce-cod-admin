@@ -46,3 +46,13 @@ export function domainLineErrors(value: string): DomainLineError[] {
 /** Slug the server accepts (lowercase letters, digits, hyphens), made from the form name. */
 export const slugFromName = (name: string): string =>
   name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+/** The first thing wrong with the Basics values before a save, in the owner's words, or null. The server checks again. */
+export function validateBasics(v: { name: string; slug: string; productId: number; redirectUrl: string; allowedOrigins: string }): string | null {
+  if (!v.name.trim()) return 'Give the form a name.';
+  if (!v.slug) return 'The form name needs at least one letter or number.';
+  if (!v.productId) return 'Choose the product this form sells.';
+  const thankYou = thankYouError(v.redirectUrl);
+  if (thankYou) return thankYou;
+  return domainLineErrors(v.allowedOrigins)[0]?.message ?? null;
+}

@@ -154,28 +154,21 @@ export function mapFields(fields: FormField[]): MappedField[] {
 }
 
 // Mirrors missingRequiredLabels in backend/src/utils/checkoutLocation.ts (F-411). The server refuses to switch a form on
-// while one of these has no enabled field, so the editor shows the same sentence before the owner saves. The words are the
-// server's, so the banner and the 400 read alike.
+// while one of these has no enabled field, so the editor shows the same sentence before the owner saves. The names are the
+// "Sends to" labels above, and the server uses the same words, so the banner and the 400 read alike.
 const REQUIRED_KEYS: Record<FormType, StandardFieldKey[]> = {
   physical: ['fullName', 'phone', 'streetAddress', 'region'],
   digital: ['fullName', 'phone', 'email'],
-};
-const GUARD_LABELS: Partial<Record<StandardFieldKey, string>> = {
-  fullName: 'Name',
-  phone: 'Phone number',
-  streetAddress: 'Street address',
-  region: 'State',
-  email: 'Email',
 };
 
 /**
  * Names of the slots an active form cannot do without and no enabled field feeds. Match is by "Sends to", then by label
  * alias, then by field type. An empty field list means the platform defaults, which the server completes: nothing missing.
  */
-export function missingRequiredLabels(fields: FormField[], formType: FormType): string[] {
+function missingRequiredLabels(fields: FormField[], formType: FormType): string[] {
   if (fields.length === 0) return [];
   const present = new Set(fields.filter((f) => f.enabled !== false).map(resolveStandardKey));
-  return REQUIRED_KEYS[formType].filter((key) => !present.has(key)).map((key) => GUARD_LABELS[key] as string);
+  return REQUIRED_KEYS[formType].filter((key) => !present.has(key)).map((key) => getStandardFieldMeta(key)?.label as string);
 }
 
 /** "This form can't take orders yet. Add: Street address." or null when nothing is missing. */

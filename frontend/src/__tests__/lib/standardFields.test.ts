@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { FormField } from '../../types/checkout-form';
-import { STANDARD_FIELDS, mapFields, missingKeysMessage, missingRequiredLabels, resolveStandardKey } from '../../lib/standardFields';
+import { STANDARD_FIELDS, mapFields, missingKeysMessage, resolveStandardKey } from '../../lib/standardFields';
 
 function field(overrides: Partial<FormField> & { label: string }): FormField {
   return {
@@ -95,7 +95,13 @@ describe('mapFields', () => {
   });
 });
 
-describe('missingRequiredLabels', () => {
+// The names the guard gives, as a list (the sentence is "This form can't take orders yet. Add: <names>.").
+const missingRequiredLabels = (fields: FormField[], formType: 'physical' | 'digital'): string[] => {
+  const message = missingKeysMessage(fields, formType);
+  return message ? message.replace("This form can't take orders yet. Add: ", '').replace(/\.$/, '').split(', ') : [];
+};
+
+describe('the required-key guard names', () => {
   const physicalFields = [
     field({ label: 'Full Name' }),
     field({ label: 'Phone', type: 'phone' }),
@@ -111,14 +117,14 @@ describe('missingRequiredLabels', () => {
     const broken = physicalFields.map((f) =>
       f.label === 'Full Name' ? { ...f, standardKey: 'custom' as const } : f
     );
-    expect(missingRequiredLabels(broken, 'physical')).toEqual(['Name']);
+    expect(missingRequiredLabels(broken, 'physical')).toEqual(['Customer name']);
   });
 
   it('ignores disabled fields', () => {
     const disabled = physicalFields.map((f) =>
       f.label === 'Region' ? { ...f, enabled: false } : f
     );
-    expect(missingRequiredLabels(disabled, 'physical')).toEqual(['State']);
+    expect(missingRequiredLabels(disabled, 'physical')).toEqual(['Region']);
   });
 
   it('requires a street address for a physical form but email instead for a digital one', () => {
@@ -149,7 +155,7 @@ describe('missingRequiredLabels', () => {
 describe('missingKeysMessage', () => {
   it("gives the server's sentence", () => {
     expect(missingKeysMessage([field({ label: 'Full Name' })], 'physical')).toBe(
-      "This form can't take orders yet. Add: Phone number, Street address, State."
+      "This form can't take orders yet. Add: Phone, Street address, Region."
     );
   });
 

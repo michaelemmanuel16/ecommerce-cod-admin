@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { domainLineErrors, isAllowedDomain, slugFromName, thankYouError } from '../../lib/checkoutBasics';
+import { domainLineErrors, isAllowedDomain, slugFromName, thankYouError, validateBasics } from '../../lib/checkoutBasics';
 
 describe('thankYouError', () => {
   it('allows empty (the built-in screen shows) and https', () => {
@@ -41,5 +41,28 @@ describe('slugFromName', () => {
   it('lowercases, joins with hyphens and trims them', () => {
     expect(slugFromName('  Summer Sale 2026!  ')).toBe('summer-sale-2026');
     expect(slugFromName('!!!')).toBe('');
+  });
+});
+
+describe('validateBasics', () => {
+  const ok = { name: 'Summer sale', slug: 'summer-sale', productId: 3, redirectUrl: '', allowedOrigins: '' };
+
+  it('passes good values', () => {
+    expect(validateBasics(ok)).toBeNull();
+    expect(validateBasics({ ...ok, redirectUrl: 'https://x.com/t', allowedOrigins: 'shop.example.com' })).toBeNull();
+  });
+
+  it.each([
+    [{ name: '  ' }, 'Give the form a name.'],
+    [{ slug: '' }, 'The form name needs at least one letter or number.'],
+    [{ productId: 0 }, 'Choose the product this form sells.'],
+    [{ redirectUrl: 'http://x.com' }, 'Thank-you page must start with https://'],
+    [{ allowedOrigins: 'ok.example.com\nnope' }, '"nope" is not a valid domain. Use a host such as shop.example.com.'],
+  ])('names the first problem: %j', (over, message) => {
+    expect(validateBasics({ ...ok, ...over })).toBe(message);
+  });
+
+  it('reports the name before anything later', () => {
+    expect(validateBasics({ ...ok, name: '', productId: 0, redirectUrl: 'http://x.com' })).toBe('Give the form a name.');
   });
 });

@@ -10,24 +10,21 @@
 /* new: the Digital and Archived tags sit after the form name */
 .v2 .cforms .formtag{margin-left:8px;font-size:11px;vertical-align:1px}
 .v2 .lnkcell{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-2);font-variant-numeric:tabular-nums}
-.v2 .lnkcell .ibtn.sm{border-color:transparent;background:transparent;color:var(--ink-3)}
-.v2 .lnkcell .ibtn.sm:hover{background:var(--hover);color:var(--ink)}
 .v2 .lnkcell svg.lucide{width:14px;height:14px}
+.v2 .lnkcell .ibtn.sm,.v2 .rowact .ibtn.sm,.v2 .frow .ibtn.sm{border-color:transparent;background:transparent}
+.v2 .lnkcell .ibtn.sm{color:var(--ink-3)}
+.v2 .lnkcell .ibtn.sm:hover,.v2 .rowact .ibtn.sm:hover,.v2 .frow .ibtn.sm:hover{background:var(--hover);color:var(--ink)}
+.v2 .rowact .ibtn.sm:disabled,.v2 .frow .ibtn.sm:disabled{opacity:.5;cursor:default}
 .v2 .lnkmenu{right:auto;left:0;width:auto;min-width:220px}
 .v2 .rowact{display:inline-flex;gap:4px;justify-content:flex-end}
-.v2 .rowact .ibtn.sm{border-color:transparent;background:transparent}
-.v2 .rowact .ibtn.sm:hover{background:var(--hover);color:var(--ink)}
 .v2 .ibtn.sm.dng:hover{background:var(--coral-soft);color:var(--coral)}
-.v2 .rowact .ibtn.sm:disabled{opacity:.5;cursor:default}
 .v2 .cforms .mut{color:var(--ink-3)}
-.v2 .cforms .cfoot{border-top:1px solid var(--line)}
 
 /* editor: Basics, Fields, regions */
 .v2 .stack{display:grid;gap:16px}
 .v2 .row2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 @media (max-width:760px){.v2 .row2{grid-template-columns:1fr}}
 .v2 .linkrow{display:flex;align-items:center;gap:8px}
-.v2 .linkrow .mut{color:var(--ink-3);white-space:nowrap}
 .v2 .fl input[readonly]{background:var(--hover);color:var(--ink-2)}
 /* new: a notice line under a field (product change, "helps Meta match buyers") */
 .v2 .fnote{font-size:12.5px;color:var(--warn-ink);margin-top:5px}
@@ -39,9 +36,6 @@
 .v2 .frow .sp{flex:1;min-width:0}
 .v2 .frow .sp b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .v2 .frow small{display:block;color:var(--ink-3);font-size:12.5px}
-.v2 .frow .ibtn.sm{border-color:transparent;background:transparent}
-.v2 .frow .ibtn.sm:hover{background:var(--hover);color:var(--ink)}
-.v2 .frow .ibtn.sm:disabled{opacity:.35;cursor:default}
 .v2 .frow-list{display:grid;gap:8px}
 .v2 .types{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
 .v2 .types button{border:1px dashed var(--line);border-radius:11px;padding:9px 10px;display:flex;gap:8px;align-items:center;font-weight:600;font-size:13px;color:var(--ink-2)}

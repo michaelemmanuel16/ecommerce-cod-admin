@@ -3,7 +3,6 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { CheckoutForms } from '../../pages/CheckoutForms';
-import { ManagerUpGate } from '../../components/shell/ManagerUpGate';
 import { ToastProvider } from '../../components/ui-v2';
 import { useAuthStore } from '../../stores/authStore';
 import type { CheckoutForm } from '../../types/checkout-form';
@@ -51,6 +50,11 @@ function renderPage() {
   );
 }
 
+const renderLoaded = async () => {
+  renderPage();
+  await screen.findByRole('table');
+};
+
 const asRole = (role: string) =>
   useAuthStore.setState({ user: { id: 1, role, firstName: 'Manny', lastName: 'A' } as never });
 
@@ -89,8 +93,7 @@ describe('Checkout forms list (F-408)', () => {
   });
 
   it('shows the name, product, link, orders, and the Digital tag only on a digital form', async () => {
-    renderPage();
-    await screen.findByRole('table');
+    await renderLoaded();
     const guide = row('Home study guide');
     expect(within(guide).getByText("Smart Parent's Home Study Guide")).toBeInTheDocument();
     expect(within(guide).getByText('Digital')).toBeInTheDocument();
@@ -100,8 +103,7 @@ describe('Checkout forms list (F-408)', () => {
   });
 
   it('shows a dash for conversion while it is null, with the tooltip', async () => {
-    renderPage();
-    await screen.findByRole('table');
+    await renderLoaded();
     const cell = within(row('Magic Groove copybook set')).getByText('—');
     expect(cell).toBeInTheDocument();
     expect(within(row('Magic Groove copybook set')).getByRole('tooltip', { hidden: true })).toHaveTextContent('Visit counts arrive in a later update.');
@@ -116,8 +118,7 @@ describe('Checkout forms list (F-408)', () => {
 
   it('opens the editor from New form and Edit', async () => {
     const user = setup();
-    renderPage();
-    await screen.findByRole('table');
+    await renderLoaded();
     await user.click(screen.getAllByRole('button', { name: 'New form' })[0]);
     expect(screen.getByText('NEW FORM PAGE')).toBeInTheDocument();
   });
@@ -126,8 +127,7 @@ describe('Checkout forms list (F-408)', () => {
     it('saves { isActive } and keeps the new state', async () => {
       const user = setup();
       setCheckoutFormActive.mockResolvedValue(undefined);
-      renderPage();
-      await screen.findByRole('table');
+      await renderLoaded();
       const sw = screen.getByRole('checkbox', { name: 'Active: Home study guide' });
       expect(sw).not.toBeChecked();
       await user.click(sw);
@@ -141,8 +141,7 @@ describe('Checkout forms list (F-408)', () => {
         isAxiosError: true,
         response: { data: { message: "This form can't take orders yet. Add: Street address." } },
       });
-      renderPage();
-      await screen.findByRole('table');
+      await renderLoaded();
       const sw = screen.getByRole('checkbox', { name: 'Active: Home study guide' });
       await user.click(sw);
       expect(await screen.findByRole('status')).toHaveTextContent("This form can't take orders yet. Add: Street address.");
@@ -151,27 +150,30 @@ describe('Checkout forms list (F-408)', () => {
   });
 
   describe('clone', () => {
-    it('calls the clone endpoint, says the copy is off, and reloads', async () => {
+    it.each([
+      [false, 'Copy created. It stays off until you switch it on.'],
+      [true, 'Copy created. It stays off until you switch it on. Add the Conversion API token again in Tracking.'],
+    ])('calls the clone endpoint and says the copy is off (token not copied: %s)', async (capiTokenNotCopied, toast) => {
       const user = setup();
-      cloneCheckoutForm.mockResolvedValue({ form: form({ id: 9 }), capiTokenNotCopied: false });
-      renderPage();
-      await screen.findByRole('table');
+      cloneCheckoutForm.mockResolvedValue({ form: form({ id: 9, name: 'Magic Groove copybook set (copy)', slug: 'magic-groove-2', isActive: false }), capiTokenNotCopied });
+      await renderLoaded();
       await user.click(screen.getByRole('button', { name: 'Clone Magic Groove copybook set' }));
       expect(cloneCheckoutForm).toHaveBeenCalledWith(1);
-      expect(await screen.findByRole('status')).toHaveTextContent('Copy created. It stays off until you switch it on.');
-      expect(screen.getByRole('status')).not.toHaveTextContent('Conversion API');
-      await waitFor(() => expect(getCheckoutForms).toHaveBeenCalledTimes(2));
+      expect(await screen.findByRole('status')).toHaveTextContent(toast);
+      if (!capiTokenNotCopied) expect(screen.getByRole('status')).not.toHaveTextContent('Conversion API');
     });
 
-    it('asks for the Conversion API token again when it was not copied', async () => {
+    it('puts the copy at the top of the list without loading the list again', async () => {
       const user = setup();
-      cloneCheckoutForm.mockResolvedValue({ form: form({ id: 9 }), capiTokenNotCopied: true });
-      renderPage();
-      await screen.findByRole('table');
+      cloneCheckoutForm.mockResolvedValue({ form: form({ id: 9, name: 'Magic Groove copybook set (copy)', slug: 'magic-groove-2', isActive: false, product: undefined, ordersThisMonth: undefined }), capiTokenNotCopied: false });
+      await renderLoaded();
       await user.click(screen.getByRole('button', { name: 'Clone Magic Groove copybook set' }));
-      expect(await screen.findByRole('status')).toHaveTextContent(
-        'Copy created. It stays off until you switch it on. Add the Conversion API token again in Tracking.',
-      );
+      const copy = await screen.findByText('Magic Groove copybook set (copy)');
+      expect(screen.getAllByRole('row')[1]).toContainElement(copy);
+      const r = row('Magic Groove copybook set (copy)');
+      expect(within(r).getByText('Magic Groove copybook set')).toBeInTheDocument(); // the product, taken from the original
+      expect(within(r).getByRole('checkbox', { name: /^Active:/ })).not.toBeChecked();
+      expect(getCheckoutForms).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -179,8 +181,7 @@ describe('Checkout forms list (F-408)', () => {
     it('archives a form with orders: the dialog says how many, the toast says archived', async () => {
       const user = setup();
       deleteCheckoutForm.mockResolvedValue({ archived: true, ordersTotal: 1198 });
-      renderPage();
-      await screen.findByRole('table');
+      await renderLoaded();
       await user.click(screen.getByRole('button', { name: 'Delete Magic Groove copybook set' }));
       const dialog = screen.getByRole('alertdialog');
       expect(within(dialog).getByRole('heading')).toHaveTextContent('Delete Magic Groove copybook set?');
@@ -191,13 +192,14 @@ describe('Checkout forms list (F-408)', () => {
       expect(deleteCheckoutForm).toHaveBeenCalledWith(1);
       expect(await screen.findByRole('status')).toHaveTextContent('Form archived.');
       expect(screen.queryByRole('alertdialog')).toBeNull();
+      expect(screen.queryByText('Magic Groove copybook set', { selector: 'b' })).toBeNull();
+      expect(getCheckoutForms).toHaveBeenCalledTimes(1);
     });
 
     it('removes a form with no orders', async () => {
       const user = setup();
       deleteCheckoutForm.mockResolvedValue({ deleted: true });
-      renderPage();
-      await screen.findByRole('table');
+      await renderLoaded();
       await user.click(screen.getByRole('button', { name: 'Delete Empty form' }));
       expect(screen.getByRole('alertdialog')).toHaveTextContent('This form has no orders. It will be removed.');
       await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' }));
@@ -206,8 +208,7 @@ describe('Checkout forms list (F-408)', () => {
 
     it('cancel leaves the form alone', async () => {
       const user = setup();
-      renderPage();
-      await screen.findByRole('table');
+      await renderLoaded();
       await user.click(screen.getByRole('button', { name: 'Delete Empty form' }));
       await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' }));
       expect(deleteCheckoutForm).not.toHaveBeenCalled();
@@ -216,8 +217,7 @@ describe('Checkout forms list (F-408)', () => {
     it("adds the server's warning to the toast", async () => {
       const user = setup();
       deleteCheckoutForm.mockResolvedValue({ archived: true, ordersTotal: 1198, warning: 'No active form sells this product.' });
-      renderPage();
-      await screen.findByRole('table');
+      await renderLoaded();
       await user.click(screen.getByRole('button', { name: 'Delete Magic Groove copybook set' }));
       await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' }));
       expect(await screen.findByRole('status')).toHaveTextContent('Form archived. No active form sells this product.');
@@ -230,8 +230,7 @@ describe('Checkout forms list (F-408)', () => {
     it('loads archived forms with an Archived tag and a Restore action, no switch and no delete', async () => {
       const user = setup();
       getCheckoutForms.mockImplementation(async (p: { archived: boolean }) => (p.archived ? [archived] : ROWS));
-      renderPage();
-      await screen.findByRole('table');
+      await renderLoaded();
       await user.click(screen.getByRole('checkbox', { name: 'Show archived' }));
       await screen.findByText('Old offer');
       expect(getCheckoutForms).toHaveBeenLastCalledWith({ archived: true, limit: 100 });
@@ -246,19 +245,18 @@ describe('Checkout forms list (F-408)', () => {
       const user = setup();
       getCheckoutForms.mockImplementation(async (p: { archived: boolean }) => (p.archived ? [archived] : ROWS));
       restoreCheckoutForm.mockResolvedValue(undefined);
-      renderPage();
-      await screen.findByRole('table');
+      await renderLoaded();
       await user.click(screen.getByRole('checkbox', { name: 'Show archived' }));
       await user.click(await screen.findByRole('button', { name: 'Restore Old offer' }));
       expect(restoreCheckoutForm).toHaveBeenCalledWith(4);
       expect(await screen.findByRole('status')).toHaveTextContent('Form restored. Switch it on when ready.');
+      expect(screen.queryByText('Old offer')).toBeNull();
     });
 
     it('has its own empty state', async () => {
       const user = setup();
       getCheckoutForms.mockImplementation(async (p: { archived: boolean }) => (p.archived ? [] : ROWS));
-      renderPage();
-      await screen.findByRole('table');
+      await renderLoaded();
       await user.click(screen.getByRole('checkbox', { name: 'Show archived' }));
       expect(await screen.findByText('No archived forms.')).toBeInTheDocument();
     });
@@ -267,8 +265,7 @@ describe('Checkout forms list (F-408)', () => {
   describe('copy link and embed code (F-410)', () => {
     it('copies https://<host>/form/<slug> and says "Link copied."', async () => {
       const user = setup();
-      renderPage();
-      await screen.findByRole('table');
+      await renderLoaded();
       await user.click(screen.getByRole('button', { name: 'Copy link for Magic Groove copybook set' }));
       expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/form/magic-groove`);
       expect(await screen.findByRole('status')).toHaveTextContent('Link copied.');
@@ -276,8 +273,7 @@ describe('Checkout forms list (F-408)', () => {
 
     it('copies the embed code from the menu', async () => {
       const user = setup();
-      renderPage();
-      await screen.findByRole('table');
+      await renderLoaded();
       await user.click(screen.getByRole('button', { name: 'More copy options for Magic Groove copybook set' }));
       await user.click(screen.getByRole('menuitem', { name: 'Copy embed code' }));
       const text = writeText.mock.calls[0][0] as string;
@@ -288,8 +284,7 @@ describe('Checkout forms list (F-408)', () => {
 
     it('offers one link per package, and no package links on a form without packages', async () => {
       const user = setup();
-      renderPage();
-      await screen.findByRole('table');
+      await renderLoaded();
       await user.click(screen.getByRole('button', { name: 'More copy options for Magic Groove copybook set' }));
       await user.click(screen.getByRole('menuitem', { name: 'Copy link: 3 sets' }));
       expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/form/magic-groove?package=12`);
@@ -302,8 +297,7 @@ describe('Checkout forms list (F-408)', () => {
     it('opens a box with the text to copy by hand when the clipboard is refused', async () => {
       const user = setup();
       writeText.mockRejectedValue(new Error('NotAllowedError'));
-      renderPage();
-      await screen.findByRole('table');
+      await renderLoaded();
       await user.click(screen.getByRole('button', { name: 'Copy link for Magic Groove copybook set' }));
       const dialog = await screen.findByRole('dialog');
       const box = within(dialog).getByLabelText('Text to copy') as HTMLTextAreaElement;
@@ -318,8 +312,7 @@ describe('Checkout forms list (F-408)', () => {
   describe('roles', () => {
     it('a manager reads the list: no New form, switch, Clone, Edit, Delete; Preview and Copy stay', async () => {
       asRole('manager');
-      renderPage();
-      await screen.findByRole('table');
+      await renderLoaded();
       expect(screen.queryByRole('button', { name: 'New form' })).toBeNull();
       expect(screen.queryByRole('checkbox', { name: /^Active:/ })).toBeNull();
       expect(screen.queryByRole('button', { name: /^Clone/ })).toBeNull();
@@ -342,37 +335,10 @@ describe('Checkout forms list (F-408)', () => {
 
     it('an owner sees every action', async () => {
       asRole('super_admin');
-      renderPage();
-      await screen.findByRole('table');
+      await renderLoaded();
       expect(screen.getAllByRole('button', { name: /^Clone/ })).toHaveLength(3);
       expect(screen.getAllByRole('button', { name: /^Delete/ })).toHaveLength(3);
       expect(screen.getAllByRole('checkbox', { name: /^Active:/ })).toHaveLength(3);
     });
-  });
-});
-
-describe('ManagerUpGate (route guard)', () => {
-  const renderGate = () =>
-    render(
-      <MemoryRouter initialEntries={['/checkout-forms']}>
-        <Routes>
-          <Route element={<ManagerUpGate />}>
-            <Route path="/checkout-forms" element={<div>THE FORMS</div>} />
-          </Route>
-        </Routes>
-      </MemoryRouter>,
-    );
-
-  it.each(['super_admin', 'admin', 'manager'])('lets %s in', (role) => {
-    asRole(role);
-    renderGate();
-    expect(screen.getByText('THE FORMS')).toBeInTheDocument();
-  });
-
-  it.each(['sales_rep', 'accountant', 'inventory_manager', 'delivery_agent'])('shows "no access" to %s', (role) => {
-    asRole(role);
-    renderGate();
-    expect(screen.queryByText('THE FORMS')).toBeNull();
-    expect(screen.getByText('You do not have access to this page')).toBeInTheDocument();
   });
 });

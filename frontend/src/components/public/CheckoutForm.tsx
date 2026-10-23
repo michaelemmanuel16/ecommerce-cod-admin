@@ -3,6 +3,7 @@ import { useForm, Controller, RegisterOptions, FieldError } from 'react-hook-for
 import { PublicCheckoutForm } from '../../services/public-orders.service';
 import { FormField, PaymentMethod } from '../../types/checkout-form';
 import { MappedField, mapFields } from '../../lib/standardFields';
+import { LEGACY_EMPTY_FORM_FIELDS } from '../../lib/defaultFields';
 import { PackageSelector } from './PackageSelector';
 import { AddOnSelector } from './AddOnSelector';
 import { OrderSummary, PaymentMethodOption } from './OrderSummary';
@@ -44,16 +45,6 @@ export interface CheckoutFormData {
 // rejects a submission without) — this one also applies to digital forms, where
 // address and state are still asked for but the server doesn't demand them.
 const DEFAULT_REQUIRED_KEYS: ReadonlySet<string> = new Set(['fullName', 'phone', 'region', 'town', 'landmark', 'streetAddress']);
-
-const DEFAULT_FIELDS: FormField[] = [
-  { id: 'fullName', label: 'Full Name', type: 'text', required: true, enabled: true, standardKey: 'fullName' },
-  { id: 'phone', label: 'Phone', type: 'phone', required: true, enabled: true, standardKey: 'phone' },
-  { id: 'region', label: 'State', type: 'select', required: true, enabled: true, standardKey: 'region' },
-  { id: 'town', label: 'City/Town', type: 'text', required: true, enabled: true, standardKey: 'town' },
-  { id: 'landmark', label: 'Nearest landmark', type: 'text', required: true, enabled: true, standardKey: 'landmark' },
-  { id: 'email', label: 'Email Address', type: 'email', required: false, enabled: false, standardKey: 'email' },
-  { id: 'streetAddress', label: 'Street Address', type: 'textarea', required: false, enabled: false, standardKey: 'streetAddress' },
-];
 
 const TOWN_FIELD: FormField = { id: 'town', label: 'City/Town', type: 'text', required: true, enabled: true, standardKey: 'town' };
 const LANDMARK_FIELD: FormField = { id: 'landmark', label: 'Nearest landmark', type: 'text', required: true, enabled: true, standardKey: 'landmark' };
@@ -137,10 +128,10 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
       fields = isDigital ? formData.fields : withTownAndLandmark(formData.fields);
     } else if (isDigital) {
       // Digital orders need an email and no town or landmark.
-      fields = DEFAULT_FIELDS.filter((f) => f.standardKey !== 'town' && f.standardKey !== 'landmark')
+      fields = LEGACY_EMPTY_FORM_FIELDS.filter((f) => f.standardKey !== 'town' && f.standardKey !== 'landmark')
         .map((f) => (f.standardKey === 'email' ? { ...f, enabled: true } : f));
     } else {
-      fields = DEFAULT_FIELDS;
+      fields = LEGACY_EMPTY_FORM_FIELDS;
     }
     // Forms saved with the old "Region" wording show the new one.
     const named = fields.map((f) => (/^region(\s*\/\s*state)?$/i.test(f.label.trim()) ? { ...f, label: 'State' } : f));
