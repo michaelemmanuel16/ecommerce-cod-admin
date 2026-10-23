@@ -263,7 +263,7 @@ model Product {
   createdAt               DateTime               @default(now()) @map("created_at")
   updatedAt               DateTime               @updatedAt @map("updated_at")
   batch_quantity          Int                    @default(1)
-  cogs                    Decimal?               @default(0) @db.Decimal(10, 2)
+  cogs                    Decimal?               @default(0) @db.Decimal(19, 4)
   productType             String                 @default("physical") @map("product_type")
   digitalFileUrl          String?                @map("digital_file_url")
   digitalFileType         String?                @map("digital_file_type")

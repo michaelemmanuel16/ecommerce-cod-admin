@@ -98,3 +98,12 @@ describe('old arrived shipments (data step of the stock migration)', () => {
     expect(after.claimStatus).toBe('none');
   });
 });
+
+describe('Product.cogs precision (F-611)', () => {
+  it('keeps four decimal places', async () => {
+    const id = pair.a.ids.product;
+    await db.product.update({ where: { id }, data: { cogs: '30.2083' } });
+    const row = await db.product.findUniqueOrThrow({ where: { id } });
+    expect(row.cogs!.toString()).toBe('30.2083');
+  });
+});
