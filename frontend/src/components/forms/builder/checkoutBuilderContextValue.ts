@@ -1,6 +1,6 @@
 import React, { createContext, useContext } from 'react';
 import { UseFormRegister, UseFormWatch, UseFormSetValue, FieldErrors } from 'react-hook-form';
-import { CheckoutFormDesign, FieldType, FormField, ProductPackage, Upsell, PixelConfig } from '../../../types/checkout-form';
+import { CheckoutFormDesign, FieldType, FormField, FormType, ProductPackage, Upsell, PixelConfig } from '../../../types/checkout-form';
 import { Product } from '../../../types';
 
 export interface BuilderFormValues {
@@ -8,10 +8,8 @@ export interface BuilderFormValues {
   slug: string;
   productId: number;
   description: string;
-  defaultCountry: string;
   buttonColor: string;
   accentColor: string;
-  currency: string;
   redirectUrl: string;
   allowedOrigins: string; // newline-separated origins; split to string[] on save
   codEnabled: boolean;
@@ -47,6 +45,24 @@ export interface CheckoutBuilderContextValue {
   setDesign: React.Dispatch<React.SetStateAction<CheckoutFormDesign>>;
 
   products: Product[];
+
+  /** Store country and currency: read-only on a form (F-411). */
+  country: string;
+  currency: string;
+  /** Follows the selected product; the server sets it on save (F-422). */
+  formType: FormType;
+  /** The form is already saved. The link is read-only from then on. */
+  isEditing: boolean;
+  /** The saved form has orders: a product change gets a warning. */
+  hasOrders: boolean;
+  /** The product the saved form had when it opened. */
+  originalProductId: number | null;
+  /** Regions of the country, and the ones this form offers (F-413). */
+  allRegions: string[];
+  regions: string[];
+  setRegions: React.Dispatch<React.SetStateAction<string[]>>;
+  /** Set after a failed save attempt: empty required fields then show their error. */
+  showErrors: boolean;
 
   addField: (type: FieldType) => void;
   updateField: (id: string, updated: FormField) => void;

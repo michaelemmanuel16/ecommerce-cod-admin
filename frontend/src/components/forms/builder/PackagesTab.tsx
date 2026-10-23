@@ -3,14 +3,13 @@ import { Plus } from 'lucide-react';
 import { Button } from '../../ui/Button';
 import { PackageEditor } from '../PackageEditor';
 import { useCheckoutBuilder } from './checkoutBuilderContextValue';
-import { getCurrencyForCountry } from '../../../utils/countries';
 import { formUrl, buildWidgetSnippet } from '../../../lib/embedSnippet';
 
 export const PackagesTab: React.FC = () => {
   const ctx = useCheckoutBuilder();
   const selectedProductId = ctx.watch('productId');
   const selectedProduct = ctx.products.find((p) => p.id === Number(selectedProductId));
-  const currency = ctx.watch('currency') || getCurrencyForCountry(ctx.watch('defaultCountry') as any);
+  const currency = ctx.currency;
   const slug = ctx.watch('slug');
   const name = ctx.watch('name');
 

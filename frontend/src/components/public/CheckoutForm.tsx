@@ -29,6 +29,8 @@ export interface CheckoutFormData {
   town: string;
   landmark: string;
   streetAddress?: string;
+  /** A field whose "Sends to" is Order notes (F-412). */
+  notes?: string;
   selectedPackageId: number;
   selectedAddonIds: number[];
   customFields?: Record<string, string>;

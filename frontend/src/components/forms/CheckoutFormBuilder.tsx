@@ -9,13 +9,17 @@ import {
   CheckoutFormDesign,
   FieldType,
   FormField,
+  FormType,
   ProductPackage,
   Upsell,
   PixelConfig,
 } from '../../types/checkout-form';
 import { Product } from '../../types';
 import apiClient from '../../services/api';
-import { getCurrencyForCountry, getRegionsForCountry } from '../../utils/countries';
+import { getCountryByCurrency, getRegionsForCountry } from '../../utils/countries';
+import { domainLineErrors, slugFromName, thankYouError } from '../../lib/checkoutBasics';
+import { missingKeysMessage } from '../../lib/standardFields';
+import { useConfigStore } from '../../stores/configStore';
 import { CheckoutBuilderProvider } from './builder/CheckoutBuilderContext';
 import {
   BuilderFormValues,
@@ -49,19 +53,43 @@ interface CheckoutFormBuilderProps {
 }
 
 // Destinations are pinned via standardKey so relabeling any of these (e.g.
-// "Street Address" → "Delivery Address") keeps the value flowing to the order.
-// State, City/Town and Nearest landmark are part of the default set because a
-// physical order without them is hard for a rider to find. Email and Street
-// address are off by default; a seller can turn them on.
+// "Street address" → "Delivery address") keeps the value flowing to the order.
+// Region, City or town, Street address and Nearest landmark are part of the default set because a
+// physical order without them is hard for a rider to find. The server refuses to switch a physical form on
+// without a street address (F-411), so it starts on. Email is off by default; a seller can turn it on.
 const defaultFields: FormField[] = [
   { id: '1', label: 'Full Name', type: 'text', required: true, enabled: true, standardKey: 'fullName' },
   { id: '2', label: 'Phone', type: 'phone', required: true, enabled: true, standardKey: 'phone' },
-  { id: '3', label: 'State', type: 'state', required: true, enabled: true, standardKey: 'region' },
-  { id: '4', label: 'City/Town', type: 'text', required: true, enabled: true, standardKey: 'town' },
-  { id: '5', label: 'Nearest landmark', type: 'text', required: true, enabled: true, standardKey: 'landmark' },
-  { id: '6', label: 'Email Address', type: 'email', required: false, enabled: false, standardKey: 'email' },
-  { id: '7', label: 'Street Address', type: 'textarea', required: false, enabled: false, standardKey: 'streetAddress' },
+  { id: '3', label: 'Region', type: 'state', required: true, enabled: true, standardKey: 'region' },
+  { id: '4', label: 'City or town', type: 'text', required: true, enabled: true, standardKey: 'town' },
+  { id: '5', label: 'Street address', type: 'textarea', required: true, enabled: true, standardKey: 'streetAddress' },
+  { id: '6', label: 'Nearest landmark', type: 'text', required: true, enabled: true, standardKey: 'landmark' },
+  { id: '7', label: 'Email Address', type: 'email', required: false, enabled: false, standardKey: 'email' },
 ];
+
+/** The regions a saved form offers: `regions.available`, or every region of its country when none are stored. */
+const savedRegions = (form: CheckoutForm | undefined, all: string[]): string[] => {
+  const stored = form?.regions as unknown;
+  const list = Array.isArray(stored) ? stored : (stored as { available?: unknown } | null | undefined)?.available;
+  return Array.isArray(list) && list.length > 0 ? list.filter((r): r is string => typeof r === 'string') : all;
+};
+
+const initialValues = (form: CheckoutForm | undefined): BuilderFormValues => ({
+  name: form?.name || '',
+  slug: form?.slug || '',
+  productId: form?.productId || 0,
+  description: form?.description || '',
+  buttonColor: form?.styling?.buttonColor || '#0f172a',
+  accentColor: form?.styling?.accentColor || '#f97316',
+  redirectUrl: form?.redirectUrl || '',
+  allowedOrigins: (form?.allowedOrigins || []).join('\n'),
+  codEnabled: form?.codEnabled ?? true,
+  paystackDepositEnabled: form?.paystackDepositEnabled ?? false,
+  paystackFullEnabled: form?.paystackFullEnabled ?? false,
+  depositPercent: form?.depositPercent ?? 50,
+  metaCapiAccessToken: form?.metaCapiAccessToken || '',
+  metaCapiTestEventCode: form?.metaCapiTestEventCode || '',
+});
 
 export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, CheckoutFormBuilderProps>(({
   onSave,
@@ -72,24 +100,7 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
   onDraftChange,
 }, ref) => {
   const { register, handleSubmit, watch, setValue, reset, formState: { errors } } = useForm<BuilderFormValues>({
-    defaultValues: {
-      name: initialData?.name || '',
-      slug: initialData?.slug || '',
-      productId: initialData?.productId || 0,
-      description: initialData?.description || '',
-      defaultCountry: initialData?.country || 'Ghana',
-      buttonColor: initialData?.styling?.buttonColor || '#0f172a',
-      accentColor: initialData?.styling?.accentColor || '#f97316',
-      currency: initialData?.currency || getStoreCurrency(),
-      redirectUrl: initialData?.redirectUrl || '',
-      allowedOrigins: (initialData?.allowedOrigins || []).join('\n'),
-      codEnabled: initialData?.codEnabled ?? true,
-      paystackDepositEnabled: initialData?.paystackDepositEnabled ?? false,
-      paystackFullEnabled: initialData?.paystackFullEnabled ?? false,
-      depositPercent: initialData?.depositPercent ?? 50,
-      metaCapiAccessToken: initialData?.metaCapiAccessToken || '',
-      metaCapiTestEventCode: initialData?.metaCapiTestEventCode || '',
-    },
+    defaultValues: initialValues(initialData),
   });
 
   const [fields, setFields] = useState<FormField[]>(initialData?.fields || defaultFields);
@@ -101,32 +112,22 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pixelConfig, setPixelConfig] = useState<PixelConfig>(initialData?.pixelConfig || {});
   const [design, setDesign] = useState<CheckoutFormDesign>(initialData?.design || {});
-  const [currentRegions, setCurrentRegions] = useState<string[]>(
-    getRegionsForCountry(initialData?.country || 'Ghana')
-  );
+  const [showErrors, setShowErrors] = useState(false);
+
+  // Country and currency come from the store and cannot be changed on a form (F-411). A saved form keeps its own.
+  const storeCurrency = useConfigStore((st) => st.currency);
+  const currency = initialData?.currency || storeCurrency || getStoreCurrency();
+  const country = initialData?.country || getCountryByCurrency(currency);
+  const allRegions = React.useMemo(() => getRegionsForCountry(country), [country]);
+  // A new form starts with every region of the country selected (F-413).
+  const [regions, setRegions] = useState<string[]>(() => savedRegions(initialData, allRegions));
 
   const initialDataId = initialData?.id;
   // Re-seed state if the parent swaps to a different form (rare in full-page mode, but covers it)
   useEffect(() => {
     if (initialData) {
-      reset({
-        name: initialData.name || '',
-        slug: initialData.slug || '',
-        productId: initialData.productId || 0,
-        description: initialData.description || '',
-        defaultCountry: initialData.country || 'Ghana',
-        buttonColor: initialData.styling?.buttonColor || '#0f172a',
-        accentColor: initialData.styling?.accentColor || '#f97316',
-        currency: initialData.currency || getStoreCurrency(),
-        redirectUrl: initialData.redirectUrl || '',
-        allowedOrigins: (initialData.allowedOrigins || []).join('\n'),
-        codEnabled: initialData.codEnabled ?? true,
-        paystackDepositEnabled: initialData.paystackDepositEnabled ?? false,
-        paystackFullEnabled: initialData.paystackFullEnabled ?? false,
-        depositPercent: initialData.depositPercent ?? 50,
-        metaCapiAccessToken: initialData.metaCapiAccessToken || '',
-        metaCapiTestEventCode: initialData.metaCapiTestEventCode || '',
-      });
+      reset(initialValues(initialData));
+      setRegions(savedRegions(initialData, allRegions));
       setFields(initialData.fields || defaultFields);
       setPackages(initialData.packages || []);
       setUpsells(initialData.upsells?.map((u) => ({ ...u, quantity: u.items?.quantity || 1 })) || []);
@@ -135,23 +136,11 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
     }
   }, [initialDataId, reset]);
 
-  // Auto-generate slug from name (create mode only)
+  // Auto-generate slug from name (create mode only); read-only once the form is saved.
   const nameValue = watch('name');
   useEffect(() => {
-    if (nameValue && !initialData) {
-      const slug = nameValue.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-      setValue('slug', slug);
-    }
+    if (nameValue && !initialData) setValue('slug', slugFromName(nameValue));
   }, [nameValue, setValue, initialData]);
-
-  // Auto-set currency + regions when country changes
-  const countryValue = watch('defaultCountry');
-  useEffect(() => {
-    if (countryValue) {
-      setValue('currency', getCurrencyForCountry(countryValue as any));
-      setCurrentRegions(getRegionsForCountry(countryValue));
-    }
-  }, [countryValue, setValue]);
 
   // Cleanup preview URLs on unmount. Mirror the live Map into a ref so the
   // unmount cleanup sees the latest set, not the empty mount-time snapshot.
@@ -170,8 +159,6 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
   // serialise the draft and compare against the previous snapshot.
   const name = watch('name');
   const description = watch('description');
-  const currency = watch('currency');
-  const defaultCountry = watch('defaultCountry');
   const productIdValue = watch('productId');
   const codEnabledValue = watch('codEnabled');
   const depositEnabledValue = watch('paystackDepositEnabled');
@@ -193,17 +180,18 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
       productType: p.productType,
     };
   }, [products, productIdValue]);
+  const formType: FormType = previewProduct?.productType === 'digital' ? 'digital' : 'physical';
   const draftPayload = React.useMemo(
     () => ({
       name,
       description,
       currency,
-      country: defaultCountry,
+      country,
       productId: Number(productIdValue) || 0,
       product: previewProduct,
       fields,
       // Streamed so the State field's dropdown updates live when the country changes.
-      regions: { available: currentRegions },
+      regions: { available: regions },
       packages,
       upsells,
       design,
@@ -213,7 +201,7 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
       paystackFullEnabled: fullEnabledValue,
       depositPercent: depositPercentValue,
     }),
-    [name, description, currency, defaultCountry, productIdValue, previewProduct, fields, currentRegions, packages, upsells, design, pixelConfig, codEnabledValue, depositEnabledValue, fullEnabledValue, depositPercentValue]
+    [name, description, currency, country, productIdValue, previewProduct, fields, regions, packages, upsells, design, pixelConfig, codEnabledValue, depositEnabledValue, fullEnabledValue, depositPercentValue]
   );
   const hasMountedRef = useRef(false);
   const lastSnapshotRef = useRef<string>('');
@@ -323,8 +311,18 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
   };
 
   const onSubmit = async (data: BuilderFormValues) => {
-    if (!data.productId || data.productId === 0) {
-      alert('Please select a product for this checkout form.');
+    // The server applies the same rules and answers 400; these fail fast, in the owner's words, before the request.
+    const problem =
+      (!data.name.trim() && 'Give the form a name.') ||
+      (!data.slug && 'The form name needs at least one letter or number.') ||
+      (!data.productId && 'Choose the product this form sells.') ||
+      thankYouError(data.redirectUrl) ||
+      domainLineErrors(data.allowedOrigins)[0]?.message ||
+      // A new form, or one that is on, cannot be saved without the fields an order needs (F-411).
+      (!initialData || initialData.isActive ? missingKeysMessage(fields, formType) : null);
+    if (problem) {
+      setShowErrors(true);
+      toast.error(problem);
       return;
     }
     if (packages.length === 0) {
@@ -382,9 +380,8 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
         productId: data.productId,
         description: data.description || '',
         fields,
-        country: data.defaultCountry,
-        currency: data.currency || getCurrencyForCountry(data.defaultCountry as any),
-        regions: { available: currentRegions },
+        currency,
+        regions: { available: regions },
         packages: packages.map((pkg) => ({
           name: pkg.name,
           description: '',
@@ -465,6 +462,16 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
     design,
     setDesign,
     products,
+    country,
+    currency,
+    formType,
+    isEditing: Boolean(initialData),
+    hasOrders: (initialData?._count?.submissions ?? 0) > 0,
+    originalProductId: initialData?.productId ?? null,
+    allRegions,
+    regions,
+    setRegions,
+    showErrors,
     addField,
     updateField,
     deleteField,

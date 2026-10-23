@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { FormField } from '../../types/checkout-form';
-import { findMissingRequiredKeys, mapFields, resolveStandardKey } from '../../lib/standardFields';
+import { STANDARD_FIELDS, mapFields, missingKeysMessage, missingRequiredLabels, resolveStandardKey } from '../../lib/standardFields';
 
 function field(overrides: Partial<FormField> & { label: string }): FormField {
   return {
@@ -95,7 +95,7 @@ describe('mapFields', () => {
   });
 });
 
-describe('findMissingRequiredKeys', () => {
+describe('missingRequiredLabels', () => {
   const physicalFields = [
     field({ label: 'Full Name' }),
     field({ label: 'Phone', type: 'phone' }),
@@ -104,24 +104,66 @@ describe('findMissingRequiredKeys', () => {
   ];
 
   it('passes a form that feeds every required slot', () => {
-    expect(findMissingRequiredKeys(physicalFields)).toEqual([]);
+    expect(missingRequiredLabels(physicalFields, 'physical')).toEqual([]);
   });
 
-  it('flags the slot a mislabelled field left empty', () => {
+  it('names the slot a mislabelled field left empty', () => {
     const broken = physicalFields.map((f) =>
       f.label === 'Full Name' ? { ...f, standardKey: 'custom' as const } : f
     );
-    expect(findMissingRequiredKeys(broken)).toEqual(['fullName']);
+    expect(missingRequiredLabels(broken, 'physical')).toEqual(['Name']);
   });
 
   it('ignores disabled fields', () => {
     const disabled = physicalFields.map((f) =>
       f.label === 'Region' ? { ...f, enabled: false } : f
     );
-    expect(findMissingRequiredKeys(disabled)).toEqual(['region']);
+    expect(missingRequiredLabels(disabled, 'physical')).toEqual(['State']);
   });
 
-  it('requires email but not address for digital products', () => {
-    expect(findMissingRequiredKeys(physicalFields, { isDigital: true })).toEqual(['email']);
+  it('requires a street address for a physical form but email instead for a digital one', () => {
+    const noAddress = physicalFields.filter((f) => f.label !== 'Delivery Address');
+    expect(missingRequiredLabels(noAddress, 'physical')).toEqual(['Street address']);
+    expect(missingRequiredLabels(noAddress, 'digital')).toEqual(['Email']);
+  });
+
+  it('matches by "Sends to" first, then by label alias, then by field type', () => {
+    expect(
+      missingRequiredLabels(
+        [
+          field({ label: 'Who are you', standardKey: 'fullName' }),
+          field({ label: 'Mobile', type: 'phone' }),
+          field({ label: 'Where', type: 'state' }),
+          field({ label: 'Anything', standardKey: 'streetAddress' }),
+        ],
+        'physical'
+      )
+    ).toEqual([]);
+  });
+
+  it('treats an empty field list as the platform defaults: nothing missing', () => {
+    expect(missingRequiredLabels([], 'physical')).toEqual([]);
+  });
+});
+
+describe('missingKeysMessage', () => {
+  it("gives the server's sentence", () => {
+    expect(missingKeysMessage([field({ label: 'Full Name' })], 'physical')).toBe(
+      "This form can't take orders yet. Add: Phone number, Street address, State."
+    );
+  });
+
+  it('is null when nothing is missing', () => {
+    expect(missingKeysMessage([], 'physical')).toBeNull();
+  });
+});
+
+describe('Sends to options', () => {
+  it('has the notes slot and no label inference for it', () => {
+    expect(STANDARD_FIELDS.map((f) => f.label)).toEqual(
+      expect.arrayContaining(['Customer name', 'Phone', 'Alternate phone', 'Email', 'Region', 'City or town', 'Street address', 'Order notes'])
+    );
+    expect(resolveStandardKey(field({ label: 'Notes' }))).toBeNull();
+    expect(resolveStandardKey(field({ label: 'Anything', standardKey: 'notes' }))).toBe('notes');
   });
 });

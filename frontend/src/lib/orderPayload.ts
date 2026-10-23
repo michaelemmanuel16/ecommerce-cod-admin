@@ -15,7 +15,7 @@ export interface BuiltOrder {
       state: string;
       town: string;
       landmark?: string;
-      notes: null;
+      notes: string | null;
       customFields?: Record<string, string>;
     };
     paymentMethod?: CheckoutFormData['paymentMethod'];
@@ -66,7 +66,7 @@ export function buildOrderPayload(form: PublicCheckoutForm, data: CheckoutFormDa
         state: data.region,
         town: data.town?.trim() ?? '',
         landmark: data.landmark?.trim() || undefined,
-        notes: null,
+        notes: data.notes?.trim() || null,
         customFields: data.customFields,
       },
       paymentMethod: data.paymentMethod,

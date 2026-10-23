@@ -41,6 +41,12 @@ describe('buildOrderPayload', () => {
     expect(none.address).toBeUndefined();
   });
 
+  it('sends the order notes a field with "Sends to: Order notes" collected, or null', () => {
+    expect(buildOrderPayload(form, { ...data, notes: '  Call before you come  ' }).payload.formData.notes).toBe('Call before you come');
+    expect(buildOrderPayload(form, data).payload.formData.notes).toBeNull();
+    expect(buildOrderPayload(form, { ...data, notes: '   ' }).payload.formData.notes).toBeNull();
+  });
+
   it('throws when the selected package is not on the form', () => {
     expect(() => buildOrderPayload(form, { ...data, selectedPackageId: 999 })).toThrow(
       'Please select a package',

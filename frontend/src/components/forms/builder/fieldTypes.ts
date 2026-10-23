@@ -25,7 +25,7 @@ export interface FieldTypeMeta {
   optionsHelp?: string;
 }
 
-// Order matches the Salesgee "Add Form Fields" grid, with State appended.
+// Order matches the Salesgee "Add Form Fields" grid, with Region (the `state` type) appended.
 export const FIELD_TYPES: readonly FieldTypeMeta[] = [
   { type: 'text', label: 'Text Input', icon: Type, defaultLabel: 'Text', hasOptions: false },
   { type: 'email', label: 'Email', icon: Mail, defaultLabel: 'Email Address', hasOptions: false },
@@ -56,7 +56,7 @@ export const FIELD_TYPES: readonly FieldTypeMeta[] = [
     hasOptions: true,
     optionsHelp: 'Customers can select multiple options from this dropdown.',
   },
-  { type: 'state', label: 'State', icon: MapPin, defaultLabel: 'State', hasOptions: false },
+  { type: 'state', label: 'Region', icon: MapPin, defaultLabel: 'Region', hasOptions: false },
 ] as const;
 
 export function getFieldTypeMeta(type: FieldType): FieldTypeMeta {

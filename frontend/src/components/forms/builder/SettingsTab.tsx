@@ -1,11 +1,8 @@
 import React from 'react';
 import { Check, Code2 } from 'lucide-react';
 import { Input } from '../../ui/Input';
-import { Select } from '../../ui/Select';
-import { Textarea } from '../../ui/Textarea';
 import { Button } from '../../ui/Button';
 import { useCheckoutBuilder } from './checkoutBuilderContextValue';
-import { getSupportedCountries } from '../../../utils/countries';
 import { buildWidgetSnippet } from '../../../lib/embedSnippet';
 import { useCopyToClipboard } from '../../../hooks/useCopyToClipboard';
 
@@ -27,17 +24,6 @@ export const SettingsTab: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h3 className="text-sm font-semibold text-gray-900 mb-3">Form Settings</h3>
-        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Default Country</label>
-          <Select
-            {...ctx.register('defaultCountry')}
-            options={getSupportedCountries().map((country) => ({ value: country, label: country }))}
-          />
-        </div>
-      </div>
-
       <div>
         <h3 className="text-sm font-semibold text-gray-900 mb-3">Payment Methods <span className="font-normal text-gray-400">(Nigeria only)</span></h3>
         <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-3">
@@ -106,38 +92,8 @@ export const SettingsTab: React.FC = () => {
       </div>
 
       <div>
-        <h3 className="text-sm font-semibold text-gray-900 mb-3">Thank You Page</h3>
-        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Custom Redirect URL</label>
-          <Input
-            {...ctx.register('redirectUrl')}
-            placeholder="https://yourbrand.com/thank-you"
-          />
-          <p className="text-xs text-gray-500 mt-2">
-            After a successful order, customers are sent here instead of the built-in confirmation
-            screen. Order details are appended as <code>?order_id=</code>, <code>total=</code> &amp;{' '}
-            <code>currency=</code>. Leave blank to keep the default confirmation page. Your page must
-            fire its own purchase pixel.
-          </p>
-        </div>
-      </div>
-
-      <div>
         <h3 className="text-sm font-semibold text-gray-900 mb-3">Embed on Your Site</h3>
         <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Allowed Domains</label>
-            <Textarea
-              {...ctx.register('allowedOrigins')}
-              rows={3}
-              placeholder={'https://yourbrand.com\nhttps://shop.yourbrand.com'}
-            />
-            <p className="text-xs text-gray-500 mt-2">
-              One domain per line (including <code>https://</code>). When set, only these sites may
-              embed this checkout. Leave blank to allow any site.
-            </p>
-          </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Embed Snippet</label>
             {widgetSnippet ? (
@@ -153,7 +109,7 @@ export const SettingsTab: React.FC = () => {
                 </div>
                 <p className="text-xs text-gray-500 mt-2">
                   Paste this where you want the checkout to appear. The form renders inline on your
-                  page — no iframe.
+                  page — no iframe. Set the sites that may embed it under Allowed domains in Basics.
                 </p>
               </>
             ) : (

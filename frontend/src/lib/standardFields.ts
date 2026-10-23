@@ -7,7 +7,7 @@
 // rejected. That is a silent, total failure for the form, which is why the
 // builder now writes `standardKey` explicitly and this inference only runs as a
 // fallback for forms built before it existed.
-import { FieldType, FormField, StandardFieldKey } from '../types/checkout-form';
+import { FieldType, FormField, FormType, StandardFieldKey } from '../types/checkout-form';
 
 export interface StandardFieldMeta {
   key: StandardFieldKey;
@@ -28,7 +28,7 @@ export const STANDARD_FIELDS: readonly StandardFieldMeta[] = [
   },
   {
     key: 'phone',
-    label: 'Phone number',
+    label: 'Phone',
     aliases: ['phone', 'phone number', 'mobile', 'mobile number', 'telephone', 'contact number'],
   },
   {
@@ -51,27 +51,22 @@ export const STANDARD_FIELDS: readonly StandardFieldMeta[] = [
   },
   {
     key: 'email',
-    label: 'Email address',
+    label: 'Email',
     aliases: ['email', 'e-mail', 'email address'],
   },
   {
     key: 'region',
-    label: 'State',
+    label: 'Region',
     aliases: ['region', 'region/state', 'state', 'state/region', 'province'],
   },
   {
     key: 'town',
-    label: 'City/Town',
+    label: 'City or town',
     aliases: ['city/town', 'city / town', 'city', 'town', 'town or area', 'area'],
   },
   {
-    key: 'landmark',
-    label: 'Nearest landmark',
-    aliases: ['nearest landmark', 'landmark'],
-  },
-  {
     key: 'streetAddress',
-    label: 'Delivery address',
+    label: 'Street address',
     aliases: [
       'address',
       'street address',
@@ -82,6 +77,13 @@ export const STANDARD_FIELDS: readonly StandardFieldMeta[] = [
       'residential address',
       'full address',
     ],
+  },
+  // No label inference for notes: the server only reads an explicit "Sends to" for it.
+  { key: 'notes', label: 'Order notes', aliases: [] },
+  {
+    key: 'landmark',
+    label: 'Nearest landmark',
+    aliases: ['nearest landmark', 'landmark'],
   },
 ];
 
@@ -151,23 +153,33 @@ export function mapFields(fields: FormField[]): MappedField[] {
   });
 }
 
-// Slots no form can do without. Mirrors the always-required part of the check in
-// backend/src/controllers/publicOrderController.ts. Town and landmark follow the
-// form's own settings (the renderer adds both to old forms) and the street
-// address is off by default, so none of the three is listed here.
-const REQUIRED_PHYSICAL: StandardFieldKey[] = ['fullName', 'phone', 'region'];
-const REQUIRED_DIGITAL: StandardFieldKey[] = ['fullName', 'phone', 'email'];
+// Mirrors missingRequiredLabels in backend/src/utils/checkoutLocation.ts (F-411). The server refuses to switch a form on
+// while one of these has no enabled field, so the editor shows the same sentence before the owner saves. The words are the
+// server's, so the banner and the 400 read alike.
+const REQUIRED_KEYS: Record<FormType, StandardFieldKey[]> = {
+  physical: ['fullName', 'phone', 'streetAddress', 'region'],
+  digital: ['fullName', 'phone', 'email'],
+};
+const GUARD_LABELS: Partial<Record<StandardFieldKey, string>> = {
+  fullName: 'Name',
+  phone: 'Phone number',
+  streetAddress: 'Street address',
+  region: 'State',
+  email: 'Email',
+};
 
 /**
- * Standard slots no enabled field feeds. A non-empty result means the form
- * cannot produce a valid order: the server will reject every submission.
+ * Names of the slots an active form cannot do without and no enabled field feeds. Match is by "Sends to", then by label
+ * alias, then by field type. An empty field list means the platform defaults, which the server completes: nothing missing.
  */
-export function findMissingRequiredKeys(
-  fields: FormField[],
-  opts: { isDigital?: boolean } = {}
-): StandardFieldKey[] {
-  const enabled = fields.filter((f) => f.enabled !== false);
-  const present = new Set(mapFields(enabled).map((m) => m.standardKey).filter(Boolean));
-  const required = opts.isDigital ? REQUIRED_DIGITAL : REQUIRED_PHYSICAL;
-  return required.filter((key) => !present.has(key));
+export function missingRequiredLabels(fields: FormField[], formType: FormType): string[] {
+  if (fields.length === 0) return [];
+  const present = new Set(fields.filter((f) => f.enabled !== false).map(resolveStandardKey));
+  return REQUIRED_KEYS[formType].filter((key) => !present.has(key)).map((key) => GUARD_LABELS[key] as string);
+}
+
+/** "This form can't take orders yet. Add: Street address." or null when nothing is missing. */
+export function missingKeysMessage(fields: FormField[], formType: FormType): string | null {
+  const missing = missingRequiredLabels(fields, formType);
+  return missing.length ? `This form can't take orders yet. Add: ${missing.join(', ')}.` : null;
 }

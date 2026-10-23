@@ -3,11 +3,10 @@ import { Plus } from 'lucide-react';
 import { Button } from '../../ui/Button';
 import { UpsellEditor } from '../UpsellEditor';
 import { useCheckoutBuilder } from './checkoutBuilderContextValue';
-import { getCurrencyForCountry } from '../../../utils/countries';
 
 export const UpsellsTab: React.FC = () => {
   const ctx = useCheckoutBuilder();
-  const currency = ctx.watch('currency') || getCurrencyForCountry(ctx.watch('defaultCountry') as any);
+  const currency = ctx.currency;
 
   return (
     <div className="space-y-4">
