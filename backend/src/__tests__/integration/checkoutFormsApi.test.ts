@@ -487,14 +487,14 @@ describe('order fields: city, region and notes', () => {
     expect(order.customer).toMatchObject({ area: 'Osu', state: 'Greater Accra' });
   });
 
-  it('a form with no city field puts the region in the town', async () => {
+  it('a form with no city field keeps the town empty and the region in the state', async () => {
     const fields = FULL_FIELDS.map((f) => (f.standardKey === 'city' ? { ...f, enabled: false } : f));
     const form = (await create(formBody({ fields }))).body.form;
     const res = await orderOn(form.slug, buyer({ state: 'Ashanti' }));
     expect(res.status).toBe(201);
     const order = await prismaBase.order.findUniqueOrThrow({ where: { id: res.body.orderId }, include: { customer: true } });
-    expect(order.deliveryArea).toBe('Ashanti');
-    expect(order.customer.area).toBe('Ashanti');
+    expect(order).toMatchObject({ deliveryArea: null, deliveryState: 'Ashanti' });
+    expect(order.customer.area).toBe('');
   });
 });
 

@@ -273,9 +273,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       }
       formData.state = region;
     }
-    // A form that does not ask for a town (field off, or an embed without one) takes the state as its town.
-    const area = cleanText(formData.town, 100)
-      || (!isDigital && (locationFieldsAbsent || slotRule(form.fields, 'town') === 'off') ? cleanText(formData.state, 100) : '');
+    const area = cleanText(formData.town, 100); // a form that does not ask for a town leaves it empty, never the state
 
     const upsellsTotal = Money.sum(resolvedUpsells.map((u) => u.price));
 
