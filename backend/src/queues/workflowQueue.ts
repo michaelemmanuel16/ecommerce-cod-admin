@@ -169,13 +169,15 @@ async function executeAssignUserAction(action: any, input: any, conditions?: any
     return { assigned: 0, message: 'No users configured for assignment' };
   }
 
-  // F-709: an unavailable delivery partner is skipped
+  // F-709: an unavailable delivery partner is skipped; so is one blocked for unpaid cash (T36)
   if (userType === 'delivery_agent') {
     const available = await prisma.user.findMany({
       where: { id: { in: assignments.map((a: any) => a.userId) }, isActive: true, isAvailable: true },
       select: { id: true },
     });
-    const availableIds = new Set(available.map((u) => u.id));
+    const blocked = await prisma.agentBalance.findMany({ where: { agentId: { in: available.map((u) => u.id) }, isBlocked: true }, select: { agentId: true } });
+    const blockedIds = new Set(blocked.map((b) => b.agentId));
+    const availableIds = new Set(available.filter((u) => !blockedIds.has(u.id)).map((u) => u.id));
     assignments = assignments.filter((a: any) => availableIds.has(a.userId));
     if (assignments.length === 0) {
       return { assigned: 0, message: 'No available delivery partner in the assignment list' };

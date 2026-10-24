@@ -6,7 +6,7 @@
  *   stock cache check (stockCheck); fixture values 442 / 116 / 99 / 36 / 21 / 20 (inventoryFixtureApi, fixtureChecks/stock);
  *   Done-when 3 (stockOnce), 7 (stockWriteGrep, transfersApi old routes), 9 (deliveryPartnersWrite).
  * This file adds what only the fixture can show: the cache check on the fixture, available to sell through the service,
- * and Done-when 2 on the fixture count.
+ * and the fixture count Finding (360.00).
  */
 import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import '../mocks/logger.mock';
@@ -78,12 +78,10 @@ describe('the Finding of the 3PL count (Done when 2)', () => {
     expect(Number(line.finding.amount)).toBe(12 * cogs);
   });
 
-  // Done when 2 says the Finding is GH₵362.50 (12 x 30.21, the landed cost of the 9 October shipment). The service prices the gap
-  // at Product.cogs, and the fixture product carries GH₵30.00 (the receive service would move it to a weighted average), so the
-  // fixture gives 360.00. Opus decides: the fixture cost, or the Finding priced at the landed cost.
-  it.failing('the fixture Finding is GH₵362.50', async () => {
+  // Count Findings are priced at Product.cogs (weighted average, T12) and the fixture keeps the owner's GH₵30.00 start cost: 12 x 30.00.
+  it('the fixture Finding is GH₵360.00', async () => {
     const res = await countLogiswift();
     expect(res.status).toBe(201);
-    expect(res.body.count.lines[0].finding.amount).toBe('362.50');
+    expect(res.body.count.lines[0].finding.amount).toBe('360.00');
   });
 });

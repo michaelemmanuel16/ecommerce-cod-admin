@@ -73,17 +73,14 @@ afterAll(async () => {
 describe('assignment skips blocked, away and deactivated partners (real database)', () => {
   const pool = () => runInTenant(tenantId, () => assignmentService.getUsersByRole('delivery_agent'));
 
-  // BUG: getUsersByRole('delivery_agent') filters `balance: { OR: [{ isBlocked: false }, { isBlocked: null }] }`. isBlocked is a
-  // required Boolean, so Prisma rejects `isBlocked: null` ("Argument `isBlocked` is missing") and the call throws on a real database.
-  // The unit test mocks Prisma and does not see it.
-  it.failing('getUsersByRole returns the available partners and leaves out the blocked, away and deactivated ones', async () => {
+  // A partner with no AgentBalance row counts as not blocked.
+  it('getUsersByRole returns the available partners and leaves out the blocked, away and deactivated ones', async () => {
     const ids = (await pool()).map((u) => u.id);
     expect(ids).toContain(P.ok);
     for (const label of ['blocked', 'away', 'gone']) expect([label, ids.includes(P[label])]).toEqual([label, false]);
   });
 
-  // Same cause: selectDeliveryAgentForArea calls getUsersByRole.
-  it.failing('selectDeliveryAgentForArea picks an available partner and never a blocked, away or deactivated one', async () => {
+  it('selectDeliveryAgentForArea picks an available partner and never a blocked, away or deactivated one', async () => {
     const picked = new Set<number>();
     for (let i = 0; i < 12; i++) {
       const u = await runInTenant(tenantId, () => assignmentService.selectDeliveryAgentForArea('Accra'));
@@ -93,18 +90,17 @@ describe('assignment skips blocked, away and deactivated partners (real database
     for (const label of ['blocked', 'away', 'gone']) expect([label, picked.has(P[label])]).toEqual([label, false]);
   });
 
-  it('a workflow assign_user action refuses a blocked partner and leaves the order alone', async () => {
+  it('a workflow assign_user action with only a blocked partner assigns nobody and leaves the order alone', async () => {
     const orderId = await mkOrder('confirmed', null);
     const action = { type: 'assign_user', config: { userType: 'delivery_agent', distributionMode: 'weighted', assignments: [{ userId: P.blocked, weight: 1 }] } };
-    await expect(runInTenant(tenantId, () => executeAction(action, { orderId }))).rejects.toThrow(/blocked/);
+    expect((await runInTenant(tenantId, () => executeAction(action, { orderId }))).assigned).toBe(0);
     expect((await prismaBase.order.findUniqueOrThrow({ where: { id: orderId } })).deliveryAgentId).toBeNull();
   });
 
-  // F-709 says the away partner is skipped, and the action does skip it. A blocked partner in the same list is not skipped:
-  // the weighted pick lands on it (weight 1 of 1) and the whole action throws PARTNER_BLOCKED instead of choosing "ok".
-  it.failing('a workflow assign_user action skips a blocked partner and assigns the next one', async () => {
+  // A blocked partner is skipped like an away one: the next partner is chosen.
+  it('a workflow assign_user action skips a blocked partner and assigns the next one', async () => {
     const orderId = await mkOrder('confirmed', null);
-    const action = { type: 'assign_user', config: { userType: 'delivery_agent', distributionMode: 'weighted', assignments: [{ userId: P.blocked, weight: 1 }, { userId: P.ok, weight: 0 }] } };
+    const action = { type: 'assign_user', config: { userType: 'delivery_agent', distributionMode: 'weighted', assignments: [{ userId: P.blocked, weight: 1 }, { userId: P.ok, weight: 1 }] } };
     await runInTenant(tenantId, () => executeAction(action, { orderId }));
     expect((await prismaBase.order.findUniqueOrThrow({ where: { id: orderId } })).deliveryAgentId).toBe(P.ok);
   });
@@ -159,6 +155,9 @@ describe('region normalisation (O3)', () => {
   it('a store in Nigeria uses the regions of Nigeria: "lagos" maps, a Ghana region is kept as typed', async () => {
     expect(getRegionsForCountry('NG')).toContain('Lagos');
     expect(await runInTenant(ngTenantId, () => normalizeOrderRegion('lagos'))).toBe('Lagos');
+    expect(await runInTenant(ngTenantId, () => normalizeOrderRegion('Lagos State'))).toBe('Lagos');
+    expect(await runInTenant(ngTenantId, () => normalizeOrderRegion('Lagos Island State'))).toBe('Lagos Island State'); // no known region left: kept as typed
+    expect(await runInTenant(tenantId, () => normalizeOrderRegion('Ashanti State'))).toBe('Ashanti'); // the same strip on a Ghana store
     expect(await runInTenant(ngTenantId, () => normalizeOrderRegion('Greater Accra Region'))).toBe('Greater Accra Region');
     expect(await runInTenant(tenantId, () => normalizeOrderRegion('lagos'))).toBe('lagos');
   });
