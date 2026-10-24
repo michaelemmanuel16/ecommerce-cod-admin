@@ -31,7 +31,7 @@ export const createProduct = async (req: AuthRequest, res: Response): Promise<vo
 };
 
 export const getProduct = async (req: AuthRequest, res: Response): Promise<void> => {
-  res.json({ product: products.forRole(role(req), await products.getProduct(Number(req.params.id))) });
+  res.json({ product: products.forRole(role(req), await products.getProduct(Number(req.params.id), req.query.includeArchived === 'true')) });
 };
 
 export const updateProduct = async (req: AuthRequest, res: Response): Promise<void> => {

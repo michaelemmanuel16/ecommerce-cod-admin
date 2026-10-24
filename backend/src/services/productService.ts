@@ -208,10 +208,16 @@ export async function lowStockProducts() {
   return rows.sort((a, b) => (a.daysOfCover ?? 0) - (b.daysOfCover ?? 0) || a.id - b.id);
 }
 
-export async function getProduct(id: number) {
-  const product = await prisma.product.findUnique({ where: { id } });
+/** One product. `includeArchived`: the drawer opens an archived product (to restore it), as the Archived tab lists it. */
+export async function getProduct(id: number, includeArchived = false) {
+  const product = includeArchived ? await withSoftDeleted(() => prisma.product.findFirst({ where: { id } })) : await prisma.product.findUnique({ where: { id } });
   if (!product) throw new AppError('Product not found', 404);
-  return { ...product, marginPct: marginPercent(product.price, product.cogs, product.productType) };
+  // The drawer locks the type once the product has orders, and the cost once a shipment was received (F-601, F-611).
+  const [orderLines, receivedShipments] = await Promise.all([
+    prisma.orderItem.count({ where: { productId: id } }),
+    prisma.inventoryShipment.count({ where: { productId: id, status: { in: ['received', 'arrived'] } } }),
+  ]);
+  return { ...product, marginPct: marginPercent(product.price, product.cogs, product.productType), hasOrders: orderLines > 0, hasReceivedShipment: receivedShipments > 0 };
 }
 
 const FIELDS = [

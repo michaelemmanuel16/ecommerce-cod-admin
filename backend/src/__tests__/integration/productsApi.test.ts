@@ -191,6 +191,25 @@ describe('cost and margin by role', () => {
   });
 });
 
+describe('GET /api/products/:id drawer facts (M4-T22)', () => {
+  it('hasOrders follows the order lines; hasReceivedShipment follows a received shipment, for every role', async () => {
+    await prismaBase.inventoryShipment.create({
+      data: { tenantId, productId: pens, quantity: 10, unitCost: 5, totalCost: 50, status: 'received', quantityCounted: 10, shortQuantity: 0, createdById: U.owner.id },
+    });
+    const detail = async (who: string, id: number, query = '') => (await get(who, `/${id}${query}`)).body.product;
+    expect(await detail('owner', copybook)).toMatchObject({ hasOrders: true, hasReceivedShipment: false });
+    expect(await detail('owner', pens)).toMatchObject({ hasOrders: true, hasReceivedShipment: true });
+    // An archived product is hidden by id, as before; the drawer asks for it with includeArchived
+    expect((await get('owner', `/${archived}`)).status).toBe(404);
+    expect(await detail('owner', archived, '?includeArchived=true')).toMatchObject({ isActive: false, hasOrders: false, hasReceivedShipment: false });
+    // The facts carry no money: a rep gets them too, still without cost
+    const rep = await detail('rep', pens);
+    expect(rep).toMatchObject({ hasOrders: true, hasReceivedShipment: true });
+    expect(rep.cogs).toBeUndefined();
+    await prismaBase.inventoryShipment.deleteMany({ where: { tenantId, productId: pens } });
+  });
+});
+
 describe('GET /api/products/summary', () => {
   it('four tiles: active and archived counts, best seller, revenue-weighted margin, low stock', async () => {
     const { body, status } = await get('manager', '/summary');

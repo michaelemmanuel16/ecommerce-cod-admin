@@ -23,11 +23,11 @@ import { ResetPassword } from './pages/ResetPassword';
 import { DynamicDashboard } from './pages/DynamicDashboard';
 import { Dashboard } from './pages/Dashboard';
 import { SettingsTabRedirect } from './pages/settings/SettingsTabRedirect';
+import { ProductEditRedirect } from './pages/products/ProductEditRedirect';
 // Lazy load all other pages for better initial load performance
 const Pricing = lazy(() => import('./pages/Pricing').then(m => ({ default: m.Pricing })));
 const OrdersRoute = lazy(() => import('./pages/orders/OrdersRoute').then(m => ({ default: m.OrdersRoute })));
 const Products = lazy(() => import('./pages/Products').then(m => ({ default: m.Products })));
-const ProductForm = lazy(() => import('./pages/ProductForm').then(m => ({ default: m.ProductForm })));
 const Customers = lazy(() => import('./pages/Customers').then(m => ({ default: m.Customers })));
 const CustomerDetails = lazy(() => import('./pages/CustomerDetails').then(m => ({ default: m.CustomerDetails })));
 const Deliveries = lazy(() => import('./pages/Deliveries').then(m => ({ default: m.Deliveries })));
@@ -286,12 +286,9 @@ function App() {
             <Route path="products" element={
               <Suspense fallback={<Loading />}><Products /></Suspense>
             } />
-            <Route path="products/new" element={
-              <Suspense fallback={<Loading />}><ProductForm /></Suspense>
-            } />
-            <Route path="products/:id/edit" element={
-              <Suspense fallback={<Loading />}><ProductForm /></Suspense>
-            } />
+            {/* The product form is a drawer on the Products page (M4-T22): old links open it. */}
+            <Route path="products/new" element={<Navigate to="/products?edit=new" replace />} />
+            <Route path="products/:id/edit" element={<ProductEditRedirect />} />
             <Route path="inventory" element={
               <Suspense fallback={<Loading />}><Inventory /></Suspense>
             } />
