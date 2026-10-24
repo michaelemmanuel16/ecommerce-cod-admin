@@ -26,7 +26,7 @@ beforeEach(() => {
 describe('Allocate modal (F-655)', () => {
   it('allocates 10 to Kofi from the warehouse and says it is in transit', async () => {
     open('allocate');
-    expect(screen.getByText('200 available')).toBeInTheDocument();
+    expect(screen.getByText('200 on hand · 34 reserved')).toBeInTheDocument();
     await userEvent.selectOptions(screen.getByLabelText('To'), String(KOFI));
     await userEvent.type(screen.getByLabelText('Quantity'), '10');
     await userEvent.click(submit(/Allocate to an agent/));
@@ -44,7 +44,7 @@ describe('Allocate modal (F-655)', () => {
   it('the limit follows the product', async () => {
     open('allocate');
     await userEvent.selectOptions(screen.getByLabelText('Product'), '2');
-    expect(screen.getByText('62 available')).toBeInTheDocument();
+    expect(screen.getByText('62 on hand · 11 reserved')).toBeInTheDocument();
   });
 
   it('shows the API refusal in the form', async () => {
@@ -57,10 +57,44 @@ describe('Allocate modal (F-655)', () => {
   });
 });
 
+describe('Reserved units (owner decision 2026-10-24)', () => {
+  it('the hint has no "reserved" part when nothing is reserved', () => {
+    const none = { ...OVERVIEW, stockByLocation: OVERVIEW.stockByLocation.map((r) => ({ ...r, reserved: 0 })) };
+    render(<StockModal kind="transfer" overview={none} products={PRODUCTS} initial={{ locationId: KOFI, productId: 1 }} onClose={vi.fn()} onDone={onDone} />);
+    expect(screen.getByText('36 on hand')).toBeInTheDocument();
+  });
+
+  it('up to the free units (on hand minus reserved) there is no warning; one more shows it, and saving stays allowed', async () => {
+    open('allocate', { productId: 1 }); // 200 on hand, 34 reserved: 166 free
+    const q = screen.getByLabelText('Quantity');
+    await userEvent.type(q, '166');
+    expect(screen.queryByText(/reserved for open orders/)).not.toBeInTheDocument();
+    await userEvent.clear(q);
+    await userEvent.type(q, '167');
+    expect(screen.getByText('This takes 1 unit reserved for open orders at Logiswift. Move those orders too, or Logiswift will run short.')).toBeInTheDocument();
+    expect(submit(/Allocate to an agent/)).toBeEnabled();
+    await userEvent.clear(q);
+    await userEvent.type(q, '200');
+    expect(screen.getByText(/This takes 34 units reserved/)).toBeInTheDocument();
+    expect(submit(/Allocate to an agent/)).toBeEnabled();
+  });
+
+  it('every kind warns, and above on hand is still an error with no warning', async () => {
+    open('transfer', { locationId: KOFI, productId: 1 }); // 36 on hand, 11 reserved
+    const q = screen.getByLabelText('Quantity');
+    await userEvent.type(q, '26');
+    expect(screen.getByText(/This takes 1 unit reserved for open orders at Kofi Appiah/)).toBeInTheDocument();
+    await userEvent.clear(q);
+    await userEvent.type(q, '37');
+    expect(screen.getByText('Only 36 on hand')).toBeInTheDocument();
+    expect(screen.queryByText(/reserved for open orders/)).not.toBeInTheDocument();
+  });
+});
+
 describe('Transfer modal', () => {
   it('moves stock agent to agent, from the holder that was clicked', async () => {
     open('transfer', { locationId: KOFI, productId: 1 });
-    expect(screen.getByText('36 on hand')).toBeInTheDocument();
+    expect(screen.getByText('36 on hand · 11 reserved')).toBeInTheDocument();
     expect(screen.getByLabelText('To agent')).toHaveValue(String(ESI));
     await userEvent.type(screen.getByLabelText('Quantity'), '5');
     await userEvent.click(submit(/Transfer to another agent/));
