@@ -1,7 +1,9 @@
 import type { Holder, HolderCount, ProductRow, ProductStatus, ProductTab } from '../../services/products.service';
 import type { TagTone } from '../../components/ui-v2';
+import { formatPercentage, todayYmd } from '../../utils/format';
+import { shortDay as dashboardShortDay } from '../dashboard/format';
 
-/** Shared bits of the Products page: tabs, status tags, wording of the stock notes. */
+/** Shared bits of the Products page: tabs, status tags, wording of the stock notes, and the margin formula. */
 
 export const PRODUCT_TABS: Array<{ id: ProductTab; label: string }> = [
   { id: 'active', label: 'Active' },
@@ -10,9 +12,6 @@ export const PRODUCT_TABS: Array<{ id: ProductTab; label: string }> = [
 ];
 
 export const isProductTab = (v: string | null): v is ProductTab => v === 'active' || v === 'archived' || v === 'all';
-
-/** Delivery success target of the Products table (Settings has no field for it yet; the Deliveries page reads the same 60). */
-export const SUCCESS_TARGET = 60;
 
 export const STATUS_TAG: Record<ProductStatus, { label: string; tone: TagTone }> = {
   archived: { label: 'Archived', tone: 'n' },
@@ -32,14 +31,28 @@ export function coverText(row: ProductRow): string | null {
   return `${row.daysOfCover} ${row.daysOfCover === 1 ? 'day' : 'days'} of cover`;
 }
 
-export const pct = (n: number | null | undefined): string => (n == null ? '—' : `${Math.round(n)}%`);
+/** Whole percent, or a dash for no figure. */
+export const pct = (n: number | null | undefined): string => (n == null ? '—' : formatPercentage(Math.round(n), 0));
 
-export const monthNow = (now: Date = new Date()): string => `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+/**
+ * Margin before delivery: (price - cost) / price, whole percent. The server's rule (productService.marginPercent): null when the
+ * price is 0 or a physical product has no cost set; a digital product at cost 0 is 100%.
+ */
+export function marginPercent(price: number, cost: number, productType: 'physical' | 'digital'): number | null {
+  if (productType === 'physical' && cost === 0) return null;
+  return price > 0 ? Math.round(((price - cost) / price) * 100) : null;
+}
+
+/** The current month, YYYY-MM, in the viewer's zone. */
+export const monthNow = (): string => todayYmd().slice(0, 7);
+
+/** "17 Oct" from a YYYY-MM-DD day or an ISO timestamp; a dash when empty. The one day formatter of the Products page. */
+export const shortDay = (value: string | null | undefined): string => (value ? dashboardShortDay(value.slice(0, 10)) : '—');
+
+/** "Oct" from YYYY-MM. */
+export const monthShort = (ym: string): string => shortDay(`${ym}-01`).split(' ')[1];
 
 const SOURCE: Record<HolderCount['source'], string> = { own_count: 'own', three_pl_dashboard: '3PL dashboard', agent_count: 'agent' };
-
-const DAY = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' });
-export const shortDay = (ymd: string): string => DAY.format(new Date(`${ymd}T12:00:00`));
 
 /** "Our records say 100 on hand at Logiswift. The 3PL dashboard count of 15 Oct says 88." One note per holder whose count differs. */
 export function countNote(h: Holder): string | null {
@@ -56,6 +69,3 @@ export function noneNote(names: string[]): string | null {
 }
 
 export const HOLDER_TYPE: Record<Holder['type'], string> = { own_store: 'Own store', partner_3pl: '3PL', agent: 'Agent' };
-
-/** Whole-number text of a possibly-string API number. */
-export const num = (v: number | string | null | undefined): number => (v == null || v === '' ? 0 : Number(v));

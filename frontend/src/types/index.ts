@@ -157,11 +157,6 @@ export interface Product {
   updatedAt: string;
 }
 
-/** What the product form sends. Starting stock goes in `openingStock` on create; the server takes no `stockQuantity` (F-658). */
-export interface ProductInput extends Partial<Product> {
-  openingStock?: { locationId?: number; quantity: number };
-}
-
 export interface Notification {
   id: number;
   type: 'order:created' | 'order:updated' | 'order:status_changed' | 'system';

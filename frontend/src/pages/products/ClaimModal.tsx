@@ -1,13 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Button, Input, Modal, useToast } from '../../components/ui-v2';
 import { shipmentsService, type Shipment } from '../../services/shipments.service';
 import { apiErrorMessage } from '../../utils/apiError';
 import { formatCurrency } from '../../utils/format';
-import { num } from './model';
+import { parseMoney } from '../../utils/money';
 
 interface ClaimModalProps {
-  open: boolean;
-  shipment: Shipment | null;
+  /** The received shipment. The modal is mounted only while it is open, one per shipment. */
+  shipment: Shipment;
   onClose: () => void;
   onChanged: (shipment: Shipment) => void;
 }
@@ -17,24 +17,14 @@ interface ClaimModalProps {
  * DR 1010 Cash in hand / CR 1200 Inventory) or write it off (no entry: the loss is already in the landed cost per unit).
  * Settled and written off claims are read only.
  */
-export function ClaimModal({ open, shipment, onClose, onChanged }: ClaimModalProps) {
+export function ClaimModal({ shipment, onClose, onChanged }: ClaimModalProps) {
   const say = useToast();
-  const [recovered, setRecovered] = useState('');
+  const [recovered, setRecovered] = useState(String(shipment.claimAmount));
   const [note, setNote] = useState('');
   const [mode, setMode] = useState<'settle' | 'write_off'>('settle');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    if (!open || !shipment) return;
-    setRecovered(String(shipment.claimAmount));
-    setNote('');
-    setMode('settle');
-    setError(null);
-    setSaving(false);
-  }, [open, shipment]);
-
-  if (!shipment) return null;
   const cur = shipment.storeCurrency;
   const amount = Number(recovered);
   const claim = shipment.claimAmount;
@@ -59,7 +49,7 @@ export function ClaimModal({ open, shipment, onClose, onChanged }: ClaimModalPro
   const isOpen = shipment.claimStatus === 'open';
   return (
     <Modal
-      open={open}
+      open
       onClose={onClose}
       title="Supplier claim"
       description={`${shipment.product.name} · ${shipment.supplier ?? 'No supplier'}`}
@@ -85,7 +75,7 @@ export function ClaimModal({ open, shipment, onClose, onChanged }: ClaimModalPro
 
         {shipment.claimStatus === 'settled' && (
           <div className="claim">
-            <p><b>Settled.</b> {formatCurrency(num(shipment.claimRecovered), cur)} recovered. Ledger entry #{shipment.claimJournalEntryId}: DR 1010 Cash in hand, CR 1200 Inventory.</p>
+            <p><b>Settled.</b> {formatCurrency(parseMoney(shipment.claimRecovered), cur)} recovered. Ledger entry #{shipment.claimJournalEntryId}: DR 1010 Cash in hand, CR 1200 Inventory.</p>
           </div>
         )}
         {shipment.claimStatus === 'written_off' && (

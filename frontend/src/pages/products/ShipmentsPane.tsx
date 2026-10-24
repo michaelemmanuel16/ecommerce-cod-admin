@@ -1,13 +1,14 @@
-import { useMemo, useState } from 'react';
-import { Lock, PackagePlus, Pencil, PackageCheck, Trash2, Truck, Wallet } from 'lucide-react';
-import { Button, ConfirmDialog, EmptyState, Skeleton, Tabs, Tag, Tile, useToast } from '../../components/ui-v2';
+import { useState } from 'react';
+import { PackagePlus, Truck, Wallet } from 'lucide-react';
+import { Button, ConfirmDialog, EmptyState, Skeleton, Table, Tabs, Tag, Tile, useToast } from '../../components/ui-v2';
 import { shipmentsService, type Shipment } from '../../services/shipments.service';
 import { apiErrorMessage } from '../../utils/apiError';
 import { formatCurrency } from '../../utils/format';
 import { ClaimModal } from './ClaimModal';
-import { num } from './model';
+import { shortDay } from './model';
 import { ReceiveModal } from './ReceiveModal';
-import { dayText } from './shipModel';
+import { shipmentColumns } from './shipmentColumns';
+import { isReceived } from './shipModel';
 import { ShipmentModal } from './ShipmentModal';
 import { useShipments } from './useShipments';
 import type { ShipFilter } from './urlState';
@@ -16,20 +17,20 @@ interface ShipmentsPaneProps {
   filter: ShipFilter;
   onFilter: (f: ShipFilter) => void;
   canWrite: boolean;
+  /** The active physical products the add modal offers. */
+  products: Array<{ id: number; name: string }>;
   /** Set by the page head's "Add shipment" button. */
   adding: boolean;
   onAddingChange: (on: boolean) => void;
-  /** After any change: the page reloads the Products table (stock and cost moved). */
-  onChanged: () => void;
+  /** After a receive or a delete: stock and cost moved, so the page reloads the Products table. */
+  onStockChanged: () => void;
 }
-
-const isReceived = (s: Shipment) => s.status !== 'pending';
 
 /**
  * The Incoming shipments tab (M4-T23, F-604 to F-608): three tiles, tabs, the 15-column table, add / edit / delete for
  * pending shipments, receive and the supplier claim. A received row is locked: no Edit, no Delete.
  */
-export function ShipmentsPane({ filter, onFilter, canWrite, adding, onAddingChange, onChanged }: ShipmentsPaneProps) {
+export function ShipmentsPane({ filter, onFilter, canWrite, products, adding, onAddingChange, onStockChanged }: ShipmentsPaneProps) {
   const say = useToast();
   const data = useShipments();
   const [editing, setEditing] = useState<Shipment | null>(null);
@@ -38,16 +39,11 @@ export function ShipmentsPane({ filter, onFilter, canWrite, adding, onAddingChan
   const [claiming, setClaiming] = useState<Shipment | null>(null);
 
   const list = data.list;
-  const pending = useMemo(() => (list ?? []).filter((s) => s.status === 'pending'), [list]);
-  const received = useMemo(() => (list ?? []).filter(isReceived), [list]);
+  const pending = (list ?? []).filter((s) => !isReceived(s));
+  const received = (list ?? []).filter(isReceived);
   const rows = filter === 'pending' ? pending : filter === 'received' ? received : list ?? [];
-  const next = useMemo(() => [...pending].filter((s) => s.expectedArrivalDate).sort((a, b) => a.expectedArrivalDate!.localeCompare(b.expectedArrivalDate!))[0], [pending]);
+  const next = pending.filter((s) => s.expectedArrivalDate).sort((a, b) => a.expectedArrivalDate!.localeCompare(b.expectedArrivalDate!))[0];
   const store = data.summary?.currency;
-
-  const changed = () => {
-    void data.refetch();
-    onChanged();
-  };
 
   const remove = async () => {
     const target = deleting;
@@ -56,11 +52,14 @@ export function ShipmentsPane({ filter, onFilter, canWrite, adding, onAddingChan
     try {
       await shipmentsService.remove(target.id);
       say('Shipment deleted');
-      changed();
+      void data.refetch();
+      onStockChanged();
     } catch (e) {
       say(apiErrorMessage(e, 'The shipment could not be deleted.'));
     }
   };
+
+  const columns = shipmentColumns({ canWrite, onReceive: setReceiving, onEdit: setEditing, onDelete: setDeleting, onClaim: setClaiming });
 
   return (
     <div>
@@ -70,7 +69,7 @@ export function ShipmentsPane({ filter, onFilter, canWrite, adding, onAddingChan
           tone="violet"
           value={data.summary ? data.summary.pendingCount : '—'}
           label="Pending shipments"
-          footer={<><span>{next ? `Next: ${next.product.name}, ${dayText(next.expectedArrivalDate)}` : 'Nothing due'}</span><Tag>Coming</Tag></>}
+          footer={<><span>{next ? `Next: ${next.product.name}, ${shortDay(next.expectedArrivalDate)}` : 'Nothing due'}</span><Tag>Coming</Tag></>}
         />
         <Tile
           icon={<PackagePlus />}
@@ -120,83 +119,7 @@ export function ShipmentsPane({ filter, onFilter, canWrite, adding, onAddingChan
         ) : rows.length === 0 ? (
           <EmptyState title="No shipments here." />
         ) : (
-          <div className="tablewrap">
-            <table className="shp" aria-label="Incoming shipments">
-              <thead>
-                <tr>
-                  <th>Product</th>
-                  <th>Supplier</th>
-                  <th className="r">Qty</th>
-                  <th className="r">Unit cost</th>
-                  <th className="r">Shipping</th>
-                  <th className="r">Customs</th>
-                  <th className="r">Other</th>
-                  <th className="r">Total</th>
-                  <th className="r">Landed per unit</th>
-                  <th>Expected</th>
-                  <th>Received at</th>
-                  <th className="r">Counted</th>
-                  <th className="r">Short</th>
-                  <th>Status</th>
-                  <th className="r">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((s) => {
-                  const done = isReceived(s);
-                  const cur = s.currency;
-                  const foreign = cur !== s.storeCurrency;
-                  return (
-                    <tr key={s.id} data-shipment={s.id}>
-                      <td><b>{s.product.name}</b></td>
-                      <td className="wrapcell">{s.supplier ?? '—'}</td>
-                      <td className="r num">{s.quantity}</td>
-                      <td className="r num">{formatCurrency(s.unitCost, cur)}</td>
-                      <td className="r num">{formatCurrency(s.shippingCost, cur)}</td>
-                      <td className="r num">{formatCurrency(num(s.customsDuties), cur)}</td>
-                      <td className="r num">{formatCurrency(s.otherCosts, cur)}</td>
-                      <td className="r num">
-                        <b>{formatCurrency(s.totalCostStore, s.storeCurrency)}</b>
-                        {foreign && <small data-testid="original-amount">{formatCurrency(s.totalCost, cur)}</small>}
-                      </td>
-                      <td className="r num"><b>{s.landedCostPerUnit === null ? '—' : formatCurrency(Math.round(s.landedCostPerUnit * 100) / 100, s.storeCurrency)}</b></td>
-                      <td>{dayText(s.expectedArrivalDate)}</td>
-                      <td className="wrapcell">
-                        {done ? <>{s.destinationLocation?.name ?? '—'}<small>{dayText(s.receivedAt)}</small></> : <span style={{ color: 'var(--ink-3)' }}>—</span>}
-                      </td>
-                      <td className="r num">{done ? s.quantityCounted : <span style={{ color: 'var(--ink-3)' }}>—</span>}</td>
-                      <td className="r num">
-                        {!done ? <span style={{ color: 'var(--ink-3)' }}>—</span> : (s.shortQuantity ?? 0) > 0 ? <Tag tone="bad">{s.shortQuantity} short</Tag> : '0'}
-                      </td>
-                      <td>{done ? <Tag tone="ok">Received</Tag> : <Tag tone="v">Pending</Tag>}</td>
-                      <td className="r">
-                        <span className="acts">
-                          {!done ? (
-                            canWrite && (
-                              <>
-                                <Button size="mini" variant="primary" onClick={() => setReceiving(s)}><PackageCheck size={13} /> Receive</Button>
-                                <Button size="icon-sm" aria-label={`Edit shipment of ${s.product.name}`} title="Edit" onClick={() => setEditing(s)}><Pencil /></Button>
-                                <Button size="icon-sm" aria-label={`Delete shipment of ${s.product.name}`} title="Delete" onClick={() => setDeleting(s)}><Trash2 /></Button>
-                              </>
-                            )
-                          ) : (
-                            <>
-                              {s.claimStatus !== 'none' && (
-                                <Button size="mini" onClick={() => setClaiming(s)}>
-                                  {s.claimStatus === 'open' ? `Claim ${formatCurrency(s.claimAmount, s.storeCurrency)}` : s.claimStatus === 'settled' ? 'Claim settled' : 'Claim written off'}
-                                </Button>
-                              )}
-                              <span className="lock" title="Received shipments are locked"><Lock size={14} aria-label="Locked" /> In stock</span>
-                            </>
-                          )}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <Table label="Incoming shipments" className="shp" columns={columns} rows={rows} rowKey={(s) => s.id} />
         )}
         <div className="pfoot">
           <span>Landed cost per unit is the total divided by the units counted on arrival (the quantity until then). It updates the product cost when the shipment is received.</span>
@@ -204,9 +127,19 @@ export function ShipmentsPane({ filter, onFilter, canWrite, adding, onAddingChan
         </div>
       </div>
 
-      <ShipmentModal open={adding || editing !== null} shipment={editing} onClose={() => { onAddingChange(false); setEditing(null); }} onSaved={changed} />
-      <ReceiveModal open={receiving !== null} shipment={receiving} onClose={() => setReceiving(null)} onReceived={() => { setReceiving(null); changed(); }} />
-      <ClaimModal open={claiming !== null} shipment={claiming} onClose={() => setClaiming(null)} onChanged={(done) => { setClaiming(done); changed(); }} />
+      {(adding || editing) && (
+        <ShipmentModal
+          key={editing?.id ?? 'new'}
+          shipment={editing}
+          products={products}
+          onClose={() => { onAddingChange(false); setEditing(null); }}
+          onSaved={() => void data.refetch()}
+        />
+      )}
+      {receiving && (
+        <ReceiveModal key={receiving.id} shipment={receiving} onClose={() => setReceiving(null)} onReceived={() => { setReceiving(null); void data.refetch(); onStockChanged(); }} />
+      )}
+      {claiming && <ClaimModal key={claiming.id} shipment={claiming} onClose={() => setClaiming(null)} onChanged={(done) => { setClaiming(done); void data.refetch(); }} />}
       <ConfirmDialog
         open={deleting !== null}
         onClose={() => setDeleting(null)}
@@ -221,4 +154,3 @@ export function ShipmentsPane({ filter, onFilter, canWrite, adding, onAddingChan
     </div>
   );
 }
-

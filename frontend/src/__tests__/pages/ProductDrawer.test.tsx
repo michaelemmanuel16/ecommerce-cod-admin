@@ -4,7 +4,8 @@ import userEvent from '@testing-library/user-event';
 import { ProductDrawer } from '../../pages/products/ProductDrawer';
 import { ToastProvider } from '../../components/ui-v2';
 import { useConfigStore } from '../../stores/configStore';
-import { DETAIL } from '../fixtures/productsPage';
+import { resetStockLocations } from '../../pages/products/useStockLocations';
+import { DETAIL, RECEIVED } from '../fixtures/productsPage';
 
 const detail = vi.fn();
 const create = vi.fn();
@@ -24,13 +25,24 @@ vi.mock('../../services/products.service', async (orig) => ({
   },
 }));
 
+const listShipments = vi.fn();
+vi.mock('../../services/shipments.service', async (orig) => ({
+  ...(await orig<typeof import('../../services/shipments.service')>()),
+  shipmentsService: { list: (...a: unknown[]) => listShipments(...a) },
+}));
+const uploadImage = vi.fn();
+vi.mock('../../services/checkout-forms.service', () => ({ checkoutFormsService: { uploadImage: (...a: unknown[]) => uploadImage(...a) } }));
+
 const onClose = vi.fn();
 const onChanged = vi.fn();
-const open = (target: number | 'new' = 'new', canStock = true) =>
-  render(<ToastProvider><ProductDrawer target={target} canStock={canStock} onClose={onClose} onChanged={onChanged} /></ToastProvider>);
+const open = (target: number | 'new' = 'new', canStock = true, canSeeCost = true) =>
+  render(<ToastProvider><ProductDrawer target={target} canStock={canStock} canSeeCost={canSeeCost} onClose={onClose} onChanged={onChanged} /></ToastProvider>);
 const drawer = () => screen.getByRole('dialog', { name: /product/i, hidden: true });
 
 beforeEach(() => {
+  resetStockLocations();
+  listShipments.mockReset();
+  listShipments.mockResolvedValue([RECEIVED]); // last received at Logiswift (id 10)
   [detail, create, update, archive, restore, stockLocations, onClose, onChanged].forEach((m) => m.mockReset());
   detail.mockResolvedValue(DETAIL);
   create.mockResolvedValue({ id: 99, name: 'Bolts' });
@@ -50,7 +62,7 @@ describe('Product drawer (M4-T22)', () => {
     await userEvent.type(screen.getByLabelText('Cost per unit'), '20');
     expect(screen.getByTestId('live-margin')).toHaveTextContent('60%');
     await userEvent.type(screen.getByLabelText('Starting stock'), '20');
-    await waitFor(() => expect(screen.getByLabelText('Holder')).toHaveValue('10')); // the first 3PL
+    await waitFor(() => expect(screen.getByLabelText('Holder')).toHaveValue('10')); // where stock was last received
     await userEvent.click(screen.getByRole('button', { name: 'Save product' }));
     await waitFor(() => expect(create).toHaveBeenCalled());
     expect(create.mock.calls[0][0]).toMatchObject({
@@ -58,6 +70,46 @@ describe('Product drawer (M4-T22)', () => {
     });
     expect(onChanged).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('no holder is preselected when nothing was received yet; a starting stock then needs one', async () => {
+    listShipments.mockResolvedValue([]);
+    open('new');
+    await userEvent.type(screen.getByLabelText('Product name'), 'Bolts');
+    await userEvent.type(screen.getByLabelText('SKU'), 'b');
+    await userEvent.type(screen.getByLabelText('Category'), 'H');
+    await userEvent.type(screen.getByLabelText('Selling price'), '5');
+    await userEvent.type(screen.getByLabelText('Starting stock'), '3');
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Logiswift' })).toBeInTheDocument());
+    expect(screen.getByLabelText('Holder')).toHaveValue('');
+    await userEvent.click(screen.getByRole('button', { name: 'Save product' }));
+    expect(await screen.findByText('Pick a holder', { selector: '.err' })).toBeInTheDocument();
+    expect(create).not.toHaveBeenCalled();
+    await userEvent.selectOptions(screen.getByLabelText('Holder'), '10');
+    await userEvent.click(screen.getByRole('button', { name: 'Save product' }));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0][0].openingStock).toEqual({ locationId: 10, quantity: 3 });
+  });
+
+  it('a role without cost sees no cost field on a new product and sends none', async () => {
+    open('new', true, false);
+    expect(screen.queryByLabelText('Cost per unit')).not.toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText('Product name'), 'Bolts');
+    await userEvent.type(screen.getByLabelText('SKU'), 'b');
+    await userEvent.type(screen.getByLabelText('Category'), 'H');
+    await userEvent.type(screen.getByLabelText('Selling price'), '5');
+    await userEvent.click(screen.getByRole('button', { name: 'Save product' }));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0][0].cogs).toBeUndefined();
+  });
+
+  it('the margin follows the server rule: a physical product with no cost shows a dash, a digital one at cost 0 is 100%', async () => {
+    open('new');
+    await userEvent.type(screen.getByLabelText('Selling price'), '40');
+    await userEvent.type(screen.getByLabelText('Cost per unit'), '0');
+    expect(screen.getByTestId('live-margin')).toHaveTextContent('—');
+    await userEvent.click(screen.getByRole('button', { name: 'Digital' }));
+    expect(screen.getByTestId('live-margin')).toHaveTextContent('100%');
   });
 
   it('says so when the margin is negative', async () => {
@@ -79,7 +131,7 @@ describe('Product drawer (M4-T22)', () => {
   });
 
   it('a fresh product with no orders or shipments can change type and cost', async () => {
-    detail.mockResolvedValue({ ...DETAIL, hasOrders: false, hasReceivedShipment: false });
+    detail.mockResolvedValue({ ...DETAIL, lockedFields: [] });
     open(1);
     await waitFor(() => expect(screen.getByLabelText('Product name')).toHaveValue('Magic Groove copybook set'));
     expect(screen.getByRole('button', { name: 'Digital' })).toBeEnabled();
@@ -88,7 +140,7 @@ describe('Product drawer (M4-T22)', () => {
 
   it('shows no cost field for a role the API gives no cost', async () => {
     const { cogs: _c, marginPct: _m, ...noCost } = DETAIL;
-    detail.mockResolvedValue(noCost);
+    detail.mockResolvedValue({ ...noCost, canSeeCost: false });
     open(1);
     await waitFor(() => expect(screen.getByLabelText('Product name')).toHaveValue('Magic Groove copybook set'));
     expect(screen.queryByLabelText('Cost per unit')).not.toBeInTheDocument();
@@ -119,6 +171,8 @@ describe('Product drawer (M4-T22)', () => {
 
   it('archive confirms, then says how many open orders and units on hand the product still has; restore undoes it', async () => {
     archive.mockResolvedValue({ product: { id: 1, name: 'Magic Groove copybook set' }, openOrders: 3, unitsOnHand: 40 });
+    // the drawer reads isActive from the product it reloads after the archive, then after the restore
+    detail.mockResolvedValueOnce(DETAIL).mockResolvedValueOnce({ ...DETAIL, isActive: false }).mockResolvedValue(DETAIL);
     restore.mockResolvedValue(undefined);
     open(1);
     await waitFor(() => expect(screen.getByLabelText('Product name')).toHaveValue('Magic Groove copybook set'));

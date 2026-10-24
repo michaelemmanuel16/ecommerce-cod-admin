@@ -5,9 +5,10 @@ import { ShipmentModal } from '../../pages/products/ShipmentModal';
 import { ReceiveModal } from '../../pages/products/ReceiveModal';
 import { ClaimModal } from '../../pages/products/ClaimModal';
 import { ShipmentsPane } from '../../pages/products/ShipmentsPane';
+import { resetStockLocations } from '../../pages/products/useStockLocations';
 import { ToastProvider } from '../../components/ui-v2';
 import { useConfigStore } from '../../stores/configStore';
-import { FOREIGN, PENDING, RECEIVED, SHIP_SUMMARY, PRODUCT_LIST } from '../fixtures/productsPage';
+import { FOREIGN, PENDING, RECEIVED, SHIP_SUMMARY } from '../fixtures/productsPage';
 
 const create = vi.fn();
 const update = vi.fn();
@@ -30,16 +31,17 @@ vi.mock('../../services/shipments.service', async (orig) => ({
 vi.mock('../../services/products.service', async (orig) => ({
   ...(await orig<typeof import('../../services/products.service')>()),
   productsService: {
-    list: vi.fn(async () => PRODUCT_LIST),
     stockLocations: vi.fn(async () => [{ id: 5, name: 'Own store', type: 'own_store' }, { id: 10, name: 'Logiswift', type: 'partner_3pl' }]),
   },
 }));
 
+const PRODUCTS = [{ id: 1, name: 'Magic Groove copybook set' }];
 const wrap = (ui: React.ReactElement) => render(<ToastProvider>{ui}</ToastProvider>);
 
 beforeEach(() => {
+  resetStockLocations();
   [create, update, receive, claim, remove, listShipments].forEach((m) => m.mockReset());
-  listShipments.mockResolvedValue([PENDING, FOREIGN, RECEIVED]);
+  listShipments.mockResolvedValue([PENDING, FOREIGN, RECEIVED]); // the last received one is at Logiswift (id 10)
   create.mockResolvedValue(PENDING);
   update.mockResolvedValue(PENDING);
   receive.mockResolvedValue(RECEIVED);
@@ -50,8 +52,8 @@ beforeEach(() => {
 
 describe('Shipment modal (M4-T23)', () => {
   it('shows the landed cost per unit live: 8,700 over 300 is 29', async () => {
-    wrap(<ShipmentModal open shipment={null} onClose={vi.fn()} onSaved={vi.fn()} />);
-    await waitFor(() => expect(screen.getByLabelText('Product')).toHaveValue('1'));
+    wrap(<ShipmentModal shipment={null} products={PRODUCTS} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(screen.getByLabelText('Product')).toHaveValue('1');
     await userEvent.type(screen.getByLabelText('Quantity'), '300');
     await userEvent.type(screen.getByLabelText(/^Unit cost/), '27');
     await userEvent.clear(screen.getByLabelText(/^Shipping/));
@@ -63,8 +65,8 @@ describe('Shipment modal (M4-T23)', () => {
   });
 
   it('a foreign currency shows the rate line: a typed rate converts the total', async () => {
-    wrap(<ShipmentModal open shipment={null} onClose={vi.fn()} onSaved={vi.fn()} />);
-    await waitFor(() => expect(screen.getByLabelText('Product')).toHaveValue('1'));
+    wrap(<ShipmentModal shipment={null} products={PRODUCTS} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(screen.getByLabelText('Product')).toHaveValue('1');
     await userEvent.type(screen.getByLabelText('Quantity'), '100');
     await userEvent.clear(screen.getByLabelText('Currency'));
     await userEvent.type(screen.getByLabelText('Currency'), 'cny');
@@ -80,7 +82,7 @@ describe('Shipment modal (M4-T23)', () => {
   });
 
   it('editing a foreign shipment shows its stored rate', async () => {
-    wrap(<ShipmentModal open shipment={FOREIGN} onClose={vi.fn()} onSaved={vi.fn()} />);
+    wrap(<ShipmentModal shipment={FOREIGN} products={PRODUCTS} onClose={vi.fn()} onSaved={vi.fn()} />);
     expect(screen.getByTestId('rate-line')).toHaveTextContent('Stored rate: 1 CNY = 1.6 GHS. Total GH₵1,600.');
     expect(screen.getByLabelText('Product')).toHaveValue('Magic Groove copybook set');
   });
@@ -88,8 +90,8 @@ describe('Shipment modal (M4-T23)', () => {
   it('shows the API message when the rate is missing', async () => {
     const err = Object.assign(new Error('x'), { isAxiosError: true, response: { status: 400, data: { error: 'No exchange rate from JPY to GHS for 2026-10-24. Add a rate in Settings or type one for this shipment.' } } });
     create.mockRejectedValue(err);
-    wrap(<ShipmentModal open shipment={null} onClose={vi.fn()} onSaved={vi.fn()} />);
-    await waitFor(() => expect(screen.getByLabelText('Product')).toHaveValue('1'));
+    wrap(<ShipmentModal shipment={null} products={PRODUCTS} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(screen.getByLabelText('Product')).toHaveValue('1');
     await userEvent.type(screen.getByLabelText('Quantity'), '5');
     await userEvent.clear(screen.getByLabelText('Currency'));
     await userEvent.type(screen.getByLabelText('Currency'), 'JPY');
@@ -102,7 +104,7 @@ describe('Shipment modal (M4-T23)', () => {
 describe('Receive modal (M4-T24)', () => {
   it('counted 288 of 300: short 12 live, landed 30.21 live, then saves the receive', async () => {
     const onReceived = vi.fn();
-    wrap(<ReceiveModal open shipment={PENDING} onClose={vi.fn()} onReceived={onReceived} />);
+    wrap(<ReceiveModal shipment={PENDING} onClose={vi.fn()} onReceived={onReceived} />);
     await waitFor(() => expect(screen.getByLabelText('Received at')).toHaveValue('10'));
     expect(screen.getByLabelText('Units shipped')).toHaveAttribute('readonly');
     expect(screen.getByTestId('live-short')).toHaveTextContent('0 units');
@@ -118,8 +120,18 @@ describe('Receive modal (M4-T24)', () => {
     expect(onReceived).toHaveBeenCalled();
   });
 
+  it('with nothing received yet there is no default holder: the user picks', async () => {
+    listShipments.mockResolvedValue([PENDING]);
+    wrap(<ReceiveModal shipment={PENDING} onClose={vi.fn()} onReceived={vi.fn()} />);
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Logiswift' })).toBeInTheDocument());
+    expect(screen.getByLabelText('Received at')).toHaveValue('');
+    await userEvent.click(screen.getByRole('button', { name: 'Save and add to stock' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Pick where the shipment arrived');
+    expect(receive).not.toHaveBeenCalled();
+  });
+
   it('refuses a count above what was shipped', async () => {
-    wrap(<ReceiveModal open shipment={PENDING} onClose={vi.fn()} onReceived={vi.fn()} />);
+    wrap(<ReceiveModal shipment={PENDING} onClose={vi.fn()} onReceived={vi.fn()} />);
     await waitFor(() => expect(screen.getByLabelText('Received at')).toHaveValue('10'));
     await userEvent.clear(screen.getByLabelText('Units counted'));
     await userEvent.type(screen.getByLabelText('Units counted'), '301');
@@ -129,7 +141,7 @@ describe('Receive modal (M4-T24)', () => {
   });
 
   it('a foreign shipment can take a typed rate', async () => {
-    wrap(<ReceiveModal open shipment={FOREIGN} onClose={vi.fn()} onReceived={vi.fn()} />);
+    wrap(<ReceiveModal shipment={FOREIGN} onClose={vi.fn()} onReceived={vi.fn()} />);
     await waitFor(() => expect(screen.getByLabelText('Received at')).toHaveValue('10'));
     await userEvent.type(screen.getByLabelText(/^Rate/), '2');
     expect(screen.getByTestId('live-landed')).toHaveTextContent('GH₵20');
@@ -141,7 +153,7 @@ describe('Receive modal (M4-T24)', () => {
 
 describe('Claim panel (M4-T24)', () => {
   it('open: shows GH₵324 and the ledger entry a settlement will post; settles with the amount recovered', async () => {
-    wrap(<ClaimModal open shipment={RECEIVED} onClose={vi.fn()} onChanged={vi.fn()} />);
+    wrap(<ClaimModal shipment={RECEIVED} onClose={vi.fn()} onChanged={vi.fn()} />);
     expect(screen.getByTestId('claim-amount')).toHaveTextContent('GH₵324');
     expect(screen.getByTestId('ledger-preview')).toHaveTextContent('DR 1010 Cash in hand, CR 1200 Inventory');
     await userEvent.clear(screen.getByLabelText(/Amount recovered/));
@@ -152,7 +164,7 @@ describe('Claim panel (M4-T24)', () => {
   });
 
   it('refuses more than the claim', async () => {
-    wrap(<ClaimModal open shipment={RECEIVED} onClose={vi.fn()} onChanged={vi.fn()} />);
+    wrap(<ClaimModal shipment={RECEIVED} onClose={vi.fn()} onChanged={vi.fn()} />);
     await userEvent.clear(screen.getByLabelText(/Amount recovered/));
     await userEvent.type(screen.getByLabelText(/Amount recovered/), '400');
     await userEvent.click(screen.getByRole('button', { name: 'Settle claim' }));
@@ -161,7 +173,7 @@ describe('Claim panel (M4-T24)', () => {
   });
 
   it('write-off says no ledger entry is posted', async () => {
-    wrap(<ClaimModal open shipment={RECEIVED} onClose={vi.fn()} onChanged={vi.fn()} />);
+    wrap(<ClaimModal shipment={RECEIVED} onClose={vi.fn()} onChanged={vi.fn()} />);
     await userEvent.click(screen.getByRole('button', { name: 'Write off' }));
     expect(screen.getByTestId('ledger-preview')).toHaveTextContent('No ledger entry is posted');
     await userEvent.type(screen.getByLabelText(/Note/), 'Supplier refused');
@@ -170,7 +182,7 @@ describe('Claim panel (M4-T24)', () => {
   });
 
   it('a settled claim is read only and names its ledger entry', () => {
-    wrap(<ClaimModal open shipment={{ ...RECEIVED, claimStatus: 'settled', claimRecovered: 300, claimJournalEntryId: 42 }} onClose={vi.fn()} onChanged={vi.fn()} />);
+    wrap(<ClaimModal shipment={{ ...RECEIVED, claimStatus: 'settled', claimRecovered: 300, claimJournalEntryId: 42 }} onClose={vi.fn()} onChanged={vi.fn()} />);
     expect(screen.getByText(/Ledger entry #42/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Settle claim' })).not.toBeInTheDocument();
   });
@@ -178,7 +190,7 @@ describe('Claim panel (M4-T24)', () => {
 
 describe('Shipments pane (M4-T23)', () => {
   const pane = (filter: 'all' | 'pending' | 'received' = 'all') =>
-    wrap(<ShipmentsPane filter={filter} onFilter={vi.fn()} canWrite adding={false} onAddingChange={vi.fn()} onChanged={vi.fn()} />);
+    wrap(<ShipmentsPane filter={filter} onFilter={vi.fn()} canWrite products={PRODUCTS} adding={false} onAddingChange={vi.fn()} onStockChanged={vi.fn()} />);
 
   it('a received row is locked: no Edit, no Delete; a pending row has both', async () => {
     pane();

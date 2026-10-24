@@ -1,10 +1,27 @@
 import type { Shipment } from '../../services/shipments.service';
-import { num } from './model';
+import { parseMoney } from '../../utils/money';
 
-/** The landed cost per unit of a shipment as the modals show it live: total in store currency over the units. */
+/** A shipment that is no longer pending: received (or an old arrived row). It is locked. */
+export const isReceived = (s: Shipment): boolean => s.status !== 'pending';
+
+/** Round half up to 4 places, as the server's Money.roundHalfUp(…, 4) does (the toPrecision step drops binary noise such as 1.00005 = 1.0000499…). */
+const round4 = (n: number): number => Math.round(Number((n * 1e4).toPrecision(15))) / 1e4;
+
+/**
+ * The rate that turns a shipment's currency into the store currency, as the screen shows it: 1 in the store currency, a typed
+ * rate, else the stored one. Null when a foreign shipment has neither yet (the server looks it up when you save).
+ */
+export function effectiveRate({ foreign, typed, stored }: { foreign: boolean; typed: number | null; stored: number | null }): number | null {
+  return !foreign ? 1 : typed ?? stored;
+}
+
+/**
+ * Landed cost per unit (D2), the server's two steps: total in store currency at the rate, rounded to 4 places, over the units,
+ * rounded to 4 places. Null with no units.
+ */
 export function liveLanded(total: number, rate: number | null, units: number): number | null {
   if (!(units > 0)) return null;
-  return Math.round((total * (rate ?? 1) / units) * 10000) / 10000;
+  return round4(round4(total * (rate ?? 1)) / units);
 }
 
 export interface ShipmentFields {
@@ -32,14 +49,8 @@ export const fromShipment = (s: Shipment): ShipmentFields => ({
   fxRate: s.fxRateSource === 'manual' && s.fxRate ? String(s.fxRate) : '',
   unitCost: String(s.unitCost),
   shippingCost: String(s.shippingCost),
-  customsDuties: String(num(s.customsDuties)),
+  customsDuties: String(parseMoney(s.customsDuties)),
   otherCosts: String(s.otherCosts),
   expectedArrivalDate: s.expectedArrivalDate ? s.expectedArrivalDate.slice(0, 10) : '',
   notes: s.notes ?? '',
 });
-
-const DAY = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' });
-/** "22 Oct" from an ISO timestamp or date; "—" when empty. Dates are UTC days. */
-export const dayText = (iso: string | null): string => (iso ? DAY.format(new Date(`${iso.slice(0, 10)}T12:00:00`)) : '—');
-
-export const today = (): string => new Date().toISOString().slice(0, 10);

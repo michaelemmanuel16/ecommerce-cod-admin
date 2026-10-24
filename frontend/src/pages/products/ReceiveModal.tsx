@@ -1,15 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { PackageCheck } from 'lucide-react';
 import { Button, Input, Modal, Select, useToast } from '../../components/ui-v2';
-import { productsService, type StockLocationOption } from '../../services/products.service';
 import { shipmentsService, type CountSource, type Shipment } from '../../services/shipments.service';
 import { apiErrorMessage } from '../../utils/apiError';
-import { formatCurrency } from '../../utils/format';
-import { liveLanded, today } from './shipModel';
+import { formatCurrency, todayYmd } from '../../utils/format';
+import { effectiveRate, liveLanded } from './shipModel';
+import { useStockLocations } from './useStockLocations';
 
 interface ReceiveModalProps {
-  open: boolean;
-  shipment: Shipment | null;
+  /** The pending shipment. The modal is mounted only while it is open, one per shipment. */
+  shipment: Shipment;
   onClose: () => void;
   onReceived: (shipment: Shipment) => void;
 }
@@ -24,51 +24,28 @@ const SOURCES: Array<{ id: CountSource; label: string }> = [
  * Receive shipment (M4-T24, F-606): "Count what arrived before it goes into stock." One save puts the counted units at the
  * holder, sets the landed cost per unit (total in store currency over the units counted) and opens a supplier claim for the short units.
  */
-export function ReceiveModal({ open, shipment, onClose, onReceived }: ReceiveModalProps) {
+export function ReceiveModal({ shipment, onClose, onReceived }: ReceiveModalProps) {
   const say = useToast();
-  const [locations, setLocations] = useState<StockLocationOption[]>([]);
-  const [locationId, setLocationId] = useState('');
-  const [date, setDate] = useState(today());
-  const [counted, setCounted] = useState('');
+  const { locations, defaultId } = useStockLocations();
+  const [picked, setPicked] = useState<string | null>(null);
+  const [date, setDate] = useState(todayYmd());
+  const [counted, setCounted] = useState(String(shipment.quantity));
   const [source, setSource] = useState<CountSource>('own_count');
   const [note, setNote] = useState('');
   const [rate, setRate] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Until the user picks, the holder is where stock was last received (none when nothing was received yet)
+  const locationId = picked ?? (defaultId == null ? '' : String(defaultId));
 
-  useEffect(() => {
-    if (!open || !shipment) return;
-    setDate(today());
-    setCounted(String(shipment.quantity));
-    setSource('own_count');
-    setNote('');
-    setRate('');
-    setError(null);
-    setSaving(false);
-  }, [open, shipment]);
-
-  useEffect(() => {
-    if (!open) return;
-    let live = true;
-    productsService.stockLocations().then((list) => {
-      if (!live) return;
-      setLocations(list);
-      setLocationId((cur) => cur || String((list.find((l) => l.type === 'partner_3pl') ?? list[0])?.id ?? ''));
-    }, () => setError('The stock holders could not load.'));
-    return () => {
-      live = false;
-    };
-  }, [open]);
-
-  if (!shipment) return null;
   const shipped = shipment.quantity;
   const n = counted.trim() === '' ? NaN : Number(counted);
   const valid = Number.isInteger(n) && n >= 0 && n <= shipped;
   const short = valid ? shipped - n : 0;
   const foreign = shipment.currency !== shipment.storeCurrency;
   const typed = rate.trim() !== '' && Number(rate) > 0 ? Number(rate) : null;
-  const effectiveRate = !foreign ? 1 : typed ?? (shipment.fxRate ? Number(shipment.fxRate) : null);
-  const landed = valid ? liveLanded(shipment.totalCost, effectiveRate, n) : null;
+  const applied = effectiveRate({ foreign, typed, stored: shipment.fxRate ? Number(shipment.fxRate) : null });
+  const landed = valid ? liveLanded(shipment.totalCost, applied, n) : null;
 
   const save = async () => {
     if (!valid) {
@@ -104,7 +81,7 @@ export function ReceiveModal({ open, shipment, onClose, onReceived }: ReceiveMod
 
   return (
     <Modal
-      open={open}
+      open
       onClose={onClose}
       title="Receive shipment"
       description={`${shipment.product.name} · ${shipment.supplier ?? 'No supplier'}. Count what arrived before it goes into stock.`}
@@ -117,10 +94,11 @@ export function ReceiveModal({ open, shipment, onClose, onReceived }: ReceiveMod
     >
       <form className="pform" noValidate onSubmit={(e) => { e.preventDefault(); void save(); }}>
         <div className="fg">
-          <Select label="Received at" value={locationId} onChange={(e) => setLocationId(e.target.value)}>
+          <Select label="Received at" value={locationId} onChange={(e) => setPicked(e.target.value)}>
+            {locationId === '' && <option value="">Pick a holder</option>}
             {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
           </Select>
-          <Input label="Received date" type="date" max={today()} value={date} onChange={(e) => setDate(e.target.value)} />
+          <Input label="Received date" type="date" max={todayYmd()} value={date} onChange={(e) => setDate(e.target.value)} />
           <Input label="Units shipped" type="number" value={shipped} readOnly />
           <Input label="Units counted" type="number" min={0} max={shipped} inputMode="numeric" value={counted} onChange={(e) => { setCounted(e.target.value); setError(null); }} />
           <Select label="Counted by" value={source} onChange={(e) => setSource(e.target.value as CountSource)}>
@@ -152,10 +130,10 @@ export function ReceiveModal({ open, shipment, onClose, onReceived }: ReceiveMod
           <span>
             Landed cost per unit
             {foreign && !typed && <small>At the stored rate; the received date&rsquo;s rate sets the final cost</small>}
-            {foreign && effectiveRate === null && <small>{shipment.currency} amount; converted when you save</small>}
+            {foreign && applied === null && <small>{shipment.currency} amount; converted when you save</small>}
           </span>
           <b className="num" data-testid="live-landed">
-            {landed === null ? '—' : formatCurrency(landed, foreign && effectiveRate === null ? shipment.currency : shipment.storeCurrency)}
+            {landed === null ? '—' : formatCurrency(landed, foreign && applied === null ? shipment.currency : shipment.storeCurrency)}
           </b>
         </div>
         {error && <p className="err" role="alert">{error}</p>}

@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { Products } from '../../pages/Products';
+import { resetStockLocations } from '../../pages/products/useStockLocations';
 import { ToastProvider } from '../../components/ui-v2';
 import { useAuthStore } from '../../stores/authStore';
 import { useConfigStore } from '../../stores/configStore';
@@ -60,6 +61,7 @@ const withoutCost = (p: typeof COPYBOOK) => {
 };
 
 beforeEach(() => {
+  resetStockLocations();
   [list, summary, holders, detail, create, update, archive, restore, stockLocations].forEach((m) => m.mockReset());
   list.mockResolvedValue(PRODUCT_LIST);
   summary.mockResolvedValue(SUMMARY);
@@ -89,7 +91,7 @@ describe('Products page (M4-T21)', () => {
     expect(row).toHaveTextContent('GH₵30');
     expect(row).toHaveTextContent('88%');
     expect(row).toHaveTextContent('7 days of cover');
-    expect(row).toHaveTextContent('48%');
+    expect(row).toHaveTextContent('48%'); // under the 60% target of the summary
     expect(row).toHaveTextContent('Low stock');
     expect(within(table).getByText("Smart Parent's Home Study Guide").closest('tr')).toHaveTextContent('Digital');
   });
@@ -112,7 +114,7 @@ describe('Products page (M4-T21)', () => {
   });
 
   it('has no cost or margin column, and no tiles, for a role the API gives no cost', async () => {
-    list.mockResolvedValue({ ...PRODUCT_LIST, products: [withoutCost(COPYBOOK), withoutCost(PENS)] });
+    list.mockResolvedValue({ ...PRODUCT_LIST, canSeeCost: false, products: [withoutCost(COPYBOOK), withoutCost(PENS)] });
     summary.mockRejectedValue(Object.assign(new Error('forbidden'), { isAxiosError: true, response: { status: 403 } }));
     renderPage();
     const table = await screen.findByRole('table', { name: 'Products' });

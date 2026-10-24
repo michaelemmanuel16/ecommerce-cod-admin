@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Boxes } from 'lucide-react';
-import { Skeleton } from '../../components/ui-v2';
+import { Skeleton, Table } from '../../components/ui-v2';
 import { productsService, type Holders } from '../../services/products.service';
-import { formatCurrency } from '../../utils/format';
-import { countNote, HOLDER_TYPE, noneNote } from './model';
+import { holderColumns } from './holderColumns';
+import { countNote, noneNote } from './model';
 
 /**
  * Stock by holder of one product (F-603), read only. Allocating, transferring, returning and adjusting happen in Inventory:
@@ -46,46 +46,7 @@ export function HoldersPanel({ productId }: { productId: number }) {
       ) : (
         <>
           <div className="hold">
-            <div className="tablewrap">
-              <table aria-label="Stock by holder">
-                <thead>
-                  <tr>
-                    <th>Holder</th>
-                    <th className="r">Allocated</th>
-                    <th className="r">In transit</th>
-                    <th className="r">Delivered</th>
-                    <th className="r">Returned</th>
-                    <th className="r">On hand</th>
-                    <th className="r">Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.holders.map((h) => (
-                    <tr key={h.locationId}>
-                      <td>
-                        <b>{h.name}</b>
-                        <small>{HOLDER_TYPE[h.type]}</small>
-                      </td>
-                      <td className="r num">{h.allocated}</td>
-                      <td className="r num">{h.inTransit > 0 ? h.inTransit : <span style={{ color: 'var(--ink-3)' }}>0</span>}</td>
-                      <td className="r num">{h.delivered}</td>
-                      <td className="r num">{h.returned}</td>
-                      <td className="r num"><b>{h.onHand}</b></td>
-                      <td className="r num">{formatCurrency(h.value)}</td>
-                    </tr>
-                  ))}
-                  <tr className="tot">
-                    <td>Total</td>
-                    <td className="r num">{data.total.allocated}</td>
-                    <td className="r num">{data.total.inTransit}</td>
-                    <td className="r num">{data.total.delivered}</td>
-                    <td className="r num">{data.total.returned}</td>
-                    <td className="r num">{data.total.onHand}</td>
-                    <td className="r num">{formatCurrency(data.total.value)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            <Table label="Stock by holder" columns={holderColumns(data.total)} rows={data.holders} rowKey={(h) => h.locationId} />
           </div>
           {data.holders.map((h) => {
             const note = countNote(h);

@@ -7,12 +7,9 @@ import { Button, EmptyState, Skeleton, Tabs, Tag, Tile } from '../components/ui-
 import { ProductDrawer } from './products/ProductDrawer';
 import { ProductsTable } from './products/ProductsTable';
 import { ShipmentsPane } from './products/ShipmentsPane';
-import { monthNow, PRODUCT_TABS, SUCCESS_TARGET } from './products/model';
+import { monthNow, monthShort, PRODUCT_TABS } from './products/model';
 import { parseView, writeView, type ProductsView } from './products/urlState';
 import { useProducts } from './products/useProducts';
-
-const MONTH_NAME = new Intl.DateTimeFormat('en-GB', { month: 'short' });
-const monthShort = (ym: string): string => MONTH_NAME.format(new Date(`${ym}-01T12:00:00`));
 
 /**
  * The Products page (M4-T21, F-600 to F-603) with the Incoming shipments tab (M4-T23). Built from docs/mockups/v2/products.html.
@@ -24,7 +21,8 @@ export function Products() {
   const [search, setSearch] = useSearchParams();
   const view = useMemo(() => parseView(search), [search]);
   const { can } = usePermissions();
-  const data = useProducts(view.tab, view.month);
+  // The shipments tab offers the active products, whatever tab the products table was left on
+  const data = useProducts(view.pane === 'shipments' ? 'active' : view.tab, view.month);
   const [addingShipment, setAddingShipment] = useState(false);
 
   const go = useCallback((next: ProductsView, replace = false) => setSearch(writeView(next), { replace }), [setSearch]);
@@ -33,7 +31,8 @@ export function Products() {
   const canCreate = can('products', 'create');
   const canEdit = can('products', 'update');
   const canStock = can('products', 'update_stock');
-  const showCost = !!list && list.products.some((p) => p.cogs !== undefined);
+  const showCost = !!list?.canSeeCost;
+  const shippable = (list?.products ?? []).filter((p) => p.isActive && p.productType === 'physical').map((p) => ({ id: p.id, name: p.name }));
   const shipments = view.pane === 'shipments';
 
   return (
@@ -91,9 +90,10 @@ export function Products() {
           filter={view.ships}
           onFilter={(ships) => go({ ...view, ships })}
           canWrite={canStock}
+          products={shippable}
           adding={addingShipment}
           onAddingChange={setAddingShipment}
-          onChanged={() => void data.refetch()}
+          onStockChanged={() => void data.refetch()}
         />
       ) : (
         <>
@@ -152,10 +152,10 @@ export function Products() {
                 action={canCreate && view.tab !== 'archived' ? <Button variant="primary" onClick={() => go({ ...view, edit: 'new' })}>Add product</Button> : undefined}
               />
             ) : list ? (
-              <ProductsTable rows={list.products} showCost={showCost} monthLabel={monthShort(list.month)} canEdit={canEdit} onEdit={(id) => go({ ...view, edit: id })} />
+              <ProductsTable rows={list.products} showCost={showCost} target={summary?.deliverySuccessTarget ?? null} monthLabel={monthShort(list.month)} canEdit={canEdit} onEdit={(id) => go({ ...view, edit: id })} />
             ) : null}
             <div className="pfoot">
-              <span>Stock adds up across every holder. Delivery success target is {SUCCESS_TARGET}%.</span>
+              <span>Stock adds up across every holder.{summary ? ` Delivery success target is ${summary.deliverySuccessTarget}%.` : ''}</span>
               {showCost && <span>Margin is price minus product cost</span>}
             </div>
           </div>
@@ -165,6 +165,7 @@ export function Products() {
       <ProductDrawer
         target={view.edit}
         canStock={canStock}
+        canSeeCost={showCost}
         onClose={() => go({ ...view, edit: null })}
         onChanged={() => void data.refetch()}
       />

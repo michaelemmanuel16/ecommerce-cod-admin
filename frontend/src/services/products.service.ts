@@ -1,5 +1,5 @@
 import apiClient from './api';
-import { Product, ProductInput } from '../types';
+import { Product } from '../types';
 
 /** The Products page API (backend productRoutes.ts, inventoryRoutes.ts). The api client turns money strings into numbers (utils/money). */
 
@@ -38,6 +38,8 @@ export interface ProductList {
   counts: { active: number; archived: number; all: number };
   month: string;
   pagination: { page: number; limit: number; total: number; pages: number };
+  /** The signed-in role may see cost and margin (the API sends them only then). */
+  canSeeCost: boolean;
 }
 
 export interface ProductsSummary {
@@ -46,6 +48,8 @@ export interface ProductsSummary {
   bestSeller: { productId: number; name: string; sku: string; units: number } | null;
   averageMargin: number | null;
   lowStock: number;
+  /** Delivery success target in percent (the tenant setting, 60 by default). */
+  deliverySuccessTarget: number;
 }
 
 export interface HolderCount {
@@ -84,10 +88,9 @@ export interface Holders {
 
 /** One product, with the two facts the drawer needs (backend getProduct). */
 export interface ProductDetail extends Omit<ProductRow, 'onHandTotal' | 'reservedTotal' | 'daysOfCover' | 'lowStockDaysEffective' | 'deliveredInPeriod' | 'deliverySuccess' | 'status'> {
-  /** The product has order lines: its type is locked. */
-  hasOrders: boolean;
-  /** A shipment of this product was received: cost comes from landed cost and is read-only. */
-  hasReceivedShipment: boolean;
+  /** Fields the server refuses to change: the type once there are order lines, the cost once a shipment was received. */
+  lockedFields: Array<'productType' | 'cogs'>;
+  canSeeCost: boolean;
 }
 
 export interface StockLocationOption {
@@ -127,25 +130,6 @@ export const productsService = {
     return response.data.products || [];
   },
 
-  async getProductById(id: number): Promise<Product> {
-    const response = await apiClient.get(`/api/products/${id}`);
-    return response.data.product || response.data;
-  },
-
-  async createProduct(product: ProductInput): Promise<Product> {
-    const response = await apiClient.post('/api/products', product);
-    return response.data.product || response.data;
-  },
-
-  async updateProduct(id: number, product: Partial<Product>): Promise<Product> {
-    const response = await apiClient.put(`/api/products/${id}`, product);
-    return response.data.product || response.data;
-  },
-
-  async deleteProduct(id: number): Promise<void> {
-    await apiClient.delete(`/api/products/${id}`);
-  },
-
   /** The Products table: the server filters by `tab` and computes the figures for `month` (YYYY-MM). */
   async list(tab: ProductTab, month: string | null, skipCache = false): Promise<ProductList> {
     const response = await apiClient.get('/api/products', { params: { tab, limit: 100, ...(month ? { month } : {}) }, skipCache, quiet: true });
@@ -159,28 +143,28 @@ export const productsService = {
   },
 
   async detail(id: number): Promise<ProductDetail> {
-    const response = await apiClient.get(`/api/products/${id}`, { params: { includeArchived: true }, skipCache: true, quiet: true });
-    return response.data.product;
+    const response = await apiClient.get(`/api/products/${id}`, { skipCache: true, quiet: true });
+    return { ...response.data.product, canSeeCost: response.data.canSeeCost };
   },
 
   async create(body: ProductPayload): Promise<ProductRow> {
-    const response = await apiClient.post('/api/products', body);
+    const response = await apiClient.post('/api/products', body, { quiet: true });
     return response.data.product;
   },
 
   async update(id: number, body: Omit<ProductPayload, 'openingStock'>): Promise<ProductRow> {
-    const response = await apiClient.put(`/api/products/${id}`, body);
+    const response = await apiClient.put(`/api/products/${id}`, body, { quiet: true });
     return response.data.product;
   },
 
   /** Archive: the product leaves new orders and forms. Says what it still holds. */
   async archive(id: number): Promise<ArchiveResult> {
-    const response = await apiClient.post(`/api/products/${id}/archive`);
+    const response = await apiClient.post(`/api/products/${id}/archive`, undefined, { quiet: true });
     return response.data;
   },
 
   async restore(id: number): Promise<void> {
-    await apiClient.post(`/api/products/${id}/restore`);
+    await apiClient.post(`/api/products/${id}/restore`, undefined, { quiet: true });
   },
 
   /** Stock by holder, read only (F-603). */

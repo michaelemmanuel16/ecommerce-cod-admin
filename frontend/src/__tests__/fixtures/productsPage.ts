@@ -25,6 +25,7 @@ export const PRODUCT_LIST: ProductList = {
   counts: { active: 3, archived: 2, all: 5 },
   month: '2026-10',
   pagination: { page: 1, limit: 100, total: 3, pages: 1 },
+  canSeeCost: true,
 };
 
 export const SUMMARY: ProductsSummary = {
@@ -33,6 +34,7 @@ export const SUMMARY: ProductsSummary = {
   bestSeller: { productId: 1, name: 'Magic Groove copybook set', sku: 'MG-CB-SET', units: 306 },
   averageMargin: 86,
   lowStock: 1,
+  deliverySuccessTarget: 60,
 };
 
 export const HOLDERS: Holders = {
@@ -52,7 +54,7 @@ export const HOLDERS: Holders = {
 export const DETAIL: ProductDetail = {
   id: 1, sku: 'MG-CB-SET', name: 'Magic Groove copybook set', description: null, category: 'Education', price: 249, cogs: 30, marginPct: 88, imageUrl: null,
   isActive: true, productType: 'physical', lowStockDays: null, digitalFileUrl: null, digitalFileType: null, downloadLinkExpiryHours: 72, maxDownloads: null,
-  hasOrders: true, hasReceivedShipment: true,
+  lockedFields: ['productType', 'cogs'], canSeeCost: true,
 };
 
 const ship = {

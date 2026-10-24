@@ -1,61 +1,38 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Check } from 'lucide-react';
 import { Button, Input, Modal, Select, useToast } from '../../components/ui-v2';
-import { productsService } from '../../services/products.service';
 import { shipmentsService, type Shipment, type ShipmentPayload } from '../../services/shipments.service';
 import { apiErrorMessage } from '../../utils/apiError';
 import { formatCurrency, getStoreCurrency } from '../../utils/format';
-import { fromShipment, liveLanded, totalOf, type ShipmentFields } from './shipModel';
+import { effectiveRate, fromShipment, liveLanded, totalOf, type ShipmentFields } from './shipModel';
 
 interface ShipmentModalProps {
-  open: boolean;
-  /** The pending shipment being edited, or null to add one. */
+  /** The pending shipment being edited, or null to add one. The modal is mounted only while it is open, one per shipment. */
   shipment: Shipment | null;
+  /** The active physical products an added shipment can be for. */
+  products: Array<{ id: number; name: string }>;
   onClose: () => void;
   onSaved: () => void;
 }
 
 type Errors = Partial<Record<keyof ShipmentFields, string>>;
 
-const blank = (store: string): ShipmentFields => ({
-  productId: '', supplier: '', quantity: '', currency: store, fxRate: '', unitCost: '', shippingCost: '0', customsDuties: '0', otherCosts: '0', expectedArrivalDate: '', notes: '',
+const blank = (store: string, productId: number | undefined): ShipmentFields => ({
+  productId: productId == null ? '' : String(productId), supplier: '', quantity: '', currency: store, fxRate: '', unitCost: '', shippingCost: '0', customsDuties: '0', otherCosts: '0', expectedArrivalDate: '', notes: '',
 });
 
 /**
  * Add or edit an incoming shipment (M4-T23, F-604, F-605, F-607). One product, one supplier, one currency. The landed cost
  * per unit shows live. For a foreign currency the rate line says which rate applies: the stored rate of the day, or a typed one.
  */
-export function ShipmentModal({ open, shipment, onClose, onSaved }: ShipmentModalProps) {
+export function ShipmentModal({ shipment, products, onClose, onSaved }: ShipmentModalProps) {
   const say = useToast();
   const store = getStoreCurrency();
   const editing = shipment !== null;
-  const [fields, setFields] = useState<ShipmentFields>(blank(store));
+  const [fields, setFields] = useState<ShipmentFields>(() => (shipment ? fromShipment(shipment) : blank(store, products[0]?.id)));
   const [errors, setErrors] = useState<Errors>({});
   const [apiError, setApiError] = useState<string | null>(null);
-  const [products, setProducts] = useState<Array<{ id: number; name: string }>>([]);
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    setFields(shipment ? fromShipment(shipment) : blank(store));
-    setErrors({});
-    setApiError(null);
-    setSaving(false);
-  }, [open, shipment, store]);
-
-  useEffect(() => {
-    if (!open || editing) return;
-    let live = true;
-    productsService.list('active', null, true).then((l) => {
-      if (!live) return;
-      const physical = l.products.filter((p) => p.productType === 'physical').map((p) => ({ id: p.id, name: p.name }));
-      setProducts(physical);
-      setFields((f) => (f.productId || physical.length === 0 ? f : { ...f, productId: String(physical[0].id) }));
-    }, () => undefined);
-    return () => {
-      live = false;
-    };
-  }, [open, editing]);
 
   const set = <K extends keyof ShipmentFields>(key: K, value: ShipmentFields[K]) => {
     setFields((f) => ({ ...f, [key]: value }));
@@ -69,17 +46,18 @@ export function ShipmentModal({ open, shipment, onClose, onSaved }: ShipmentModa
   const typedRate = fields.fxRate.trim() !== '' && Number(fields.fxRate) > 0 ? Number(fields.fxRate) : null;
   // The stored rate of an edited shipment applies while its currency stays the same.
   const storedRate = shipment && shipment.currency === currency && shipment.fxRate ? Number(shipment.fxRate) : null;
-  const rate = !foreign ? 1 : typedRate ?? storedRate;
+  const rate = effectiveRate({ foreign, typed: typedRate, stored: storedRate });
   const landed = liveLanded(total, rate, Number(fields.quantity));
   const landedText = landed === null ? '—' : formatCurrency(landed, foreign && rate === null ? currency : store);
   const landedInForeign = foreign && rate === null && landed !== null;
 
-  const lineText = useMemo(() => {
-    if (!foreign) return null;
-    if (typedRate) return `Typed rate: 1 ${currency} = ${typedRate} ${store}. Total ${formatCurrency(total * typedRate, store)}.`;
-    if (storedRate) return `Stored rate: 1 ${currency} = ${storedRate} ${store}. Total ${formatCurrency(total * storedRate, store)}.`;
-    return `The stored rate of the day (1 ${currency} in ${store}) is used when you save. Type a rate to override it.`;
-  }, [foreign, typedRate, storedRate, currency, store, total]);
+  const lineText = !foreign
+    ? null
+    : typedRate
+      ? `Typed rate: 1 ${currency} = ${typedRate} ${store}. Total ${formatCurrency(total * typedRate, store)}.`
+      : storedRate
+        ? `Stored rate: 1 ${currency} = ${storedRate} ${store}. Total ${formatCurrency(total * storedRate, store)}.`
+        : `The stored rate of the day (1 ${currency} in ${store}) is used when you save. Type a rate to override it.`;
 
   const check = (): Errors => {
     const e: Errors = {};
@@ -126,7 +104,7 @@ export function ShipmentModal({ open, shipment, onClose, onSaved }: ShipmentModa
 
   return (
     <Modal
-      open={open}
+      open
       onClose={onClose}
       title={editing ? 'Edit shipment' : 'Add incoming shipment'}
       description="Record what is on the way and what it costs to land."
