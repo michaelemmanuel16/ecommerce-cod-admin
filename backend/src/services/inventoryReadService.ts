@@ -224,7 +224,8 @@ export async function overview(f: OverviewFilters) {
       latestCount: first ? {
         countId: first.countId, date: first.date, source: first.source,
         unitsOff: comparable.reduce((s, r) => s + Math.abs(r.count!.difference ?? 0), 0),
-        isOld: comparable.length === 0,
+        // One old line is enough: the card must not say "Matches" while a product there needs a recount
+        isOld: comparable.length < lines.length,
       } : null,
     };
   });

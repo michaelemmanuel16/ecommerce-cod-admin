@@ -150,7 +150,7 @@ describe('GET /overview', () => {
     const { body } = await get('owner', '/overview');
     expect(row(body, swift, copybook).count).toMatchObject({ status: 'old', difference: null, counted: 188 });
     expect(row(body, swift, pens).count.status).toBe('matches'); // pens did not move
-    expect(card(body, swift).latestCount).toMatchObject({ unitsOff: 0, isOld: false });
+    expect(card(body, swift).latestCount).toMatchObject({ unitsOff: 0, isOld: true }); // one old line makes the card say so, not "Matches"
   });
 
   it('the product pre-filter and bad filters: 400', async () => {
