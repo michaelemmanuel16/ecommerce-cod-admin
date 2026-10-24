@@ -7,6 +7,7 @@ import * as Money from '../utils/money';
 import { getSystemUserId } from './systemUserService';
 import { openFindingOnce } from './findingService';
 import { withSoftDeleted } from '../utils/prismaExtensions';
+import { GLAutomationService } from './glAutomationService';
 
 /**
  * Stock (F-651, F-657, F-305, M4-T06/T07). This file is the only writer of `StockLevel.quantity` and `Product.stockQuantity`
@@ -311,12 +312,16 @@ export async function fulfilOrder(tx: TransactionClient, order: FulfilOrder, act
     }
   }
   for (const productId of moved) await refreshCache(tx, productId);
+  // F-611: the cost of the units that left, at the product cost of this moment. The revenue entry books the same amount.
+  if (moved.size > 0) {
+    await tx.order.updateMany({ where: { id: order.id, landedCostTotal: null }, data: { landedCostTotal: GLAutomationService.calculateTotalCOGS(lines) } });
+  }
 }
 
 /**
  * An order leaves `delivered` (returned, or moved back, F-657): every active fulfilment goes back to the location it came
  * from as an `order_reversal` movement, and the fulfilment is marked reversed. A repeat finds nothing to reverse.
- * An order delivered before M4 has no fulfilment row and reverses nothing.
+ * An order delivered before M4 has no fulfilment row and reverses no stock.
  */
 export async function reverseOrder(tx: TransactionClient, order: FulfilOrder, actorUserId?: number | null): Promise<void> {
   const active = await tx.inventoryTransfer.findMany({
@@ -324,6 +329,8 @@ export async function reverseOrder(tx: TransactionClient, order: FulfilOrder, ac
     orderBy: { id: 'asc' },
   });
   if (active.length === 0) return;
+  // The booked landed cost goes with the delivery (F-611); the ledger reversal reads the amount from the entry it reverses.
+  await tx.order.updateMany({ where: { id: order.id, landedCostTotal: { not: null } }, data: { landedCostTotal: null } });
   const createdById = actorUserId ?? (await getSystemUserId(resolveTenantId(order.tenantId)));
   for (const fulfilment of active) {
     await applyMovement(tx, {

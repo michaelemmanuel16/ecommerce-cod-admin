@@ -73,6 +73,7 @@ import glRoutes from './routes/glRoutes';
 import agentReconciliationRoutes from './routes/agentReconciliationRoutes';
 import agentInventoryRoutes from './routes/agentInventoryRoutes';
 import inventoryRoutes from './routes/inventoryRoutes';
+import shipmentRoutes from './routes/shipmentRoutes';
 import whatsappRoutes from './routes/whatsappRoutes';
 import smsRoutes from './routes/smsRoutes';
 import emailRoutes from './routes/emailRoutes';
@@ -276,6 +277,7 @@ app.use('/api/calls', apiLimiter, callRoutes);
 app.use('/api/agent-reconciliation', apiLimiter, agentReconciliationRoutes);
 app.use('/api/agent-inventory', apiLimiter, agentInventoryRoutes);
 app.use('/api/inventory', apiLimiter, inventoryRoutes);
+app.use('/api/shipments', apiLimiter, shipmentRoutes);
 // WhatsApp webhook endpoints — dedicated high-limit rate limiter (1000/15min prod)
 // bypasses apiLimiter (500/15min) since Meta sends bursts of status callbacks
 app.get('/api/whatsapp/webhook', whatsappWebhookLimiter, verifyWebhook);

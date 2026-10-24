@@ -86,11 +86,17 @@ export function stockFixtureChecks(getTenantId: () => string): void {
       const [s] = await rows<Record<string, string | number | null>>(`
         SELECT quantity, quantity_counted, short_quantity, total_cost::text, total_cost_store::text, landed_cost_per_unit::text, claim_status::text,
                claim_amount::text, status::text, to_char(received_at, 'YYYY-MM-DD') AS received, (SELECT name FROM stock_locations WHERE id = destination_location_id) AS destination
-        FROM inventory_shipments WHERE tenant_id = $1`);
+        FROM inventory_shipments WHERE tenant_id = $1 AND status = 'received'`);
       expect(s).toEqual({
         quantity: 300, quantity_counted: 288, short_quantity: 12, total_cost: '8700.0000', total_cost_store: '8700.0000', landed_cost_per_unit: '30.2083',
         claim_status: 'open', claim_amount: '324.0000', status: 'received', received: '2026-10-09', destination: 'Logiswift',
       });
+    });
+
+    it('the 3 pending shipments: 3 pending, 1,500 units on the way, GH₵24,950 to land', async () => {
+      const [r] = await rows<{ n: bigint; units: bigint; cost: string }>(`
+        SELECT COUNT(*) AS n, SUM(quantity) AS units, SUM(total_cost)::text AS cost FROM inventory_shipments WHERE tenant_id = $1 AND status = 'pending'`);
+      expect([Number(r.n), Number(r.units), Number(r.cost)]).toEqual([3, 1500, 24950]);
     });
 
     it('the 3PL count of 15 October: copybook 188 against 200 (12 off), pens and grip trainer match', async () => {

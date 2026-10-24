@@ -686,13 +686,13 @@ async function fixtureHash(prisma: PrismaClient, tenantId: string): Promise<stri
   const [locations, levels, shipments, counts, movements] = await Promise.all([
     prisma.stockLocation.findMany({ where: { tenantId }, orderBy: { name: 'asc' }, select: { name: true, type: true, user: { select: { email: true } } } }),
     prisma.stockLevel.findMany({ where: { tenantId }, orderBy: [{ location: { name: 'asc' } }, { product: { sku: 'asc' } }], select: { quantity: true, location: { select: { name: true } }, product: { select: { sku: true } } } }),
-    prisma.inventoryShipment.findMany({ where: { tenantId }, orderBy: { createdAt: 'asc' }, select: { quantity: true, totalCost: true, status: true, quantityCounted: true, shortQuantity: true, landedCostPerUnit: true, claimStatus: true, claimAmount: true, receivedAt: true } }),
+    prisma.inventoryShipment.findMany({ where: { tenantId }, orderBy: { createdAt: 'asc' }, select: { supplier: true, quantity: true, totalCost: true, status: true, currency: true, expectedArrivalDate: true, quantityCounted: true, shortQuantity: true, landedCostPerUnit: true, claimStatus: true, claimAmount: true, receivedAt: true } }),
     prisma.stockCountLine.findMany({ where: { tenantId }, orderBy: [{ count: { countDate: 'asc' } }, { product: { sku: 'asc' } }], select: { systemQuantity: true, countedQuantity: true, difference: true, count: { select: { countDate: true, source: true, location: { select: { name: true } } } }, product: { select: { sku: true } } } }),
     prisma.inventoryTransfer.findMany({ where: { tenantId }, orderBy: [{ createdAt: 'asc' }, { transferType: 'asc' }, { productId: 'asc' }, { quantity: 'asc' }], select: { transferType: true, status: true, quantity: true, receivedQuantity: true, createdAt: true, product: { select: { sku: true } }, fromLocation: { select: { name: true } }, toLocation: { select: { name: true } } } }),
   ]);
   for (const l of locations) hash.update(`location|${l.name}|${l.type}|${l.user?.email ?? ''}\n`);
   for (const l of levels) hash.update(`level|${l.location.name}|${l.product.sku}|${l.quantity}\n`);
-  for (const x of shipments) hash.update(`shipment|${x.quantity}|${x.totalCost.toFixed(4)}|${x.status}|${x.quantityCounted}|${x.shortQuantity}|${x.landedCostPerUnit?.toFixed(4)}|${x.claimStatus}|${x.claimAmount.toFixed(4)}|${x.receivedAt?.toISOString()}\n`);
+  for (const x of shipments) hash.update(`shipment|${x.supplier}|${x.quantity}|${x.totalCost.toFixed(4)}|${x.status}|${x.currency}|${x.expectedArrivalDate?.toISOString()}|${x.quantityCounted}|${x.shortQuantity}|${x.landedCostPerUnit?.toFixed(4)}|${x.claimStatus}|${x.claimAmount.toFixed(4)}|${x.receivedAt?.toISOString()}\n`);
   for (const c of counts) hash.update(`count|${c.count.location.name}|${c.count.countDate.toISOString()}|${c.count.source}|${c.product.sku}|${c.systemQuantity}|${c.countedQuantity}|${c.difference}\n`);
   for (const m of movements) hash.update(`move|${m.transferType}|${m.status}|${m.product.sku}|${m.quantity}|${m.receivedQuantity ?? ''}|${m.fromLocation?.name ?? ''}|${m.toLocation?.name ?? ''}|${m.createdAt.toISOString()}\n`);
   return hash.digest('hex');
@@ -959,7 +959,7 @@ export async function seedFixture(prisma: PrismaClient, opts: SeedFixtureOptions
   });
 
   // The 9 October shipment: 300 shipped at GH₵27.00, shipping 450, other 150 (total 8,700); 288 counted, 12 short;
-  // landed cost 8,700 / 288 = 30.2083; open supplier claim 12 x 27 = 324. No ledger entry here (the receive service posts it, M4-T08).
+  // landed cost 8,700 / 288 = 30.2083; open supplier claim 12 x 27 = 324. No ledger entry here (the receive service posts it, M4-T12).
   const received9Oct = new Date(Date.UTC(2026, 9, 9, 10, 0, 0));
   const shipment = await prisma.inventoryShipment.create({
     data: {
@@ -972,6 +972,23 @@ export async function seedFixture(prisma: PrismaClient, opts: SeedFixtureOptions
       claimStatus: 'open', claimAmount: money(12 * 27), claimNote: 'Short on arrival: 12 units',
     },
   });
+  // The 3 pending shipments of the Incoming shipments tab (mockup): 3 pending, 1,500 units, GH₵24,950 to land.
+  // total = quantity x unit cost + shipping + customs + other: 12,000 + 7,500 + 5,450.
+  const pendingShipments = [
+    { sku: 'MG-COPYBOOK-SET', supplier: 'Accra Print House', quantity: 400, unit: 27.9, shipping: 640, customs: 0, other: 200, expected: Date.UTC(2026, 9, 22), created: Date.UTC(2026, 9, 18, 9, 0, 0) },
+    { sku: 'MG-REFILL-PENS', supplier: 'Guangzhou Stationery', quantity: 600, unit: 9.5, shipping: 1200, customs: 600, other: 0, expected: Date.UTC(2026, 9, 29), created: Date.UTC(2026, 9, 19, 9, 0, 0) },
+    { sku: 'MG-GRIP-TRAINER', supplier: 'Guangzhou Stationery', quantity: 500, unit: 8, shipping: 900, customs: 450, other: 100, expected: Date.UTC(2026, 10, 3), created: Date.UTC(2026, 9, 20, 9, 0, 0) },
+  ] as const;
+  for (const p of pendingShipments) {
+    await prisma.inventoryShipment.create({
+      data: {
+        tenantId, productId: productId[p.sku], supplier: p.supplier, quantity: p.quantity,
+        unitCost: money(p.unit), shippingCost: money(p.shipping), customsDuties: money(p.customs), otherCosts: money(p.other),
+        totalCost: money(p.quantity * p.unit + p.shipping + p.customs + p.other), status: 'pending', currency: 'GHS',
+        expectedArrivalDate: new Date(p.expected), createdById: admin.id, createdAt: new Date(p.created),
+      },
+    });
+  }
   await prisma.inventoryTransfer.create({
     data: {
       tenantId, productId: productId['MG-COPYBOOK-SET'], quantity: 288, transferType: 'receipt', toLocationId: locationId['Logiswift'],
