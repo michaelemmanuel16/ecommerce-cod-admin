@@ -52,12 +52,12 @@ afterAll(async () => {
 });
 
 describe('GET /api/auth/me', () => {
-  it('finance clerk lands on /finance, owner on /, stock keeper on /products', async () => {
+  it('finance clerk lands on /finance, owner on /, stock keeper on /inventory', async () => {
     const get = (label: string) => request(app).get('/api/auth/me').set(bearer(tokens[label]));
     expect((await get('finance')).body.homeRoute).toBe('/finance');
     expect((await get('owner')).body.homeRoute).toBe('/');
     expect((await get('manager')).body.homeRoute).toBe('/');
-    expect((await get('stock')).body.homeRoute).toBe('/products');
+    expect((await get('stock')).body.homeRoute).toBe('/inventory');
   });
 
   it('keeps the old fields and adds permissions, menu and roles', async () => {

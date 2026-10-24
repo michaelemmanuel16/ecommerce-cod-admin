@@ -1556,6 +1556,7 @@ enum StockLocationType {
 }
 
 /// A place that holds stock (F-650). agent and partner_3pl link to one User; in_transit is one system location per tenant.
+/// A partial unique index (one `own_store` per tenant) exists only in migration 20261024140000_m4_one_own_store.
 model StockLocation {
   id        Int               @id @default(autoincrement())
   type      StockLocationType

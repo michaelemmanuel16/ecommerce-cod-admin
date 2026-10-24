@@ -66,7 +66,9 @@ async function main() {
     if (process.argv.includes('--undo')) {
       const deliveries = await prisma.delivery.deleteMany({ where: { tenantId: tenant.id } });
       const profiles = await prisma.deliveryPartnerProfile.deleteMany({ where: { tenantId: tenant.id } });
-      console.log(`Removed ${deliveries.count} deliveries and ${profiles.count} partner profiles of ${FIXTURE_SLUG}.`);
+      // m4-inventory.spec.ts allocates stock to agents, which leaves inbox notifications that block the fixture re-seed
+      const notifications = await prisma.notification.deleteMany({ where: { tenantId: tenant.id } });
+      console.log(`Removed ${deliveries.count} deliveries, ${profiles.count} partner profiles and ${notifications.count} notifications of ${FIXTURE_SLUG}.`);
       return;
     }
 

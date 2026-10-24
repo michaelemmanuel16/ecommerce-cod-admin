@@ -11,6 +11,7 @@ import { AuthRequest } from '../types';
 import { COUNT_REASONS, COUNT_SOURCES } from '../services/stockCountService';
 import { TransferStatus, TransferType, StockLocationType } from '@prisma/client';
 import { ADJUST_REASONS, CREATE_TYPES, DISPUTE_REASONS, RETURN_REASONS } from '../services/transferService';
+import { locationOfUser } from '../services/inventoryReadService';
 
 const router = Router();
 
@@ -24,11 +25,26 @@ const canReceive = (req: AuthRequest, res: Response, next: NextFunction) =>
   req.user?.role === 'delivery_agent' ? next() : canWriteStock(req, res, next);
 
 // Reads: products:view, but never for a call rep or a delivery agent. They get no cost and no per-holder stock (F-600).
-const canView = [
-  requireResourcePermission('products', 'view'),
-  (req: AuthRequest, res: Response, next: NextFunction) =>
-    canSeeCost(req.user?.role) ? next() : res.status(403).json({ error: 'You do not have access to stock figures' }),
-];
+const canViewPermission = requireResourcePermission('products', 'view');
+const canView = (req: AuthRequest, res: Response, next: NextFunction) =>
+  canViewPermission(req, res, (err?: unknown) => {
+    if (err) return next(err);
+    return canSeeCost(req.user?.role) ? next() : res.status(403).json({ error: 'You do not have access to stock figures' });
+  });
+// The one exception: a delivery agent reads /levels and /transfers for their own stock location only (F-653). The agent's
+// location goes to the service as req.scopeLocationId, and another location is 403. Every other role takes canView.
+const canViewOrOwn = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  if (req.user?.role !== 'delivery_agent') return canView(req, res, next);
+  const own = await locationOfUser(req.user.id);
+  if (own == null) return res.status(403).json({ error: 'You have no stock location' });
+  const asked = req.query.locationId;
+  if (asked !== undefined && asked !== '' && Number(asked) !== own) return res.status(403).json({ error: 'You can only see your own stock' });
+  req.scopeLocationId = own;
+  return next();
+};
+// The CSV export: owner, admin and finance clerk (F-659).
+const canExport = (req: AuthRequest, res: Response, next: NextFunction) =>
+  ['super_admin', 'admin', 'accountant'].includes(req.user?.role ?? '') ? next() : res.status(403).json({ error: 'You do not have access to the export' });
 
 const id = param('id').isInt({ min: 1 }).withMessage('Invalid transfer ID').toInt();
 const countId = param('id').isInt({ min: 1 }).withMessage('Invalid count ID').toInt();
@@ -75,6 +91,9 @@ router.post(
   controller.adjustStock,
 );
 
+// Set up the own store (F-652)
+router.post('/locations', canWriteStock, [body('name').isString().trim().isLength({ min: 1, max: 100 }).withMessage('Give the store a name'), body('address').optional({ nullable: true }).isString().trim().isLength({ max: 200 }), validate], controller.createOwnStore);
+
 // Reads (F-651, F-652, F-603, F-659, F-656)
 const optInt = (name: string) => query(name).optional().isInt({ min: 1 }).withMessage(`${name} must be a whole number above 0`);
 const optDay = (name: string) => query(name).optional().matches(YMD).withMessage(`${name} must be a date, YYYY-MM-DD`);
@@ -84,19 +103,31 @@ router.get(
   [optInt('product'), query('type').optional().isIn(Object.values(StockLocationType)), query('onlyDifferences').optional().isBoolean(), validate],
   controller.overview,
 );
-router.get('/levels', canView, [optInt('locationId'), optInt('productId'), validate], controller.levels);
+router.get('/levels', canViewOrOwn, [optInt('locationId'), optInt('productId'), validate], controller.levels);
 router.get('/product/:productId/holders', canView, [param('productId').isInt({ min: 1 }).withMessage('Invalid product ID').toInt(), validate], controller.holders);
 router.get(
   '/transfers',
-  canView,
+  canViewOrOwn,
   [
     query('type').optional().isIn(Object.values(TransferType)).withMessage('Unknown type'),
     query('status').optional().isIn(Object.values(TransferStatus)).withMessage('Unknown status'),
     optInt('locationId'), optInt('productId'), optDay('from'), optDay('to'),
-    ...paginationValidation, validate,
+    query('includeCounts').optional().isBoolean(), ...paginationValidation, validate,
   ],
   controller.listTransfers,
 );
+router.get(
+  '/transfers/export.csv',
+  canView, canExport,
+  [
+    query('type').optional().isIn(Object.values(TransferType)).withMessage('Unknown type'),
+    query('status').optional().isIn(Object.values(TransferStatus)).withMessage('Unknown status'),
+    optInt('locationId'), optInt('productId'), optDay('from'), optDay('to'), validate,
+  ],
+  controller.exportTransfers,
+);
+router.get('/locations', canView, controller.listLocations);
+router.get('/transfers/:id/trail', canView, [id, validate], controller.transferTrail);
 router.get('/returns/summary', canView, [optDay('from'), optDay('to'), optInt('partnerId'), validate], controller.returnsSummary);
 
 // Stock counts (F-653)

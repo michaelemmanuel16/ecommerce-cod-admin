@@ -46,14 +46,14 @@ afterAll(async () => {
 });
 
 describe('inventory on the fixture (T15)', () => {
-  it('overview: Logiswift on hand 442, reserved 116, copybook count 188 against 200 (difference 12, "12 units off")', async () => {
+  it('overview: Logiswift on hand 442, reserved 116, copybook count 188 against 200 (difference -12, "12 units off")', async () => {
     const { body } = await get('/api/inventory/overview');
     const card = (name: string) => body.locations.find((l: any) => l.name === name);
     expect(card('Logiswift')).toMatchObject({ onHand: 442, reserved: 116, products: 3, latestCount: { unitsOff: 12, isOld: false, source: 'three_pl_dashboard', date: '2026-10-15' } });
     expect(card('Kofi Appiah')).toMatchObject({ onHand: 99, reserved: 21, inTransit: 20 });
     expect(card('Kasapa Express')).toMatchObject({ onHand: 0 });
     const copybook = body.stockByLocation.find((r: any) => r.locationName === 'Logiswift' && r.productId === sku['MG-COPYBOOK-SET']);
-    expect(copybook).toMatchObject({ onHand: 200, reserved: 116, count: { counted: 188, difference: 12, status: 'off' } });
+    expect(copybook).toMatchObject({ onHand: 200, reserved: 116, count: { counted: 188, difference: -12, status: 'off' } });
     const kofi = body.stockByLocation.find((r: any) => r.locationName === 'Kofi Appiah' && r.productId === sku['MG-COPYBOOK-SET']);
     expect(kofi).toMatchObject({ onHand: 36, reserved: 21, inTransit: 20 });
     expect((await get(`/api/inventory/overview?product=${sku['MG-REFILL-PENS']}`)).body.stockByLocation.every((r: any) => r.productId === sku['MG-REFILL-PENS'])).toBe(true);
@@ -65,7 +65,7 @@ describe('inventory on the fixture (T15)', () => {
     expect(body.total.onHand).toBe(236);
     expect(body.productTotal).toBe(236);
     expect(body.holders.find((h: any) => h.name === 'Kofi Appiah')).toMatchObject({ inTransit: 20, allocated: 36 });
-    expect(body.holders.find((h: any) => h.name === 'Logiswift')).toMatchObject({ returned: 41, count: { difference: 12 } });
+    expect(body.holders.find((h: any) => h.name === 'Logiswift')).toMatchObject({ returned: 41, count: { difference: -12 } });
     expect(body.holdersWithNone).toEqual(['Esi Badu', 'Kasapa Express', 'Kwesi Amoah']);
   });
 
@@ -75,10 +75,10 @@ describe('inventory on the fixture (T15)', () => {
   });
 
   it('history: 9 movements, filtered by type with tab counts', async () => {
-    const all = await get('/api/inventory/transfers?limit=100');
+    const all = await get('/api/inventory/transfers?limit=100&includeCounts=true');
     expect(all.body.pagination.total).toBe(9);
     expect(all.body.typeCounts).toEqual({ opening: 6, receipt: 1, allocation: 1, return_to_warehouse: 1 });
-    const returns = await get('/api/inventory/transfers?type=return_to_warehouse');
+    const returns = await get('/api/inventory/transfers?type=return_to_warehouse&includeCounts=true');
     expect(returns.body.transfers).toHaveLength(1);
     expect(returns.body.transfers[0]).toMatchObject({ quantity: 41, receivedQuantity: 36, shortQuantity: 5, status: 'disputed' });
   });

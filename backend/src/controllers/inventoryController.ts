@@ -3,6 +3,8 @@ import { AuthRequest } from '../types';
 import * as transfers from '../services/transferService';
 import * as counts from '../services/stockCountService';
 import * as reads from '../services/inventoryReadService';
+import * as locations from '../services/stockLocationService';
+import * as exporter from '../services/transferExportService';
 
 const intQuery = (v: unknown) => (v === undefined || v === '' ? undefined : Number(v));
 const text = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undefined);
@@ -66,7 +68,7 @@ export const overview = async (req: AuthRequest, res: Response): Promise<void> =
 
 /** GET /api/inventory/levels */
 export const levels = async (req: AuthRequest, res: Response): Promise<void> => {
-  res.json(await reads.levels({ locationId: intQuery(req.query.locationId), productId: intQuery(req.query.productId) }));
+  res.json(await reads.levels({ locationId: intQuery(req.query.locationId), productId: intQuery(req.query.productId), scopeLocationId: req.scopeLocationId }));
 };
 
 /** GET /api/inventory/product/:productId/holders (F-603) */
@@ -74,17 +76,47 @@ export const holders = async (req: AuthRequest, res: Response): Promise<void> =>
   res.json(await reads.holders(Number(req.params.productId)));
 };
 
-/** GET /api/inventory/transfers: movement history (F-659) */
-export const listTransfers = async (req: AuthRequest, res: Response): Promise<void> => {
+/** The transfer filters of the list and the export, from the query. */
+const transferFilters = (req: AuthRequest) => {
   const q = req.query;
-  res.json(await reads.transfers({
+  return {
     type: text(q.type) as reads.TransferFilters['type'], status: text(q.status) as reads.TransferFilters['status'],
     locationId: intQuery(q.locationId), productId: intQuery(q.productId), from: text(q.from), to: text(q.to),
-    page: intQuery(q.page) ?? 1, limit: intQuery(q.limit) ?? 20,
+    scopeLocationId: req.scopeLocationId,
+  };
+};
+
+/** GET /api/inventory/transfers: movement history (F-659). `includeCounts=true` adds the total and the tab counts. */
+export const listTransfers = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.json(await reads.transfers({
+    ...transferFilters(req), page: intQuery(req.query.page) ?? 1, limit: intQuery(req.query.limit) ?? 20, includeCounts: req.query.includeCounts === 'true',
   }));
+};
+
+/** GET /api/inventory/transfers/export.csv: the same filters as the list, all rows (F-659) */
+export const exportTransfers = async (req: AuthRequest, res: Response): Promise<void> => {
+  const csv = await exporter.exportTransfers({ id: req.user!.id }, transferFilters(req));
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="stock-moves.csv"');
+  res.send(csv);
+};
+
+/** GET /api/inventory/locations: id, name, type and active flag of every location, for pickers */
+export const listLocations = async (_req: AuthRequest, res: Response): Promise<void> => {
+  res.json({ locations: await locations.listLocations() });
 };
 
 /** GET /api/inventory/returns/summary (F-656) */
 export const returnsSummary = async (req: AuthRequest, res: Response): Promise<void> => {
   res.json(await reads.returnsSummary({ from: text(req.query.from), to: text(req.query.to), partnerId: intQuery(req.query.partnerId) }));
+};
+
+/** GET /api/inventory/transfers/:id/trail: the audit rows of one transfer */
+export const transferTrail = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.json(await reads.transferTrail(Number(req.params.id)));
+};
+
+/** POST /api/inventory/locations: set up the own store (F-652) */
+export const createOwnStore = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.status(201).json({ location: await locations.createOwnStore({ id: req.user!.id }, req.body) });
 };

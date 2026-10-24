@@ -12,10 +12,12 @@ interface ModalProps {
   children: ReactNode;
   /** Footer row (.mf), usually buttons. */
   footer?: ReactNode;
+  /** The wide dialog (.dlg.wide, 1120px) of the transfer history. */
+  wide?: boolean;
 }
 
 /** The dialog (.mveil / .dlg, 520px). Escape and a click on the veil close it; focus returns to the opener. */
-export function Modal({ open, onClose, title, description, children, footer }: ModalProps) {
+export function Modal({ open, onClose, title, description, children, footer, wide }: ModalProps) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
   useLayer(open, ref, onClose);
@@ -24,7 +26,7 @@ export function Modal({ open, onClose, title, description, children, footer }: M
   return (
     <Portal>
       <div className="mveil" onClick={(e) => e.target === e.currentTarget && onClose()}>
-        <div ref={ref} className="dlg" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
+        <div ref={ref} className={wide ? 'dlg wide' : 'dlg'} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
           <div className="mh">
             <div>
               <h3 id={titleId}>{title}</h3>

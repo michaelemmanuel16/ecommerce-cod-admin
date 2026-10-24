@@ -97,9 +97,12 @@ async function oldCounts(counts: CountRow[]): Promise<Set<string>> {
   return old;
 }
 
-/** Our records against the latest count of one (location, product). "Count is old" replaces the gap when stock moved after it. */
+/**
+ * Our records against the latest count of one (location, product). "Count is old" replaces the gap when stock moved after it.
+ * `difference` is counted minus our records, the sign of StockCountLine.difference: -12 means 12 fewer units than our records say.
+ */
 function compare(count: CountRow, onHand: number, isOld: boolean) {
-  const difference = onHand - count.counted;
+  const difference = count.counted - onHand;
   return {
     countId: count.countId, lineId: count.lineId, date: count.date, source: count.source, counted: count.counted,
     difference: isOld ? null : difference,
@@ -158,8 +161,9 @@ async function levelRows(f: { locationId?: number; productId?: number; type?: St
   return [...rows.values()].sort((a, b) => a.productName.localeCompare(b.productName) || a.locationName.localeCompare(b.locationName));
 }
 
-export async function levels(f: { locationId?: number; productId?: number }) {
-  const rows = await levelRows(f);
+/** `scopeLocationId` is set for a delivery agent: their own location, whatever the query asked (the route has refused another one). */
+export async function levels(f: { locationId?: number; productId?: number; scopeLocationId?: number }) {
+  const rows = await levelRows({ locationId: f.scopeLocationId ?? f.locationId, productId: f.productId });
   return { levels: rows.filter((r) => r.onHand !== 0 || r.reserved > 0 || r.inTransit > 0) };
 }
 
@@ -273,29 +277,63 @@ function dateRange(f: { from?: string; to?: string }): Prisma.DateTimeFilter | u
   }
 }
 
-export interface TransferFilters { type?: TransferType; status?: TransferStatus; locationId?: number; productId?: number; from?: string; to?: string; page: number; limit: number }
+export interface TransferFilters {
+  type?: TransferType; status?: TransferStatus; locationId?: number; productId?: number; from?: string; to?: string;
+  page: number; limit: number;
+  /** A delivery agent's own location: only moves into or out of it, whatever `locationId` says. */
+  scopeLocationId?: number;
+  /** Run the total and the per-type counts (the history modal). Recent transfers, the agent screen and exports skip them. */
+  includeCounts?: boolean;
+}
 
-/** Movement history with filters and pagination (F-659). `typeCounts` are the tab counts for the other filters. */
-export async function transfers(f: TransferFilters) {
+/** The filters without the type: the tab counts are the other filters' counts per type. */
+function baseWhere(f: Omit<TransferFilters, 'page' | 'limit'>): Prisma.InventoryTransferWhereInput {
   const range = dateRange(f);
-  const base: Prisma.InventoryTransferWhereInput = {
+  const location = f.scopeLocationId ?? f.locationId;
+  return {
     ...(f.status ? { status: f.status } : {}),
     ...(f.productId != null ? { productId: f.productId } : {}),
-    ...(f.locationId != null ? { OR: [{ fromLocationId: f.locationId }, { toLocationId: f.locationId }] } : {}),
+    ...(location != null ? { OR: [{ fromLocationId: location }, { toLocationId: location }] } : {}),
     ...(range ? { createdAt: range } : {}),
   };
+}
+
+const NEWEST_FIRST = [{ createdAt: 'desc' }, { id: 'desc' }] as const;
+
+/** Movement history with filters and pagination (F-659). `typeCounts` and the total come only with `includeCounts`. */
+export async function transfers(f: TransferFilters) {
+  const base = baseWhere(f);
   const where: Prisma.InventoryTransferWhereInput = { ...base, ...(f.type ? { transferType: f.type } : {}) };
-  const [rows, total, groups] = await Promise.all([
-    prisma.inventoryTransfer.findMany({ where, include: TRANSFER_INCLUDE, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], skip: (f.page - 1) * f.limit, take: f.limit }),
-    prisma.inventoryTransfer.count({ where }),
-    prisma.inventoryTransfer.groupBy({ by: ['transferType'], where: base, _count: { _all: true } }),
+  const [rows, counted] = await Promise.all([
+    prisma.inventoryTransfer.findMany({ where, include: TRANSFER_INCLUDE, orderBy: [...NEWEST_FIRST], skip: (f.page - 1) * f.limit, take: f.limit }),
+    f.includeCounts
+      ? Promise.all([
+        prisma.inventoryTransfer.groupBy({ by: ['transferType'], where: base, _count: { _all: true } }),
+        // With no type filter the total is the sum of the groups; only a type filter needs its own count
+        f.type ? prisma.inventoryTransfer.count({ where }) : Promise.resolve(null),
+      ])
+      : null,
   ]);
   const now = new Date();
+  const body = { transfers: rows.map((r) => presentTransfer(r, now)) };
+  if (!counted) return { ...body, pagination: { page: f.page, limit: f.limit } };
+  const [groups, typed] = counted;
+  const total = typed ?? groups.reduce((sum, g) => sum + g._count._all, 0);
   return {
-    transfers: rows.map((r) => presentTransfer(r, now)),
+    ...body,
     typeCounts: Object.fromEntries(groups.map((g) => [g.transferType, g._count._all])),
     pagination: { page: f.page, limit: f.limit, total, pages: Math.ceil(total / f.limit) },
   };
+}
+
+/** Every move the filters match, newest first, in batches (the CSV export). */
+export async function* transferBatches(f: Omit<TransferFilters, 'page' | 'limit'>, size = 500) {
+  const where: Prisma.InventoryTransferWhereInput = { ...baseWhere(f), ...(f.type ? { transferType: f.type } : {}) };
+  for (let skip = 0; ; skip += size) {
+    const rows = await prisma.inventoryTransfer.findMany({ where, include: TRANSFER_INCLUDE, orderBy: [...NEWEST_FIRST], skip, take: size });
+    if (rows.length > 0) yield rows;
+    if (rows.length < size) return;
+  }
 }
 
 /**
@@ -345,3 +383,23 @@ export async function returnsSummary(f: { from?: string; to?: string; partnerId?
   };
 }
 
+
+/** The stock location a delivery agent holds, or null when the account has none. */
+export async function locationOfUser(userId: number): Promise<number | null> {
+  const loc = await prisma.stockLocation.findFirst({ where: { userId }, select: { id: true } });
+  return loc?.id ?? null;
+}
+
+/** The audit rows of one transfer, oldest first: who sent, received, resolved or cancelled it, and when (F-659). */
+export async function transferTrail(id: number) {
+  const exists = await prisma.inventoryTransfer.findUnique({ where: { id }, select: { id: true } });
+  if (!exists) throw new AppError('Transfer not found', 404);
+  const rows = await prisma.auditLog.findMany({
+    where: { resource: 'inventory_transfer', resourceId: String(id) },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    include: { user: { select: { id: true, firstName: true, lastName: true } } },
+  });
+  return {
+    trail: rows.map((r) => ({ id: r.id, action: r.action, at: r.createdAt, by: r.user, details: r.metadata })),
+  };
+}

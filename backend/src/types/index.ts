@@ -11,6 +11,8 @@ export interface AuthRequest extends Request {
   };
   /** Set by authenticate() once it has verified the platform-admin flag (saves a second lookup). */
   isPlatformAdmin?: boolean;
+  /** Set on the inventory read routes for a delivery agent: the only stock location they may read. */
+  scopeLocationId?: number;
 }
 
 export interface JWTPayload {

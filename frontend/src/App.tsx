@@ -47,7 +47,7 @@ const PaymentCallback = lazy(() => import('./pages/PaymentCallback').then(m => (
 const UiGallery = import.meta.env.DEV ? lazy(() => import('./pages/dev/UiGallery')) : null;
 const EarningsHistory = lazy(() => import('./pages/EarningsHistory'));
 const AgentMyInventory = lazy(() => import('./pages/AgentMyInventory'));
-const AgentInventoryManagement = lazy(() => import('./pages/AgentInventoryManagement'));
+const Inventory = lazy(() => import('./pages/Inventory').then(m => ({ default: m.Inventory })));
 const Communications = lazy(() => import('./pages/Communications'));
 const SubscriptionCallback = lazy(() => import('./pages/SubscriptionCallback').then(m => ({ default: m.SubscriptionCallback })));
 const PlatformLogin = lazy(() => import('./pages/PlatformLogin').then(m => ({ default: m.PlatformLogin })));
@@ -66,12 +66,13 @@ const MobileDeliveries = lazy(() => import('./pages/mobile/MobileDeliveries'));
 const MobileDeliveryDetail = lazy(() => import('./pages/mobile/MobileDeliveryDetail'));
 const MobileCollections = lazy(() => import('./pages/mobile/MobileCollections'));
 
+// The agent's own stock screen. Everyone else who opens the old path lands on Inventory & stock (M4-T25).
 const AgentInventoryRoute: React.FC = () => {
   const { user } = useAuthStore();
   if (user?.role === 'delivery_agent') {
     return <AgentMyInventory />;
   }
-  return <AgentInventoryManagement />;
+  return <Navigate to="/inventory" replace />;
 };
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode; skipOnboardingCheck?: boolean }> = ({ children, skipOnboardingCheck }) => {
@@ -291,6 +292,9 @@ function App() {
             <Route path="products/:id/edit" element={
               <Suspense fallback={<Loading />}><ProductForm /></Suspense>
             } />
+            <Route path="inventory" element={
+              <Suspense fallback={<Loading />}><Inventory /></Suspense>
+            } />
             <Route path="customers" element={
               <Suspense fallback={<Loading />}><Customers /></Suspense>
             } />
@@ -341,13 +345,13 @@ function App() {
             <Route path="webhooks" element={
               <Suspense fallback={<Loading />}><Webhooks /></Suspense>
             } />
-            <Route path="agent-inventory" element={
-              <Suspense fallback={<Loading />}><AgentInventoryRoute /></Suspense>
-            } />
             <Route path="earnings-history" element={
               <Suspense fallback={<Loading />}><EarningsHistory /></Suspense>
             } />
             </Route>
+            <Route path="agent-inventory" element={
+              <Suspense fallback={<Loading />}><AgentInventoryRoute /></Suspense>
+            } />
             <Route path="platform" element={platformRoute(PlatformDashboard)} />
             <Route path="platform/tenants" element={platformRoute(PlatformTenants)} />
             <Route path="platform/tenants/:id" element={platformRoute(PlatformTenantDetail)} />
