@@ -148,6 +148,19 @@ describe('a count stays current until the on-hand number changes there', () => {
     await expectOld(swift, copybook);
   });
 
+  it('the card says the count is old when one product of it is old, though the other matches', async () => {
+    const res = await post('/counts', { locationId: kofi, countDate: today(), source: 'three_pl_dashboard', lines: [
+      { productId: copybook, countedQuantity: (await row(kofi, copybook)).row.onHand },
+      { productId: pens, countedQuantity: 0 },
+    ] });
+    expect(res.status).toBe(201);
+    expect((await row(kofi, copybook)).card.latestCount).toMatchObject({ isOld: false, unitsOff: 0 });
+    await new Promise((r) => setTimeout(r, 30));
+    const before = (await row(kofi, copybook)).row.onHand;
+    expect((await post('/adjust', { locationId: kofi, productId: copybook, newQuantity: before - 1, reason: 'damaged' })).status).toBe(200);
+    expect((await row(kofi, pens)).row.count.status).toBe('matches');
+    await expectOld(kofi, copybook);
+  });
   it('applying the count does not make it old (the fix is the count\'s own)', async () => {
     const count = await countTwelveUnder(swift, pens);
     const line = count.lines[0];
