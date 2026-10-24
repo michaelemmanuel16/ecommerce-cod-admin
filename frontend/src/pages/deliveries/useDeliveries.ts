@@ -5,6 +5,7 @@ import {
   type PartnerList,
   type PartnerSummary,
   type PartnerTab,
+  type ReturnsSummary,
   type RangeParams,
   type WaitingList,
 } from '../../services/delivery-partners.service';
@@ -21,6 +22,8 @@ interface DeliveriesState {
   reasons: FailureReasons | null;
   /** null: the role may not see it (the API answered 403) or it has not loaded. */
   waiting: WaitingList | null;
+  /** null: the role may not read stock (403) or it has not loaded. */
+  returns: ReturnsSummary | null;
   /** True until the first answer for the current view. */
   loading: boolean;
   error: string | null;
@@ -31,7 +34,7 @@ interface DeliveriesState {
  * and the waiting list. One answer replaces the last, the newest ask wins. Order and availability events refresh it quietly.
  */
 export function useDeliveries(range: RangeParams, tab: PartnerTab) {
-  const [state, setState] = useState<DeliveriesState>({ list: null, summary: null, reasons: null, waiting: null, loading: true, error: null });
+  const [state, setState] = useState<DeliveriesState>({ list: null, summary: null, reasons: null, waiting: null, returns: null, loading: true, error: null });
   const latest = useRef({ range, tab });
   latest.current = { range, tab };
   const ticket = useRef(0);
@@ -41,11 +44,12 @@ export function useDeliveries(range: RangeParams, tab: PartnerTab) {
     const mine = ++ticket.current;
     const wanted = latest.current;
     if (!quiet) setState((s) => ({ ...s, loading: true, error: null }));
-    const [list, summary, reasons, waiting] = await Promise.allSettled([
+    const [list, summary, reasons, waiting, returns] = await Promise.allSettled([
       deliveryPartnersService.list(wanted.range, wanted.tab, quiet),
       deliveryPartnersService.summary(wanted.range, quiet),
       deliveryPartnersService.failureReasons(wanted.range, quiet),
       deliveryPartnersService.waiting(WAITING_LIMIT, quiet),
+      deliveryPartnersService.returnsSummary(wanted.range, quiet),
     ]);
     if (mine !== ticket.current) return; // a newer view asked meanwhile
     setState((s) => ({
@@ -53,6 +57,7 @@ export function useDeliveries(range: RangeParams, tab: PartnerTab) {
       summary: summary.status === 'fulfilled' ? summary.value : s.summary,
       reasons: reasons.status === 'fulfilled' ? reasons.value : s.reasons,
       waiting: waiting.status === 'fulfilled' ? waiting.value : null,
+      returns: returns.status === 'fulfilled' ? returns.value : null,
       loading: false,
       error: list.status === 'rejected' ? 'The delivery partners could not load.' : null,
     }));

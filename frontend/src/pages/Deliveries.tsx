@@ -159,7 +159,7 @@ export function Deliveries() {
       </div>
 
       <div className="grid two">
-        <ReasonsCard reasons={data.reasons} phrase={phrase} range={range} />
+        <ReasonsCard reasons={data.reasons} returns={data.returns} phrase={phrase} range={range} />
         <div className="stack">
           {data.waiting && <WaitingCard waiting={data.waiting} />}
           {list && <OutNowCard rows={list.rows} />}

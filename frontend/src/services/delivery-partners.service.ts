@@ -163,6 +163,12 @@ export interface OrderProof {
   attempts: AttemptView[];
 }
 
+/** GET /api/inventory/returns/summary (COD-41, F-656): returns sent back by 3PLs, received, missing. */
+export interface ReturnsSummary {
+  partners: Array<{ locationId: number; partnerId: number | null; name: string; sent: number; received: number; missing: number }>;
+  total: { sent: number; received: number; missing: number };
+}
+
 export interface RangeParams {
   from: string;
   to: string;
@@ -213,4 +219,11 @@ export const deliveryPartnersService = {
     const response = await apiClient.get(`/api/deliveries/by-order/${orderId}`, { quiet: true, skipCache: true });
     return { proof: response.data.proof, attempts: response.data.attempts };
   },
+
+  /** Rejects with 403 for a role that may not read stock; the Deliveries page then leaves the missing-units line out. */
+  async returnsSummary(range: RangeParams, skipCache = false): Promise<ReturnsSummary> {
+    const response = await apiClient.get('/api/inventory/returns/summary', { params: range, skipCache, quiet: true });
+    return response.data;
+  },
+
 };

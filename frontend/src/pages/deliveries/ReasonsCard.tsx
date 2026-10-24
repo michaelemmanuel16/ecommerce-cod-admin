@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Card, EmptyState } from '../../components/ui-v2';
-import type { FailureReasons } from '../../services/delivery-partners.service';
+import type { FailureReasons, ReturnsSummary } from '../../services/delivery-partners.service';
 import { FAILURE_REASONS } from '../orders/reasons';
 import { count } from './model';
 
@@ -15,16 +15,30 @@ const LABEL = new Map(FAILURE_REASONS);
 
 interface ReasonsCardProps {
   reasons: FailureReasons | null;
+  /** Null when the role may not read stock: the missing-units line is left out. */
+  returns: ReturnsSummary | null;
   /** "in October": the end of the card sub-line. */
   phrase: string;
   range: { from: string; to: string };
+}
+
+/** "Returned units missing" (F-656): what 3PLs sent back against what we received. One 3PL names it and links to its stock. */
+function MissingLine({ returns }: { returns: ReturnsSummary }) {
+  const { sent, received, missing } = returns.total;
+  const who = returns.partners.length === 1 ? returns.partners[0] : null;
+  return (
+    <p className="note">
+      <b>Returned units missing:</b> <span className="num">{count(missing)}</span>. {who ? who.name : '3PLs'} sent back {count(sent)} {sent === 1 ? 'unit' : 'units'}. We received {count(received)}.{' '}
+      <Link to={who ? `/inventory?location=${who.locationId}` : '/inventory'}>See it in Inventory</Link>
+    </p>
+  );
 }
 
 /**
  * Failed and returned by reason (F-705). Failed and returned are two figures; the bars count both together.
  * A click on a reason opens Orders filtered by it, for the same dates.
  */
-export function ReasonsCard({ reasons, phrase, range }: ReasonsCardProps) {
+export function ReasonsCard({ reasons, returns, phrase, range }: ReasonsCardProps) {
   if (!reasons) return <Card title="Failed and returned by reason" aside={phrase}><div className="bars" aria-busy="true"><span className="skel" style={{ height: 120 }} /></div></Card>;
 
   const shown = reasons.reasons.filter((r) => r.count > 0);
@@ -55,6 +69,7 @@ export function ReasonsCard({ reasons, phrase, range }: ReasonsCardProps) {
               </Link>
             ))}
           </div>
+          {returns && returns.total.sent > 0 && <MissingLine returns={returns} />}
           {biggest?.reason === 'not_reachable' && (
             <p className="note">Not reachable is the biggest cause. Calling the customer before dispatch is the cheapest fix.</p>
           )}
