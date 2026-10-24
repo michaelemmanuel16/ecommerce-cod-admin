@@ -4,8 +4,14 @@
  */
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 
+// Available to sell is read from the levels; these tests run on a mocked client
+jest.mock('../../services/stockService', () => ({
+  getAvailableToSell: async () => 10,
+  getAvailableMany: async (ids: number[]) => new Map(ids.map((id) => [id, 10])),
+}));
+
 jest.mock('../../utils/appEvents', () => ({ __esModule: true, emitOrderCreatedEvent: jest.fn() }));
-jest.mock('../../services/checkoutFormService', () => ({ __esModule: true, default: {}, withAvailable: async (_id: number, upsells: any[]) => ({ productAvailable: 10, upsells }) }));
+jest.mock('../../services/checkoutFormService', () => ({ __esModule: true, default: {} }));
 jest.mock('../../services/metaCapiService', () => ({
   metaCapiService: { fireCapiPurchaseEvent: jest.fn(() => Promise.resolve()) },
 }));
@@ -47,6 +53,7 @@ const stubForm = {
 
 describe('a second payment provider', () => {
   beforeEach(() => {
+    (prismaMock.finding.create as any).mockResolvedValue({ id: 1 }); // openFindingOnce returns the Finding id
     registerPaymentProvider(stub);
     // jest config has resetMocks:true, so re-arm the fire-and-forget mock each test.
     (metaCapiService.fireCapiPurchaseEvent as any).mockResolvedValue(undefined);

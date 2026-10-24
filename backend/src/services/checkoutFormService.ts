@@ -5,7 +5,7 @@ import { Prisma } from '@prisma/client';
 import logger from '../utils/logger';
 import * as Money from '../utils/money';
 import { townsForForm } from './locationService';
-import { isUpsellAvailable } from '../utils/checkoutFormRules';
+import { isUpsellAvailable, productInStock } from '../utils/checkoutFormRules';
 import { isStorageUrl } from '../config/r2';
 import { getTenantId } from '../utils/tenantContext';
 import { supportWhatsappForTenant } from './tenantLookupService';
@@ -77,7 +77,7 @@ const PUBLIC_FORM_SELECT = {
       // Read to hide an upsell whose product is inactive or out of stock; removed again before the response.
       isActive: true,
       productId: true,
-      product: { select: { isActive: true, stockQuantity: true, productType: true } },
+      product: { select: { isActive: true, productType: true } },
     },
   },
 } satisfies Prisma.CheckoutFormSelect;
@@ -93,31 +93,16 @@ function withStorageBanner<D>(design: D): D {
   return { ...design, page } as D;
 }
 
-type StockedUpsell = { productId?: number | null; product?: { isActive: boolean; stockQuantity: number; productType: string } | null };
-
-/**
- * Available to sell (on hand less reserved, M4-T16) for a form's product and the products linked to its upsells.
- * Each upsell's product carries `available` in place of the cached on-hand number, which is what `isUpsellAvailable` reads.
- */
-export async function withAvailable<U extends StockedUpsell>(productId: number, upsells: U[]) {
-  const available = await getAvailableMany([productId, ...upsells.map((u) => u.productId).filter((id): id is number => id != null)]);
-  return {
-    productAvailable: available.get(productId) ?? 0,
-    upsells: upsells.map((u) => {
-      if (!u.product) return { ...u, product: u.product as null | undefined };
-      const { stockQuantity: _cached, ...rest } = u.product;
-      return { ...u, product: { ...rest, available: available.get(u.productId!) ?? 0 } };
-    }),
-  };
-}
-
-async function sanitizePublicForm<T extends { productId: number; product: { stockQuantity: number; productType: string }; country: string | null; regions: unknown; upsells: StockedUpsell[] }>(form: T) {
+async function sanitizePublicForm<T extends { productId: number; product: { stockQuantity: number; productType: string }; country: string | null; regions: unknown; upsells: Array<{ productId: number | null; isActive: boolean; product: { isActive: boolean; productType: string } | null }> }>(form: T) {
   const { productId, ...rest } = form;
-  const { stockQuantity, ...productData } = form.product;
-  const stocked = await withAvailable(productId, form.upsells);
-  const upsells = stocked.upsells.filter(isUpsellAvailable).map(({ productId: _productId, product: _product, isActive: _isActive, ...visible }: any) => visible);
-  const inStock = productData.productType === 'digital' ? stockQuantity > 0 : stocked.productAvailable > 0;
-  return { ...rest, upsells, design: withStorageBanner((form as { design?: unknown }).design), product: { ...productData, inStock }, towns: townsForForm(form.country, form.regions) };
+  const { stockQuantity: _cached, ...productData } = form.product;
+  const available = await getAvailableMany([productId, ...form.upsells.map((u) => u.productId).filter((id): id is number => id != null)]);
+  const upsells = form.upsells.filter((u) => isUpsellAvailable(u, available)).map(({ productId: _productId, product: _product, isActive: _isActive, ...visible }) => visible);
+  return {
+    ...rest, upsells, design: withStorageBanner((form as { design?: unknown }).design),
+    product: { ...productData, inStock: productInStock(productId, form.product, available) },
+    towns: townsForForm(form.country, form.regions),
+  };
 }
 
 // ---------- Public embed config cache ----------
@@ -504,14 +489,14 @@ export class CheckoutFormService {
     }
 
     const { productId, ...rest } = form;
-    const { stockQuantity, ...productData } = form.product;
-    const available = (await getAvailableMany([productId])).get(productId) ?? 0;
+    const { stockQuantity: _cached, ...productData } = form.product;
+    const available = await getAvailableMany([productId]);
     return {
       ...rest,
       // An upsell switched off in the editor is hidden here as on the public form.
-      upsells: form.upsells.filter(isUpsellAvailable),
+      upsells: form.upsells.filter((u) => isUpsellAvailable(u, available)),
       design: withStorageBanner(form.design),
-      product: { ...productData, inStock: productData.productType === 'digital' ? stockQuantity > 0 : available > 0 },
+      product: { ...productData, inStock: productInStock(productId, form.product, available) },
       towns: townsForForm(form.country, form.regions),
     };
   }

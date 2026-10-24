@@ -5,7 +5,7 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { ArrowLeft, Upload, X, Package, FileText } from 'lucide-react';
 import { productsService } from '../services/products.service';
-import { Product } from '../types';
+import { Product, ProductInput } from '../types';
 import { apiClient } from '../services/api';
 import { useConfigStore } from '../stores/configStore';
 import { getCurrencySymbol } from '../utils/countries';
@@ -192,7 +192,7 @@ export const ProductForm: React.FC = () => {
             }
 
             // The server no longer takes stockQuantity (F-658): starting stock goes in as openingStock on create; an edit changes no stock
-            const productData: Partial<Product> & { openingStock?: { quantity: number } } = {
+            const productData: ProductInput = {
                 name: formData.name.trim(),
                 description: formData.description.trim(),
                 sku: formData.sku.trim().toUpperCase(),

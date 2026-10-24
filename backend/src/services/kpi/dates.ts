@@ -72,7 +72,8 @@ export function localDate(instant: Date, zone: string): string {
 /** UTC calendar date 'YYYY-MM-DD' of an instant (a Postgres DATE column read as UTC midnight). */
 export const ymdOfUtc = (instant: Date): string => localDate(instant, 'UTC');
 
-const YMD = /^(\d{4})-(\d{2})-(\d{2})$/;
+/** A date as YYYY-MM-DD (shape only; parseYmd checks it is a real day). */
+export const YMD = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export function parseYmd(ymd: string): { year: number; month: number; day: number } {
   const m = YMD.exec(ymd);
@@ -100,6 +101,9 @@ export function endOfDay(ymd: string, zone: string): Date {
 export function daysInMonth(year: number, month: number): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
+
+/** A month as YYYY-MM (month 01-12). */
+export const MONTH_RE = /^(\d{4})-(0[1-9]|1[0-2])$/;
 
 /** [from, to) of a local calendar month (month 1-12). */
 export function monthRange(year: number, month: number, zone: string) {

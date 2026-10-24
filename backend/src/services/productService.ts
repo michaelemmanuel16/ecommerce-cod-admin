@@ -4,11 +4,11 @@ import { AppError } from '../middleware/errorHandler';
 import { resolveTenantId } from '../utils/tenantContext';
 import { withSoftDeleted } from '../utils/prismaExtensions';
 import * as Money from '../utils/money';
-import { PHYSICAL, createProductWithStock, getLocation } from './stockService';
-import { reservedByHolder } from './inventoryReadService';
+import { PHYSICAL, RESERVING, createProductWithStock, getLocation, getOnHandMany, getReservedMany } from './stockService';
 import { productDeliveredUnits } from './kpi/products';
-import { DAY_MS, getStoreTimeZone, localDate, monthRange } from './kpi/dates';
+import { DAY_MS, MONTH_RE, getStoreTimeZone, localDate, monthRange } from './kpi/dates';
 import { ratePercent } from './kpi/rates';
+import { canSeeCost } from '../utils/costAccess';
 
 /**
  * Products API (F-600, F-601, F-602, M4-T16). Stock figures are computed from the levels and the orders, never stored:
@@ -19,10 +19,6 @@ import { ratePercent } from './kpi/rates';
 /** Days of cover under which a product is "low stock" when it has no setting of its own (F-601). M7 reads the setting. */
 export const DEFAULT_LOW_STOCK_DAYS = 14;
 const COVER_WINDOW_DAYS = 14;
-/** Roles that see cost and margin (F-600). A call rep and a delivery agent do not. */
-const COST_ROLES = ['super_admin', 'admin', 'manager', 'accountant', 'inventory_manager'];
-export const canSeeCost = (role?: string | null) => role != null && COST_ROLES.includes(role);
-
 /** The product without its cost fields, for roles that may not see them. */
 export function withoutCost<T extends { cogs?: unknown; marginPct?: unknown }>(product: T): Omit<T, 'cogs' | 'marginPct'> {
   const { cogs: _cogs, marginPct: _margin, ...rest } = product;
@@ -59,7 +55,7 @@ export function productStatus(p: { isActive: boolean; productType: string }, onH
 function monthWindow(month?: string) {
   const zone = getStoreTimeZone(resolveTenantId());
   const ym = month ?? localDate(new Date(), zone).slice(0, 7);
-  const m = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(ym);
+  const m = MONTH_RE.exec(ym);
   if (!m) throw new AppError('month must be YYYY-MM', 400);
   return { month: ym, ...monthRange(Number(m[1]), Number(m[2]), zone) };
 }
@@ -67,13 +63,14 @@ function monthWindow(month?: string) {
 type Row = Prisma.ProductGetPayload<object>;
 
 /** Delivered / (delivered + failed + returned) on closed orders that hold the product, closed in the window (orders, not units). */
-async function deliverySuccess(from: Date, to: Date): Promise<Map<number, number | null>> {
+async function deliverySuccess(ids: number[], from: Date, to: Date): Promise<Map<number, number | null>> {
   const rows = await prisma.$queryRaw<Array<{ productId: number; delivered: bigint; closed: bigint }>>(Prisma.sql`
     SELECT i.product_id AS "productId",
            COUNT(DISTINCT o.id) FILTER (WHERE o.status = 'delivered') AS delivered,
            COUNT(DISTINCT o.id) AS closed
     FROM order_items i JOIN orders o ON o.id = i.order_id
     WHERE o.tenant_id = ${resolveTenantId()} AND o.deleted_at IS NULL AND o.status IN ('delivered', 'failed_delivery', 'returned')
+      AND i.product_id IN (${Prisma.join(ids)})
       AND (CASE o.status WHEN 'delivered' THEN COALESCE(o.delivery_date, o.updated_at)
                          WHEN 'returned' THEN COALESCE(o.returned_at, o.updated_at)
                          ELSE o.updated_at END) >= ${from}
@@ -84,36 +81,40 @@ async function deliverySuccess(from: Date, to: Date): Promise<Map<number, number
   return new Map(rows.map((r) => [r.productId, ratePercent(Number(r.delivered), Number(r.closed))]));
 }
 
-/** The computed figures for a set of products in one month. */
-async function figures(products: Row[], window: { from: Date; to: Date }) {
-  const tenantId = resolveTenantId();
-  const ids = products.map((p) => p.id);
+/** Days of cover and the delivered-last-14-days figure of one product. */
+function coverOf(p: { productType: string }, onHand: number, units14: number): number | null {
+  return p.productType === 'digital' ? null : daysOfCover(onHand, units14);
+}
+
+/** Units delivered per product over the last 14 days, for the given ids. */
+async function recentUnits(ids: number[]): Promise<Map<number, number>> {
   const now = new Date();
-  const [levels, reserved, inMonth, recent, success] = await Promise.all([
-    prisma.stockLevel.groupBy({ by: ['productId'], _sum: { quantity: true }, where: { productId: { in: ids }, location: { isActive: true, type: { in: PHYSICAL } } } }),
-    reservedByHolder(),
-    productDeliveredUnits(tenantId, 'all', window.from, window.to),
-    productDeliveredUnits(tenantId, 'all', new Date(now.getTime() - COVER_WINDOW_DAYS * DAY_MS), now),
-    deliverySuccess(window.from, window.to),
+  const recent = await productDeliveredUnits(resolveTenantId(), ids, new Date(now.getTime() - COVER_WINDOW_DAYS * DAY_MS), now);
+  return new Map((recent.byProduct ?? []).map((l) => [l.productId, l.units]));
+}
+
+/** The computed figures for a set of products in one month. Every read is limited to these products. */
+async function figures(products: Row[], window: { from: Date; to: Date }) {
+  const ids = products.map((p) => p.id);
+  if (ids.length === 0) return [];
+  const [onHand, reserved, inMonth, last14, success] = await Promise.all([
+    getOnHandMany(ids),
+    getReservedMany(ids),
+    productDeliveredUnits(resolveTenantId(), ids, window.from, window.to),
+    recentUnits(ids),
+    deliverySuccess(ids, window.from, window.to),
   ]);
-  const onHand = new Map(levels.map((l) => [l.productId, l._sum.quantity ?? 0]));
-  const reservedTotal = new Map<number, number>();
-  for (const [k, units] of reserved) {
-    const productId = Number(k.split(':')[1]);
-    reservedTotal.set(productId, (reservedTotal.get(productId) ?? 0) + units);
-  }
   const monthUnits = new Map((inMonth.byProduct ?? []).map((l) => [l.productId, l.units]));
-  const recentUnits = new Map((recent.byProduct ?? []).map((l) => [l.productId, l.units]));
 
   return products.map((p) => {
     const digital = p.productType === 'digital';
     const stock = onHand.get(p.id) ?? 0;
-    const cover = digital ? null : daysOfCover(stock, recentUnits.get(p.id) ?? 0);
+    const cover = coverOf(p, stock, last14.get(p.id) ?? 0);
     const lowDays = p.lowStockDays ?? DEFAULT_LOW_STOCK_DAYS;
     return {
       ...p,
       onHandTotal: digital ? null : stock,
-      reservedTotal: digital ? null : reservedTotal.get(p.id) ?? 0,
+      reservedTotal: digital ? null : reserved.get(p.id) ?? 0,
       daysOfCover: cover,
       lowStockDaysEffective: digital ? null : lowDays,
       deliveredInPeriod: monthUnits.get(p.id) ?? 0,
@@ -138,12 +139,13 @@ export async function listProducts(f: ListFilters) {
   if (tab !== 'all') where.isActive = tab === 'active';
   else if (f.isActive !== undefined) where.isActive = f.isActive;
 
-  const [rows, total, active, archived] = await withSoftDeleted(() => Promise.all([
+  const [rows, total, tabs] = await withSoftDeleted(() => Promise.all([
     prisma.product.findMany({ where, skip: (f.page - 1) * f.limit, take: f.limit, orderBy: { createdAt: 'desc' } }),
     prisma.product.count({ where }),
-    prisma.product.count({ where: { isActive: true } }),
-    prisma.product.count({ where: { isActive: false } }),
+    prisma.product.groupBy({ by: ['isActive'], _count: { _all: true } }),
   ]));
+  const active = tabs.find((t) => t.isActive)?._count._all ?? 0;
+  const archived = tabs.find((t) => !t.isActive)?._count._all ?? 0;
   return {
     products: await figures(rows, window),
     pagination: { page: f.page, limit: f.limit, total, pages: Math.ceil(total / f.limit) },
@@ -155,10 +157,9 @@ export async function listProducts(f: ListFilters) {
 /** GET /api/products/summary: the four tiles of the Products page. */
 export async function productsSummary(monthParam?: string) {
   const window = monthWindow(monthParam);
-  const tenantId = resolveTenantId();
   const [all, delivered] = await Promise.all([
-    withSoftDeleted(() => prisma.product.findMany()),
-    productDeliveredUnits(tenantId, 'all', window.from, window.to),
+    withSoftDeleted(() => prisma.product.findMany({ select: { id: true, price: true, cogs: true, isActive: true, productType: true, lowStockDays: true } })),
+    productDeliveredUnits(resolveTenantId(), 'all', window.from, window.to),
   ]);
   const byProduct = delivered.byProduct ?? [];
   const priced = new Map(all.map((p) => [p.id, p]));
@@ -173,14 +174,35 @@ export async function productsSummary(monthParam?: string) {
     revenue = Money.add(revenue, Money.mul(line.units, p.price));
   }
   const active = all.filter((p) => p.isActive);
-  const physical = (await figures(active.filter((p) => p.productType !== 'digital'), window));
   return {
     month: window.month,
     activeProducts: { active: active.length, archived: all.length - active.length },
     bestSeller: top ? { productId: top.productId, name: top.name, sku: top.sku, units: top.units } : null,
     averageMargin: revenue.isZero() ? null : wholePercent(margin, revenue),
-    lowStock: physical.filter((p) => p.status === 'low_stock').length,
+    lowStock: (await lowStockIds(active)).length,
   };
+}
+
+/** Ids of the active physical products whose days of cover are under their limit (one on-hand read, one 14-day read). */
+async function lowStockIds(active: Array<{ id: number; isActive: boolean; productType: string; lowStockDays: number | null }>): Promise<number[]> {
+  const physical = active.filter((p) => p.productType !== 'digital');
+  if (physical.length === 0) return [];
+  const ids = physical.map((p) => p.id);
+  const [onHand, last14] = await Promise.all([getOnHandMany(ids), recentUnits(ids)]);
+  return physical
+    .filter((p) => {
+      const stock = onHand.get(p.id) ?? 0;
+      return productStatus(p, stock, coverOf(p, stock, last14.get(p.id) ?? 0), p.lowStockDays ?? DEFAULT_LOW_STOCK_DAYS) === 'low_stock';
+    })
+    .map((p) => p.id);
+}
+
+/** GET /api/products/low-stock: the active physical products under their days-of-cover limit, with the list columns, fewest days first. */
+export async function lowStockProducts() {
+  const active = await prisma.product.findMany({ where: { isActive: true, productType: { not: 'digital' } } });
+  const low = new Set(await lowStockIds(active));
+  const rows = await figures(active.filter((p) => low.has(p.id)), monthWindow());
+  return rows.sort((a, b) => (a.daysOfCover ?? 0) - (b.daysOfCover ?? 0) || a.id - b.id);
 }
 
 export async function getProduct(id: number) {
@@ -258,7 +280,7 @@ export async function archiveProduct(id: number) {
   const current = await withSoftDeleted(() => prisma.product.findFirst({ where: { id } }));
   if (!current) throw new AppError('Product not found', 404);
   const [openOrders, onHand] = await Promise.all([
-    prisma.order.count({ where: { status: { in: ['pending_confirmation', 'confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery'] }, orderItems: { some: { productId: id } } } }),
+    prisma.order.count({ where: { status: { in: ['pending_confirmation', ...RESERVING] }, orderItems: { some: { productId: id } } } }),
     prisma.stockLevel.aggregate({ _sum: { quantity: true }, where: { productId: id, location: { isActive: true, type: { in: PHYSICAL } } } }),
   ]);
   const product = current.isActive ? await prisma.product.update({ where: { id }, data: { isActive: false } }) : current;

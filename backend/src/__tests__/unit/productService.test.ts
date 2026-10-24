@@ -2,7 +2,8 @@
  * M4-T16 (F-600): the pure rules of the Products API: margin, days of cover, status tag, cost visibility.
  */
 import { describe, it, expect } from '@jest/globals';
-import { canSeeCost, daysOfCover, marginPercent, productStatus, withoutCost, DEFAULT_LOW_STOCK_DAYS } from '../../services/productService';
+import { daysOfCover, marginPercent, productStatus, withoutCost, DEFAULT_LOW_STOCK_DAYS } from '../../services/productService';
+import { canSeeCost } from '../../utils/costAccess';
 
 describe('marginPercent', () => {
   it('is (price - cost) / price in whole percent: copybook 88, pens 70, grip trainer 69, guide 95', () => {

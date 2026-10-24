@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../types';
 import * as products from '../services/productService';
-import prisma from '../utils/prisma';
+import { canSeeCost } from '../utils/costAccess';
 
 const role = (req: AuthRequest) => req.user?.role;
 
@@ -18,7 +18,7 @@ export const getAllProducts = async (req: AuthRequest, res: Response): Promise<v
 
 export const getProductsSummary = async (req: AuthRequest, res: Response): Promise<void> => {
   // The tiles hold the average margin: cost-role only
-  if (!products.canSeeCost(role(req))) {
+  if (!canSeeCost(role(req))) {
     res.status(403).json({ error: 'You do not have access to cost figures' });
     return;
   }
@@ -52,9 +52,5 @@ export const deleteProduct = async (req: AuthRequest, res: Response): Promise<vo
 };
 
 export const getLowStockProducts = async (req: AuthRequest, res: Response): Promise<void> => {
-  const rows = await prisma.product.findMany({
-    where: { isActive: true, stockQuantity: { lte: prisma.product.fields.lowStockThreshold } },
-    orderBy: { stockQuantity: 'asc' },
-  });
-  res.json({ products: rows.map((p) => products.forRole(role(req), p)) });
+  res.json({ products: (await products.lowStockProducts()).map((p) => products.forRole(role(req), p)) });
 };

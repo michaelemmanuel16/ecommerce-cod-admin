@@ -3,6 +3,7 @@ import { DeclineReason, FailureReason, OrderStatus } from '@prisma/client';
 import { ORDER_FLAG_CODES } from '../services/orderFlagService';
 import { ORDER_SORT_FIELDS } from '../services/orderService';
 import { CUSTOMER_RISKS, CUSTOMER_SEGMENTS, CUSTOMER_SORT_FIELDS } from '../services/customerService';
+import { MONTH_RE } from '../services/kpi/dates';
 
 /**
  * Password validation utility
@@ -167,7 +168,7 @@ export const productIdValidation: ValidationChain[] = [param('id').isInt({ min: 
 export const productListValidation: ValidationChain[] = [
   ...paginationValidation,
   query('tab').optional().isIn(['active', 'archived', 'all']).withMessage('tab must be active, archived or all'),
-  query('month').optional().matches(/^\d{4}-(0[1-9]|1[0-2])$/).withMessage('month must be YYYY-MM'),
+  query('month').optional().matches(MONTH_RE).withMessage('month must be YYYY-MM'),
 ];
 
 /** Customers list, tiles and export filters (F-350 to F-353). */

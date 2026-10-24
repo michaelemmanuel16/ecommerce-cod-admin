@@ -5,7 +5,7 @@ import orderService from './orderService';
 import financialService from './financialService';
 import { deliveredRevenue } from './kpi/revenue';
 import { rates } from './kpi/rates';
-import { PHYSICAL } from './stockService';
+import { getOnHandMany } from './stockService';
 
 /**
  * The queries behind the registry tools. Tool files may not import the Prisma client, so the
@@ -86,12 +86,7 @@ export const toolQueryService = {
     const hasMore = products.length > MAX_ACTIVE_PRODUCTS;
     const shown = hasMore ? products.slice(0, MAX_ACTIVE_PRODUCTS) : products;
     // Stock is read from the levels (on hand over the active physical locations), not from the cached Product.stockQuantity (F-658)
-    const levels = await prisma.stockLevel.groupBy({
-      by: ['productId'],
-      _sum: { quantity: true },
-      where: { productId: { in: shown.map((p) => p.id) }, location: { isActive: true, type: { in: PHYSICAL } } },
-    });
-    const onHand = new Map(levels.map((l) => [l.productId, l._sum.quantity ?? 0]));
+    const onHand = await getOnHandMany(shown.map((p) => p.id));
     return { products: shown.map((p) => ({ ...p, stock: onHand.get(p.id) ?? 0 })), hasMore };
   },
 

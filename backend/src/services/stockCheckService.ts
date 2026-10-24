@@ -3,7 +3,7 @@ import { runInTenant } from '../utils/tenantContext';
 import { forEachTenant } from '../utils/tenantLoop';
 import { withSoftDeleted } from '../utils/prismaExtensions';
 import * as Money from '../utils/money';
-import { PHYSICAL } from './stockService';
+import { getOnHandMany } from './stockService';
 import { openFindingOnce } from './findingService';
 
 /**
@@ -17,11 +17,10 @@ export interface StockCheckResult { checked: number; differing: number[] }
 
 export async function checkStockForTenant(tenantId: string): Promise<StockCheckResult> {
   return runInTenant(tenantId, async () => {
-    const [products, levels] = await Promise.all([
+    const [products, onHand] = await Promise.all([
       withSoftDeleted(() => prisma.product.findMany({ where: { productType: { not: 'digital' } }, select: { id: true, name: true, sku: true, cogs: true, stockQuantity: true } })),
-      prisma.stockLevel.groupBy({ by: ['productId'], _sum: { quantity: true }, where: { location: { isActive: true, type: { in: PHYSICAL } } } }),
+      getOnHandMany(),
     ]);
-    const onHand = new Map(levels.map((l) => [l.productId, l._sum.quantity ?? 0]));
     const differing: number[] = [];
     for (const p of products) {
       const real = onHand.get(p.id) ?? 0;

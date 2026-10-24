@@ -147,6 +147,10 @@ describe('GET /api/products', () => {
     const { body } = await get('owner', '?limit=100');
     expect(row(body, lowId)).toMatchObject({ daysOfCover: 40, status: 'low_stock' });
     expect(row(body, empty)).toMatchObject({ onHandTotal: 0, daysOfCover: null, status: 'out_of_stock' });
+    // GET /low-stock reads the same days of cover: the product under its limit is there, the others are not
+    const low = (await get('owner', '/low-stock')).body.products;
+    expect(low.map((p: any) => p.id)).toEqual([lowId]);
+    expect(low[0]).toMatchObject({ daysOfCover: 40, status: 'low_stock' });
   });
 
   it('400 for a bad tab, month, page or limit', async () => {

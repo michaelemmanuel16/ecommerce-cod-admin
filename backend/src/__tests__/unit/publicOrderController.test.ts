@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 
+// Available to sell is read from the levels; these tests run on a mocked client
+jest.mock('../../services/stockService', () => ({
+  getAvailableToSell: async () => 10,
+  getAvailableMany: async (ids: number[]) => new Map(ids.map((id) => [id, 10])),
+}));
+
 jest.mock('../../services/paystackService', () => ({
   paystackService: {
     initializeTransaction: jest.fn(),
@@ -15,8 +21,6 @@ jest.mock('../../utils/appEvents', () => ({
 jest.mock('../../services/checkoutFormService', () => ({
   __esModule: true,
   default: {},
-  // Available to sell is read from the levels; these tests run on a mocked client
-  withAvailable: async (_productId: number, upsells: any[]) => ({ productAvailable: 10, upsells }),
 }));
 
 jest.mock('../../services/metaCapiService', () => ({

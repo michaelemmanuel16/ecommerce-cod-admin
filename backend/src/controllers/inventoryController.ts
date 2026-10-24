@@ -4,6 +4,9 @@ import * as transfers from '../services/transferService';
 import * as counts from '../services/stockCountService';
 import * as reads from '../services/inventoryReadService';
 
+const intQuery = (v: unknown) => (v === undefined || v === '' ? undefined : Number(v));
+const text = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undefined);
+
 /** The signed-in user as the transfer service sees them. */
 const actorOf = (req: AuthRequest): transfers.TransferActor => ({ id: req.user!.id, role: req.user!.role });
 
@@ -40,9 +43,7 @@ export const createCount = async (req: AuthRequest, res: Response): Promise<void
 /** GET /api/inventory/counts?locationId= */
 export const listCounts = async (req: AuthRequest, res: Response): Promise<void> => {
   const { locationId, page, limit } = req.query;
-  res.json(await counts.listCounts({
-    locationId: locationId ? Number(locationId) : undefined, page: page ? Number(page) : 1, limit: limit ? Number(limit) : 20,
-  }));
+  res.json(await counts.listCounts({ locationId: intQuery(locationId), page: intQuery(page) ?? 1, limit: intQuery(limit) ?? 20 }));
 };
 
 /** GET /api/inventory/counts/:id */
@@ -54,9 +55,6 @@ export const getCount = async (req: AuthRequest, res: Response): Promise<void> =
 export const applyCountLine = async (req: AuthRequest, res: Response): Promise<void> => {
   res.json(await counts.applyLine({ id: req.user!.id }, Number(req.params.id), Number(req.params.lineId), req.body));
 };
-
-const intQuery = (v: unknown) => (v === undefined || v === '' ? undefined : Number(v));
-const text = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undefined);
 
 /** GET /api/inventory/overview (F-652) */
 export const overview = async (req: AuthRequest, res: Response): Promise<void> => {

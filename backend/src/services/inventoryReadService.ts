@@ -4,7 +4,7 @@ import { AppError } from '../middleware/errorHandler';
 import { resolveTenantId } from '../utils/tenantContext';
 import { withSoftDeleted } from '../utils/prismaExtensions';
 import * as Money from '../utils/money';
-import { RESERVING, getOnHand } from './stockService';
+import { RESERVING } from './stockService';
 import { TRANSFER_INCLUDE, present as presentTransfer } from './transferService';
 import { openFindingOnce } from './findingService';
 import { getStoreTimeZone, parseBound } from './kpi/dates';
@@ -18,7 +18,10 @@ import { getStoreTimeZone, parseBound } from './kpi/dates';
 const key = (a: number, b: number) => `${a}:${b}`;
 const num = (v: bigint | number | null | undefined) => Number(v ?? 0);
 
-/** Reserved units per (holder user, product): orders in a reserving status at the order's delivery partner (F-651). */
+/**
+ * Reserved units per (holder user, product): orders in a reserving status at the order's delivery partner (F-651).
+ * Raw SQL for the grouping by holder; its WHERE must follow `reservedWhere` in stockService (per-product totals use getReservedMany).
+ */
 export async function reservedByHolder(productId?: number): Promise<Map<string, number>> {
   const rows = await prisma.$queryRaw<Array<{ userId: number; productId: number; units: bigint }>>(Prisma.sql`
     SELECT o.delivery_agent_id AS "userId", i.product_id AS "productId", SUM(i.quantity) AS units
@@ -48,14 +51,14 @@ interface CountRow {
   countId: number; lineId: number; locationId: number; productId: number; counted: number; source: string; date: string; createdAt: Date;
 }
 
-/** The latest count line per (location, product), newest count date first. */
-async function latestCountLines(): Promise<CountRow[]> {
+/** The latest count line per (location, product); with `productId`, only for that product. */
+async function latestCountLines(productId?: number): Promise<CountRow[]> {
   const rows = await prisma.$queryRaw<Array<{ countId: number; lineId: number; locationId: number; productId: number; counted: number; source: string; date: string; createdAt: Date }>>(Prisma.sql`
     SELECT DISTINCT ON (c.location_id, l.product_id)
       c.id AS "countId", l.id AS "lineId", c.location_id AS "locationId", l.product_id AS "productId", l.counted_quantity AS counted,
       c.source::text AS source, TO_CHAR(c.count_date, 'YYYY-MM-DD') AS date, c.created_at AS "createdAt"
     FROM stock_count_lines l JOIN stock_counts c ON c.id = l.count_id
-    WHERE l.tenant_id = ${resolveTenantId()}
+    WHERE l.tenant_id = ${resolveTenantId()}${productId != null ? Prisma.sql` AND l.product_id = ${productId}` : Prisma.empty}
     ORDER BY c.location_id, l.product_id, c.count_date DESC, c.id DESC`);
   return rows;
 }
@@ -159,8 +162,7 @@ export async function overview(f: OverviewFilters) {
     prisma.stockLocation.findMany({ where: { isActive: true, type: { not: 'in_transit' } }, orderBy: [{ type: 'asc' }, { name: 'asc' }] }),
     latestCountLines(),
   ]);
-  const old = await oldCounts(counts);
-  const rows = await levelRows({ activeOnly: true }, counts);
+  const [old, rows] = await Promise.all([oldCounts(counts), levelRows({ activeOnly: true }, counts)]);
 
   const countOf = new Map(counts.map((c) => [key(c.locationId, c.productId), c]));
   const table = rows.map((r) => {
@@ -196,20 +198,19 @@ export async function overview(f: OverviewFilters) {
 
 /** Per holder of one product: allocated, in transit, delivered, returned, on hand, value; a total row (F-603). */
 export async function holders(productId: number) {
-  const product = await withSoftDeleted(() => prisma.product.findFirst({ where: { id: productId }, select: { id: true, name: true, sku: true, productType: true, cogs: true, isActive: true } }));
-  if (!product) throw new AppError('Product not found', 404);
-  if (product.productType === 'digital') throw new AppError('A digital product has no stock to hold', 400);
-
-  const [levelRowsList, locations, moves, counts] = await Promise.all([
+  const [product, levelRowsList, locations, moves, counts] = await Promise.all([
+    withSoftDeleted(() => prisma.product.findFirst({ where: { id: productId }, select: { id: true, name: true, sku: true, productType: true, cogs: true, isActive: true } })),
     levelRows({ productId }),
     prisma.stockLocation.findMany({ where: { type: { not: 'in_transit' } }, orderBy: { name: 'asc' } }),
     prisma.inventoryTransfer.findMany({
       where: { productId, status: { not: 'cancelled' } },
       select: { transferType: true, fromLocationId: true, toLocationId: true, quantity: true, receivedQuantity: true, status: true, reversedAt: true },
     }),
-    latestCountLines(),
+    latestCountLines(productId),
   ]);
-  const old = await oldCounts(counts.filter((c) => c.productId === productId));
+  if (!product) throw new AppError('Product not found', 404);
+  if (product.productType === 'digital') throw new AppError('A digital product has no stock to hold', 400);
+  const old = await oldCounts(counts);
   const cost = Money.orZero(product.cogs);
 
   const allocated = new Map<number, number>();
@@ -246,23 +247,29 @@ export async function holders(productId: number) {
     product: { id: product.id, name: product.name, sku: product.sku, archived: !product.isActive },
     holders: shown,
     total: { ...total, value: Money.toApi(Money.mul(total.onHand, cost)) },
-    productTotal: await getOnHand(productId),
+    // On hand over the active physical locations: what the cached product total holds
+    productTotal: levelRowsList.filter((r) => r.locationActive).reduce((sum, r) => sum + r.onHand, 0),
     // Active holders with none of this product (F-603 note)
     holdersWithNone: rows.filter((r) => !r.active && r.isActive).map((r) => r.name),
   };
+}
+
+/** The createdAt filter of a from / to pair of store-zone days (inclusive of `to`). 400 for a bad day. */
+function dateRange(f: { from?: string; to?: string }): Prisma.DateTimeFilter | undefined {
+  if (!f.from && !f.to) return undefined;
+  const zone = getStoreTimeZone(resolveTenantId());
+  try {
+    return { ...(f.from ? { gte: parseBound(f.from, 'from', zone) } : {}), ...(f.to ? { lt: parseBound(f.to, 'to', zone) } : {}) };
+  } catch {
+    throw new AppError('from and to must be dates, YYYY-MM-DD', 400);
+  }
 }
 
 export interface TransferFilters { type?: TransferType; status?: TransferStatus; locationId?: number; productId?: number; from?: string; to?: string; page: number; limit: number }
 
 /** Movement history with filters and pagination (F-659). `typeCounts` are the tab counts for the other filters. */
 export async function transfers(f: TransferFilters) {
-  const zone = getStoreTimeZone(resolveTenantId());
-  let range: Prisma.DateTimeFilter | undefined;
-  try {
-    range = f.from || f.to ? { ...(f.from ? { gte: parseBound(f.from, 'from', zone) } : {}), ...(f.to ? { lt: parseBound(f.to, 'to', zone) } : {}) } : undefined;
-  } catch {
-    throw new AppError('from and to must be dates, YYYY-MM-DD', 400);
-  }
+  const range = dateRange(f);
   const base: Prisma.InventoryTransferWhereInput = {
     ...(f.status ? { status: f.status } : {}),
     ...(f.productId != null ? { productId: f.productId } : {}),
@@ -290,13 +297,7 @@ export async function transfers(f: TransferFilters) {
  * date the return was recorded. Each return with missing units opens one `stock_gap` Finding (missing x cost).
  */
 export async function returnsSummary(f: { from?: string; to?: string; partnerId?: number }) {
-  const zone = getStoreTimeZone(resolveTenantId());
-  let range: Prisma.DateTimeFilter | undefined;
-  try {
-    range = f.from || f.to ? { ...(f.from ? { gte: parseBound(f.from, 'from', zone) } : {}), ...(f.to ? { lt: parseBound(f.to, 'to', zone) } : {}) } : undefined;
-  } catch {
-    throw new AppError('from and to must be dates, YYYY-MM-DD', 400);
-  }
+  const range = dateRange(f);
   const returns = await prisma.inventoryTransfer.findMany({
     where: {
       transferType: 'return_to_warehouse', status: { in: ['received', 'disputed'] },

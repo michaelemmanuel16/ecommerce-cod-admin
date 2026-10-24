@@ -4,6 +4,9 @@ import * as controller from '../controllers/inventoryController';
 import { authenticate, requireResourcePermission } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate } from '../middleware/validation';
+import { canSeeCost } from '../utils/costAccess';
+import { paginationValidation } from '../utils/validators';
+import { YMD } from '../services/kpi/dates';
 import { AuthRequest } from '../types';
 import { COUNT_REASONS, COUNT_SOURCES } from '../services/stockCountService';
 import { TransferStatus, TransferType, StockLocationType } from '@prisma/client';
@@ -24,7 +27,7 @@ const canReceive = (req: AuthRequest, res: Response, next: NextFunction) =>
 const canView = [
   requireResourcePermission('products', 'view'),
   (req: AuthRequest, res: Response, next: NextFunction) =>
-    req.user?.role === 'sales_rep' || req.user?.role === 'delivery_agent' ? res.status(403).json({ error: 'You do not have access to stock figures' }) : next(),
+    canSeeCost(req.user?.role) ? next() : res.status(403).json({ error: 'You do not have access to stock figures' }),
 ];
 
 const id = param('id').isInt({ min: 1 }).withMessage('Invalid transfer ID').toInt();
@@ -74,7 +77,7 @@ router.post(
 
 // Reads (F-651, F-652, F-603, F-659, F-656)
 const optInt = (name: string) => query(name).optional().isInt({ min: 1 }).withMessage(`${name} must be a whole number above 0`);
-const optDay = (name: string) => query(name).optional().matches(/^\d{4}-\d{2}-\d{2}$/).withMessage(`${name} must be a date, YYYY-MM-DD`);
+const optDay = (name: string) => query(name).optional().matches(YMD).withMessage(`${name} must be a date, YYYY-MM-DD`);
 router.get(
   '/overview',
   canView,
@@ -90,7 +93,7 @@ router.get(
     query('type').optional().isIn(Object.values(TransferType)).withMessage('Unknown type'),
     query('status').optional().isIn(Object.values(TransferStatus)).withMessage('Unknown status'),
     optInt('locationId'), optInt('productId'), optDay('from'), optDay('to'),
-    query('page').optional().isInt({ min: 1 }), query('limit').optional().isInt({ min: 1, max: 100 }), validate,
+    ...paginationValidation, validate,
   ],
   controller.listTransfers,
 );
@@ -102,7 +105,7 @@ router.post(
   canWriteStock,
   [
     intField('locationId'),
-    body('countDate').isString().withMessage('countDate must be a date, YYYY-MM-DD'),
+    body('countDate').matches(YMD).withMessage('countDate must be a date, YYYY-MM-DD'),
     body('source').isIn(COUNT_SOURCES).withMessage(`source must be one of: ${COUNT_SOURCES.join(', ')}`),
     note,
     body('lines').isArray({ min: 1 }).withMessage('A count needs at least one product'),
@@ -115,7 +118,7 @@ router.post(
 router.get(
   '/counts',
   canView,
-  [query('locationId').optional().isInt({ min: 1 }), query('page').optional().isInt({ min: 1 }), query('limit').optional().isInt({ min: 1, max: 100 }), validate],
+  [optInt('locationId'), ...paginationValidation, validate],
   controller.listCounts,
 );
 router.get('/counts/:id', canView, [countId, validate], controller.getCount);

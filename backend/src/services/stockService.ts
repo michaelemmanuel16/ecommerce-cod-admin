@@ -6,6 +6,7 @@ import { fullName } from '../utils/nameUtils';
 import * as Money from '../utils/money';
 import { getSystemUserId } from './systemUserService';
 import { openFindingOnce } from './findingService';
+import { withSoftDeleted } from '../utils/prismaExtensions';
 
 /**
  * Stock (F-651, F-657, F-305, M4-T06/T07). This file is the only writer of `StockLevel.quantity` and `Product.stockQuantity`
@@ -163,14 +164,39 @@ export async function rebuildCache(tx: TransactionClient, productIds?: number[])
   return out;
 }
 
+/** Levels that count as on hand: active physical locations. */
+const onHandLevels = { location: { isActive: true, type: { in: PHYSICAL } } } satisfies Prisma.StockLevelWhereInput;
+
+/**
+ * The orders that reserve units (F-651): reserving status, not deleted, at a delivery partner. With `holderUserId`, only
+ * that partner's orders. The raw SQL in inventoryReadService.reservedByHolder must follow this filter.
+ */
+export const reservedWhere = (holderUserId?: number): Prisma.OrderWhereInput => ({
+  deletedAt: null, status: { in: RESERVING }, deliveryAgentId: holderUserId != null ? holderUserId : { not: null },
+});
+
+/** On-hand units per product over the active physical locations (all products when `productIds` is left out). Products with none are absent. */
+export async function getOnHandMany(productIds?: number[], db: Db = prisma): Promise<Map<number, number>> {
+  const rows = await db.stockLevel.groupBy({
+    by: ['productId'], _sum: { quantity: true },
+    where: { ...onHandLevels, ...(productIds ? { productId: { in: productIds } } : {}) },
+  });
+  return new Map(rows.map((r) => [r.productId, r._sum.quantity ?? 0]));
+}
+
+/** Reserved units per product over all holders. Products with none are absent. */
+export async function getReservedMany(productIds?: number[], db: Db = prisma): Promise<Map<number, number>> {
+  const rows = await db.orderItem.groupBy({
+    by: ['productId'], _sum: { quantity: true },
+    where: { ...(productIds ? { productId: { in: productIds } } : {}), order: reservedWhere() },
+  });
+  return new Map(rows.map((r) => [r.productId, r._sum.quantity ?? 0]));
+}
+
 /** On-hand units of a product: at one location, or summed over the active physical locations. */
 export async function getOnHand(productId: number, locationId?: number, db: Db = prisma): Promise<number> {
-  const sum = await db.stockLevel.aggregate({
-    _sum: { quantity: true },
-    where: locationId != null
-      ? { productId, locationId }
-      : { productId, location: { isActive: true, type: { in: PHYSICAL } } },
-  });
+  if (locationId == null) return (await getOnHandMany([productId], db)).get(productId) ?? 0;
+  const sum = await db.stockLevel.aggregate({ _sum: { quantity: true }, where: { productId, locationId } });
   return sum._sum.quantity ?? 0;
 }
 
@@ -179,42 +205,31 @@ export async function getOnHand(productId: number, locationId?: number, db: Db =
  * delivery partner. With `locationId`, only the orders of the partner at that location. Orders with no partner reserve nothing.
  */
 export async function getReserved(productId: number, locationId?: number, db: Db = prisma): Promise<number> {
-  let holder: Prisma.OrderWhereInput = { deliveryAgentId: { not: null } };
-  if (locationId != null) {
-    const location = await db.stockLocation.findUnique({ where: { id: locationId }, select: { userId: true } });
-    if (location?.userId == null) return 0;
-    holder = { deliveryAgentId: location.userId };
-  }
-  const sum = await db.orderItem.aggregate({
-    _sum: { quantity: true },
-    where: { productId, order: { deletedAt: null, status: { in: RESERVING }, ...holder } },
-  });
+  if (locationId == null) return (await getReservedMany([productId], db)).get(productId) ?? 0;
+  const location = await db.stockLocation.findUnique({ where: { id: locationId }, select: { userId: true } });
+  if (location?.userId == null) return 0;
+  const sum = await db.orderItem.aggregate({ _sum: { quantity: true }, where: { productId, order: reservedWhere(location.userId) } });
   return sum._sum.quantity ?? 0;
 }
 
 /** On hand less reserved, over all holders. May be below 0. */
 export async function getAvailableToSell(productId: number, db: Db = prisma): Promise<number> {
-  if (db === prisma) {
-    const [onHand, reserved] = await Promise.all([getOnHand(productId, undefined, db), getReserved(productId, undefined, db)]);
-    return onHand - reserved;
-  }
-  return (await getOnHand(productId, undefined, db)) - (await getReserved(productId, undefined, db));
+  return (await getAvailableMany([productId], db)).get(productId) ?? 0;
 }
 
-/** On hand less reserved for many products at once (the batch form of `getAvailableToSell`). Products with no stock read 0. */
+/**
+ * On hand less reserved for many products at once. Physical products only: a digital product has no stock, so its id is
+ * absent from the answer (and so is an unknown id). A physical product with no stock reads 0.
+ */
 export async function getAvailableMany(productIds: number[], db: Db = prisma): Promise<Map<number, number>> {
   const ids = [...new Set(productIds)];
-  const out = new Map<number, number>(ids.map((id) => [id, 0]));
+  const out = new Map<number, number>();
   if (ids.length === 0) return out;
-  const [levels, reserved] = await Promise.all([
-    db.stockLevel.groupBy({ by: ['productId'], _sum: { quantity: true }, where: { productId: { in: ids }, location: { isActive: true, type: { in: PHYSICAL } } } }),
-    db.orderItem.groupBy({
-      by: ['productId'], _sum: { quantity: true },
-      where: { productId: { in: ids }, order: { deletedAt: null, status: { in: RESERVING }, deliveryAgentId: { not: null } } },
-    }),
-  ]);
-  for (const l of levels) out.set(l.productId, l._sum.quantity ?? 0);
-  for (const r of reserved) out.set(r.productId, (out.get(r.productId) ?? 0) - (r._sum.quantity ?? 0));
+  // One after the other: `db` may be an interactive transaction
+  const physical = await withSoftDeleted(() => db.product.findMany({ where: { id: { in: ids }, productType: { not: 'digital' } }, select: { id: true } }));
+  const onHand = await getOnHandMany(ids, db);
+  const reserved = await getReservedMany(ids, db);
+  for (const { id } of physical) out.set(id, (onHand.get(id) ?? 0) - (reserved.get(id) ?? 0));
   return out;
 }
 
