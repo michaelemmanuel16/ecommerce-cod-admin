@@ -145,3 +145,39 @@ Incoming shipments get their own service and routes. Receiving a shipment counts
 - `frontend/src/services/shipments.service.ts`
 - Tests: `shipmentsApi.test.ts`, `shipmentReceive.test.ts`, `landedCostOrders.test.ts`; fixture `numbersFixture.ts`, `fixtureChecks/stock.ts`
 
+
+
+---
+
+## COD-41: Stock counts, inventory read APIs, Products API and nightly check (M4-T14 to T17)
+
+- **Date:** 2026-10-24
+- **Type:** feat
+- **Branch:** `m4/cod-41` (with `m4/cod-41-schema`), merged into `feature/m4-stock-fulfilment` at 48a579c (schema b2cdcd6)
+- **Commits:** c83aae7, a83448e (schema and fixture); d9ea3b4, 4ec4efd, d146682, 9efac3a, 6aee706, 84db221, 9459a93 (simplify), a30f0dd, 5c7c1e4
+
+### Summary
+- **Stock counts** (`/api/inventory/counts`, F-653): create a count at one location (date, source, note, lines). Each line stores system, counted and difference (counted − system); a line with a difference opens one `stock_gap` Finding. `POST /counts/:id/lines/:lineId/apply` with a reason (and an optional shipment for "Short on arrival") writes one adjustment movement; a second apply is 409.
+- **Inventory reads:** `/api/inventory/overview` (location cards: on hand, reserved, products, in transit, count tag), `/levels`, `/product/:id/holders`, `/returns/summary`. Owner, admin, manager, accountant and stock keeper read; a sales rep and a delivery agent get 403. Value columns only for roles in `utils/costAccess.ts`.
+- **Products API:** list with tabs (active, archived, all), month, on hand, reserved, days of cover, delivered in the month, delivery success and status; `/api/products/summary` (active and archived counts, best seller, average margin, low stock); create with `openingStock {quantity, locationId}` (needs `products:update_stock`); `stockQuantity` in a body is 400; archive and restore return open orders and units on hand; nullable `Product.maxDownloads` (the digital delivery used it and always fell back to 5).
+- **Margin rule (owner-review item):** revenue-weighted average; a physical product with cost 0 or null shows no margin and is left out of the average; a digital product with cost 0 stays in. Fixture average 86.
+- **Nightly check** (`stockCheckService`, Bull queue, 02:30 Africa/Accra): compares the product cache with the sum of levels and opens a Finding for a gap.
+- **Bug found in Opus review:** the order edit check counted reserved units twice (84db221).
+
+### Verification
+- Milestone at 48a579c: build and lint pass; unit 1626; frontend vitest 1057; all 128 integration files pass. The first full run hit its time limit at load 17 (three lanes testing at once); the files that timed out pass when run alone.
+- API check on the production-dump copy (port 3300): overview 200 (Logiswift 5,524 on hand, 925 reserved); levels 200; holders 200; returns summary 200; rep and agent 403 on overview and levels; no token 401; products list 200 with cost and margin for admin, none for a rep; summary 200 (4 active, best seller Magic Copybook 460, margin 88), rep 403; low stock 200; create with `stockQuantity` 400; create with opening stock 20 at Logiswift 201 and holders show 20; count 18 of 20 opens the line, holders show "off", apply 200 and holders show 18 and "matches", apply again 409, rep apply 403; archive 200 (archived tab lists it), restore 200.
+- The copy needed the admin `products:update_stock` grant once (it was migrated with the COD-38 script version, before the grant). The production migration (T41) uses the current script, which grants it.
+
+### Open points
+- The read API's count `difference` is records − counted, while a count line's `difference` is counted − records. Fix in COD-44 so both use one sign.
+- `/api/products/summary` is 403 for a role without cost access (it holds the average margin). An alternative is to leave out only the margin. Owner-review item.
+- Create, update, archive and restore responses must pass through `forRole` (security review). Fixed in COD-43.
+- Days of cover can be very large for a slow product (Dictamni on the copy: 32,011). The UI should cap the display.
+- Follow-up done in COD-43: `StockCount.shipmentId` replaces the 7-field match for receive counts.
+
+### Key Files
+- `backend/src/services/stockCountService.ts`, `inventoryReadService.ts`, `productService.ts`, `stockCheckService.ts`, `queues/stockCheckQueue.ts`, `utils/costAccess.ts`
+- `backend/src/routes/inventoryRoutes.ts`, `productRoutes.ts`; controllers for both
+- `backend/prisma/migrations/20261024120000_m4_product_max_downloads/`
+- Tests: `stockCountsApi.test.ts`, `inventoryReadApi.test.ts`, `inventoryFixtureApi.test.ts`, `productsApi.test.ts`, `stockCheck.test.ts`; `fixtureChecks/products.ts`
