@@ -9,7 +9,7 @@ import '../mocks/logger.mock';
 import { prismaBase } from '../../utils/prisma';
 import prisma from '../../utils/prisma';
 import { runInTenant } from '../../utils/tenantContext';
-import { createTenant, deleteTenantRows } from './helpers/twoTenants';
+import { createTenant, deleteTenantRows, mkUser } from './helpers/twoTenants';
 import { stockUp } from './helpers/stock';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import orderService from '../../services/orderService';
@@ -67,7 +67,7 @@ beforeAll(async () => {
   tenantId = (await createTenant('Landed Cost', { currency: 'GHS' })).id;
   await seedTenantDefaults(tenantId);
   copybook = (await prismaBase.product.create({ data: { sku: `LC-COPY-${SUFFIX}`, name: 'Copybook', category: 'x', price: 100, cogs: 20, stockQuantity: 0, tenantId } })).id;
-  const user = await prismaBase.user.create({ data: { email: `lc-kofi-${SUFFIX}@codadmin.test`, password: 'x', firstName: 'Kofi', lastName: 'Agent', role: 'delivery_agent', tenantId } });
+  const user = await mkUser(tenantId, 'Kofi', 'delivery_agent');
   const locationId = await stockUp(tenantId, copybook, 500, { name: 'Kofi Agent', type: 'agent', userId: user.id });
   kofi = { userId: user.id, locationId };
   formSlug = `lc-form-${SUFFIX}`;

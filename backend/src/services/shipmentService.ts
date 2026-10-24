@@ -67,6 +67,11 @@ const moneyInput = (value: unknown): Money.Money => Money.tryParse(value) ?? Mon
 
 type Row = Prisma.InventoryShipmentGetPayload<{ include: typeof INCLUDE }>;
 
+/** Landed cost per unit (D2): total in store currency over the units. Null when there are none. One formula for pending and received. */
+function computeLanded(totalStore: Money.MoneyInput, units: number): Money.Money | null {
+  return units > 0 ? Money.roundHalfUp(Money.div(totalStore, units), 4) : null;
+}
+
 /**
  * The shipment as the API returns it. `currency` is the effective one. `totalCost` stays in that currency; `totalCostStore`
  * is the store-currency amount (stored once received, else the total at the stored rate). `landedCostPerUnit` is stored once
@@ -74,10 +79,8 @@ type Row = Prisma.InventoryShipmentGetPayload<{ include: typeof INCLUDE }>;
  */
 function present(row: Row, storeCurrency: string) {
   const currency = row.currency ?? storeCurrency;
-  const rate = row.fxRate ? Money.parse(row.fxRate) : Money.parse(1);
-  const totalCostStore = row.totalCostStore ?? Money.roundHalfUp(Money.mul(row.totalCost, rate), 4);
-  const units = row.quantityCounted ?? row.quantity;
-  const landedCostPerUnit = row.landedCostPerUnit ?? (units > 0 ? Money.roundHalfUp(Money.div(totalCostStore, units), 4) : null);
+  const totalCostStore = row.totalCostStore ?? Money.roundHalfUp(Money.mul(row.totalCost, row.fxRate ?? 1), 4);
+  const landedCostPerUnit = row.landedCostPerUnit ?? computeLanded(totalCostStore, row.quantityCounted ?? row.quantity);
   return { ...row, currency, storeCurrency, totalCostStore, landedCostPerUnit };
 }
 
@@ -94,7 +97,7 @@ async function audit(tx: TransactionClient, actor: ShipmentActor, action: string
 async function lockShipment(tx: TransactionClient, id: number) {
   const locked = await tx.$queryRaw<Array<{ id: number }>>`SELECT id FROM inventory_shipments WHERE id = ${id} AND tenant_id = ${resolveTenantId()} FOR UPDATE`;
   if (locked.length === 0) throw new AppError('Shipment not found', 404);
-  return tx.inventoryShipment.findUniqueOrThrow({ where: { id }, include: { product: true } });
+  return tx.inventoryShipment.findUniqueOrThrow({ where: { id } });
 }
 
 function parseCurrency(value: unknown): string {
@@ -122,8 +125,8 @@ async function resolveRate(tenantId: string, currency: string, storeCurrency: st
   return { fxRate: found.rate, fxRateSource: found.source };
 }
 
-/** The store-currency rate to multiply by (1 for the store currency). */
-const factor = (fxRate: Money.Money | null) => fxRate ?? Money.parse(1);
+/** Request input when sent, else the stored value. */
+const pick = (value: unknown, stored: Money.MoneyInput): Money.Money => (value !== undefined ? moneyInput(value) : Money.parse(stored));
 
 export async function listShipments(filters: { status?: string; productId?: number } = {}) {
   const where: Prisma.InventoryShipmentWhereInput = {};
@@ -160,9 +163,9 @@ export async function getShipment(id: number) {
 
 export async function createShipment(actor: ShipmentActor, input: ShipmentInput) {
   const tenantId = resolveTenantId();
-  const quantity = input.quantity;
-  if (!input.productId || !Number.isInteger(quantity) || (quantity as number) < 1) throw new AppError('Product and quantity (>= 1) are required', 400);
-  const product = await prisma.product.findUnique({ where: { id: input.productId }, select: { id: true, productType: true, name: true } });
+  const { productId, quantity } = input;
+  if (!productId || quantity == null || !Number.isInteger(quantity) || quantity < 1) throw new AppError('Product and quantity (>= 1) are required', 400);
+  const product = await prisma.product.findUnique({ where: { id: productId }, select: { id: true, productType: true, name: true } });
   if (!product) throw new AppError('Product not found', 404);
   if (product.productType === 'digital') throw new AppError(`"${product.name}" is a digital product and has no stock`, 400);
 
@@ -177,18 +180,19 @@ export async function createShipment(actor: ShipmentActor, input: ShipmentInput)
   const created = await prisma.$transaction(async (tx) => {
     const row = await tx.inventoryShipment.create({
       data: {
-        productId: product.id, supplier: input.supplier || null, quantity: quantity as number,
+        productId: product.id, supplier: input.supplier || null, quantity,
         unitCost, shippingCost: shipping, customsDuties: customs, otherCosts: other,
-        totalCost: computeTotal(unitCost, quantity as number, shipping, customs, other),
+        totalCost: computeTotal(unitCost, quantity, shipping, customs, other),
         currency: currency === storeCurrency ? null : currency, fxRate, fxRateSource,
         expectedArrivalDate: input.expectedArrivalDate ? new Date(input.expectedArrivalDate) : null,
         notes: input.notes || null, createdById: actor.id,
       },
+      include: INCLUDE,
     });
     await audit(tx, actor, 'create', row.id, { productId: product.id, quantity: row.quantity, currency, total: Money.toApi(row.totalCost) });
     return row;
   });
-  return getShipment(created.id);
+  return present(created, storeCurrency);
 }
 
 export async function updateShipment(actor: ShipmentActor, id: number, input: ShipmentInput) {
@@ -205,29 +209,31 @@ export async function updateShipment(actor: ShipmentActor, id: number, input: Sh
     ? { fxRate: peek.fxRate ? Money.parse(peek.fxRate) : null, fxRateSource: peek.fxRateSource }
     : await resolveRate(tenantId, currency, storeCurrency, peek.createdAt, input.fxRate);
 
-  await prisma.$transaction(async (tx) => {
+  const updated = await prisma.$transaction(async (tx) => {
     const shipment = await lockShipment(tx, id);
     if (shipment.status !== 'pending') throw new AppError('Only a pending shipment can be edited', 409);
-    const quantity = input.quantity !== undefined ? input.quantity : shipment.quantity;
-    if (!Number.isInteger(quantity) || (quantity as number) < 1) throw new AppError('Quantity must be a whole number above 0', 400);
-    const unitCost = input.unitCost !== undefined ? moneyInput(input.unitCost) : Money.parse(shipment.unitCost);
-    const shipping = input.shippingCost !== undefined ? moneyInput(input.shippingCost) : Money.parse(shipment.shippingCost);
-    const customs = input.customsDuties !== undefined ? moneyInput(input.customsDuties) : Money.parse(shipment.customsDuties);
-    const other = input.otherCosts !== undefined ? moneyInput(input.otherCosts) : Money.parse(shipment.otherCosts);
-    const totalCost = computeTotal(unitCost, quantity as number, shipping, customs, other);
-    await tx.inventoryShipment.update({
+    const quantity = input.quantity ?? shipment.quantity;
+    if (!Number.isInteger(quantity) || quantity < 1) throw new AppError('Quantity must be a whole number above 0', 400);
+    const unitCost = pick(input.unitCost, shipment.unitCost);
+    const shipping = pick(input.shippingCost, shipment.shippingCost);
+    const customs = pick(input.customsDuties, shipment.customsDuties);
+    const other = pick(input.otherCosts, shipment.otherCosts);
+    const totalCost = computeTotal(unitCost, quantity, shipping, customs, other);
+    const row = await tx.inventoryShipment.update({
       where: { id },
       data: {
         supplier: input.supplier !== undefined ? (input.supplier || null) : undefined,
-        quantity: quantity as number, unitCost, shippingCost: shipping, customsDuties: customs, otherCosts: other, totalCost,
+        quantity, unitCost, shippingCost: shipping, customsDuties: customs, otherCosts: other, totalCost,
         currency: currency === storeCurrency ? null : currency, fxRate: rate.fxRate, fxRateSource: rate.fxRateSource,
         expectedArrivalDate: input.expectedArrivalDate !== undefined ? (input.expectedArrivalDate ? new Date(input.expectedArrivalDate) : null) : undefined,
         notes: input.notes !== undefined ? (input.notes || null) : undefined,
       },
+      include: INCLUDE,
     });
-    await audit(tx, actor, 'update', id, { quantity: quantity as number, currency, total: Money.toApi(totalCost), before: { quantity: shipment.quantity, total: Money.toApi(shipment.totalCost) } });
+    await audit(tx, actor, 'update', id, { quantity, currency, total: Money.toApi(totalCost), before: { quantity: shipment.quantity, total: Money.toApi(shipment.totalCost) } });
+    return row;
   });
-  return getShipment(id);
+  return present(updated, storeCurrency);
 }
 
 export async function deleteShipment(actor: ShipmentActor, id: number) {
@@ -255,11 +261,14 @@ export async function receiveShipment(actor: ShipmentActor, id: number, input: R
   const peek = await prisma.inventoryShipment.findUnique({ where: { id }, select: { currency: true, status: true } });
   if (!peek) throw new AppError('Shipment not found', 404);
   if (peek.status !== 'pending') throw new AppError(`This shipment is already ${peek.status}`, 409);
+  const location = await getLocation(prisma, input.locationId);
+  if (!PHYSICAL.includes(location.type)) throw new AppError('Receive into an own store, a 3PL or an agent, not the in-transit location', 400);
+  if (!location.isActive) throw new AppError(`${location.name} is not active`, 400);
   const currency = peek.currency ?? storeCurrency;
   // The rate of the received date (F-606). Looked up before the lock; the shipment's currency is checked again under it.
   const { fxRate, fxRateSource } = await resolveRate(tenantId, currency, storeCurrency, receivedAt, input.fxRate);
 
-  await prisma.$transaction(async (tx) => {
+  const received = await prisma.$transaction(async (tx) => {
     const shipment = await lockShipment(tx, id);
     if (shipment.status !== 'pending') throw new AppError(`This shipment is already ${shipment.status}`, 409);
     if ((shipment.currency ?? storeCurrency) !== currency) throw new AppError('The shipment changed while you received it. Try again.', 409);
@@ -267,17 +276,13 @@ export async function receiveShipment(actor: ShipmentActor, id: number, input: R
     if (counted > shipment.quantity) throw new AppError(`Counted quantity cannot be above the ${shipment.quantity} shipped`, 400);
 
     const product = await lockProduct(tx, shipment.productId);
-    const location = await getLocation(tx, input.locationId);
-    if (!PHYSICAL.includes(location.type)) throw new AppError('Receive into an own store, a 3PL or an agent, not the in-transit location', 400);
-    if (!location.isActive) throw new AppError(`${location.name} is not active`, 400);
-
     const short = shipment.quantity - counted;
-    const totalCostStore = Money.roundHalfUp(Money.mul(shipment.totalCost, factor(fxRate)), 4);
-    const landedCostPerUnit = counted > 0 ? Money.roundHalfUp(Money.div(totalCostStore, counted), 4) : null;
+    const totalCostStore = Money.roundHalfUp(Money.mul(shipment.totalCost, fxRate ?? 1), 4);
+    const landedCostPerUnit = computeLanded(totalCostStore, counted);
 
-    // On hand before the receipt, under the product lock; a negative total counts as 0.
+    // On hand before the receipt, under the product lock; a negative total counts as 0 for the average.
     const before = Math.max(await getOnHand(shipment.productId, undefined, tx), 0);
-    if (counted > 0) {
+    if (landedCostPerUnit) {
       const { row } = await applyMovement(tx, {
         type: 'receipt', productId: shipment.productId, quantity: counted, createdById: actor.id,
         toLocationId: location.id, shipmentId: shipment.id, lockedProduct: product,
@@ -287,18 +292,16 @@ export async function receiveShipment(actor: ShipmentActor, id: number, input: R
 
       // Weighted-average product cost (F-611). With no units on hand and none counted the old cost stays.
       const units = before + counted;
-      const oldCost = Money.orZero(product.cogs);
       const average = units > 0
-        ? Money.roundHalfUp(Money.div(Money.add(Money.mul(before, oldCost), Money.mul(counted, landedCostPerUnit!)), units), 4)
-        : oldCost;
+        ? Money.roundHalfUp(Money.div(Money.add(Money.mul(before, Money.orZero(product.cogs)), Money.mul(counted, landedCostPerUnit)), units), 4)
+        : Money.orZero(product.cogs);
       await tx.product.update({ where: { id: shipment.productId }, data: { cogs: average } });
     }
 
-    const unitCostStore = Money.mul(shipment.unitCost, factor(fxRate));
-    const claimAmount = short > 0 ? Money.roundHalfUp(Money.mul(short, unitCostStore), 4) : Money.ZERO;
-    const entry = await GLAutomationService.createInventoryPurchaseEntry(tx as any, shipment, totalCostStore, receivedAt, actor.id);
+    const claimAmount = short > 0 ? Money.roundHalfUp(Money.mul(short, Money.mul(shipment.unitCost, fxRate ?? 1)), 4) : Money.ZERO;
+    const entry = await GLAutomationService.createInventoryPurchaseEntry(tx as any, shipment, product.name, totalCostStore, receivedAt, actor.id);
 
-    await tx.inventoryShipment.update({
+    const row = await tx.inventoryShipment.update({
       where: { id },
       data: {
         status: 'received', receivedAt, receivedById: actor.id, destinationLocationId: location.id,
@@ -307,6 +310,7 @@ export async function receiveShipment(actor: ShipmentActor, id: number, input: R
         claimStatus: short > 0 ? 'open' : 'none', claimAmount,
         notes: input.note ? (shipment.notes ? `${shipment.notes}\n${input.note}` : input.note) : undefined,
       },
+      include: INCLUDE,
     });
     if (short > 0) {
       await openFindingOnce({
@@ -329,8 +333,9 @@ export async function receiveShipment(actor: ShipmentActor, id: number, input: R
       productId: shipment.productId, shipped: shipment.quantity, counted, short, locationId: location.id, countSource: input.countSource,
       totalCostStore: Money.toApi(totalCostStore), landedCostPerUnit: landedCostPerUnit ? Money.toApi(landedCostPerUnit) : null, claimAmount: Money.toApi(claimAmount),
     });
+    return row;
   }, { timeout: 30_000 });
-  return getShipment(id);
+  return present(received, storeCurrency);
 }
 
 /** Close the shipment's Finding (the gap is explained: recovered or written off). */
@@ -348,7 +353,8 @@ async function closeFinding(tx: TransactionClient, id: number, note: string) {
  */
 export async function settleClaim(actor: ShipmentActor, id: number, input: ClaimInput) {
   if (!CLAIM_ACTIONS.includes(input.action)) throw new AppError('action must be settle or write_off', 400);
-  await prisma.$transaction(async (tx) => {
+  const storeCurrency = await getCurrency();
+  const updated = await prisma.$transaction(async (tx) => {
     const shipment = await lockShipment(tx, id);
     if (shipment.claimStatus !== 'open') throw new AppError(`This shipment has no open claim (claim is ${shipment.claimStatus})`, 409);
 
@@ -356,19 +362,17 @@ export async function settleClaim(actor: ShipmentActor, id: number, input: Claim
       const recovered = Money.tryParse(input.amountRecovered);
       if (!recovered || !recovered.gt(0)) throw new AppError('amountRecovered must be above 0', 400);
       if (recovered.gt(shipment.claimAmount)) throw new AppError(`amountRecovered cannot be above the claim of ${Money.toApi(shipment.claimAmount)}`, 400);
-      const entry = await GLAutomationService.createInventoryClaimEntry(tx as any, shipment, Money.roundHalfUp(recovered, 4), actor.id);
-      await tx.inventoryShipment.update({
-        where: { id },
-        data: { claimStatus: 'settled', claimRecovered: Money.roundHalfUp(recovered, 4), claimJournalEntryId: entry.id },
-      });
+      const amount = Money.roundHalfUp(recovered, 4);
+      const { name } = await tx.product.findUniqueOrThrow({ where: { id: shipment.productId }, select: { name: true } });
+      const entry = await GLAutomationService.createInventoryClaimEntry(tx as any, shipment, name, amount, actor.id);
       await closeFinding(tx, id, `Claim on shipment ${id} settled: ${Money.toApi(recovered)} recovered`);
       await audit(tx, actor, 'claim_settle', id, { claimAmount: Money.toApi(shipment.claimAmount), amountRecovered: Money.toApi(recovered), journalEntryId: entry.id });
-    } else {
-      const note = (input as { note?: string | null }).note?.trim() || null;
-      await tx.inventoryShipment.update({ where: { id }, data: { claimStatus: 'written_off', claimNote: note ?? shipment.claimNote } });
-      await closeFinding(tx, id, `Claim on shipment ${id} written off${note ? `: ${note}` : ''}`);
-      await audit(tx, actor, 'claim_write_off', id, { claimAmount: Money.toApi(shipment.claimAmount), note });
+      return tx.inventoryShipment.update({ where: { id }, data: { claimStatus: 'settled', claimRecovered: amount, claimJournalEntryId: entry.id }, include: INCLUDE });
     }
+    const note = input.note?.trim() || null;
+    await closeFinding(tx, id, `Claim on shipment ${id} written off${note ? `: ${note}` : ''}`);
+    await audit(tx, actor, 'claim_write_off', id, { claimAmount: Money.toApi(shipment.claimAmount), note });
+    return tx.inventoryShipment.update({ where: { id }, data: { claimStatus: 'written_off', claimNote: note ?? shipment.claimNote }, include: INCLUDE });
   });
-  return getShipment(id);
+  return present(updated, storeCurrency);
 }

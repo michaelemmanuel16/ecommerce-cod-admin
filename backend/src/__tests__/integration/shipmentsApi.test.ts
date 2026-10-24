@@ -10,7 +10,7 @@ import request from 'supertest';
 import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
 import { generateAccessToken } from '../../utils/jwt';
-import { createTenant, deleteTenantRows } from './helpers/twoTenants';
+import { createTenant, deleteTenantRows, mkUser } from './helpers/twoTenants';
 import { bearer } from './helpers/superAdminToken';
 import { seedFixture, deleteFixtureRows, FIXTURE_SLUG } from '../fixtures/numbersFixture';
 
@@ -27,10 +27,6 @@ let copybook: number;
 let ebook: number;
 let otherProduct: number;
 
-const mkUser = async (tid: string, label: string, role: any) => {
-  const u = await prismaBase.user.create({ data: { email: `shp-${label}-${SUFFIX}@codadmin.test`, password: 'x', firstName: label, lastName: 'T', role, tenantId: tid } });
-  return { id: u.id, token: generateAccessToken({ id: u.id, email: u.email, role, tenantId: tid }) };
-};
 const call = (method: 'get' | 'post' | 'patch' | 'delete', who: string, path: string, body?: Record<string, unknown>) =>
   request(app)[method](`/api/shipments${path}`).set(bearer(token[who])).send(body);
 const create = (extra: Record<string, unknown> = {}) =>
@@ -40,7 +36,7 @@ beforeAll(async () => {
   tenantId = (await createTenant('Shipments Api', { currency: 'GHS' })).id;
   otherTenantId = (await createTenant('Shipments Api Other', { currency: 'GHS' })).id;
   for (const [label, role] of [['owner', 'super_admin'], ['keeper', 'inventory_manager'], ['admin', 'admin'], ['manager', 'manager'], ['rep', 'sales_rep']]) {
-    token[label] = (await mkUser(tenantId, label, role)).token;
+    token[label] = (await mkUser(tenantId, label, role as any)).token;
   }
   otherToken = (await mkUser(otherTenantId, 'other-owner', 'super_admin')).token;
   const product = (tid: string, sku: string, extra: Record<string, unknown> = {}) =>

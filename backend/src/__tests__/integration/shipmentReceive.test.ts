@@ -13,9 +13,8 @@ import path from 'path';
 import request from 'supertest';
 import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
-import { generateAccessToken } from '../../utils/jwt';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
-import { createTenant, deleteTenantRows } from './helpers/twoTenants';
+import { createTenant, deleteTenantRows, mkUser } from './helpers/twoTenants';
 import { bearer } from './helpers/superAdminToken';
 import { cacheOf, levelAt, stockUp } from './helpers/stock';
 
@@ -34,10 +33,6 @@ let store: number;
 let swift: number;
 let transit: number;
 
-const mkUser = async (label: string, role: any) => {
-  const u = await prismaBase.user.create({ data: { email: `shr-${label}-${SUFFIX}@codadmin.test`, password: 'x', firstName: label, lastName: 'T', role, tenantId } });
-  return { id: u.id, token: generateAccessToken({ id: u.id, email: u.email, role, tenantId }) };
-};
 const api = (method: 'get' | 'post', who: { token: string }, path: string, body?: Record<string, unknown>) =>
   request(app)[method](`/api/shipments${path}`).set(bearer(who.token)).send(body);
 const newShipment = async (extra: Record<string, unknown> = {}) => {
@@ -48,7 +43,7 @@ const newShipment = async (extra: Record<string, unknown> = {}) => {
 const receive = (id: number, extra: Record<string, unknown> = {}) =>
   api('post', owner, `/${id}/receive`, { locationId: swift, receivedAt: YESTERDAY, quantityCounted: 288, countSource: 'own_count', ...extra });
 const entries = (id: number) => prismaBase.journalEntry.findMany({
-  where: { tenantId, sourceType: 'inventory_purchase', sourceId: id }, orderBy: { id: 'asc' }, include: { transactions: { include: { account: true } } },
+  where: { tenantId, sourceType: { in: ['inventory_purchase', 'inventory_claim'] }, sourceId: id }, orderBy: { id: 'asc' }, include: { transactions: { include: { account: true } } },
 });
 const lines = (entry: Awaited<ReturnType<typeof entries>>[number]) =>
   entry.transactions.map((t) => [t.account.code, Number(t.debitAmount), Number(t.creditAmount)]).sort();
@@ -58,8 +53,8 @@ const movements = (id: number) => prismaBase.inventoryTransfer.findMany({ where:
 beforeAll(async () => {
   tenantId = (await createTenant('Shipment Receive', { currency: 'GHS' })).id;
   await seedTenantDefaults(tenantId);
-  owner = await mkUser('owner', 'super_admin');
-  manager = await mkUser('manager', 'manager');
+  owner = await mkUser(tenantId, 'owner', 'super_admin');
+  manager = await mkUser(tenantId, 'manager', 'manager');
   copybook = (await prismaBase.product.create({ data: { sku: `SR-COPY-${SUFFIX}`, name: 'Copybook set', category: 'x', price: 249, cogs: 30, stockQuantity: 0, tenantId } })).id;
   store = await stockUp(tenantId, copybook, 100, { name: 'Own store' }); // 100 on hand before the first receipt
   swift = (await prismaBase.stockLocation.create({ data: { tenantId, name: 'Swift 3PL', type: 'partner_3pl' } })).id;
@@ -246,7 +241,7 @@ describe('the supplier claim (F-608)', () => {
     expect([res.body.claimStatus, Number(res.body.claimRecovered)]).toEqual(['settled', 300]);
     const list = await entries(id);
     expect(list).toHaveLength(2); // the purchase and the claim
-    const claimEntry = list.find((e) => e.externalRef === `claim:${id}`)!;
+    const claimEntry = list.find((e) => e.sourceType === 'inventory_claim')!;
     expect(lines(claimEntry)).toEqual([['1010', 300, 0], ['1200', 0, 300]]);
     expect((await prismaBase.inventoryShipment.findUniqueOrThrow({ where: { id } })).claimJournalEntryId).toBe(claimEntry.id);
     const finding = await prismaBase.finding.findFirstOrThrow({ where: { tenantId, subjectType: 'inventory_shipment', subjectId: String(id) } });
