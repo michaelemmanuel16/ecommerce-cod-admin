@@ -18,8 +18,9 @@ export interface StockModalProps {
   onDone: (message: string) => void;
 }
 
-const onHandAt = (overview: Overview, locationId: number | undefined, productId: number | undefined): number =>
-  overview.stockByLocation.find((r) => r.locationId === locationId && r.productId === productId)?.onHand ?? 0;
+const rowAt = (overview: Overview, locationId: number | undefined, productId: number | undefined) =>
+  overview.stockByLocation.find((r) => r.locationId === locationId && r.productId === productId);
+const onHandAt = (overview: Overview, locationId: number | undefined, productId: number | undefined): number => rowAt(overview, locationId, productId)?.onHand ?? 0;
 
 /** The chosen option, or the first one: the choice is derived, so a list that changes under it never leaves a stale pick. */
 const chosen = (options: LocationCard[], id: number | null | undefined): LocationCard | undefined => options.find((o) => o.id === id) ?? options[0];
@@ -52,6 +53,7 @@ export function MoveModal({ kind, overview, products, initial, onClose, onDone }
   const toOptions = overview.locations.filter((l) => meta.to.includes(l.type) && l.id !== from?.id);
   const to = chosen(toOptions, toId);
   const have = onHandAt(overview, from?.id, productId);
+  const reserved = rowAt(overview, from?.id, productId)?.reserved ?? 0;
   const product = products.find((p) => p.id === productId);
 
   const qty = quantity.trim() === '' ? null : Number(quantity);
@@ -60,6 +62,8 @@ export function MoveModal({ kind, overview, products, initial, onClose, onDone }
   else if (qty !== null && qty < 1) quantityError = 'Use 1 or more';
   else if (qty !== null && qty > have) quantityError = `Only ${count(have)} on hand`;
   const ready = !!product && !!from && !!to && qty !== null && !quantityError;
+  // Staff may move reserved units (the limit is on hand), but the window says what that costs the open orders there
+  const takesReserved = qty !== null && !quantityError ? Math.min(reserved, qty - Math.max(have - reserved, 0)) : 0;
 
   const save = async () => {
     if (!ready || !product || !from || !to || qty === null) return;
@@ -86,7 +90,7 @@ export function MoveModal({ kind, overview, products, initial, onClose, onDone }
         {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
       </Select>
       <div className="fg">
-        <Select label={copy.fromLabel} hint={`${count(have)} ${kind === 'allocate' ? 'available' : 'on hand'}`} value={from?.id ?? ''} onChange={(e) => setFromId(Number(e.target.value))}>
+        <Select label={copy.fromLabel} hint={`${count(have)} on hand${reserved > 0 ? ` · ${count(reserved)} reserved` : ''}`} value={from?.id ?? ''} onChange={(e) => setFromId(Number(e.target.value))}>
           {fromOptions.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
         </Select>
         <Select label={copy.toLabel} value={to?.id ?? ''} onChange={(e) => setToId(Number(e.target.value))}>
@@ -101,6 +105,11 @@ export function MoveModal({ kind, overview, products, initial, onClose, onDone }
           </Select>
         )}
       </div>
+      {takesReserved > 0 && from && (
+        <p className="fnote" role="status">
+          This takes {count(takesReserved)} {takesReserved === 1 ? 'unit' : 'units'} reserved for open orders at {from.name}. Move those orders too, or {from.name} will run short.
+        </p>
+      )}
       {kind === 'allocate' && <p className="hint">Units show as in transit until the agent confirms them.</p>}
     </StockShell>
   );

@@ -72,27 +72,53 @@ async function latestCountLines(productId?: number): Promise<CountRow[]> {
 }
 
 /**
- * Units moved at a (location, product) after the count was saved make the count old ("Count is old", F-652).
- * Left out: the movement an "Apply count" wrote (it is the count's own fix), and units still in transit (they sit on the
- * transfer row and are shown in their own column).
+ * Any change of the on-hand number at a (location, product) after the count was saved makes the count old ("Count is old", F-652).
+ * Every on-hand change is an `InventoryTransfer` row (adjustments, receipts, order fulfilment and its reversal, transfers):
+ * - the SOURCE of a move loses its units when the row is created, whatever the status is afterwards (an open transfer included);
+ * - the DESTINATION gains them when the move is received (`receivedAt`), or at creation for a move that is received at once;
+ *   a transfer still in transit to the location does not change its on-hand yet.
+ * Two changes settle an old row and leave no time on it: a cancel, and a dispute resolved with "return to source". Both put units
+ * back at the source, and their audit rows say when.
+ * Left out: the movement an "Apply count" wrote (it is the count's own fix).
  */
 async function oldCounts(counts: CountRow[]): Promise<Set<string>> {
   if (counts.length === 0) return new Set();
   const since = new Date(Math.min(...counts.map((c) => c.createdAt.getTime())));
-  const moves = await prisma.inventoryTransfer.findMany({
-    where: {
-      appliedCountLines: { none: {} },
-      productId: { in: [...new Set(counts.map((c) => c.productId))] },
-      OR: [{ fromLocationId: { in: [...new Set(counts.map((c) => c.locationId))] } }, { toLocationId: { in: [...new Set(counts.map((c) => c.locationId))] } }],
-      AND: [{ OR: [{ createdAt: { gt: since } }, { receivedAt: { gt: since } }] }],
-    },
-    select: { productId: true, fromLocationId: true, toLocationId: true, status: true, createdAt: true, receivedAt: true },
+  const productIds = [...new Set(counts.map((c) => c.productId))];
+  const locationIds = [...new Set(counts.map((c) => c.locationId))];
+  const select = { id: true, productId: true, fromLocationId: true, toLocationId: true, status: true, createdAt: true, receivedAt: true } as const;
+  const [moves, settled] = await Promise.all([
+    prisma.inventoryTransfer.findMany({
+      where: {
+        appliedCountLines: { none: {} },
+        productId: { in: productIds },
+        OR: [{ fromLocationId: { in: locationIds } }, { toLocationId: { in: locationIds } }],
+        AND: [{ OR: [{ createdAt: { gt: since } }, { receivedAt: { gt: since } }] }],
+      },
+      select,
+    }),
+    prisma.auditLog.findMany({
+      where: { resource: 'inventory_transfer', action: { in: ['cancel', 'resolve'] }, createdAt: { gt: since }, resourceId: { not: null } },
+      select: { resourceId: true, createdAt: true },
+    }),
+  ]);
+  const settledRows = settled.length === 0 ? [] : await prisma.inventoryTransfer.findMany({
+    where: { id: { in: settled.map((a) => Number(a.resourceId)) }, productId: { in: productIds }, fromLocationId: { in: locationIds } },
+    select,
   });
+  const settledAt = new Map(settledRows.map((r) => [r.id, r]));
+
   const old = new Set<string>();
   for (const c of counts) {
-    const after = moves.some((m) => m.productId === c.productId && (m.fromLocationId === c.locationId || m.toLocationId === c.locationId)
-      && ((m.status !== 'in_transit' && m.createdAt > c.createdAt) || (m.toLocationId === c.locationId && m.receivedAt != null && m.receivedAt > c.createdAt)));
-    if (after) old.add(key(c.locationId, c.productId));
+    const after = (at: Date | null) => at != null && at > c.createdAt;
+    const changed = moves.some((m) => m.productId === c.productId && (
+      (m.fromLocationId === c.locationId && after(m.createdAt))
+      || (m.toLocationId === c.locationId && (m.status === 'received' || m.status === 'disputed') && after(m.receivedAt ?? m.createdAt))
+    )) || settled.some((a) => {
+      const row = settledAt.get(Number(a.resourceId));
+      return row != null && row.productId === c.productId && row.fromLocationId === c.locationId && after(a.createdAt);
+    });
+    if (changed) old.add(key(c.locationId, c.productId));
   }
   return old;
 }

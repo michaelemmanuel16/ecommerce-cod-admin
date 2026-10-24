@@ -108,7 +108,10 @@ test('allocate 10 to Kofi: the transfer shows "In transit" and the table updates
   const modal = page.getByRole('dialog', { name: 'Allocate to an agent' });
   await modal.getByLabel('Product').selectOption({ label: COPYBOOK });
   await modal.getByLabel('From').selectOption({ label: 'Logiswift' });
-  await expect(modal.getByText('188 available')).toBeVisible();
+  await expect(modal.getByText('188 on hand · 116 reserved')).toBeVisible();
+  // 72 units are free: above that the window warns, and saving stays allowed
+  await modal.getByLabel('Quantity').fill('80');
+  await expect(modal.getByText(/This takes 8 units reserved for open orders at Logiswift/)).toBeVisible();
   await modal.getByLabel('To', { exact: true }).selectOption({ label: 'Kofi Appiah' });
   await modal.getByLabel('Quantity').fill('10');
   await modal.getByRole('button', { name: 'Allocate to an agent' }).click();

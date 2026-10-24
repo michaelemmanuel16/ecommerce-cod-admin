@@ -1015,8 +1015,10 @@ export async function seedFixture(prisma: PrismaClient, opts: SeedFixtureOptions
     },
   });
   // 3PL count of Logiswift on 15 October: copybook 188 against our 200 (12 off); pens and grip trainer match.
+  // Counted on 15 Oct, saved at 17 Oct 12:00, after the 11:20 allocation to Kofi above: units that leave a location after its count
+  // make the count old (F-652), so the count stays current only if it was saved after them.
   const count = await prisma.stockCount.create({
-    data: { tenantId, locationId: locationId['Logiswift'], countDate: new Date(Date.UTC(2026, 9, 15)), source: 'three_pl_dashboard', countedById: admin.id, createdAt: new Date(Date.UTC(2026, 9, 15, 9, 0, 0)) },
+    data: { tenantId, locationId: locationId['Logiswift'], countDate: new Date(Date.UTC(2026, 9, 15)), source: 'three_pl_dashboard', countedById: admin.id, createdAt: new Date(Date.UTC(2026, 9, 17, 12, 0, 0)) },
   });
   const counted: Partial<Record<Sku, number>> = { ...STOCK_AT.logiswift, 'MG-COPYBOOK-SET': 188 };
   await prisma.stockCountLine.createMany({
