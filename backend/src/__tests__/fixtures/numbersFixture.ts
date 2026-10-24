@@ -98,9 +98,9 @@ const FAILURE_REASONS: Array<[string, number]> = [
 
 const PRODUCTS = [
   { sku: 'MG-COPYBOOK-SET', name: 'Magic Groove copybook set', price: 249, cogs: 30, category: 'copybook' },
-  { sku: 'MG-REFILL-PENS', name: 'Refill pens', price: 40, cogs: 0, category: 'add-on' },
-  { sku: 'MG-GRIP-TRAINER', name: 'Pencil grip trainer', price: 35, cogs: 0, category: 'add-on' },
-  { sku: 'MG-PARENT-GUIDE', name: "Smart Parent's guide", price: 59, cogs: 0, category: 'add-on' },
+  { sku: 'MG-REFILL-PENS', name: 'Refill pens', price: 40, cogs: 12, category: 'add-on' },
+  { sku: 'MG-GRIP-TRAINER', name: 'Pencil grip trainer', price: 35, cogs: 11, category: 'add-on' },
+  { sku: 'MG-PARENT-GUIDE', name: "Smart Parent's guide", price: 59, cogs: 3, category: 'add-on' },
   { sku: 'DT-CREAM', name: 'Dictamni cream', price: 250, cogs: 0, category: 'cream' },
 ] as const;
 type Sku = (typeof PRODUCTS)[number]['sku'];
@@ -682,6 +682,8 @@ async function fixtureHash(prisma: PrismaClient, tenantId: string): Promise<stri
   for (const t of targets) hash.update(`target|${t.scope}|${t.metric}|${t.periodStart.toISOString()}|${t.value.toFixed(4)}\n`);
   for (const b of balances) hash.update(`balance|${b.agent.email}|${b.currentBalance.toFixed(4)}\n`);
   for (const c of collections) hash.update(`collection|${c.order.externalOrderId}|${c.status}|${c.amount.toFixed(4)}|${c.allocatedAmount.toFixed(4)}|${c.collectionDate.toISOString()}\n`);
+  // Product prices and costs (F-600 margins).
+  for (const x of await prisma.product.findMany({ where: { tenantId }, orderBy: { sku: 'asc' }, select: { sku: true, price: true, cogs: true } })) hash.update(`product|${x.sku}|${x.price.toFixed(4)}|${x.cogs?.toFixed(4)}\n`);
   // Part 3 rows: locations, levels, shipments, counts and movements (no ids).
   const [locations, levels, shipments, counts, movements] = await Promise.all([
     prisma.stockLocation.findMany({ where: { tenantId }, orderBy: { name: 'asc' }, select: { name: true, type: true, user: { select: { email: true } } } }),
