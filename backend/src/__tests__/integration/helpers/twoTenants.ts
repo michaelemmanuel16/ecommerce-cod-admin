@@ -1,4 +1,5 @@
 import { randomBytes } from 'crypto';
+import { UserRole } from '@prisma/client';
 import prisma, { prismaBase } from '../../../utils/prisma';
 import { runInTenant } from '../../../utils/tenantContext';
 import { generateAccessToken } from '../../../utils/jwt';
@@ -54,6 +55,15 @@ export function createTenant(label: string, extra: { currency?: string } = {}) {
   return prismaBase.tenant.create({
     data: { name: `${label} ${suffix}`, slug: `${label.toLowerCase().replace(/\s+/g, '-')}-${suffix}`, ...extra },
   });
+}
+
+let userSeq = 0;
+
+/** One user in a tenant, with an access token for the API. Email is unique per call. Pair with deleteTenantRows. */
+export async function mkUser(tenantId: string, label: string, role: UserRole, extra: Record<string, unknown> = {}) {
+  const email = `${label}-${tenantId.slice(0, 8)}-${Date.now()}-${userSeq++}@codadmin.test`;
+  const u = await prismaBase.user.create({ data: { email, password: 'x', firstName: label, lastName: 'T', role, tenantId, ...extra } });
+  return { id: u.id, token: generateAccessToken({ id: u.id, email, role, tenantId }) };
 }
 
 /** Run one wave of independent creates. Waits for all of them, so a failure never leaves a write in flight behind the cleanup. */

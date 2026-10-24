@@ -1407,6 +1407,7 @@ enum JournalSourceType {
   order_failed_delivery
   agent_collection
   inventory_purchase
+  inventory_claim
   period_close
   digital_sale
   paystack_payout

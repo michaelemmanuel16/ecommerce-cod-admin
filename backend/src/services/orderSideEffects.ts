@@ -51,7 +51,7 @@ async function postRevenue(
   const entry = await GLAutomationService.createRevenueRecognitionEntry(
     tx as any,
     order,
-    GLAutomationService.calculateTotalCOGS(order.orderItems),
+    GLAutomationService.cogsOfOrder(order),
     userId,
   );
   // completeDelivery (`always`) books its own cash collection, so the flag is set with the entry link. The
