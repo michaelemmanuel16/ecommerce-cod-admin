@@ -29,6 +29,8 @@ export const stateLabel = (state: string | null | undefined): string => baseStat
 
 /** Comparison key of a region name: lower case, the word "region" and any bracket suffix dropped, letters only. */
 const regionKey = (s: string): string => baseState(s).toLowerCase().replace(/\bregion\b/g, '').replace(/[^a-z]/g, '');
+/** The same key with a trailing word "state" dropped ("Lagos State"), used only when it leaves a known region. */
+const stateStrippedKey = (s: string): string => baseState(s).toLowerCase().replace(/\bregion\b/g, '').replace(/\s+state\s*$/, '').replace(/[^a-z]/g, '');
 
 /**
  * The region of the store's country that `value` names, or null (O3, M4-T19). Exact after cleaning, never a guess:
@@ -37,5 +39,5 @@ const regionKey = (s: string): string => baseState(s).toLowerCase().replace(/\br
 export function matchStoreRegion(value: string | null | undefined, regions: string[]): string | null {
   const key = regionKey(value ?? '');
   if (!key) return null;
-  return regions.find((r) => regionKey(r) === key) ?? null;
+  return regions.find((r) => regionKey(r) === key) ?? regions.find((r) => regionKey(r) === stateStrippedKey(value ?? '')) ?? null;
 }

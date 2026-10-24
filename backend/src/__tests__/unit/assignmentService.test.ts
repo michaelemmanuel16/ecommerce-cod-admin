@@ -32,12 +32,10 @@ describe('AssignmentService', () => {
             expect(mockPrisma.user.findMany).toHaveBeenCalledWith(expect.objectContaining({
                 where: expect.objectContaining({
                     role: 'delivery_agent',
-                    balance: {
-                        OR: [
-                            { isBlocked: false },
-                            { isBlocked: null }
-                        ]
-                    }
+                    OR: [
+                        { balance: { is: null } },
+                        { balance: { is: { isBlocked: false } } }
+                    ]
                 })
             }));
             expect(result).toEqual(mockUsers);

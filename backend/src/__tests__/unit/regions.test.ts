@@ -33,6 +33,12 @@ describe('matchStoreRegion (M4-T19, O3)', () => {
   ])('%s is %s', (input, expected) => {
     expect(matchStoreRegion(input, gh)).toBe(expected);
   });
+  it('drops a trailing "State" only where a known region is left', () => {
+    expect(matchStoreRegion('Lagos State', ['Lagos', 'Ogun'])).toBe('Lagos');
+    expect(matchStoreRegion('Ogun state', ['Lagos', 'Ogun'])).toBe('Ogun');
+    expect(matchStoreRegion('Lagos Island State', ['Lagos', 'Ogun'])).toBeNull();
+    expect(matchStoreRegion('Lagos State', gh)).toBeNull();
+  });
   it('returns null for a town, a typo, a region of another country, blank and null', () => {
     for (const input of ['Accra Central', 'Greater Acra', 'Lagos', '', '   ', null, undefined]) {
       expect(matchStoreRegion(input, gh)).toBeNull();
