@@ -58,7 +58,7 @@ export interface HolderCount {
   date: string;
   source: 'own_count' | 'three_pl_dashboard' | 'agent_count';
   counted: number;
-  /** Our records minus the count. Null when stock moved after the count ("old"). */
+  /** The count minus our records (the sign of a count line: -12 is 12 units fewer than we thought). Null when stock moved after the count ("old"). */
   difference: number | null;
   status: 'matches' | 'off' | 'old';
 }
@@ -173,9 +173,11 @@ export const productsService = {
     return response.data;
   },
 
-  /** Active physical stock locations, for the starting-stock and receive pickers. */
+  /** Active stock locations (no in-transit), for the starting-stock and receive pickers. */
   async stockLocations(): Promise<StockLocationOption[]> {
-    const response = await apiClient.get('/api/inventory/overview', { quiet: true });
-    return (response.data.locations as StockLocationOption[]).map((l) => ({ id: l.id, name: l.name, type: l.type }));
+    const response = await apiClient.get('/api/inventory/locations', { quiet: true });
+    return (response.data.locations as Array<StockLocationOption & { isActive: boolean }>)
+      .filter((l) => l.isActive)
+      .map((l) => ({ id: l.id, name: l.name, type: l.type }));
   },
 };

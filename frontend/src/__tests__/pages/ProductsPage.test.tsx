@@ -131,6 +131,7 @@ describe('Products page (M4-T21)', () => {
     expect(holdersTable).toHaveTextContent('Logiswift');
     expect(holdersTable).toHaveTextContent('Kofi Appiah');
     expect(holdersTable).toHaveTextContent('Total');
+    expect(await screen.findByText('12 units off', { selector: '.tag' })).toBeInTheDocument(); // the shared countTag, count minus records = -12
     expect(await screen.findByText(/Our records say 100 on hand at Logiswift\. The 3PL dashboard count of 15 Oct says 88\./)).toBeInTheDocument();
     expect(screen.getByText('Esi Badu and Kwesi Amoah hold none of this product right now.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Open in Inventory/ })).toHaveAttribute('href', '/inventory?product=1');

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Boxes } from 'lucide-react';
-import { Skeleton, Table } from '../../components/ui-v2';
+import { Skeleton, Table, Tag } from '../../components/ui-v2';
+import { countTag } from '../inventory/model';
 import { productsService, type Holders } from '../../services/products.service';
 import { holderColumns } from './holderColumns';
 import { countNote, noneNote } from './model';
@@ -50,7 +51,9 @@ export function HoldersPanel({ productId }: { productId: number }) {
           </div>
           {data.holders.map((h) => {
             const note = countNote(h);
-            return note ? <p className="exnote" key={h.locationId}>{note}</p> : null;
+            if (!note) return null;
+            const tag = countTag({ isOld: false, difference: h.count!.difference ?? 0, wording: 'off' });
+            return <p className="exnote" key={h.locationId}><Tag tone={tag.tone}>{tag.text}</Tag> {note}</p>;
           })}
           {noneNote(data.holdersWithNone) && <p className="exnote">{noneNote(data.holdersWithNone)}</p>}
         </>

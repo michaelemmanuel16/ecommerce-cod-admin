@@ -42,7 +42,7 @@ export const HOLDERS: Holders = {
   holders: [
     {
       locationId: 10, name: 'Logiswift', type: 'partner_3pl', isActive: true, allocated: 300, inTransit: 0, delivered: 176, returned: 24, onHand: 100, reserved: 0, value: 3000,
-      count: { countId: 5, lineId: 9, date: '2026-10-15', source: 'three_pl_dashboard', counted: 88, difference: 12, status: 'off' },
+      count: { countId: 5, lineId: 9, date: '2026-10-15', source: 'three_pl_dashboard', counted: 88, difference: -12, status: 'off' },
     },
     { locationId: 11, name: 'Kofi Appiah', type: 'agent', isActive: true, allocated: 80, inTransit: 20, delivered: 40, returned: 0, onHand: 40, reserved: 0, value: 1200, count: null },
   ],
