@@ -12,9 +12,14 @@ describe('marginPercent', () => {
     expect(marginPercent(35, '10.85')).toBe(69);
     expect(marginPercent(59, '2.95')).toBe(95);
   });
-  it('is null when the price is 0, and 100 when there is no cost', () => {
+  it('is null when the price is 0', () => {
     expect(marginPercent(0, 5)).toBeNull();
-    expect(marginPercent(50, null)).toBe(100);
+  });
+  it('a physical product with cost 0 or none has no margin; a digital product at cost 0 is 100', () => {
+    expect(marginPercent(50, null)).toBeNull();
+    expect(marginPercent(50, 0)).toBeNull();
+    expect(marginPercent(50, 0, 'digital')).toBe(100);
+    expect(marginPercent(50, null, 'digital')).toBe(100);
   });
   it('can be negative (cost above price)', () => {
     expect(marginPercent(10, 15)).toBe(-50);

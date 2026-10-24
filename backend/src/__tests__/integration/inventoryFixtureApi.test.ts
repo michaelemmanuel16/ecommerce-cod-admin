@@ -118,15 +118,12 @@ describe('products on the fixture (T16)', () => {
     expect(summary.activeProducts).toEqual({ active: 5, archived: 0 });
   });
 
-  it('margin per row 88% / 70% / 69% / 95% once the costs of the three add-ons are set, and the weighted average of the tile', async () => {
-    // The fixture leaves the cost of the add-ons at 0 (only the copybook has the owner-set GH₵30), so their margin reads 100% until a cost is set.
-    expect(byName((await get(`/api/products?tab=all&${MONTH}&limit=100`)).body)['MG-REFILL-PENS'].marginPct).toBe(100);
-    const costs: Record<string, string> = { 'MG-REFILL-PENS': '12', 'MG-GRIP-TRAINER': '10.85', 'MG-PARENT-GUIDE': '2.95' };
-    for (const [code, cogs] of Object.entries(costs)) await prismaBase.product.updateMany({ where: { tenantId, sku: code }, data: { cogs } });
+  it('margin per row 88% / 70% / 69% / 95%, the cream (no cost set) has none, and the tile average is 86%', async () => {
     const p = byName((await get(`/api/products?tab=all&${MONTH}&limit=100`)).body);
     expect([p['MG-COPYBOOK-SET'], p['MG-REFILL-PENS'], p['MG-GRIP-TRAINER'], p['MG-PARENT-GUIDE']].map((x) => x.marginPct)).toEqual([88, 70, 69, 95]);
-    // Sum of units x (price - cost) over sum of units x price, all five products: 79,730.25 / 92,111 = 86.56%, shown as 87
-    expect((await get(`/api/products/summary?${MONTH}`)).body.averageMargin).toBe(87);
+    expect(p['DT-CREAM'].marginPct).toBeNull();
+    // Sum of units x (price - cost) over sum of units x price, the cream left out because it has no cost: 77,214 / 89,611
+    expect((await get(`/api/products/summary?${MONTH}`)).body.averageMargin).toBe(86);
   });
 
   it('a call rep gets no cost field; PATCH /api/products/:id/stock is a 404', async () => {

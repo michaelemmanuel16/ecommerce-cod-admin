@@ -132,6 +132,15 @@ describe('GET /api/products', () => {
     expect(body.month).toMatch(/^\d{4}-\d{2}$/);
   });
 
+  it('a physical product with no cost set has no margin (null) and a digital one at cost 0 is 100%', async () => {
+    const free = (await send('post', 'owner', '', newProduct({ cogs: 0, price: 10 }))).body.product.id;
+    const guide = (await send('post', 'owner', '', newProduct({ cogs: 0, price: 10, productType: 'digital' }))).body.product.id;
+    const { body } = await get('owner', '?limit=100');
+    expect(row(body, free).marginPct).toBeNull();
+    expect(row(body, guide).marginPct).toBe(100);
+    expect((await get('owner', `/${free}`)).body.product.marginPct).toBeNull();
+  });
+
   it('a month with no deliveries gives 0 delivered, no error', async () => {
     const { body, status } = await get('owner', '?month=2020-01');
     expect(status).toBe(200);
@@ -194,6 +203,10 @@ describe('GET /api/products/summary', () => {
 
   it('average margin is sum of units x (price - cost) over sum of units x price', async () => {
     // delivered this month: copybook 28 + 0, pens 3, ebook 1, plus the extra product from the low stock test (cost 1, price 20, 14 units)
+    // A physical product with no cost set is left out of the average even when it sold: 5 units here must not move it
+    const noCost = (await send('post', 'owner', '', newProduct({ cogs: 0, price: 100 }))).body.product.id;
+    const order = await makeOrder({ tenantId, customerId: (await makeCustomer(tenantId)).id, status: 'delivered', deliveryDate: new Date() });
+    await line(order.id, noCost, 5);
     const units = [[28, 249, 30], [3, 40, 12], [1, 59, 3], [14, 20, 1]];
     const margin = units.reduce((s, [n, price, cost]) => s + n * (price - cost), 0);
     const revenue = units.reduce((s, [n, price]) => s + n * price, 0);
@@ -234,7 +247,11 @@ describe('POST /api/products', () => {
   it('lowStockDays and the digital fields are stored; no opening stock means no movement', async () => {
     const res = await send('post', 'owner', '', newProduct({ lowStockDays: 21, productType: 'digital', digitalFileUrl: 'https://files.example/a.pdf', digitalFileType: 'pdf', downloadLinkExpiryHours: 48, maxDownloads: 3 }));
     expect(res.status).toBe(201);
-    expect(res.body.product).toMatchObject({ lowStockDays: 21, productType: 'digital', digitalFileType: 'pdf', downloadLinkExpiryHours: 48, stockQuantity: 0 });
+    expect(res.body.product).toMatchObject({ lowStockDays: 21, productType: 'digital', digitalFileType: 'pdf', downloadLinkExpiryHours: 48, maxDownloads: 3, stockQuantity: 0 });
+    expect((await get('owner', `/${res.body.product.id}`)).body.product.maxDownloads).toBe(3);
+    expect((await send('put', 'owner', `/${res.body.product.id}`, { maxDownloads: 7 })).body.product.maxDownloads).toBe(7);
+    expect((await send('put', 'owner', `/${res.body.product.id}`, { maxDownloads: null })).body.product.maxDownloads).toBeNull();
+    expect((await send('put', 'owner', `/${res.body.product.id}`, { maxDownloads: 0 })).status).toBe(400);
     expect(await prismaBase.inventoryTransfer.count({ where: { productId: res.body.product.id } })).toBe(0);
   });
 

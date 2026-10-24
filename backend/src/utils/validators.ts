@@ -86,7 +86,7 @@ export const updateCustomerValidation: ValidationChain[] = [
 
 const NO_STOCK_QUANTITY = 'stockQuantity is not accepted. Give openingStock when you create a product, or use Adjust quantity in Inventory.';
 
-// Fields both create and update take (F-601). maxDownloads has no column on Product yet, so it is checked but not stored.
+// Fields both create and update take (F-601). maxDownloads is the download limit of a digital product (null reads as 5).
 const productFieldRules = (): ValidationChain[] => [
   body('stockQuantity').not().exists().withMessage(NO_STOCK_QUANTITY),
   body('lowStockDays').optional({ nullable: true }).isInt({ min: 1, max: 365 }).withMessage('lowStockDays must be a whole number of days, 1 to 365'),

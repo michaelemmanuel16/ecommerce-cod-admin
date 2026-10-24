@@ -30,9 +30,12 @@ export const forRole = <T extends { cogs?: unknown; marginPct?: unknown }>(role:
 const wholePercent = (num: Money.MoneyInput, den: Money.MoneyInput): number | null =>
   Money.parse(den).isZero() ? null : Money.roundHalfUp(Money.mul(Money.div(num, den), 100), 0).toNumber();
 
-/** Margin before delivery: (price - cost) / price, whole percent. Null when the price is 0. */
-export function marginPercent(price: Money.MoneyInput, cost: Money.MoneyInput | null | undefined): number | null {
-  return wholePercent(Money.sub(price, Money.orZero(cost)), price);
+/** A physical product with cost 0 or none has no cost set: it has no margin and stays out of the average. A digital product at cost 0 is 100%, which is real. */
+const hasCost = (p: { productType: string; cogs: Money.MoneyInput | null | undefined }) => p.productType === 'digital' || !Money.orZero(p.cogs).isZero();
+
+/** Margin before delivery: (price - cost) / price, whole percent. Null when the price is 0 or a physical product has no cost set. */
+export function marginPercent(price: Money.MoneyInput, cost: Money.MoneyInput | null | undefined, productType = 'physical'): number | null {
+  return hasCost({ productType, cogs: cost }) ? wholePercent(Money.sub(price, Money.orZero(cost)), price) : null;
 }
 
 /** On hand divided by the average units delivered per day over the last 14 days. Null when nothing sold ("No sales"). */
@@ -119,7 +122,7 @@ async function figures(products: Row[], window: { from: Date; to: Date }) {
       lowStockDaysEffective: digital ? null : lowDays,
       deliveredInPeriod: monthUnits.get(p.id) ?? 0,
       deliverySuccess: digital ? null : success.get(p.id) ?? null,
-      marginPct: marginPercent(p.price, p.cogs),
+      marginPct: marginPercent(p.price, p.cogs, p.productType),
       status: productStatus(p, stock, cover, lowDays),
     };
   });
@@ -169,7 +172,7 @@ export async function productsSummary(monthParam?: string) {
   let revenue = Money.ZERO;
   for (const line of byProduct) {
     const p = priced.get(line.productId);
-    if (!p) continue;
+    if (!p || !hasCost(p)) continue;
     margin = Money.add(margin, Money.mul(line.units, Money.sub(p.price, Money.orZero(p.cogs))));
     revenue = Money.add(revenue, Money.mul(line.units, p.price));
   }
@@ -208,12 +211,12 @@ export async function lowStockProducts() {
 export async function getProduct(id: number) {
   const product = await prisma.product.findUnique({ where: { id } });
   if (!product) throw new AppError('Product not found', 404);
-  return { ...product, marginPct: marginPercent(product.price, product.cogs) };
+  return { ...product, marginPct: marginPercent(product.price, product.cogs, product.productType) };
 }
 
 const FIELDS = [
   'sku', 'name', 'description', 'category', 'price', 'cogs', 'imageUrl', 'weight', 'dimensions', 'isActive', 'productType',
-  'lowStockDays', 'lowStockThreshold', 'digitalFileUrl', 'digitalFileType', 'downloadLinkExpiryHours',
+  'lowStockDays', 'lowStockThreshold', 'digitalFileUrl', 'digitalFileType', 'downloadLinkExpiryHours', 'maxDownloads',
 ] as const;
 
 function pick(body: Record<string, unknown>) {
