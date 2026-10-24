@@ -25,26 +25,26 @@ const canReceive = (req: AuthRequest, res: Response, next: NextFunction) =>
   req.user?.role === 'delivery_agent' ? next() : canWriteStock(req, res, next);
 
 // Reads: products:view, but never for a call rep or a delivery agent. They get no cost and no per-holder stock (F-600).
-const canView = [
-  requireResourcePermission('products', 'view'),
-  (req: AuthRequest, res: Response, next: NextFunction) =>
-    canSeeCost(req.user?.role) ? next() : res.status(403).json({ error: 'You do not have access to stock figures' }),
-];
-
-// A delivery agent reads /levels and /transfers for their own stock location only (F-653). The server forces the filter;
-// another location is 403. These two routes skip the stock-figures gate for agents; nothing else in this file does.
-const unlessAgent = (mw: (req: AuthRequest, res: Response, next: NextFunction) => unknown) =>
-  (req: AuthRequest, res: Response, next: NextFunction) => (req.user?.role === 'delivery_agent' ? next() : mw(req, res, next));
-const ownLocationOnly = async (req: AuthRequest, res: Response, next: NextFunction) => {
-  if (req.user?.role !== 'delivery_agent') return next();
+const canViewPermission = requireResourcePermission('products', 'view');
+const canView = (req: AuthRequest, res: Response, next: NextFunction) =>
+  canViewPermission(req, res, (err?: unknown) => {
+    if (err) return next(err);
+    return canSeeCost(req.user?.role) ? next() : res.status(403).json({ error: 'You do not have access to stock figures' });
+  });
+// The one exception: a delivery agent reads /levels and /transfers for their own stock location only (F-653). The agent's
+// location goes to the service as req.scopeLocationId, and another location is 403. Every other role takes canView.
+const canViewOrOwn = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  if (req.user?.role !== 'delivery_agent') return canView(req, res, next);
   const own = await locationOfUser(req.user.id);
   if (own == null) return res.status(403).json({ error: 'You have no stock location' });
   const asked = req.query.locationId;
   if (asked !== undefined && asked !== '' && Number(asked) !== own) return res.status(403).json({ error: 'You can only see your own stock' });
-  req.query.locationId = String(own);
+  req.scopeLocationId = own;
   return next();
 };
-const canViewOrOwn = [...canView.map(unlessAgent), ownLocationOnly];
+// The CSV export: owner, admin and finance clerk (F-659).
+const canExport = (req: AuthRequest, res: Response, next: NextFunction) =>
+  ['super_admin', 'admin', 'accountant'].includes(req.user?.role ?? '') ? next() : res.status(403).json({ error: 'You do not have access to the export' });
 
 const id = param('id').isInt({ min: 1 }).withMessage('Invalid transfer ID').toInt();
 const countId = param('id').isInt({ min: 1 }).withMessage('Invalid count ID').toInt();
@@ -112,10 +112,21 @@ router.get(
     query('type').optional().isIn(Object.values(TransferType)).withMessage('Unknown type'),
     query('status').optional().isIn(Object.values(TransferStatus)).withMessage('Unknown status'),
     optInt('locationId'), optInt('productId'), optDay('from'), optDay('to'),
-    ...paginationValidation, validate,
+    query('includeCounts').optional().isBoolean(), ...paginationValidation, validate,
   ],
   controller.listTransfers,
 );
+router.get(
+  '/transfers/export.csv',
+  canView, canExport,
+  [
+    query('type').optional().isIn(Object.values(TransferType)).withMessage('Unknown type'),
+    query('status').optional().isIn(Object.values(TransferStatus)).withMessage('Unknown status'),
+    optInt('locationId'), optInt('productId'), optDay('from'), optDay('to'), validate,
+  ],
+  controller.exportTransfers,
+);
+router.get('/locations', canView, controller.listLocations);
 router.get('/transfers/:id/trail', canView, [id, validate], controller.transferTrail);
 router.get('/returns/summary', canView, [optDay('from'), optDay('to'), optInt('partnerId'), validate], controller.returnsSummary);
 

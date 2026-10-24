@@ -120,12 +120,12 @@ describe('GET /overview', () => {
 
   let countId: number;
   let lineId: number;
-  it('a count shows the difference (records less count), the card says N units off, the source and the date', async () => {
+  it('a count shows the difference (count less records, the sign of the count line), the card says N units off, the source and the date', async () => {
     const c = await post('owner', '/counts', { locationId: swift, countDate: today(), source: 'three_pl_dashboard', lines: [{ productId: copybook, countedQuantity: 188 }, { productId: pens, countedQuantity: 62 }] });
     countId = c.body.count.id;
     lineId = c.body.count.lines[0].id;
     const { body } = await get('manager', '/overview');
-    expect(row(body, swift, copybook).count).toMatchObject({ counted: 188, difference: 12, status: 'off', source: 'three_pl_dashboard', date: today() });
+    expect(row(body, swift, copybook).count).toMatchObject({ counted: 188, difference: -12, status: 'off', source: 'three_pl_dashboard', date: today() });
     expect(row(body, swift, pens).count).toMatchObject({ difference: 0, status: 'matches' });
     expect(card(body, swift).latestCount).toMatchObject({ countId, unitsOff: 12, isOld: false, source: 'three_pl_dashboard' });
     expect(card(body, kofi).latestCount).toBeNull();
@@ -226,7 +226,7 @@ describe('GET /product/:productId/holders', () => {
 
 describe('GET /transfers (history)', () => {
   it('newest first with pagination and tab counts that come from the data', async () => {
-    const res = await get('manager', '/transfers?limit=2');
+    const res = await get('manager', '/transfers?limit=2&includeCounts=true');
     expect(res.status).toBe(200);
     expect(res.body.transfers).toHaveLength(2);
     expect(res.body.pagination).toMatchObject({ page: 1, limit: 2 });
@@ -239,16 +239,16 @@ describe('GET /transfers (history)', () => {
   });
 
   it('filters by type, status, location, product and date; the tab counts ignore the type filter', async () => {
-    const byType = await get('owner', '/transfers?type=allocation');
+    const byType = await get('owner', '/transfers?type=allocation&includeCounts=true');
     expect(byType.body.transfers.map((t: any) => t.transferType)).toEqual(['allocation']);
     expect(byType.body.transfers[0].status).toBe('cancelled');
     expect(Object.keys(byType.body.typeCounts).length).toBeGreaterThan(1);
-    expect((await get('owner', '/transfers?status=cancelled')).body.pagination.total).toBe(1);
+    expect((await get('owner', '/transfers?status=cancelled&includeCounts=true')).body.pagination.total).toBe(1);
     const atKofi = (await get('owner', `/transfers?locationId=${kofi}&limit=100`)).body.transfers;
     expect(atKofi.every((t: any) => t.fromLocationId === kofi || t.toLocationId === kofi)).toBe(true);
     expect((await get('owner', `/transfers?productId=${pens}&limit=100`)).body.transfers.every((t: any) => t.productId === pens)).toBe(true);
-    expect((await get('owner', `/transfers?from=${today()}&to=${today()}`)).body.pagination.total).toBeGreaterThan(5);
-    expect((await get('owner', '/transfers?from=2020-01-01&to=2020-01-31')).body).toMatchObject({ transfers: [], pagination: { total: 0 } });
+    expect((await get('owner', `/transfers?from=${today()}&to=${today()}&includeCounts=true`)).body.pagination.total).toBeGreaterThan(5);
+    expect((await get('owner', '/transfers?from=2020-01-01&to=2020-01-31&includeCounts=true')).body).toMatchObject({ transfers: [], pagination: { total: 0 } });
   });
 
   it('400 for a bad type, status, date, page or limit', async () => {

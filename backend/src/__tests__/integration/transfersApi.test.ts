@@ -323,7 +323,7 @@ describe('POST /api/inventory/transfers/:id/cancel', () => {
 
 describe('concurrent creates', () => {
   it('two transfers cannot send more than the source holds', async () => {
-    const source = await location('Small store', 'own_store');
+    const source = await location('Small store', 'partner_3pl');
     await stockUp(tenantId, copybook, 10, { locationId: source });
     const send = () => post('owner', '/transfers', { type: 'allocation', productId: copybook, quantity: 7, fromLocationId: source, toLocationId: esi });
     const [a, b] = await Promise.all([send(), send()]);
