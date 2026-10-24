@@ -113,6 +113,15 @@ describe('Products page (M4-T21)', () => {
     expect(summary).toHaveBeenCalledWith('2026-09', false);
   });
 
+  it('a product with no cost set (0) shows a dash for cost and margin, not GH₵0', async () => {
+    list.mockResolvedValue({ ...PRODUCT_LIST, products: [{ ...PENS, id: 9, name: 'Dictamni cream', sku: 'DT-CREAM', cogs: 0, marginPct: null }] });
+    renderPage();
+    const table = await screen.findByRole('table', { name: 'Products' });
+    const row = within(table).getByText('Dictamni cream').closest('tr')!;
+    expect(row).not.toHaveTextContent('GH₵0');
+    expect(within(row).getAllByText('—').length).toBeGreaterThanOrEqual(2);
+  });
+
   it('has no cost or margin column, and no tiles, for a role the API gives no cost', async () => {
     list.mockResolvedValue({ ...PRODUCT_LIST, canSeeCost: false, products: [withoutCost(COPYBOOK), withoutCost(PENS)] });
     summary.mockRejectedValue(Object.assign(new Error('forbidden'), { isAxiosError: true, response: { status: 403 } }));

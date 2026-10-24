@@ -83,7 +83,7 @@ export function ProductsTable({ rows, showCost, target, monthLabel, canEdit, onE
                   </td>
                   <td className="sku">{p.sku}</td>
                   <td className="r num">{formatCurrency(p.price)}</td>
-                  {showCost && <td className="r num">{p.cogs == null ? <Dash /> : formatCurrency(p.cogs)}</td>}
+                  {showCost && <td className="r num">{p.cogs == null || Number(p.cogs) === 0 ? <Dash /> : formatCurrency(p.cogs)}</td>}
                   {showCost && <td className="r num"><b>{pct(p.marginPct)}</b></td>}
                   <td className="r num">
                     <b>{p.onHandTotal === null ? '—' : p.onHandTotal}</b>

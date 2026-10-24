@@ -29,7 +29,7 @@ export function HoldersPanel({ productId }: { productId: number }) {
       <div className="exhead">
         <div>
           <b>Stock by holder</b>
-          <small>Read only. Allocate, transfer, return and adjust stock in Inventory. On hand is allocated minus in transit, delivered and returned. Value is at cost.</small>
+          <small>Read only. Allocate, transfer, return and adjust stock in Inventory. Allocated counts the units that reached the holder. Transfers out and adjustments also change on hand. Value is at cost.</small>
         </div>
         <div className="exbtns">
           <Link className="mini pri" to={`/inventory?product=${productId}`} style={{ textDecoration: 'none' }}>
