@@ -18,6 +18,7 @@ import workflowService from '../../services/workflowService';
 import { executeAction } from '../../queues/workflowQueue';
 import { getSocketInstance } from '../../utils/socketInstance';
 import { bearer } from './helpers/superAdminToken';
+import { stockUp } from './helpers/stock';
 
 jest.mock('../../utils/socketInstance', () => ({
   setSocketInstance: jest.fn(),
@@ -72,6 +73,7 @@ beforeAll(async () => {
     data: { firstName: 'Ama', lastName: 'Mensah', phoneNumber: `+2332${String(SUFFIX).slice(-8)}`, address: '3 Test Rd', state: 'Greater Accra', area: 'Accra', tenantId },
   })).id;
   productId = (await prismaBase.product.create({ data: { sku: `PW-${SUFFIX}`, name: 'Copybook', category: 'x', price: 50, stockQuantity: 20, tenantId } })).id;
+  await stockUp(tenantId, productId, 20); // available to sell comes from the levels (M4-T16)
   await mkUser('admin', 'admin');
   await mkUser('manager', 'manager');
   await mkUser('stock', 'inventory_manager');
