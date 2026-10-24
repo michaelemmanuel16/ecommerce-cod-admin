@@ -51,14 +51,22 @@ interface CountRow {
   countId: number; lineId: number; locationId: number; productId: number; counted: number; source: string; date: string; createdAt: Date;
 }
 
-/** The latest count line per (location, product); with `productId`, only for that product. */
+/** The latest whole-location count line per (location, product); with `productId`, only for that product. */
 async function latestCountLines(productId?: number): Promise<CountRow[]> {
   const rows = await prisma.$queryRaw<Array<{ countId: number; lineId: number; locationId: number; productId: number; counted: number; source: string; date: string; createdAt: Date }>>(Prisma.sql`
     SELECT DISTINCT ON (c.location_id, l.product_id)
       c.id AS "countId", l.id AS "lineId", c.location_id AS "locationId", l.product_id AS "productId", l.counted_quantity AS counted,
       c.source::text AS source, TO_CHAR(c.count_date, 'YYYY-MM-DD') AS date, c.created_at AS "createdAt"
     FROM stock_count_lines l JOIN stock_counts c ON c.id = l.count_id
-    WHERE l.tenant_id = ${resolveTenantId()}${productId != null ? Prisma.sql` AND l.product_id = ${productId}` : Prisma.empty}
+    WHERE l.tenant_id = ${resolveTenantId()}
+      -- Not the one-line count a 3PL-dashboard receive writes (shipmentService.receiveShipment): it counts the arrival (shipped
+      -- against counted), not the whole location. Recognised by the shipment it belongs to, not by its note.
+      AND NOT EXISTS (
+        SELECT 1 FROM inventory_shipments s
+        WHERE s.tenant_id = l.tenant_id AND s.status = 'received' AND s.product_id = l.product_id AND s.destination_location_id = c.location_id
+          AND s.quantity = l.system_quantity AND s.quantity_counted = l.counted_quantity
+          AND s.received_by_id = c.counted_by_id AND (s.received_at AT TIME ZONE 'UTC')::date = c.count_date AND c.source = 'three_pl_dashboard'
+      )${productId != null ? Prisma.sql` AND l.product_id = ${productId}` : Prisma.empty}
     ORDER BY c.location_id, l.product_id, c.count_date DESC, c.id DESC`);
   return rows;
 }

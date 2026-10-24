@@ -14,6 +14,7 @@ import { createTenant, deleteTenantRows } from './helpers/twoTenants';
 import { bearer } from './helpers/superAdminToken';
 import { stockUp } from './helpers/stock';
 import { makeCustomer, makeOrder } from './helpers/kpiOrders';
+import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 
 jest.mock('../../utils/socketInstance', () => ({
   setSocketInstance: jest.fn(),
@@ -53,6 +54,7 @@ const card = (body: any, loc: number) => body.locations.find((l: any) => l.id ==
 beforeAll(async () => {
   tenantId = (await createTenant('Inventory Read')).id;
   otherTenantId = (await createTenant('Inventory Read Other')).id;
+  await seedTenantDefaults(tenantId); // a shipment receive posts to the ledger
   await mkUser('owner', 'super_admin');
   await mkUser('keeper', 'inventory_manager');
   await mkUser('manager', 'manager');
@@ -153,6 +155,30 @@ describe('GET /overview', () => {
 
   it('the product pre-filter and bad filters: 400', async () => {
     for (const q of ['product=abc', 'product=0', 'type=shelf', 'onlyDifferences=maybe']) expect([q, (await get('owner', `/overview?${q}`)).status]).toEqual([q, 400]);
+  });
+});
+
+describe('a shipment received with the 3PL dashboard count (M4-T12)', () => {
+  it('writes a one-line count of the arrival; the overview and holders do not read it as a count of the location', async () => {
+    const bolts = (await prismaBase.product.create({ data: { sku: `IR-BOLT-${SUFFIX}`, name: 'Bolts', category: 'x', price: 5, cogs: 2, stockQuantity: 0, tenantId } })).id;
+    const made = await request(app).post('/api/shipments').set(bearer(U.owner.token)).send({ productId: bolts, supplier: 'Acme', quantity: 10, unitCost: 2, shippingCost: 0, customsDuties: 0, otherCosts: 0 });
+    expect(made.status).toBe(201);
+    const before = (await get('owner', '/overview')).body;
+    expect(row(before, kasapa, bolts)).toBeUndefined();
+
+    const received = await request(app).post(`/api/shipments/${made.body.id}/receive`).set(bearer(U.owner.token))
+      .send({ locationId: kasapa, receivedAt: new Date(Date.now() - 86_400_000).toISOString().slice(0, 10), quantityCounted: 8, countSource: 'three_pl_dashboard' });
+    expect(received.status).toBe(200);
+    // The receive wrote its count line: shipped 10, counted 8
+    const line = await prismaBase.stockCountLine.findFirstOrThrow({ where: { tenantId, productId: bolts }, include: { count: true } });
+    expect([line.systemQuantity, line.countedQuantity, line.count.locationId]).toEqual([10, 8, kasapa]);
+
+    const after = (await get('owner', '/overview')).body;
+    expect(row(after, kasapa, bolts)).toMatchObject({ onHand: 8, count: null }); // not "5 units off"
+    expect(card(after, kasapa)).toMatchObject({ onHand: 8, latestCount: null });
+    expect(card(after, swift)).toEqual(card(before, swift));
+    expect((await get('owner', `/product/${bolts}/holders`)).body.holders[0]).toMatchObject({ name: 'Kasapa', onHand: 8, count: null });
+    expect((await get('owner', '/overview?onlyDifferences=true')).body.stockByLocation.map((r: any) => r.productId)).not.toContain(bolts);
   });
 });
 
