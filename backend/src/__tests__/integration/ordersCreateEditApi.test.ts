@@ -421,4 +421,26 @@ describe('available to sell (M4-T16)', () => {
     expect((await edit('admin', id, line(5))).status).toBe(400);
     expect((await edit('admin', id, line(5))).body.message).toContain('Insufficient stock');
   });
+
+  it('an order that reserves its units needs only the growth: 10 on hand, 5 reserved by this order, 5 to 6 is allowed; a pending order compares the full quantity', async () => {
+    const product = (await prismaBase.product.create({ data: { sku: `D-${SUFFIX}`, name: 'Growth set', category: 'x', price: 30, stockQuantity: 0, tenantId } })).id;
+    const swiftUser = await prismaBase.user.create({ data: { email: `oce-grow-${SUFFIX}@codadmin.test`, password: 'x', firstName: 'Grow', lastName: 'T', role: 'delivery_agent', kind: 'company', tenantId } });
+    await stockUp(tenantId, product, 10, { name: 'Grow 3PL', type: 'partner_3pl', userId: swiftUser.id });
+    const mk = (status: string, extra: Record<string, unknown>) => prismaBase.order.create({
+      data: {
+        customerId, status, subtotal: 150, totalAmount: 150, codAmount: 150, tenantId, deliveryAddress: '1 St', deliveryState: 'Greater Accra', deliveryArea: 'Accra',
+        orderItems: { create: [{ productId: product, quantity: 5, unitPrice: 30, totalPrice: 150 }] }, ...extra,
+      } as any,
+    }).then((o) => o.id);
+    const line = (quantity: number) => ({ orderItems: [{ productId: product, quantity, unitPrice: 30 }], discount: 0, totalAmount: quantity * 30, confirmTotalChange: true });
+
+    const confirmed = await mk('confirmed', { deliveryAgentId: swiftUser.id }); // reserves 5: available 5
+    expect((await edit('admin', confirmed, line(10))).status).toBe(200); // growth 5 fits the 5 spare
+    expect((await edit('admin', confirmed, line(16))).status).toBe(400); // growth 6 does not
+    // Pending, no partner: reserves nothing, so the full quantity is compared with available
+    await prismaBase.order.update({ where: { id: confirmed }, data: { status: 'cancelled' } });
+    const pending = await mk('pending_confirmation', {});
+    expect((await edit('admin', pending, line(10))).status).toBe(200);
+    expect((await edit('admin', pending, line(11))).status).toBe(400);
+  });
 });
