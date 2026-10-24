@@ -3,7 +3,8 @@ import toast from 'react-hot-toast';
 import { AlertCircle, Boxes, Package, Truck } from 'lucide-react';
 import { inventoryService, type StockLevelRow, type Transfer } from '../services/inventory.service';
 import { ReceiveDialog } from './inventory/TransferDialogs';
-import { MOVE_LABEL, num, placeName, shortDateTime, signedQuantity, statusView } from './inventory/model';
+import { count } from './deliveries/model';
+import { MOVE_LABEL, placeName, shortDateTime, signedQuantity, statusView } from './inventory/model';
 
 const HISTORY_LIMIT = 20;
 
@@ -74,7 +75,7 @@ export default function AgentMyInventory() {
             <div className="flex items-center justify-between">
               <div>
                 <p className={`text-sm ${text} font-medium`}>{label}</p>
-                <p className={`text-2xl font-bold ${big} mt-1`}>{num(value)}</p>
+                <p className={`text-2xl font-bold ${big} mt-1`}>{count(value)}</p>
               </div>
               <div className={`${chip} p-3 rounded-lg`}>
                 <Icon className="w-6 h-6 text-white" />
@@ -94,7 +95,7 @@ export default function AgentMyInventory() {
             {waiting.map((t) => (
               <li key={t.id} className="flex items-center justify-between gap-3 px-6 py-4">
                 <div>
-                  <p className="text-sm font-medium text-gray-900">{t.product.name} &times; {num(t.quantity)}</p>
+                  <p className="text-sm font-medium text-gray-900">{t.product.name} &times; {count(t.quantity)}</p>
                   <p className="text-xs text-gray-500">From {placeName(t, 'from')}, {shortDateTime(t.createdAt)}{t.overdue ? ' · Overdue' : ''}</p>
                 </div>
                 <button
@@ -140,9 +141,9 @@ export default function AgentMyInventory() {
                       <div className="text-sm font-medium text-gray-900">{l.productName}</div>
                       <div className="text-sm text-gray-500">{l.sku}</div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold text-gray-900">{num(l.onHand)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{num(l.reserved)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{num(l.inTransit)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold text-gray-900">{count(l.onHand)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{count(l.reserved)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{count(l.inTransit)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -179,7 +180,8 @@ export default function AgentMyInventory() {
         )}
       </div>
 
-      <ReceiveDialog
+      {receiving && <ReceiveDialog
+        key={receiving.id}
         transfer={receiving}
         onClose={() => setReceiving(null)}
         onDone={(message) => {
@@ -187,7 +189,7 @@ export default function AgentMyInventory() {
           toast.success(message);
           void load();
         }}
-      />
+      />}
     </div>
   );
 }

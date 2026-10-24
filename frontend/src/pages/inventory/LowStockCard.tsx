@@ -1,7 +1,7 @@
 import { PackageX } from 'lucide-react';
 import { Button } from '../../components/ui-v2';
 import type { LowStockProduct } from '../../services/inventory.service';
-import { num } from './model';
+import { count } from '../deliveries/model';
 
 interface LowStockCardProps {
   products: LowStockProduct[];
@@ -22,8 +22,8 @@ export function LowStockCard({ products, canMove, onAllocate, onShow }: LowStock
             <div>
               <b>{p.name}</b>
               <small>
-                {num(p.onHandTotal ?? 0)} on hand
-                {p.daysOfCover !== null ? `, about ${num(Math.round(p.daysOfCover))} ${Math.round(p.daysOfCover) === 1 ? 'day' : 'days'} left` : ''}
+                {count(p.onHandTotal ?? 0)} on hand
+                {p.daysOfCover !== null ? `, about ${count(Math.round(p.daysOfCover))} ${Math.round(p.daysOfCover) === 1 ? 'day' : 'days'} left` : ''}
               </small>
             </div>
             <div className="tbtns">

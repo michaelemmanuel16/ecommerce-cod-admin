@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Download } from 'lucide-react';
 import { Button, EmptyState, Modal, Pagination, Select, Skeleton, Table, Tabs, Tag, type Column } from '../../components/ui-v2';
@@ -6,18 +6,17 @@ import {
   inventoryService, type Overview, type PhysicalProduct, type TrailRow, type Transfer, type TransferFilters, type TransferList, type TransferStatus, type TransferType,
 } from '../../services/inventory.service';
 import { apiErrorMessage } from '../../utils/apiError';
-import { MOVE_LABEL, MOVE_TONE, MOVE_TYPES, num, personName, placeName, REASON_LABEL, shortDateTime, signedQuantity, statusView, transfersToCsv } from './model';
+import { personName } from '../../utils/people';
+import { count } from '../deliveries/model';
+import { MOVE_LABEL, MOVE_TONE, MOVE_TYPES, placeName, REASON_LABEL, shortDateTime, signedQuantity, statusView } from './model';
 import { StatusCell, TransferActions } from './TransferParts';
 
 const PAGE_SIZE = 15;
-const EXPORT_PAGE = 100;
-const EXPORT_MAX_PAGES = 50;
 const STATUSES: Array<{ id: TransferStatus; label: string }> = [
   { id: 'in_transit', label: 'In transit' }, { id: 'disputed', label: 'Received short' }, { id: 'received', label: 'Received' }, { id: 'cancelled', label: 'Cancelled' },
 ];
 
 interface HistoryModalProps {
-  open: boolean;
   overview: Overview;
   products: PhysicalProduct[];
   /** The transfer to show in the side detail on open (a click on the Recent transfers table). */
@@ -25,7 +24,7 @@ interface HistoryModalProps {
   canMove: boolean;
   /** Owner, admin and finance clerk. */
   canExport: boolean;
-  /** Changes with every saved stock change, so the list reloads under an open modal. */
+  /** Changes with every answer the page gets, so the list reloads under the open modal. */
   refreshKey: number;
   onClose: () => void;
   onReceive: (t: Transfer) => void;
@@ -44,55 +43,52 @@ interface Filters {
 }
 const BLANK: Filters = { tab: 'all', locationId: null, productId: null, status: null, from: '', to: '', page: 1 };
 
-const apiFilters = (f: Filters, page: number, limit: number): TransferFilters => ({
+const apiFilters = (f: Filters): TransferFilters => ({
   ...(f.tab !== 'all' && { type: f.tab }),
   ...(f.locationId !== null && { locationId: f.locationId }),
   ...(f.productId !== null && { productId: f.productId }),
   ...(f.status && { status: f.status }),
   ...(f.from && { from: f.from }),
   ...(f.to && { to: f.to }),
-  page,
-  limit,
 });
 
 /**
  * Transfer history (M4-T28, F-659): tabs with counts per type, filters, the table, and a side detail with the audit trail.
- * Owner, admin and finance clerk can export what the filters show as CSV.
+ * Owner, admin and finance clerk download what the filters show as a CSV the server builds. The page mounts the modal only
+ * while it is open and keys it by the transfer it opens on, so the filters start fresh each time.
  */
-export function HistoryModal({ open, overview, products, initialId, canMove, canExport, refreshKey, onClose, onReceive, onResolve, onCancel }: HistoryModalProps) {
+export function HistoryModal({ overview, products, initialId, canMove, canExport, refreshKey, onClose, onReceive, onResolve, onCancel }: HistoryModalProps) {
   const [filters, setFilters] = useState<Filters>(BLANK);
   const [list, setList] = useState<TransferList | null>(null);
+  /** The tab counts and the total come with the first page and with every filter change; a later page keeps them. */
+  const [totals, setTotals] = useState<Pick<TransferList, 'typeCounts'> & { total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(initialId ?? null);
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
-    if (!open) return;
-    setFilters(BLANK);
-    setSelectedId(initialId ?? null);
-    setList(null);
-  }, [open, initialId]);
-
-  useEffect(() => {
-    if (!open) return;
     let live = true;
-    inventoryService.transfers(apiFilters(filters, filters.page, PAGE_SIZE), true)
-      .then((l) => { if (live) { setList(l); setError(null); } })
+    inventoryService.transfers({ ...apiFilters(filters), page: filters.page, limit: PAGE_SIZE, includeCounts: filters.page === 1 }, true)
+      .then((l) => {
+        if (!live) return;
+        setList(l);
+        if (l.typeCounts) setTotals({ typeCounts: l.typeCounts, total: l.pagination.total ?? 0 });
+        setError(null);
+      })
       .catch(() => { if (live) setError('The history could not load.'); });
     return () => { live = false; };
-  }, [open, filters, refreshKey]);
+  }, [filters, refreshKey]);
 
   const change = (patch: Partial<Filters>) => setFilters((f) => ({ ...f, page: 1, ...patch }));
   const selected = list?.transfers.find((t) => t.id === selectedId) ?? null;
 
   const tabs = useMemo(() => {
-    const counts = list?.typeCounts ?? {};
-    const total = Object.values(counts).reduce((a, b) => a + (b ?? 0), 0);
+    const counts = totals?.typeCounts ?? {};
     return [
-      { id: 'all', label: 'All', count: list ? total : undefined },
+      { id: 'all', label: 'All', count: totals ? Object.values(counts).reduce((a, b) => a + (b ?? 0), 0) : undefined },
       ...MOVE_TYPES.filter((t) => (counts[t] ?? 0) > 0 || filters.tab === t).map((t) => ({ id: t, label: MOVE_LABEL[t], count: counts[t] ?? 0 })),
     ];
-  }, [list, filters.tab]);
+  }, [totals, filters.tab]);
 
   const columns = useMemo<Column<Transfer>[]>(() => [
     { key: 'date', header: 'Date', render: (t) => shortDateTime(t.createdAt) },
@@ -104,16 +100,10 @@ export function HistoryModal({ open, overview, products, initialId, canMove, can
     { key: 'status', header: 'Status', render: (t) => <StatusCell transfer={t} /> },
   ], []);
 
-  const exportCsv = useCallback(async () => {
+  const exportCsv = async () => {
     setExporting(true);
     try {
-      const all: Transfer[] = [];
-      for (let page = 1; page <= EXPORT_MAX_PAGES; page++) {
-        const part = await inventoryService.transfers(apiFilters(filters, page, EXPORT_PAGE), true);
-        all.push(...part.transfers);
-        if (page >= part.pagination.pages) break;
-      }
-      const url = URL.createObjectURL(new Blob([transfersToCsv(all)], { type: 'text/csv;charset=utf-8' }));
+      const url = URL.createObjectURL(await inventoryService.exportCsv(apiFilters(filters)));
       const a = document.createElement('a');
       a.href = url;
       a.download = 'stock-moves.csv';
@@ -123,12 +113,12 @@ export function HistoryModal({ open, overview, products, initialId, canMove, can
       setError(apiErrorMessage(e, 'The export failed.'));
     }
     setExporting(false);
-  }, [filters]);
+  };
 
   return (
     <Modal
       wide
-      open={open}
+      open
       onClose={onClose}
       title="Transfer history"
       description="Every allocation, sale, transfer, return and adjustment."
@@ -163,8 +153,8 @@ export function HistoryModal({ open, overview, products, initialId, canMove, can
             ) : (
               <Table label="Transfer history" className="tt" columns={columns} rows={list.transfers} rowKey={(t) => t.id} onRowClick={(t) => setSelectedId(t.id)} rowClass={(t) => (t.id === selectedId ? 'picked' : undefined)} />
             )}
-            {list && list.pagination.total > 0 && (
-              <Pagination page={filters.page} pageSize={PAGE_SIZE} total={list.pagination.total} noun="moves" onPageChange={(page) => setFilters((f) => ({ ...f, page }))} />
+            {totals && totals.total > 0 && (
+              <Pagination page={filters.page} pageSize={PAGE_SIZE} total={totals.total} noun="moves" onPageChange={(page) => setFilters((f) => ({ ...f, page }))} />
             )}
           </div>
           {selected && <TransferDetail transfer={selected} canMove={canMove} refreshKey={refreshKey} onReceive={onReceive} onResolve={onResolve} onCancel={onCancel} onClose={() => setSelectedId(null)} />}
@@ -208,7 +198,7 @@ function TransferDetail({ transfer: t, canMove, refreshKey, onReceive, onResolve
       <p className="hd-move">{placeName(t, 'from')} &rarr; {placeName(t, 'to')}</p>
       <dl className="kv">
         <div><dt>Status</dt><dd><Tag tone={s.tone}>{s.text}</Tag>{t.overdue && <Tag tone="warn" className="after">Overdue</Tag>}</dd></div>
-        {t.receivedQuantity !== null && <div><dt>Counted</dt><dd>{num(t.receivedQuantity)} of {num(t.quantity)}</dd></div>}
+        {t.receivedQuantity !== null && <div><dt>Counted</dt><dd>{count(t.receivedQuantity)} of {count(t.quantity)}</dd></div>}
         {t.reason && <div><dt>Reason</dt><dd>{REASON_LABEL[t.reason]}</dd></div>}
         {t.notes && <div><dt>Note</dt><dd>{t.notes}</dd></div>}
         {t.orderId !== null && <div><dt>Order</dt><dd><Link to={`/orders/${t.orderId}`}>Order {t.orderId}</Link></dd></div>}

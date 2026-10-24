@@ -27,7 +27,7 @@ const row = (r: Partial<StockRow> & Pick<StockRow, 'locationId' | 'locationName'
 });
 
 export const ROWS: StockRow[] = [
-  row({ locationId: LOGISWIFT, locationName: 'Logiswift', locationType: 'partner_3pl', productId: 1, productName: 'Magic Groove copybook set', sku: 'MG-CB-SET', onHand: 200, reserved: 34, count: { countId: 5, lineId: 50, date: '2026-10-15', source: 'three_pl_dashboard', counted: 188, difference: 12, status: 'off' } }),
+  row({ locationId: LOGISWIFT, locationName: 'Logiswift', locationType: 'partner_3pl', productId: 1, productName: 'Magic Groove copybook set', sku: 'MG-CB-SET', onHand: 200, reserved: 34, count: { countId: 5, lineId: 50, date: '2026-10-15', source: 'three_pl_dashboard', counted: 188, difference: -12, status: 'off' } }),
   row({ locationId: KOFI, locationName: 'Kofi Appiah', locationType: 'agent', productId: 1, productName: 'Magic Groove copybook set', sku: 'MG-CB-SET', onHand: 36, reserved: 11, inTransit: 20, count: { countId: 6, lineId: 60, date: '2026-10-15', source: 'agent_count', counted: 36, difference: 0, status: 'matches' } }),
   row({ locationId: LOGISWIFT, locationName: 'Logiswift', locationType: 'partner_3pl', productId: 2, productName: 'Magic Groove refill pens', sku: 'MG-PEN-REF', onHand: 62, reserved: 11 }),
   row({ locationId: KOFI, locationName: 'Kofi Appiah', locationType: 'agent', productId: 2, productName: 'Magic Groove refill pens', sku: 'MG-PEN-REF', onHand: 18, reserved: 4 }),

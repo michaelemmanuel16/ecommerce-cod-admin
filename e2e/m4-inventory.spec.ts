@@ -7,7 +7,8 @@ import { API_URL, PASSWORD, signIn, stamp, tokenFor, uniquePhone } from './helpe
  * Needs a stack on a local test database that holds the fixture (see e2e/m4-deliveries.spec.ts):
  *   backend: DATABASE_URL=<local ..._test_... db> npm run seed:fixture && npm run e2e:fixture-setup
  *   run:     E2E_BASE_URL=http://localhost:5203 E2E_API_URL=http://localhost:3103 npx playwright test e2e/m4-inventory.spec.ts
- * The specs run in order and change stock, so seed again before a second run.
+ * The specs run in order and change stock, so seed again before a second run. Run `npm run e2e:fixture-setup -- --undo` first:
+ * it also removes the notifications this spec leaves, which would block the fixture re-seed.
  *
  * Fixture numbers (the API's, not the mockup's): Logiswift holds 442 on hand and 116 reserved (200 / 62 / 180), the Magic
  * Groove copybook set is 12 units under our records (200 against the 3PL count of 188), Kofi holds 99 with 20 in transit.
@@ -104,13 +105,13 @@ test('allocate 10 to Kofi: the transfer shows "In transit" and the table updates
   await openPage(page);
   await page.getByRole('button', { name: 'Move stock' }).click();
   await page.getByRole('menuitem', { name: 'Allocate to an agent' }).click();
-  const modal = page.getByRole('dialog', { name: 'Allocate stock to agent' });
+  const modal = page.getByRole('dialog', { name: 'Allocate to an agent' });
   await modal.getByLabel('Product').selectOption({ label: COPYBOOK });
   await modal.getByLabel('From').selectOption({ label: 'Logiswift' });
   await expect(modal.getByText('188 available')).toBeVisible();
   await modal.getByLabel('To', { exact: true }).selectOption({ label: 'Kofi Appiah' });
   await modal.getByLabel('Quantity').fill('10');
-  await modal.getByRole('button', { name: 'Allocate stock' }).click();
+  await modal.getByRole('button', { name: 'Allocate to an agent' }).click();
 
   await expect(page.getByRole('status')).toContainText('Allocated 10');
   const first = recent(page).getByRole('row').nth(1);
@@ -125,12 +126,12 @@ test('receive 8 of 10 with a reason: "Received 2 short"; resolve with "Return to
   // 10 copybooks to the other 3PL, which the stock keeper confirms on its behalf
   await page.getByRole('button', { name: 'Move stock' }).click();
   await page.getByRole('menuitem', { name: 'Allocate to an agent' }).click();
-  const modal = page.getByRole('dialog', { name: 'Allocate stock to agent' });
+  const modal = page.getByRole('dialog', { name: 'Allocate to an agent' });
   await modal.getByLabel('Product').selectOption({ label: COPYBOOK });
   await modal.getByLabel('From').selectOption({ label: 'Logiswift' });
   await modal.getByLabel('To', { exact: true }).selectOption({ label: 'Kasapa Express' });
   await modal.getByLabel('Quantity').fill('10');
-  await modal.getByRole('button', { name: 'Allocate stock' }).click();
+  await modal.getByRole('button', { name: 'Allocate to an agent' }).click();
 
   const row = recent(page).getByRole('row').filter({ hasText: 'Kasapa Express' }).first();
   await expect(row).toContainText('In transit');
@@ -163,7 +164,8 @@ test('the history modal lists the moves and opens the audit trail of one', async
   await expect(detail).toContainText('Audit trail');
   await expect(detail.getByText('Dispute resolved')).toBeVisible();
   await expect(detail.getByText('Counted on arrival')).toBeVisible();
-  await expect(dialog.getByRole('button', { name: /Export CSV/ })).toBeVisible();
+  const [download] = await Promise.all([page.waitForEvent('download'), dialog.getByRole('button', { name: /Export CSV/ }).click()]);
+  expect(download.suggestedFilename()).toBe('stock-moves.csv');
 });
 
 test('a stock keeper signs in and lands on Inventory', async ({ page, request }) => {

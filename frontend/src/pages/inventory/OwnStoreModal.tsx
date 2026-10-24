@@ -1,28 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Button, Input, Modal, useToast } from '../../components/ui-v2';
 import { inventoryService } from '../../services/inventory.service';
 import { apiErrorMessage } from '../../utils/apiError';
 
 interface OwnStoreModalProps {
-  open: boolean;
   onClose: () => void;
   onCreated: () => void;
 }
 
 /** "Set up own store" (F-652): one name and an optional address. The API allows one own store per business. */
-export function OwnStoreModal({ open, onClose, onCreated }: OwnStoreModalProps) {
+/** The page mounts it only while it is open, so the fields start empty each time. */
+export function OwnStoreModal({ onClose, onCreated }: OwnStoreModalProps) {
   const say = useToast();
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
   const [error, setError] = useState<string | undefined>();
   const [saving, setSaving] = useState(false);
-  useEffect(() => {
-    if (!open) return;
-    setName('');
-    setAddress('');
-    setError(undefined);
-    setSaving(false);
-  }, [open]);
 
   const save = async () => {
     if (!name.trim()) {
@@ -42,7 +35,7 @@ export function OwnStoreModal({ open, onClose, onCreated }: OwnStoreModalProps) 
 
   return (
     <Modal
-      open={open}
+      open
       onClose={onClose}
       title="Set up own store"
       description="A place where you keep stock yourself. It gets a card, and you can count it and move stock out of it."

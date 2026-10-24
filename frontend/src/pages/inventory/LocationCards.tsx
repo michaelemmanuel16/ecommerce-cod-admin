@@ -1,20 +1,13 @@
 import { Clock, Plus, Store, User, Warehouse, type LucideIcon } from 'lucide-react';
 import { Button, Tag } from '../../components/ui-v2';
 import type { LocationCard, StockLocationType } from '../../services/inventory.service';
-import { cardNote, cardTag, num, TYPE_LABEL } from './model';
-import type { StockAction } from './urlState';
+import { ACTION_META, cardNote, countTag, HOLDER_ACTIONS, TYPE_LABEL, type StockAction } from './model';
+import { count } from '../deliveries/model';
 
 const ICON: Record<StockLocationType, { Icon: LucideIcon; tone: 'gold' | 'mint' | 'pine' }> = {
   partner_3pl: { Icon: Warehouse, tone: 'gold' },
   agent: { Icon: User, tone: 'mint' },
   own_store: { Icon: Store, tone: 'pine' },
-};
-
-/** The buttons under a card, as in the mockup: a store or 3PL sends stock out, an agent returns or passes it on. */
-const BUTTONS: Record<StockLocationType, Array<{ action: StockAction; label: string }>> = {
-  own_store: [{ action: 'allocate', label: 'Allocate stock' }, { action: 'adjust', label: 'Adjust quantity' }],
-  partner_3pl: [{ action: 'allocate', label: 'Allocate stock' }, { action: 'adjust', label: 'Adjust quantity' }],
-  agent: [{ action: 'return', label: 'Return' }, { action: 'transfer', label: 'Transfer' }, { action: 'adjust', label: 'Adjust quantity' }],
 };
 
 interface LocationCardsProps {
@@ -33,7 +26,8 @@ export function LocationCards({ cards, canMove, offerOwnStore, onAction, onSetUp
     <div className="locs">
       {cards.map((card) => {
         const { Icon, tone } = ICON[card.type];
-        const tag = cardTag(card);
+        const latest = card.latestCount;
+        const tag = latest ? countTag({ isOld: latest.isOld, difference: -latest.unitsOff, wording: 'off' }) : null;
         const stats: Array<[string, number]> = [['On hand', card.onHand], ['Reserved', card.reserved], ['Products', card.products], ['In transit', card.inTransit]];
         return (
           <article key={card.id} className={tag?.tone === 'bad' ? 'card loc gap' : 'card loc'} aria-label={card.name}>
@@ -47,14 +41,14 @@ export function LocationCards({ cards, canMove, offerOwnStore, onAction, onSetUp
             </div>
             <div className="stats">
               {stats.map(([label, value]) => (
-                <div key={label} className="drv"><small>{label}</small><b className="num">{num(value)}</b></div>
+                <div key={label} className="drv"><small>{label}</small><b className="num">{count(value)}</b></div>
               ))}
             </div>
-            <div className="note"><Clock aria-hidden="true" />{cardNote(card)}</div>
+            <div className="note"><Clock aria-hidden="true" />{cardNote(latest)}</div>
             {canMove && (
               <div className="tbtns">
-                {BUTTONS[card.type].map((b) => (
-                  <Button key={b.action} size="mini" onClick={() => onAction(b.action, card.id)}>{b.label}</Button>
+                {HOLDER_ACTIONS[card.type].map((action) => (
+                  <Button key={action} size="mini" onClick={() => onAction(action, card.id)}>{ACTION_META[action].label}</Button>
                 ))}
               </div>
             )}

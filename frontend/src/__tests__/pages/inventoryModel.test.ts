@@ -1,19 +1,22 @@
 import { describe, it, expect } from 'vitest';
-import { canConfirmHere, canReturnToSource, cardNote, cardTag, placeName, signedQuantity, statusView, transfersToCsv } from '../../pages/inventory/model';
+import { canConfirmHere, canReturnToSource, cardNote, countTag, placeName, signedQuantity, signedValue, statusView } from '../../pages/inventory/model';
 import { parseView, writeView } from '../../pages/inventory/urlState';
 import { CARDS, KOFI, LOGISWIFT, transfer } from '../fixtures/inventory';
 
-describe('location card tag and note (F-652)', () => {
-  it('"12 units off" when the count is below our records', () => {
-    expect(cardTag(CARDS[0])).toEqual({ tone: 'bad', text: '12 units off' });
-    expect(cardNote(CARDS[0])).toBe('3PL dashboard count, 15 Oct');
+describe('count tag (F-652)', () => {
+  it('a card says "12 units off"; a table row says "\u221212 units" (counted minus our records)', () => {
+    expect(countTag({ isOld: false, difference: -12, wording: 'off' })).toEqual({ tone: 'bad', text: '12 units off' });
+    expect(countTag({ isOld: false, difference: -12 })).toEqual({ tone: 'bad', text: '\u221212 units' });
+    expect(countTag({ isOld: false, difference: 3 })).toEqual({ tone: 'bad', text: '+3 units' });
+    expect(countTag({ isOld: false, difference: -1, wording: 'off' }).text).toBe('1 unit off');
   });
-  it('Matches, "Count is old" and no tag before the first count', () => {
-    expect(cardTag(CARDS[1])).toEqual({ tone: 'ok', text: 'Matches' });
-    expect(cardTag(CARDS[2])).toEqual({ tone: 'warn', text: 'Count is old' });
-    expect(cardTag({ ...CARDS[0], latestCount: null })).toBeNull();
-    expect(cardNote({ ...CARDS[0], latestCount: null })).toBe('No stock count yet');
-    expect(cardTag({ ...CARDS[0], latestCount: { ...CARDS[0].latestCount!, unitsOff: 1 } })?.text).toBe('1 unit off');
+  it('Matches, and "Count is old" instead of a gap', () => {
+    expect(countTag({ isOld: false, difference: 0 })).toEqual({ tone: 'ok', text: 'Matches' });
+    expect(countTag({ isOld: true, difference: -12 })).toEqual({ tone: 'warn', text: 'Count is old' });
+  });
+  it('the note under a card names the source and the day, or says there is no count', () => {
+    expect(cardNote(CARDS[0].latestCount)).toBe('3PL dashboard count, 15 Oct');
+    expect(cardNote(null)).toBe('No stock count yet');
   });
 });
 
@@ -58,23 +61,8 @@ describe('names and signs in the history', () => {
     expect(signedQuantity(transfer({ id: 1, transferType: 'adjustment', quantity: 2, toLocation: null }))).toBe('−2');
     expect(signedQuantity(transfer({ id: 2, transferType: 'count_adjustment', quantity: 3, fromLocation: null }))).toBe('+3');
     expect(signedQuantity(transfer({ id: 3, quantity: 20 }))).toBe('20');
-  });
-});
-
-describe('transfersToCsv (F-659)', () => {
-  it('writes a header and one row per move', () => {
-    const csv = transfersToCsv([transfer({ id: 1, quantity: 20, notes: 'For the weekend' })]).split('\r\n');
-    expect(csv[0]).toBe('Date,Type,From,To,Product,SKU,Quantity,Status,Counted,Reason,Order,Note');
-    expect(csv[1]).toContain('"Allocation","Logiswift","Kofi Appiah","Magic Groove copybook set","MG-CB-SET",20,"In transit"');
-    expect(csv[1]).toContain('"For the weekend"');
-  });
-  it('quotes commas and quotes, and defuses a leading formula character', () => {
-    const csv = transfersToCsv([transfer({ id: 1, notes: '=HYPERLINK("x"),"hi"' })]);
-    expect(csv).toContain(`"'=HYPERLINK(""x""),""hi"""`);
-  });
-  it('an adjustment out is a negative number', () => {
-    const csv = transfersToCsv([transfer({ id: 1, transferType: 'adjustment', quantity: 2, toLocation: null })]);
-    expect(csv.split('\r\n')[1]).toContain(',-2,');
+    expect(signedValue(transfer({ id: 4, transferType: 'adjustment', quantity: 2, toLocation: null }))).toBe(-2);
+    expect(signedValue(transfer({ id: 5, transferType: 'adjustment', quantity: 2, fromLocation: null }))).toBe(2);
   });
 });
 

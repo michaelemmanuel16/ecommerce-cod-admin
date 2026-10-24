@@ -100,8 +100,10 @@ export interface Transfer {
 
 export interface TransferList {
   transfers: Transfer[];
-  typeCounts: Partial<Record<TransferType, number>>;
-  pagination: { page: number; limit: number; total: number; pages: number };
+  /** Only with `includeCounts`. */
+  typeCounts?: Partial<Record<TransferType, number>>;
+  /** `total` and `pages` only with `includeCounts`. */
+  pagination: { page: number; limit: number; total?: number; pages?: number };
 }
 
 export interface TransferFilters {
@@ -113,6 +115,8 @@ export interface TransferFilters {
   to?: string;
   page?: number;
   limit?: number;
+  /** Ask for the total and the per-type counts (the history modal). Recent transfers and the agent screen leave it out. */
+  includeCounts?: boolean;
 }
 
 export interface TrailRow {
@@ -216,6 +220,13 @@ export const inventoryService = {
 
   async transfers(filters: TransferFilters, skipCache = false): Promise<TransferList> {
     const res = await apiClient.get('/api/inventory/transfers', { params: clean(filters), skipCache, quiet: true });
+    return res.data;
+  },
+
+  /** The CSV the server builds for the same filters as the list (owner, admin, finance clerk). */
+  async exportCsv(filters: TransferFilters): Promise<Blob> {
+    const { page: _p, limit: _l, includeCounts: _c, ...rest } = filters;
+    const res = await apiClient.get('/api/inventory/transfers/export.csv', { params: clean(rest), responseType: 'blob', skipCache: true, quiet: true });
     return res.data;
   },
 

@@ -1,9 +1,8 @@
 import type { StockLocationType } from '../../services/inventory.service';
+import { positive } from '../../utils/urlState';
+import type { StockAction } from './model';
 
-export type StockAction = 'allocate' | 'transfer' | 'return' | 'adjust' | 'count';
-export const STOCK_ACTIONS: StockAction[] = ['allocate', 'transfer', 'return', 'adjust', 'count'];
-export const isStockAction = (v: string | null): v is StockAction => STOCK_ACTIONS.includes(v as StockAction);
-
+const ACTIONS: StockAction[] = ['allocate', 'transfer', 'return', 'adjust', 'count'];
 const TYPES: StockLocationType[] = ['own_store', 'partner_3pl', 'agent'];
 
 /** What the Inventory view depends on. It lives in the URL, so a copied link opens the same table. */
@@ -20,13 +19,6 @@ export interface InventoryView {
   location: number | null;
 }
 
-export const DEFAULT_VIEW: InventoryView = { product: null, type: null, diff: false, action: null, location: null };
-
-const positive = (v: string | null): number | null => {
-  const n = Number(v);
-  return v !== null && Number.isInteger(n) && n > 0 ? n : null;
-};
-
 export function parseView(search: URLSearchParams): InventoryView {
   const type = search.get('type');
   const action = search.get('action');
@@ -34,7 +26,7 @@ export function parseView(search: URLSearchParams): InventoryView {
     product: positive(search.get('product')),
     type: TYPES.includes(type as StockLocationType) ? (type as StockLocationType) : null,
     diff: search.get('diff') === '1',
-    action: isStockAction(action) ? action : null,
+    action: ACTIONS.includes(action as StockAction) ? (action as StockAction) : null,
     location: positive(search.get('location')),
   };
 }

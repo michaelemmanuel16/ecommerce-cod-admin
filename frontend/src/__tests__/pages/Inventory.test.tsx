@@ -8,14 +8,19 @@ import { useAuthStore } from '../../stores/authStore';
 import { useConfigStore } from '../../stores/configStore';
 import { ESI, KOFI, OVERVIEW, PRODUCTS, ROWS, TRANSFERS } from '../fixtures/inventory';
 
+const handlers = new Map<string, () => void>();
+vi.mock('../../services/socket', () => ({
+  getSocket: () => ({ on: (e: string, h: () => void) => handlers.set(e, h), off: (e: string) => handlers.delete(e) }),
+}));
 const overview = vi.fn();
 const transfers = vi.fn();
+const products = vi.fn();
 vi.mock('../../services/inventory.service', async (orig) => ({
   ...(await orig<typeof import('../../services/inventory.service')>()),
   inventoryService: {
     overview: (...a: unknown[]) => overview(...a),
     transfers: (...a: unknown[]) => transfers(...a),
-    products: () => Promise.resolve(PRODUCTS),
+    products: (...a: unknown[]) => products(...a),
     lowStock: () => Promise.resolve([{ id: 2, name: 'Magic Groove refill pens', sku: 'MG-PEN-REF', onHandTotal: 80, daysOfCover: 6, lowStockDaysEffective: 14 }]),
     trail: () => Promise.resolve([]),
   },
@@ -33,6 +38,8 @@ const table = () => screen.getByRole('table', { name: 'Stock by location' });
 
 beforeEach(() => {
   overview.mockReset().mockResolvedValue(OVERVIEW);
+  products.mockReset().mockResolvedValue(PRODUCTS);
+  handlers.clear();
   transfers.mockReset().mockResolvedValue({ transfers: TRANSFERS, typeCounts: {}, pagination: { page: 1, limit: 6, total: 4, pages: 1 } });
   useConfigStore.setState({ currency: 'GHS', loaded: true });
   useAuthStore.setState({ user: { id: 1, role: 'super_admin', firstName: 'M', lastName: 'O' } as never, permissions: {} });
@@ -80,7 +87,25 @@ describe('Inventory page', () => {
 
   it('?action=allocate opens the allocate modal once and leaves the URL', async () => {
     renderPage('/inventory?action=allocate');
-    expect(await screen.findByRole('dialog', { name: 'Allocate stock to agent' })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'Allocate to an agent' })).toBeInTheDocument();
+  });
+
+  it('refreshes quietly, once, after an order event (stock moves when an order is delivered)', async () => {
+    renderPage();
+    await screen.findByRole('article', { name: 'Logiswift' });
+    const before = overview.mock.calls.length;
+    handlers.get('order:status_changed')?.();
+    handlers.get('order:updated')?.();
+    await waitFor(() => expect(overview.mock.calls.length).toBe(before + 1), { timeout: 3000 });
+    expect(overview).toHaveBeenLastCalledWith(true);
+  });
+
+  it('loads the product list once, not on every refresh', async () => {
+    renderPage();
+    await screen.findByRole('article', { name: 'Logiswift' });
+    handlers.get('order:updated')?.();
+    await waitFor(() => expect(overview.mock.calls.length).toBeGreaterThan(1), { timeout: 3000 });
+    expect(products).toHaveBeenCalledTimes(1);
   });
 
   it('offers to set up an own store when there is none, and lists the low-stock product', async () => {

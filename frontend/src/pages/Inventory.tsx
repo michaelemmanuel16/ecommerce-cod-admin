@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowLeftRight, ChevronDown, ClipboardCheck, History, PackagePlus, SlidersHorizontal, Undo2 } from 'lucide-react';
+import { ChevronDown, History } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { useV2Page } from '../components/shell/useV2Page';
 import { usePopover } from '../components/shell/usePopover';
@@ -12,20 +12,22 @@ import { StockTable } from './inventory/StockTable';
 import { RecentTransfers } from './inventory/RecentTransfers';
 import { LowStockCard } from './inventory/LowStockCard';
 import { OwnStoreModal } from './inventory/OwnStoreModal';
-import { StockModal, type StockModalKind } from './inventory/StockModal';
+import { StockModal } from './inventory/MoveModals';
 import { CountSheet } from './inventory/CountSheet';
 import { HistoryModal } from './inventory/HistoryModal';
 import { ReceiveDialog, ResolveDialog } from './inventory/TransferDialogs';
-import { TYPE_LABEL } from './inventory/model';
-import { parseView, writeView, type InventoryView, type StockAction } from './inventory/urlState';
+import { ACTION_META, TYPE_LABEL, type ModalKind } from './inventory/model';
+import { parseView, writeView, type InventoryView } from './inventory/urlState';
 import { useInventory } from './inventory/useInventory';
 
-/** What is open on top of the page: a stock modal or the count sheet, with the holder and product to preselect. */
-interface Opened {
-  action: StockAction;
+/** The holder and product a stock modal or the count sheet starts with. */
+interface Preset {
   locationId?: number | null;
   productId?: number | null;
 }
+
+/** The Move-stock menu, in the order of the mockup; Adjust sits below the line. */
+const MENU: ModalKind[] = ['allocate', 'transfer', 'return', 'adjust'];
 
 /**
  * The Inventory page (M4-T25 to T29, F-652 to F-655, F-659), built from docs/mockups/v2/inventory.html.
@@ -43,46 +45,40 @@ export function Inventory() {
   const canMove = can('products', 'update_stock');
   const canExport = isAdmin || user?.role === 'accountant';
 
-  const [opened, setOpened] = useState<Opened | null>(null);
-  const [nonce, setNonce] = useState(0);
+  /** The stock modal that is open. Mounted only while it is, so its fields start fresh each time. */
+  const [modal, setModal] = useState<(Preset & { kind: ModalKind }) | null>(null);
+  /** The count sheet keeps its place in the tree after it closes, so the Drawer can slide out; `id` is a new sheet for each opening. */
+  const [sheet, setSheet] = useState<{ id: number; open: boolean; locationId?: number | null } | null>(null);
   const [settingUp, setSettingUp] = useState(false);
-  const [history, setHistory] = useState<{ open: boolean; id: number | null }>({ open: false, id: null });
+  const [history, setHistory] = useState<{ id: number | null } | null>(null);
   const [receiving, setReceiving] = useState<Transfer | null>(null);
   const [resolving, setResolving] = useState<Transfer | null>(null);
   const [cancelling, setCancelling] = useState<Transfer | null>(null);
-  /** Bumped after every saved stock change, so an open history modal reloads. */
-  const [version, setVersion] = useState(0);
 
   const go = useCallback((next: InventoryView, replace = false) => setSearch(writeView(next), { replace }), [setSearch]);
 
-  const changed = useCallback(() => {
-    setVersion((v) => v + 1);
-    void data.refetch();
-  }, [data.refetch]);
   const done = useCallback((message: string) => {
-    setOpened(null);
+    setModal(null);
     setReceiving(null);
     setResolving(null);
     say(message);
-    changed();
-  }, [say, changed]);
+    void data.refetch();
+  }, [say, data.refetch]);
+
+  const open = useCallback((action: ModalKind | 'count', preset: Preset = {}) => {
+    menu.close();
+    if (action === 'count') setSheet((s) => ({ id: (s?.id ?? 0) + 1, open: true, locationId: preset.locationId }));
+    else setModal({ kind: action, ...preset });
+  }, [menu]);
 
   // ?action= opens a modal or the sheet once, then leaves the URL. A person who may not move stock gets nothing.
   useEffect(() => {
     if (!view.action || data.loading) return;
-    if (canMove) {
-      setOpened({ action: view.action, locationId: view.location, productId: view.product });
-      setNonce((n) => n + 1);
-    }
+    if (canMove) open(view.action, { locationId: view.location, productId: view.product });
     go({ ...view, action: null }, true);
-  }, [view, data.loading, canMove, go]);
+  }, [view, data.loading, canMove, go, open]);
 
-  const open = useCallback((action: StockAction, locationId?: number | null, productId?: number | null) => {
-    setOpened({ action, locationId, productId });
-    setNonce((n) => n + 1);
-    menu.close();
-  }, [menu]);
-  const fromRow = useCallback((action: StockAction, row: StockRow) => open(action, row.locationId, row.productId), [open]);
+  const fromRow = useCallback((action: ModalKind, row: StockRow) => open(action, { locationId: row.locationId, productId: row.productId }), [open]);
 
   const overview = data.overview;
   const rows = useMemo(() => {
@@ -106,15 +102,13 @@ export function Inventory() {
     try {
       await inventoryService.cancel(t.id);
       say(`Cancelled. ${t.quantity} ${t.product.name} went back to ${t.fromLocation?.name ?? 'the source'}.`);
-      changed();
+      void data.refetch();
     } catch (e) {
       say(apiErrorMessage(e, 'The transfer could not be cancelled.'));
     }
   };
 
-  const stockKind = opened && opened.action !== 'count' ? (opened.action as StockModalKind) : null;
-
-  return (
+    return (
     <section className="inventory">
       <div className="head">
         <div>
@@ -122,24 +116,28 @@ export function Inventory() {
           <p>Where every unit sits, and where our records and the latest count disagree.</p>
         </div>
         <div className="hd-actions">
-          <Button onClick={() => setHistory({ open: true, id: null })}><History />Transfer history</Button>
+          <Button onClick={() => setHistory({ id: null })}><History />Transfer history</Button>
           {canMove && (
             <>
               <div className="mwrap" ref={menu.wrapRef}>
                 <button ref={menu.triggerRef} type="button" className="btn" aria-haspopup="menu" aria-expanded={menu.open} onClick={menu.toggle}>
-                  <ArrowLeftRight />Move stock<ChevronDown style={{ width: 15, height: 15 }} />
+                  <ACTION_META.transfer.Icon />Move stock<ChevronDown style={{ width: 15, height: 15 }} />
                 </button>
                 {menu.open && (
                   <div className="menu" role="menu" aria-label="Move stock">
-                    <button type="button" role="menuitem" onClick={() => open('allocate')}><PackagePlus />Allocate to an agent</button>
-                    <button type="button" role="menuitem" onClick={() => open('transfer')}><ArrowLeftRight />Transfer between agents</button>
-                    <button type="button" role="menuitem" onClick={() => open('return')}><Undo2 />Return to warehouse</button>
-                    <hr />
-                    <button type="button" role="menuitem" onClick={() => open('adjust')}><SlidersHorizontal />Adjust a quantity</button>
+                    {MENU.map((action) => {
+                      const { label, Icon } = ACTION_META[action];
+                      return (
+                        <Fragment key={action}>
+                          {action === 'adjust' && <hr />}
+                          <button type="button" role="menuitem" onClick={() => open(action)}><Icon />{label}</button>
+                        </Fragment>
+                      );
+                    })}
                   </div>
                 )}
               </div>
-              <Button variant="primary" onClick={() => open('count')}><ClipboardCheck />Start stock count</Button>
+              <Button variant="primary" onClick={() => open('count')}><ACTION_META.count.Icon />{ACTION_META.count.label}</Button>
             </>
           )}
         </div>
@@ -158,14 +156,14 @@ export function Inventory() {
             cards={overview.locations}
             canMove={canMove}
             offerOwnStore={!overview.hasOwnStore}
-            onAction={(action, locationId) => open(action, locationId)}
+            onAction={(action, locationId) => open(action, { locationId })}
             onSetUpStore={() => setSettingUp(true)}
           />
 
           <LowStockCard
             products={data.low}
             canMove={canMove}
-            onAllocate={(productId) => open('allocate', null, productId)}
+            onAllocate={(productId) => open('allocate', { productId })}
             onShow={(productId) => go({ ...view, product: productId })}
           />
 
@@ -194,47 +192,51 @@ export function Inventory() {
             canMove={canMove}
             onReceive={setReceiving}
             onResolve={setResolving}
-            onOpenHistory={(id) => setHistory({ open: true, id: id ?? null })}
+            onOpenHistory={(id) => setHistory({ id: id ?? null })}
           />
 
-          {stockKind && (
+          {modal && (
             <StockModal
-              key={nonce}
-              kind={stockKind}
+              kind={modal.kind}
               overview={overview}
               products={data.products}
-              initial={opened ?? undefined}
-              onClose={() => setOpened(null)}
+              initial={modal}
+              onClose={() => setModal(null)}
               onDone={done}
             />
           )}
-          <CountSheet
-            open={opened?.action === 'count'}
-            overview={overview}
-            products={data.products}
-            initialLocationId={opened?.locationId}
-            onClose={() => setOpened(null)}
-            onChanged={changed}
-          />
-          <HistoryModal
-            open={history.open}
-            overview={overview}
-            products={data.products}
-            initialId={history.id}
-            canMove={canMove}
-            canExport={canExport}
-            refreshKey={version}
-            onClose={() => setHistory({ open: false, id: null })}
-            onReceive={setReceiving}
-            onResolve={setResolving}
-            onCancel={setCancelling}
-          />
+          {sheet && (
+            <CountSheet
+              key={sheet.id}
+              open={sheet.open}
+              overview={overview}
+              products={data.products}
+              initialLocationId={sheet.locationId}
+              onClose={() => setSheet((s) => s && { ...s, open: false })}
+              onChanged={() => void data.refetch()}
+            />
+          )}
+          {history && (
+            <HistoryModal
+              key={history.id ?? 'all'}
+              overview={overview}
+              products={data.products}
+              initialId={history.id}
+              canMove={canMove}
+              canExport={canExport}
+              refreshKey={data.revision}
+              onClose={() => setHistory(null)}
+              onReceive={setReceiving}
+              onResolve={setResolving}
+              onCancel={setCancelling}
+            />
+          )}
         </>
       ) : null}
 
-      <OwnStoreModal open={settingUp} onClose={() => setSettingUp(false)} onCreated={() => { setSettingUp(false); changed(); }} />
-      <ReceiveDialog transfer={receiving} onClose={() => setReceiving(null)} onDone={done} />
-      <ResolveDialog transfer={resolving} onClose={() => setResolving(null)} onDone={done} />
+      {settingUp && <OwnStoreModal onClose={() => setSettingUp(false)} onCreated={() => { setSettingUp(false); void data.refetch(); }} />}
+      {receiving && <ReceiveDialog key={receiving.id} transfer={receiving} onClose={() => setReceiving(null)} onDone={done} />}
+      {resolving && <ResolveDialog key={resolving.id} transfer={resolving} onClose={() => setResolving(null)} onDone={done} />}
       <ConfirmDialog
         open={cancelling !== null}
         onClose={() => setCancelling(null)}

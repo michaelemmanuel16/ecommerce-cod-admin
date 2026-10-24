@@ -27,10 +27,11 @@ const saved = (applied = false): StockCount => ({
 });
 
 const onChanged = vi.fn();
-const open = () => render(<CountSheet open overview={OVERVIEW} products={PRODUCTS} initialLocationId={LOGISWIFT} onClose={vi.fn()} onChanged={onChanged} />);
+const onClose = vi.fn();
+const open = () => render(<CountSheet open overview={OVERVIEW} products={PRODUCTS} initialLocationId={LOGISWIFT} onClose={onClose} onChanged={onChanged} />);
 
 beforeEach(() => {
-  [createCount, applyCountLine, receivedShipments, onChanged].forEach((m) => m.mockReset());
+  [createCount, applyCountLine, receivedShipments, onChanged, onClose].forEach((m) => m.mockReset());
   createCount.mockResolvedValue(saved());
   receivedShipments.mockResolvedValue([{ id: 3, productId: 1, quantity: 300, quantityCounted: 288, shortQuantity: 12, receivedAt: '2026-10-09T00:00:00.000Z', destinationLocationId: LOGISWIFT }]);
   applyCountLine.mockResolvedValue({ count: saved(true), onHand: 188 });
@@ -67,7 +68,18 @@ describe('Start a stock count (F-653)', () => {
     await userEvent.click(within(line).getByRole('button', { name: 'Apply count' }));
     await waitFor(() => expect(applyCountLine).toHaveBeenCalledWith(8, 80, { reason: 'short_on_arrival', shipmentId: 3 }));
     expect(await within(line).findByText('Applied')).toBeInTheDocument();
-    expect(onChanged).toHaveBeenCalled();
+    // the page reloads once, when the sheet closes, not after each save or apply
+    expect(onChanged).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }));
+    expect(onClose).toHaveBeenCalled();
+    expect(onChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('closing without saving does not reload the page', async () => {
+    open();
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onClose).toHaveBeenCalled();
+    expect(onChanged).not.toHaveBeenCalled();
   });
 
   it('"Keep investigating" makes no call', async () => {

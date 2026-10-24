@@ -1,16 +1,65 @@
-import { format, parseISO } from 'date-fns';
+import { ArrowLeftRight, ClipboardCheck, PackagePlus, SlidersHorizontal, Undo2, type LucideIcon } from 'lucide-react';
 import type { TagTone } from '../../components/ui-v2';
 import type {
-  AdjustReason, CountReason, CountSource, DisputeReason, LocationCard, ReturnReason, StockLocationType, Transfer, TransferReason, TransferType,
+  AdjustReason, CountReason, CountSource, DisputeReason, ReturnReason, StockLocationType, Transfer, TransferReason, TransferType,
 } from '../../services/inventory.service';
+import { formatDate } from '../../utils/format';
+import { count } from '../deliveries/model';
 
 export const TYPE_LABEL: Record<StockLocationType, string> = { own_store: 'Own store', partner_3pl: '3PL', agent: 'Agent' };
 
 export const SOURCE_LABEL: Record<CountSource, string> = { own_count: 'Our count', three_pl_dashboard: '3PL dashboard count', agent_count: 'Agent count' };
-export const COUNT_SOURCES: CountSource[] = ['own_count', 'three_pl_dashboard', 'agent_count'];
+export const COUNT_SOURCES = Object.keys(SOURCE_LABEL) as CountSource[];
 
 /** The count source that usually fits a location type; the sheet starts with it. */
 export const DEFAULT_SOURCE: Record<StockLocationType, CountSource> = { own_store: 'own_count', partner_3pl: 'three_pl_dashboard', agent: 'agent_count' };
+
+/** The stock moves a person starts: three that move units between places, and one that sets a quantity. */
+export type MoveKind = 'allocate' | 'transfer' | 'return';
+export type ModalKind = MoveKind | 'adjust';
+/** What the page opens: a modal or the count sheet. Also the `?action=` values. */
+export type StockAction = ModalKind | 'count';
+
+interface ActionMeta {
+  /** The one name of the action: menu, card button, table tooltip, modal title and submit button. */
+  label: string;
+  Icon: LucideIcon;
+  /** Holder types the "From" (or "Holder") list offers. */
+  from: StockLocationType[];
+  /** Location types the stock can go to. Empty for an action that moves nothing. */
+  to: StockLocationType[];
+  /** The toast after a save. */
+  done: (d: { quantity: number; product: string; from: string; to: string }) => string;
+}
+
+const ALL_HOLDERS: StockLocationType[] = ['own_store', 'partner_3pl', 'agent'];
+
+export const ACTION_META: Record<StockAction, ActionMeta> = {
+  allocate: {
+    label: 'Allocate to an agent', Icon: PackagePlus, from: ['own_store', 'partner_3pl'], to: ['agent', 'partner_3pl', 'own_store'],
+    done: (d) => `Allocated ${count(d.quantity)} of ${d.product} to ${d.to}. In transit until they confirm.`,
+  },
+  transfer: {
+    label: 'Transfer to another agent', Icon: ArrowLeftRight, from: ['agent'], to: ['agent'],
+    done: (d) => `Sent ${count(d.quantity)} of ${d.product} from ${d.from} to ${d.to}. In transit until they confirm.`,
+  },
+  return: {
+    label: 'Return to warehouse', Icon: Undo2, from: ['agent', 'partner_3pl'], to: ['own_store', 'partner_3pl'],
+    done: (d) => `${count(d.quantity)} of ${d.product} on the way back from ${d.from}. In transit until it is received.`,
+  },
+  adjust: {
+    label: 'Adjust quantity', Icon: SlidersHorizontal, from: ALL_HOLDERS, to: [],
+    done: (d) => `${d.from} now holds ${count(d.quantity)} of ${d.product}. Reason logged.`,
+  },
+  count: { label: 'Start stock count', Icon: ClipboardCheck, from: ALL_HOLDERS, to: [], done: () => 'Count saved.' },
+};
+
+/** The buttons under a card and in a table row: a store or 3PL sends stock out, an agent returns or passes it on. */
+export const HOLDER_ACTIONS: Record<StockLocationType, ModalKind[]> = {
+  own_store: ['allocate', 'adjust'],
+  partner_3pl: ['allocate', 'adjust'],
+  agent: ['return', 'transfer', 'adjust'],
+};
 
 export const MOVE_LABEL: Record<TransferType, string> = {
   allocation: 'Allocation',
@@ -50,30 +99,28 @@ export const RETURN_REASONS: ReturnReason[] = ['failed_deliveries', 'customer_re
 export const ADJUST_REASONS: AdjustReason[] = ['physical_count_correction', 'damaged', 'lost_or_stolen', 'found_extra_stock', 'other'];
 export const COUNT_REASONS: CountReason[] = ['physical_count_correction', 'damaged', 'lost_or_stolen', 'found_extra_stock', 'short_on_arrival', 'other'];
 
-export const num = (n: number): string => n.toLocaleString('en-GB');
-
-/** "15 Oct" from a YYYY-MM-DD day or an ISO time. */
-export const shortDate = (iso: string): string => format(parseISO(iso), 'd MMM');
-export const shortDateTime = (iso: string): string => format(parseISO(iso), 'd MMM, HH:mm');
-
-export const personName = (u: { firstName: string; lastName: string }): string => `${u.firstName} ${u.lastName}`.trim();
+/** "15 Oct" from a YYYY-MM-DD day or an ISO time. A bare day is read as local midnight, so no time zone moves it. */
+export const shortDate = (iso: string): string => formatDate(iso.length === 10 ? `${iso}T00:00:00` : iso, 'd MMM');
+export const shortDateTime = (iso: string): string => formatDate(iso, 'd MMM, HH:mm');
 
 /** Today as YYYY-MM-DD in the browser's zone (the count date input). */
-export const today = (): string => format(new Date(), 'yyyy-MM-dd');
+export const today = (): string => formatDate(new Date(), 'yyyy-MM-dd');
 
-/** Where a stock row's gap tag points: "12 units off", "Matches", "Count is old" or nothing (no count yet). */
-export function cardTag(card: LocationCard): { tone: TagTone; text: string } | null {
-  const c = card.latestCount;
-  if (!c) return null;
-  if (c.isOld) return { tone: 'warn', text: 'Count is old' };
-  return c.unitsOff > 0 ? { tone: 'bad', text: `${num(c.unitsOff)} ${c.unitsOff === 1 ? 'unit' : 'units'} off` } : { tone: 'ok', text: 'Matches' };
+/**
+ * The tag for a count against our records. `difference` is counted minus our records, the sign of a count line: -12 is 12
+ * units fewer than we thought. A card says "12 units off" (`wording: 'off'`), a table row says "−12 units".
+ */
+export function countTag({ isOld, difference, wording = 'signed' }: { isOld: boolean; difference: number; wording?: 'signed' | 'off' }): { tone: TagTone; text: string } {
+  if (isOld) return { tone: 'warn', text: 'Count is old' };
+  if (difference === 0) return { tone: 'ok', text: 'Matches' };
+  const units = Math.abs(difference);
+  const noun = units === 1 ? 'unit' : 'units';
+  return { tone: 'bad', text: wording === 'off' ? `${count(units)} ${noun} off` : `${difference < 0 ? '−' : '+'}${count(units)} ${noun}` };
 }
 
 /** "Logiswift count, 15 Oct" style line under a card. */
-export function cardNote(card: LocationCard): string {
-  const c = card.latestCount;
-  if (!c) return 'No stock count yet';
-  return `${SOURCE_LABEL[c.source]}, ${shortDate(c.date)}`;
+export function cardNote(latest: { source: CountSource; date: string } | null): string {
+  return latest ? `${SOURCE_LABEL[latest.source]}, ${shortDate(latest.date)}` : 'No stock count yet';
 }
 
 /** The place at one end of a move. The ends the move does not have read as what they are. */
@@ -84,11 +131,17 @@ export function placeName(t: Pick<Transfer, 'transferType' | 'fromLocation' | 't
   return t.transferType === 'order_fulfillment' ? 'Customer' : '—';
 }
 
-/** Quantity with a sign for the moves that only add or only remove at one place. */
+/** The quantity of a move. An adjustment or count fix that only takes units out of a place is negative; every other move is unsigned. */
+export function signedValue(t: Pick<Transfer, 'transferType' | 'quantity' | 'fromLocation' | 'toLocation'>): number {
+  const solo = t.transferType === 'adjustment' || t.transferType === 'count_adjustment';
+  return solo && t.fromLocation && !t.toLocation ? -t.quantity : t.quantity;
+}
+
+/** `signedValue` as text: a solo move shows its sign ("−2", "+3"), a move between places shows the plain number. */
 export function signedQuantity(t: Pick<Transfer, 'transferType' | 'quantity' | 'fromLocation' | 'toLocation'>): string {
   const solo = t.transferType === 'adjustment' || t.transferType === 'count_adjustment';
-  if (!solo) return num(t.quantity);
-  return t.fromLocation && !t.toLocation ? `−${num(t.quantity)}` : `+${num(t.quantity)}`;
+  const value = signedValue(t);
+  return solo ? `${value < 0 ? '−' : '+'}${count(Math.abs(value))}` : count(value);
 }
 
 export interface StatusView {
@@ -107,16 +160,16 @@ export function statusView(t: Transfer): StatusView {
       return { tone: 'v', text: 'In transit', sub: null };
     case 'disputed': {
       const short = t.shortQuantity;
-      return { tone: 'bad', text: `Received ${num(short)} short`, sub: [counted !== null ? `Counted ${num(counted)} of ${num(t.quantity)}` : null, reason].filter(Boolean).join(' · ') };
+      return { tone: 'bad', text: `Received ${count(short)} short`, sub: [counted !== null ? `Counted ${count(counted)} of ${count(t.quantity)}` : null, reason].filter(Boolean).join(' · ') };
     }
     case 'cancelled':
       return { tone: 'n', text: 'Cancelled', sub: null };
     default: {
       // received. A resolved dispute keeps the counted quantity below the sent one.
       if (counted !== null && counted < t.quantity) {
-        return { tone: 'n', text: 'Resolved', sub: `Counted ${num(counted)} of ${num(t.quantity)}${reason ? ` · ${reason}` : ''}` };
+        return { tone: 'n', text: 'Resolved', sub: `Counted ${count(counted)} of ${count(t.quantity)}${reason ? ` · ${reason}` : ''}` };
       }
-      return { tone: 'ok', text: 'Received', sub: counted !== null ? `Counted ${num(counted)} of ${num(t.quantity)}` : null };
+      return { tone: 'ok', text: 'Received', sub: counted !== null ? `Counted ${count(counted)} of ${count(t.quantity)}` : null };
     }
   }
 }
@@ -127,39 +180,3 @@ export const canConfirmHere = (t: Transfer): boolean =>
 
 /** F-654: units a 3PL says it sent back never reached us, so they cannot be "returned to the source". */
 export const canReturnToSource = (t: Transfer): boolean => !(t.transferType === 'return_to_warehouse' && t.fromLocation?.type === 'partner_3pl');
-
-const CSV_COLUMNS = ['Date', 'Type', 'From', 'To', 'Product', 'SKU', 'Quantity', 'Status', 'Counted', 'Reason', 'Order', 'Note'] as const;
-
-/** A text cell: quoted, and a leading = + - @ is defused so a spreadsheet never runs it as a formula. */
-function csvText(value: string): string {
-  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
-  return `"${safe.replace(/"/g, '""')}"`;
-}
-
-/** The transfers as CSV, one row per move, oldest column order as in the history table (F-659). Numbers are plain. */
-export function transfersToCsv(transfers: Transfer[]): string {
-  const rows = transfers.map((t) => {
-    const solo = t.transferType === 'adjustment' || t.transferType === 'count_adjustment';
-    const quantity = solo && t.fromLocation && !t.toLocation ? -t.quantity : t.quantity;
-    return [
-      csvText(format(parseISO(t.createdAt), 'yyyy-MM-dd HH:mm')),
-      csvText(MOVE_LABEL[t.transferType]),
-      csvText(placeName(t, 'from')),
-      csvText(placeName(t, 'to')),
-      csvText(t.product.name),
-      csvText(t.product.sku),
-      String(quantity),
-      csvText(statusView(t).text),
-      t.receivedQuantity === null ? '' : String(t.receivedQuantity),
-      csvText(t.reason ? REASON_LABEL[t.reason] : ''),
-      t.orderId === null ? '' : String(t.orderId),
-      csvText(t.notes ?? ''),
-    ].join(',');
-  });
-  return [CSV_COLUMNS.join(','), ...rows].join('\r\n');
-}
-
-/** "Magic Groove copybook set × 20" */
-export const itemsText = (t: Transfer): string => `${t.product.name} \u00d7 ${signedQuantity(t)}`;
-
-export const whenText = (t: Transfer): string => shortDate(t.createdAt);

@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { StockModal, type StockModalKind } from '../../pages/inventory/StockModal';
+import { StockModal } from '../../pages/inventory/MoveModals';
+import type { ModalKind } from '../../pages/inventory/model';
 import { ESI, KOFI, LOGISWIFT, OVERVIEW, PRODUCTS } from '../fixtures/inventory';
 
 const createTransfer = vi.fn();
@@ -12,7 +13,7 @@ vi.mock('../../services/inventory.service', async (orig) => ({
 }));
 
 const onDone = vi.fn();
-const open = (kind: StockModalKind, initial?: { locationId?: number; productId?: number }) =>
+const open = (kind: ModalKind, initial?: { locationId?: number; productId?: number }) =>
   render(<StockModal kind={kind} overview={OVERVIEW} products={PRODUCTS} initial={initial} onClose={vi.fn()} onDone={onDone} />);
 const submit = (name: RegExp) => screen.getByRole('button', { name });
 
@@ -28,7 +29,7 @@ describe('Allocate modal (F-655)', () => {
     expect(screen.getByText('200 available')).toBeInTheDocument();
     await userEvent.selectOptions(screen.getByLabelText('To'), String(KOFI));
     await userEvent.type(screen.getByLabelText('Quantity'), '10');
-    await userEvent.click(submit(/Allocate stock/));
+    await userEvent.click(submit(/Allocate to an agent/));
     await waitFor(() => expect(createTransfer).toHaveBeenCalledWith({ type: 'allocation', productId: 1, quantity: 10, fromLocationId: LOGISWIFT, toLocationId: KOFI, note: undefined }));
     expect(onDone).toHaveBeenCalledWith(expect.stringContaining('In transit until they confirm'));
   });
@@ -37,7 +38,7 @@ describe('Allocate modal (F-655)', () => {
     open('allocate', { productId: 1 });
     await userEvent.type(screen.getByLabelText('Quantity'), '201');
     expect(screen.getByText('Only 200 on hand')).toBeInTheDocument();
-    expect(submit(/Allocate stock/)).toBeDisabled();
+    expect(submit(/Allocate to an agent/)).toBeDisabled();
   });
 
   it('the limit follows the product', async () => {
@@ -50,7 +51,7 @@ describe('Allocate modal (F-655)', () => {
     createTransfer.mockRejectedValue({ isAxiosError: true, response: { data: { error: 'Only 5 available' } } });
     open('allocate');
     await userEvent.type(screen.getByLabelText('Quantity'), '5');
-    await userEvent.click(submit(/Allocate stock/));
+    await userEvent.click(submit(/Allocate to an agent/));
     expect(await screen.findByRole('alert')).toHaveTextContent(/Only 5 available|could not be moved/);
     expect(onDone).not.toHaveBeenCalled();
   });
@@ -62,7 +63,7 @@ describe('Transfer modal', () => {
     expect(screen.getByText('36 on hand')).toBeInTheDocument();
     expect(screen.getByLabelText('To agent')).toHaveValue(String(ESI));
     await userEvent.type(screen.getByLabelText('Quantity'), '5');
-    await userEvent.click(submit(/Transfer stock/));
+    await userEvent.click(submit(/Transfer to another agent/));
     await waitFor(() => expect(createTransfer).toHaveBeenCalledWith(expect.objectContaining({ type: 'agent_transfer', fromLocationId: KOFI, toLocationId: ESI, quantity: 5 })));
   });
   it('offers agents only, and not the sender as receiver', () => {
@@ -77,7 +78,7 @@ describe('Return modal', () => {
     open('return', { locationId: KOFI, productId: 1 });
     await userEvent.type(screen.getByLabelText('Quantity'), '9');
     await userEvent.selectOptions(screen.getByLabelText('Reason'), 'customer_refused');
-    await userEvent.click(submit(/Return stock/));
+    await userEvent.click(submit(/Return to warehouse/));
     await waitFor(() => expect(createTransfer).toHaveBeenCalledWith(expect.objectContaining({ type: 'return_to_warehouse', reason: 'customer_refused', fromLocationId: KOFI, toLocationId: LOGISWIFT, quantity: 9 })));
   });
 });
@@ -87,7 +88,7 @@ describe('Adjust modal', () => {
     open('adjust', { locationId: KOFI, productId: 1 });
     expect(screen.getByLabelText('New quantity')).toHaveValue(36);
     expect(screen.getByText('Now 36. No change.')).toBeInTheDocument();
-    expect(submit(/Save adjustment/)).toBeDisabled();
+    expect(submit(/Adjust quantity/)).toBeDisabled();
   });
   it('shows the change and saves it with a reason', async () => {
     open('adjust', { locationId: KOFI, productId: 1 });
@@ -96,7 +97,7 @@ describe('Adjust modal', () => {
     await userEvent.type(q, '30');
     expect(screen.getByText('Now 36. Change of −6.')).toBeInTheDocument();
     await userEvent.selectOptions(screen.getByLabelText('Reason'), 'damaged');
-    await userEvent.click(submit(/Save adjustment/));
+    await userEvent.click(submit(/Adjust quantity/));
     await waitFor(() => expect(adjust).toHaveBeenCalledWith({ locationId: KOFI, productId: 1, newQuantity: 30, reason: 'damaged', note: undefined }));
   });
   it('Other needs a note', async () => {
@@ -105,8 +106,8 @@ describe('Adjust modal', () => {
     await userEvent.clear(q);
     await userEvent.type(q, '40');
     await userEvent.selectOptions(screen.getByLabelText('Reason'), 'other');
-    expect(submit(/Save adjustment/)).toBeDisabled();
+    expect(submit(/Adjust quantity/)).toBeDisabled();
     await userEvent.type(screen.getByLabelText(/Note/), 'Found a box');
-    expect(submit(/Save adjustment/)).toBeEnabled();
+    expect(submit(/Adjust quantity/)).toBeEnabled();
   });
 });

@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { History } from 'lucide-react';
 import { Button, EmptyState, Table, type Column } from '../../components/ui-v2';
 import type { Transfer } from '../../services/inventory.service';
-import { itemsText, whenText } from './model';
+import { shortDate, signedQuantity } from './model';
 import { Move, StatusCell, TransferActions } from './TransferParts';
 
 interface RecentTransfersProps {
@@ -16,9 +16,9 @@ interface RecentTransfersProps {
 /** The latest moves (F-654, F-659). The full list with filters is in the history modal. */
 export function RecentTransfers({ transfers, canMove, onReceive, onResolve, onOpenHistory }: RecentTransfersProps) {
   const columns = useMemo<Column<Transfer>[]>(() => [
-    { key: 'date', header: 'Date', render: (t) => whenText(t) },
+    { key: 'date', header: 'Date', render: (t) => shortDate(t.createdAt) },
     { key: 'move', header: 'Move', render: (t) => <Move transfer={t} /> },
-    { key: 'items', header: 'Items', render: (t) => itemsText(t) },
+    { key: 'items', header: 'Items', render: (t) => `${t.product.name} \u00d7 ${signedQuantity(t)}` },
     { key: 'status', header: 'Status', render: (t) => <StatusCell transfer={t} /> },
     ...(canMove ? [{ key: 'actions', header: <span className="sr-only">Actions</span>, render: (t: Transfer) => <TransferActions transfer={t} onReceive={onReceive} onResolve={onResolve} /> }] : []),
   ], [canMove, onReceive, onResolve]);
