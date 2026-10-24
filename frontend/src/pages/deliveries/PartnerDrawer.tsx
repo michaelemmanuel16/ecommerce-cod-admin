@@ -7,14 +7,16 @@ import { deliveryPartnersService, type PartnerDetail, type PartnerRow } from '..
 import { apiErrorMessage } from '../../utils/apiError';
 import { DrawerFees } from './DrawerFees';
 import { DrawerOrders } from './DrawerOrders';
+import { DrawerStock } from './DrawerStock';
 import { DrawerSummary } from './DrawerSummary';
 import { AvailabilitySwitch } from './AvailabilitySwitch';
 import { rowTags, TYPE_LABEL, TYPE_TONE } from './model';
 
-export type DrawerTab = 'summary' | 'orders' | 'fees';
+export type DrawerTab = 'summary' | 'orders' | 'stock' | 'fees';
 const TABS: Array<{ id: DrawerTab; label: string }> = [
   { id: 'summary', label: 'Summary' },
   { id: 'orders', label: 'Orders' },
+  { id: 'stock', label: 'Stock' },
   { id: 'fees', label: 'Fees' },
 ];
 
@@ -43,8 +45,8 @@ const agentOf = (p: PartnerDetail): DeliveryAgent => ({
 });
 
 /**
- * The partner drawer (M4-T32, F-707, F-711, F-713, F-709). Tabs Summary, Orders, Fees. "Edit person" opens the existing user edit.
- * A save on Fees writes an audit row on the server. The Stock tab comes with the stock APIs (COD-41).
+ * The partner drawer (M4-T32, F-707, F-711, F-713, F-709). Tabs Summary, Orders, Stock, Fees. "Edit person" opens the existing user edit.
+ * A save on Fees writes an audit row on the server.
  */
 export function PartnerDrawer({ id, row, target, canEdit, canSwitch, startTab = 'summary', onClose, onChanged }: PartnerDrawerProps) {
   const say = useToast();
@@ -115,6 +117,8 @@ export function PartnerDrawer({ id, row, target, canEdit, canSwitch, startTab = 
           <DrawerSummary partner={partner} row={row} target={target} />
         ) : tab === 'orders' ? (
           <DrawerOrders partnerId={partner.id} />
+        ) : tab === 'stock' ? (
+          <DrawerStock location={partner.stockLocation} />
         ) : (
           <DrawerFees partner={partner} canEdit={canEdit} onSaved={(p) => { setPartner(p); onChanged(); }} />
         )}

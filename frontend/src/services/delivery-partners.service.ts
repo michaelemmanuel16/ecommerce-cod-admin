@@ -169,6 +169,17 @@ export interface ReturnsSummary {
   total: { sent: number; received: number; missing: number };
 }
 
+/** One row of GET /api/inventory/levels. */
+export interface StockLevelRow {
+  locationId: number;
+  productId: number;
+  productName: string;
+  sku: string;
+  onHand: number;
+  reserved: number;
+  inTransit: number;
+}
+
 export interface RangeParams {
   from: string;
   to: string;
@@ -226,4 +237,8 @@ export const deliveryPartnersService = {
     return response.data;
   },
 
+  async stockLevels(locationId: number): Promise<StockLevelRow[]> {
+    const response = await apiClient.get('/api/inventory/levels', { params: { locationId }, skipCache: true, quiet: true });
+    return response.data.levels;
+  },
 };

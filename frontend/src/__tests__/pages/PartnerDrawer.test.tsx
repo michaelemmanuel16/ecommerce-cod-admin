@@ -13,6 +13,7 @@ const update = vi.fn();
 const setAvailability = vi.fn();
 const orderProof = vi.fn();
 const listOrders = vi.fn();
+const stockLevels = vi.fn();
 vi.mock('../../services/delivery-partners.service', async (orig) => ({
   ...(await orig<typeof import('../../services/delivery-partners.service')>()),
   deliveryPartnersService: {
@@ -20,6 +21,7 @@ vi.mock('../../services/delivery-partners.service', async (orig) => ({
     update: (...a: unknown[]) => update(...a),
     setAvailability: (...a: unknown[]) => setAvailability(...a),
     orderProof: (...a: unknown[]) => orderProof(...a),
+    stockLevels: (...a: unknown[]) => stockLevels(...a),
   },
 }));
 vi.mock('../../services/orders.service', () => ({ ordersService: { listOrders: (...a: unknown[]) => listOrders(...a) } }));
@@ -49,10 +51,14 @@ function open(props: Partial<React.ComponentProps<typeof PartnerDrawer>> = {}) {
 }
 
 beforeEach(() => {
-  [get, update, setAvailability, orderProof, listOrders, onChanged].forEach((m) => m.mockReset());
+  [get, update, setAvailability, orderProof, listOrders, stockLevels, onChanged].forEach((m) => m.mockReset());
   get.mockResolvedValue(KOFI);
   update.mockImplementation((_id: number, patch: { daysToPay: number }) => Promise.resolve({ ...KOFI, profile: { ...KOFI.profile, daysToPay: patch.daysToPay } }));
   setAvailability.mockResolvedValue(undefined);
+  stockLevels.mockResolvedValue([
+    { locationId: 9, productId: 1, productName: 'Copybook set', sku: 'MG-COPYBOOK-SET', onHand: 20, reserved: 21, inTransit: 0 },
+    { locationId: 9, productId: 2, productName: 'Magic pens', sku: 'MG-REFILL-PENS', onHand: 5, reserved: 0, inTransit: 3 },
+  ]);
   listOrders.mockResolvedValue({ rows: [ORDER], pagination: { page: 1, limit: 10, total: 1, pages: 1 } });
   orderProof.mockResolvedValue({
     proof: { recorded: true, proofType: 'photo', recipientName: 'Abena Owusu', time: '2026-10-17T09:56:00Z', cashCollected: '289.00', photoUrl: '/api/deliveries/proof-photo/1?sig=x' },
@@ -120,5 +126,24 @@ describe('Partner drawer (M4-T32)', () => {
     await userEvent.click(sw);
     await waitFor(() => expect(setAvailability).toHaveBeenCalledWith(2, false));
     expect(onChanged).toHaveBeenCalled();
+  });
+
+  it('Stock tab sums the partner location and links to Inventory for it', async () => {
+    open();
+    await userEvent.click(await screen.findByRole('tab', { name: 'Stock' }));
+    expect(await screen.findByLabelText('Stock at Kofi Appiah')).toHaveTextContent('Copybook set');
+    expect(stockLevels).toHaveBeenCalledWith(9);
+    const figs = document.querySelector('.dstock .dfig') as HTMLElement;
+    expect(figs).toHaveTextContent('On hand25');
+    expect(figs).toHaveTextContent('Reserved21');
+    expect(figs).toHaveTextContent('In transit to them3');
+    expect(screen.getByRole('link', { name: 'See Kofi Appiah in Inventory' })).toHaveAttribute('href', '/inventory?location=9');
+  });
+
+  it('Stock tab says so when the role may not read stock (403)', async () => {
+    stockLevels.mockRejectedValue(new Error('403'));
+    open();
+    await userEvent.click(await screen.findByRole('tab', { name: 'Stock' }));
+    expect(await screen.findByText('The stock could not load.')).toBeInTheDocument();
   });
 });
