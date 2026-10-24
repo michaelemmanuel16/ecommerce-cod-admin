@@ -1,18 +1,18 @@
 import { useState } from 'react';
 import { Modal, Skeleton } from '../../components/ui-v2';
-import { API_URL } from '../../services/tokenRefresh';
 import type { OrderProof } from '../../services/delivery-partners.service';
 import { formatCurrency } from '../../utils/format';
+import { photoSrc } from '../../utils/photoSrc';
+import { FAILURE_REASONS } from '../orders/reasons';
 import { shortDate } from '../orders/model';
 
-/** The photo link is relative to the API host and expires after 10 minutes. */
-const photoSrc = (url: string): string => `${API_URL}${url}`;
+const REASON_LABEL = new Map<string, string>(FAILURE_REASONS);
 
 /** A small proof photo that opens large. A photo that fails to load shows a placeholder (F-711). */
 export function ProofThumb({ url, big, onOpen }: { url: string; big?: boolean; onOpen?: () => void }) {
   const [broken, setBroken] = useState(false);
   if (broken) return <span className="proofph" aria-label="Photo could not load">No photo</span>;
-  const img = <img src={photoSrc(url)} alt="Delivery proof" className={big ? 'proofbig' : 'proofthumb'} onError={() => setBroken(true)} />;
+  const img = <img src={photoSrc(url)} alt="Delivery proof" loading="lazy" className={big ? 'proofbig' : 'proofthumb'} onError={() => setBroken(true)} />;
   return onOpen ? (
     <button type="button" className="proofbtn" onClick={onOpen} aria-label="Open the delivery proof photo">{img}</button>
   ) : img;
@@ -42,7 +42,7 @@ export function ProofBlock({ data }: { data: OrderProof | 'error' | null }) {
         <ol className="attempts" aria-label="Delivery attempts">
           {attempts.map((a) => (
             <li key={a.id}>
-              <b>{shortDate(a.attemptedAt)}</b> {a.reason ? a.reason.replace(/_/g, ' ') : 'No reason'}
+              <b>{shortDate(a.attemptedAt)}</b> {a.reason ? REASON_LABEL.get(a.reason) ?? a.reason : 'No reason'}
               {a.note ? `. ${a.note}` : ''} <span className="mut">by {a.partner.name}</span>
             </li>
           ))}

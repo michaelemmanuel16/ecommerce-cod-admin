@@ -1,23 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Button, EmptyState, Select, Skeleton, Tag } from '../../components/ui-v2';
+import { Button, EmptyState, Select } from '../../components/ui-v2';
 import { deliveryPartnersService, type OrderProof, type OrderProofSummary } from '../../services/delivery-partners.service';
 import { ordersService, type OrderListRow } from '../../services/orders.service';
 import type { OrderStatus } from '../../types';
-import { formatCurrency } from '../../utils/format';
 import { ORDER_STATUS_LABELS } from '../../utils/orderStatus';
-import { orderNumber, shortDate, STATUS_TONE, customerName } from '../orders/model';
+import { isClosed } from './model';
+import { ListSkeleton } from './ListSkeleton';
+import { OrderRow } from './OrderRow';
 import { ProofBlock, ProofThumb } from './ProofBlock';
 
 const PAGE = 10;
-/** Orders that can have a delivery proof or attempts. */
-const CLOSED: OrderStatus[] = ['delivered', 'failed_delivery', 'returned'];
-const FILTERS: Array<{ id: string; label: string; statuses: OrderStatus[] }> = [
-  { id: 'all', label: 'All statuses', statuses: [] },
-  { id: 'out_for_delivery', label: ORDER_STATUS_LABELS.out_for_delivery, statuses: ['out_for_delivery'] },
-  { id: 'delivered', label: ORDER_STATUS_LABELS.delivered, statuses: ['delivered'] },
-  { id: 'failed_delivery', label: ORDER_STATUS_LABELS.failed_delivery, statuses: ['failed_delivery'] },
-  { id: 'returned', label: ORDER_STATUS_LABELS.returned, statuses: ['returned'] },
+const FILTERS: Array<{ id: string; label: string; status?: OrderStatus }> = [
+  { id: 'all', label: 'All statuses' },
+  ...(['out_for_delivery', 'delivered', 'failed_delivery', 'returned'] as const).map((status) => ({ id: status, label: ORDER_STATUS_LABELS[status], status })),
 ];
 
 /**
@@ -44,15 +39,15 @@ export function DrawerOrders({ partnerId }: { partnerId: number }) {
     setLoading(true);
     setFailed(false);
     try {
-      const statuses = FILTERS.find((f) => f.id === status)?.statuses ?? [];
+      const only = FILTERS.find((f) => f.id === status)?.status;
       const res = await ordersService.listOrders({
-        deliveryAgentId: partnerId, page: nextPage, limit: PAGE, sortBy: 'createdAt', sortOrder: 'desc', ...(statuses.length && { status: statuses }),
+        deliveryAgentId: partnerId, page: nextPage, limit: PAGE, sortBy: 'createdAt', sortOrder: 'desc', ...(only && { status: [only] }),
       });
       if (mine !== ticket.current) return; // a newer filter asked meanwhile
       setRows((cur) => (nextPage === 1 ? res.rows : [...cur, ...res.rows]));
       setTotal(res.pagination.total);
       setPage(nextPage);
-      const closed = res.rows.filter((r) => CLOSED.includes(r.status)).map((r) => r.id);
+      const closed = res.rows.filter((r) => isClosed(r.status)).map((r) => r.id);
       if (closed.length > 0) {
         // A role that may not read proofs, or a failed call, leaves the rows without a thumbnail
         deliveryPartnersService.orderProofs(partnerId, closed).then(
@@ -91,7 +86,7 @@ export function DrawerOrders({ partnerId }: { partnerId: number }) {
       </Select>
 
       {loading && rows.length === 0 ? (
-        <div aria-busy="true" aria-label="Loading orders"><Skeleton height={56} /><Skeleton height={56} className="skelgap" /></div>
+        <ListSkeleton label="Loading orders" />
       ) : failed && rows.length === 0 ? (
         <EmptyState title="The orders could not load." action={<Button onClick={() => void load(1, filter)}>Try again</Button>} />
       ) : rows.length === 0 ? (
@@ -99,26 +94,20 @@ export function DrawerOrders({ partnerId }: { partnerId: number }) {
       ) : (
         <ul className="dolist" aria-label="Orders of this partner">
           {rows.map((r) => {
+            const closed = isClosed(r.status);
             const summary = summaries[r.id];
             const attempts = summary?.attemptCount ?? 0;
-            const photo = summary?.photoUrl ?? null;
             return (
               <li key={r.id}>
-                <div className="dorow">
-                  {CLOSED.includes(r.status) && <div className="dothumb">{photo ? <ProofThumb url={photo} onOpen={() => setOpenId(r.id)} /> : null}</div>}
-                  <div className="domain">
-                    <Link to={`/orders/${r.id}`}><b>{orderNumber(r.id)}</b></Link> {customerName(r)}
-                    <small>{shortDate(r.createdAt)} · {formatCurrency(r.totalAmount)}</small>
-                  </div>
-                  <div className="doside">
-                    <Tag tone={STATUS_TONE[r.status]}>{ORDER_STATUS_LABELS[r.status]}</Tag>
-                    {CLOSED.includes(r.status) && (
-                      <button type="button" className="linkbtn" aria-expanded={openId === r.id} onClick={() => toggle(r.id)}>
-                        {attempts > 0 ? `${attempts} ${attempts === 1 ? 'attempt' : 'attempts'}` : 'Proof'}
-                      </button>
-                    )}
-                  </div>
-                </div>
+                <OrderRow
+                  row={r}
+                  lead={closed && <div className="dothumb">{summary?.photoUrl ? <ProofThumb url={summary.photoUrl} onOpen={() => setOpenId(r.id)} /> : null}</div>}
+                  aside={closed && (
+                    <button type="button" className="linkbtn" aria-expanded={openId === r.id} onClick={() => toggle(r.id)}>
+                      {attempts > 0 ? `${attempts} ${attempts === 1 ? 'attempt' : 'attempts'}` : 'Proof'}
+                    </button>
+                  )}
+                />
                 {openId === r.id && <ProofBlock data={details[r.id] ?? null} />}
               </li>
             );

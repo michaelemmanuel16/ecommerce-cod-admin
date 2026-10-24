@@ -1,3 +1,4 @@
+import axios from 'axios';
 import apiClient from './api';
 import type { FailureReason, OrderStatus } from '../types';
 
@@ -192,6 +193,16 @@ export interface RangeParams {
   to: string;
 }
 
+/** A role that may not read this (the API answers 403) gets null; any other failure still rejects. */
+export async function allowed<T>(call: Promise<T>): Promise<T | null> {
+  try {
+    return await call;
+  } catch (e) {
+    if (axios.isAxiosError(e) && e.response?.status === 403) return null;
+    throw e;
+  }
+}
+
 export const deliveryPartnersService = {
   async list(range: RangeParams, type: PartnerTab, skipCache = false): Promise<PartnerList> {
     const response = await apiClient.get('/api/delivery-partners', { params: { ...range, type }, skipCache, quiet: true });
@@ -208,9 +219,8 @@ export const deliveryPartnersService = {
     return response.data;
   },
 
-  async waiting(limit: number, skipCache = false): Promise<WaitingList> {
-    const response = await apiClient.get('/api/delivery-partners/waiting', { params: { limit }, skipCache, quiet: true });
-    return response.data;
+  async waiting(limit: number, skipCache = false): Promise<WaitingList | null> {
+    return allowed(apiClient.get('/api/delivery-partners/waiting', { params: { limit }, skipCache, quiet: true }).then((r) => r.data));
   },
 
   async get(id: number): Promise<PartnerDetail> {
@@ -238,20 +248,17 @@ export const deliveryPartnersService = {
     return { proof: response.data.proof, attempts: response.data.attempts };
   },
 
-  /** Rejects with 403 for a role that may not read stock; the Deliveries page then leaves the missing-units line out. */
+  async returnsSummary(range: RangeParams, skipCache = false): Promise<ReturnsSummary | null> {
+    return allowed(apiClient.get('/api/inventory/returns/summary', { params: range, skipCache, quiet: true }).then((r) => r.data));
+  },
+
+  async stockLevels(locationId: number): Promise<StockLevelRow[] | null> {
+    return allowed(apiClient.get('/api/inventory/levels', { params: { locationId }, skipCache: true, quiet: true }).then((r) => r.data.levels));
+  },
+
   /** Photo link and attempt count of up to 50 orders of this partner, in one call. */
   async orderProofs(partnerId: number, orderIds: number[]): Promise<OrderProofSummary[]> {
     const response = await apiClient.get(`/api/delivery-partners/${partnerId}/order-proofs`, { params: { orderIds: orderIds.join(',') }, skipCache: true, quiet: true });
     return response.data.proofs;
-  },
-
-  async returnsSummary(range: RangeParams, skipCache = false): Promise<ReturnsSummary> {
-    const response = await apiClient.get('/api/inventory/returns/summary', { params: range, skipCache, quiet: true });
-    return response.data;
-  },
-
-  async stockLevels(locationId: number): Promise<StockLevelRow[]> {
-    const response = await apiClient.get('/api/inventory/levels', { params: { locationId }, skipCache: true, quiet: true });
-    return response.data.levels;
   },
 };

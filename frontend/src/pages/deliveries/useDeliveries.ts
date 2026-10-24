@@ -22,19 +22,17 @@ interface DeliveriesState {
   reasons: FailureReasons | null;
   /** null: the role may not see it (the API answered 403) or it has not loaded. */
   waiting: WaitingList | null;
-  /** null: the role may not read stock (403) or it has not loaded. */
-  returns: ReturnsSummary | null;
   /** True until the first answer for the current view. */
   loading: boolean;
   error: string | null;
 }
 
 /**
- * Everything the Deliveries page reads for one view: the table (tab = the API `type`), the five tiles, the reasons card
- * and the waiting list. One answer replaces the last, the newest ask wins. Order and availability events refresh it quietly.
+ * Everything the Deliveries page reads for one view: the table (tab = the API `type`), the five tiles, the reasons card,
+ * the waiting list and the returns summary (null when the role may not read stock). One answer replaces the last, the newest ask wins. Order and availability events refresh it quietly.
  */
 export function useDeliveries(range: RangeParams, tab: PartnerTab) {
-  const [state, setState] = useState<DeliveriesState>({ list: null, summary: null, reasons: null, waiting: null, returns: null, loading: true, error: null });
+  const [state, setState] = useState<DeliveriesState>({ list: null, summary: null, reasons: null, waiting: null, loading: true, error: null });
   const latest = useRef({ range, tab });
   latest.current = { range, tab };
   const ticket = useRef(0);
@@ -44,20 +42,18 @@ export function useDeliveries(range: RangeParams, tab: PartnerTab) {
     const mine = ++ticket.current;
     const wanted = latest.current;
     if (!quiet) setState((s) => ({ ...s, loading: true, error: null }));
-    const [list, summary, reasons, waiting, returns] = await Promise.allSettled([
+    const [list, summary, reasons, waiting] = await Promise.allSettled([
       deliveryPartnersService.list(wanted.range, wanted.tab, quiet),
       deliveryPartnersService.summary(wanted.range, quiet),
       deliveryPartnersService.failureReasons(wanted.range, quiet),
       deliveryPartnersService.waiting(WAITING_LIMIT, quiet),
-      deliveryPartnersService.returnsSummary(wanted.range, quiet),
     ]);
     if (mine !== ticket.current) return; // a newer view asked meanwhile
     setState((s) => ({
       list: list.status === 'fulfilled' ? list.value : s.list,
       summary: summary.status === 'fulfilled' ? summary.value : s.summary,
       reasons: reasons.status === 'fulfilled' ? reasons.value : s.reasons,
-      waiting: waiting.status === 'fulfilled' ? waiting.value : null,
-      returns: returns.status === 'fulfilled' ? returns.value : null,
+      waiting: waiting.status === 'fulfilled' ? waiting.value : s.waiting, // null: the role may not see it (403)
       loading: false,
       error: list.status === 'rejected' ? 'The delivery partners could not load.' : null,
     }));
@@ -66,6 +62,14 @@ export function useDeliveries(range: RangeParams, tab: PartnerTab) {
   useEffect(() => {
     void load(false);
   }, [viewKey, load]);
+
+  // The returns line follows the dates only: an order or availability event does not change it.
+  const [returns, setReturns] = useState<ReturnsSummary | null>(null);
+  useEffect(() => {
+    let live = true;
+    deliveryPartnersService.returnsSummary(range, true).then((r) => live && setReturns(r), () => live && setReturns(null));
+    return () => { live = false; };
+  }, [range.from, range.to]);
 
   useEffect(() => {
     const socket = getSocket();
@@ -85,5 +89,5 @@ export function useDeliveries(range: RangeParams, tab: PartnerTab) {
   }, [load]);
 
   const refetch = useCallback(() => load(true), [load]);
-  return { ...state, refetch };
+  return { ...state, returns, refetch };
 }

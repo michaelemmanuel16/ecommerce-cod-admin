@@ -126,7 +126,7 @@ describe('Deliveries cards (M4-T31)', () => {
   });
 
   it('a role that may not see the waiting list (403) still gets the page', async () => {
-    waiting.mockRejectedValue(new Error('403'));
+    waiting.mockResolvedValue(null);
     renderPage();
     await screen.findByRole('table', { name: 'Delivery partners' });
     expect(screen.queryByText('Waiting to dispatch', { selector: 'h3' })).not.toBeInTheDocument();
@@ -136,12 +136,13 @@ describe('Deliveries cards (M4-T31)', () => {
     renderPage();
     const card = (await screen.findByText('Failed and returned by reason')).closest('.card') as HTMLElement;
     const line = await within(card).findByText(/Returned units missing:/);
+    expect(returnsSummary).toHaveBeenCalledTimes(1); // it follows the dates, not every refresh
     expect(line.closest('p')).toHaveTextContent('Returned units missing: 5. Logiswift sent back 41 units. We received 36.');
     expect(within(card).getByRole('link', { name: 'See it in Inventory' })).toHaveAttribute('href', '/inventory?location=7');
   });
 
   it('a role that may not read stock (403) gets the card without the missing-units line', async () => {
-    returnsSummary.mockRejectedValue(new Error('403'));
+    returnsSummary.mockResolvedValue(null);
     renderPage();
     const card = (await screen.findByText('Failed and returned by reason')).closest('.card') as HTMLElement;
     await within(card).findByText('165');

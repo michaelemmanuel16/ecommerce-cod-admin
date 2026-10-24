@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Skeleton } from '../../components/ui-v2';
 import { deliveryPartnersService, type PartnerDetail, type StockLevelRow } from '../../services/delivery-partners.service';
+import { ListSkeleton } from './ListSkeleton';
 import { count } from './model';
 
 interface DrawerStockProps {
@@ -10,10 +10,12 @@ interface DrawerStockProps {
 
 /**
  * Stock tab (F-651): what the partner's stock location holds, from /api/inventory/levels, with a link to the Inventory page for
- * that location. A role that may not read stock gets a 403 and sees a plain note instead.
+ * that location. A role that may not read stock sees a plain note instead.
  */
 export function DrawerStock({ location }: DrawerStockProps) {
   const [levels, setLevels] = useState<StockLevelRow[] | null>(null);
+  /** null: the role may not read stock (403). */
+  const [refused, setRefused] = useState(false);
   const [failed, setFailed] = useState(false);
   const locationId = location?.id ?? null;
 
@@ -21,14 +23,19 @@ export function DrawerStock({ location }: DrawerStockProps) {
     if (locationId === null) return;
     let live = true;
     setLevels(null);
+    setRefused(false);
     setFailed(false);
-    deliveryPartnersService.stockLevels(locationId).then((r) => live && setLevels(r), () => live && setFailed(true));
+    deliveryPartnersService.stockLevels(locationId).then(
+      (r) => live && (r === null ? setRefused(true) : setLevels(r)),
+      () => live && setFailed(true),
+    );
     return () => { live = false; };
   }, [locationId]);
 
   if (!location) return <p className="mut">This partner has no stock location.</p>;
+  if (refused) return <p className="mut">Stock figures are not shown to your role.</p>;
   if (failed) return <p className="mut">The stock could not load.</p>;
-  if (!levels) return <div aria-busy="true" aria-label="Loading stock"><Skeleton height={56} /><Skeleton height={56} className="skelgap" /></div>;
+  if (!levels) return <ListSkeleton label="Loading stock" />;
 
   const sum = (pick: (l: StockLevelRow) => number) => levels.reduce((s, l) => s + pick(l), 0);
   return (

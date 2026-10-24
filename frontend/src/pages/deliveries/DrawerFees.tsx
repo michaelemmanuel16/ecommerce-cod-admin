@@ -1,27 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Button, Input, Select, useToast } from '../../components/ui-v2';
 import { deliveryPartnersService, type PartnerDataSource, type PartnerDetail } from '../../services/delivery-partners.service';
 import { apiErrorMessage } from '../../utils/apiError';
 import { formatCurrency } from '../../utils/format';
+import { fieldsOf, type Fields } from './feesFields';
 import { DATA_SOURCES, DATA_SOURCE_LABEL, VEHICLE_TYPES } from './model';
-
-interface Fields {
-  daysToPay: string;
-  dataSource: PartnerDataSource;
-  isTrial: boolean;
-  baseTown: string;
-  vehicleType: string;
-  vehicleId: string;
-}
-
-const fieldsOf = (p: PartnerDetail): Fields => ({
-  daysToPay: String(p.profile.daysToPay),
-  dataSource: p.profile.dataSource,
-  isTrial: p.profile.isTrial,
-  baseTown: p.profile.baseTown ?? '',
-  vehicleType: p.vehicleType ?? '',
-  vehicleId: p.vehicleId ?? '',
-});
 
 interface DrawerFeesProps {
   partner: PartnerDetail;
@@ -36,16 +19,17 @@ interface DrawerFeesProps {
  */
 export function DrawerFees({ partner, canEdit, onSaved }: DrawerFeesProps) {
   const say = useToast();
-  const [fields, setFields] = useState<Fields>(fieldsOf(partner));
+  // The page gives this component a key made of the saved fields, so a new saved partner starts it again
+  const base = fieldsOf(partner);
+  const [fields, setFields] = useState<Fields>(base);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  useEffect(() => setFields(fieldsOf(partner)), [partner]);
 
   const set = <K extends keyof Fields>(key: K, value: Fields[K]) => {
     setFields((f) => ({ ...f, [key]: value }));
     setError(null);
   };
-  const dirty = JSON.stringify(fields) !== JSON.stringify(fieldsOf(partner));
+  const dirty = (Object.keys(base) as Array<keyof Fields>).some((k) => fields[k] !== base[k]);
 
   const save = async () => {
     const days = Number(fields.daysToPay);

@@ -90,7 +90,7 @@ describe('Partner drawer (M4-T32)', () => {
     expect(orderProofs).toHaveBeenCalledWith(2, [24117]);
     expect(orderProof).not.toHaveBeenCalled(); // the detail loads when the row opens
     await userEvent.click(within(list).getByRole('button', { name: '1 attempt' }));
-    expect(within(list).getByText(/not reachable/)).toBeInTheDocument();
+    expect(await within(list).findByText(/Not reachable/)).toBeInTheDocument();
     expect(within(list).getByText('Recipient', { exact: false })).toBeInTheDocument();
   });
 
@@ -147,9 +147,27 @@ describe('Partner drawer (M4-T32)', () => {
   });
 
   it('Stock tab says so when the role may not read stock (403)', async () => {
-    stockLevels.mockRejectedValue(new Error('403'));
+    stockLevels.mockResolvedValue(null);
+    open();
+    await userEvent.click(await screen.findByRole('tab', { name: 'Stock' }));
+    expect(await screen.findByText('Stock figures are not shown to your role.')).toBeInTheDocument();
+  });
+
+  it('Stock tab shows an error when the call fails for another reason', async () => {
+    stockLevels.mockRejectedValue(new Error('500'));
     open();
     await userEvent.click(await screen.findByRole('tab', { name: 'Stock' }));
     expect(await screen.findByText('The stock could not load.')).toBeInTheDocument();
+  });
+
+  it('the Orders tab keeps its rows when the user visits another tab and comes back', async () => {
+    open();
+    await userEvent.click(await screen.findByRole('tab', { name: 'Orders' }));
+    await screen.findByRole('list', { name: 'Orders of this partner' });
+    await userEvent.click(screen.getByRole('tab', { name: 'Fees' }));
+    await userEvent.click(screen.getByRole('tab', { name: 'Orders' }));
+    expect(await screen.findByRole('list', { name: 'Orders of this partner' })).toBeInTheDocument();
+    expect(listOrders).toHaveBeenCalledTimes(2); // the Summary tab list, then the Orders tab once
+    expect(orderProofs).toHaveBeenCalledTimes(1);
   });
 });
