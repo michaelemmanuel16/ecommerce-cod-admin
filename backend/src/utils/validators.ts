@@ -3,6 +3,7 @@ import { DeclineReason, FailureReason, OrderStatus } from '@prisma/client';
 import { ORDER_FLAG_CODES } from '../services/orderFlagService';
 import { ORDER_SORT_FIELDS } from '../services/orderService';
 import { CUSTOMER_RISKS, CUSTOMER_SEGMENTS, CUSTOMER_SORT_FIELDS } from '../services/customerService';
+import { MONTH_RE } from '../services/kpi/dates';
 
 /**
  * Password validation utility
@@ -83,14 +84,34 @@ export const updateCustomerValidation: ValidationChain[] = [
 ];
 
 
+const NO_STOCK_QUANTITY = 'stockQuantity is not accepted. Give openingStock when you create a product, or use Adjust quantity in Inventory.';
+
+// Fields both create and update take (F-601). maxDownloads is the download limit of a digital product (null reads as 5).
+const productFieldRules = (): ValidationChain[] => [
+  body('stockQuantity').not().exists().withMessage(NO_STOCK_QUANTITY),
+  body('lowStockDays').optional({ nullable: true }).isInt({ min: 1, max: 365 }).withMessage('lowStockDays must be a whole number of days, 1 to 365'),
+  body('maxDownloads').optional({ nullable: true }).isInt({ min: 1, max: 100 }).withMessage('maxDownloads must be a whole number, 1 to 100'),
+  body('downloadLinkExpiryHours').optional({ nullable: true }).isInt({ min: 1 }).withMessage('downloadLinkExpiryHours must be a whole number above 0'),
+];
+
 export const createProductValidation: ValidationChain[] = [
   body('sku').notEmpty(),
   body('name').notEmpty(),
   body('category').notEmpty(),
   body('price').isFloat({ min: 0 }),
   body('cogs').isFloat({ min: 0 }),
-  body('stockQuantity').isInt({ min: 0 })
+  ...productFieldRules(),
+  body('openingStock').optional().isObject().withMessage('openingStock must be { locationId, quantity }'),
+  body('openingStock.locationId').optional().isInt({ min: 1 }).withMessage('openingStock.locationId must be a whole number above 0').toInt(),
+  body('openingStock.quantity').if(body('openingStock').exists()).isInt({ min: 0 }).withMessage('openingStock.quantity must be a whole number, 0 or more').toInt(),
 ];
+
+export const updateProductValidation: ValidationChain[] = [
+  body('price').optional().isFloat({ min: 0 }),
+  body('cogs').optional().isFloat({ min: 0 }),
+  ...productFieldRules(),
+];
+
 
 export const createOrderValidation: ValidationChain[] = [
   body('customerId').optional(),
@@ -139,6 +160,15 @@ export const assignAgentValidation: ValidationChain[] = [
 export const paginationValidation: ValidationChain[] = [
   query('page').optional().isInt({ min: 1 }),
   query('limit').optional().isInt({ min: 1, max: 100 })
+];
+
+export const productIdValidation: ValidationChain[] = [param('id').isInt({ min: 1 }).withMessage('Invalid product ID').toInt()];
+
+/** Products list and summary filters (F-600). */
+export const productListValidation: ValidationChain[] = [
+  ...paginationValidation,
+  query('tab').optional().isIn(['active', 'archived', 'all']).withMessage('tab must be active, archived or all'),
+  query('month').optional().matches(MONTH_RE).withMessage('month must be YYYY-MM'),
 ];
 
 /** Customers list, tiles and export filters (F-350 to F-353). */

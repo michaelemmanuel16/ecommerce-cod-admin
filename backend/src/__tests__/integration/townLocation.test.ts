@@ -14,6 +14,7 @@ import { createTenant, deleteTenantRows } from './helpers/twoTenants';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import { clearCurrencyCache } from '../../utils/currency';
 import { bearer } from './helpers/superAdminToken';
+import { stockUp } from './helpers/stock';
 
 jest.mock('../../middleware/bulkRateLimiter', () => {
   const pass = (_req: unknown, _res: unknown, next: () => void) => next();
@@ -66,6 +67,7 @@ beforeAll(async () => {
   const product = await prismaBase.product.create({
     data: { name: `Town Prod ${SUFFIX}`, sku: `TW-${SUFFIX}`, category: 'test', price: 10, stockQuantity: 1000, tenantId: ghTenant },
   });
+  await stockUp(ghTenant, product.id, 1000); // available to sell comes from the levels (M4-T16)
   formSlug = `town-form-${SUFFIX}`;
   await makeForm(ghTenant, product.id, formSlug, []);
   // A seller who switched City/Town and Nearest landmark off.

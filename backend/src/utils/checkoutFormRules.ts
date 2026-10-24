@@ -43,13 +43,21 @@ export function pixelConfigError(config: unknown): string | null {
   return null;
 }
 
-type UpsellStock = { productId?: number | null; product?: { isActive: boolean; stockQuantity: number; productType: string } | null };
+type UpsellStock = { productId?: number | null; product?: { isActive: boolean; productType: string } | null };
 
-/** An upsell shows only while it is switched on. A product-linked upsell also needs its product active and, for a physical product, in stock. */
-export function isUpsellAvailable(upsell: UpsellStock & { isActive?: boolean }): boolean {
+/** Available to sell per physical product id (stockService.getAvailableMany): on hand less reserved. A digital product is absent. */
+export type AvailableMap = ReadonlyMap<number, number>;
+
+/** An upsell shows only while it is switched on. A product-linked upsell also needs its product active and, for a physical product, available to sell. */
+export function isUpsellAvailable(upsell: UpsellStock & { isActive?: boolean }, available: AvailableMap): boolean {
   // The editor's on/off switch.
   if (upsell.isActive === false) return false;
   const product = upsell.product;
   if (!upsell.productId || !product) return true;
-  return product.isActive && (product.productType === 'digital' || product.stockQuantity > 0);
+  return product.isActive && (product.productType === 'digital' || (available.get(upsell.productId) ?? 0) > 0);
+}
+
+/** The form product's in-stock flag: a physical product needs units available to sell; a digital one keeps its old rule (cached number above 0). */
+export function productInStock(productId: number, product: { productType: string; stockQuantity: number }, available: AvailableMap): boolean {
+  return product.productType === 'digital' ? product.stockQuantity > 0 : (available.get(productId) ?? 0) > 0;
 }

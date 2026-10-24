@@ -15,14 +15,18 @@ jest.mock('../../utils/logger', () => ({
 
 import { prismaMock } from '../mocks/prisma.mock';
 import { createProduct } from '../../controllers/productController';
+import { useTestTenant } from '../mocks/tenant.mock';
 
 describe('productController.createProduct — SKU uniqueness', () => {
+  useTestTenant();
   let mockReq: any;
   let mockRes: any;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockReq = { body: { name: 'Test Product', sku: 'SKU-001', price: 100 }, user: null };
+    mockReq = { body: { name: 'Test Product', sku: 'SKU-001', price: 100 }, user: { id: 1 } };
+    // The create runs in a transaction; the mock client stands in for it
+    (prismaMock.$transaction as any).mockImplementation(async (cb: any) => cb(prismaMock));
     mockRes = {
       status: jest.fn().mockReturnThis(),
       json: jest.fn().mockReturnThis(),

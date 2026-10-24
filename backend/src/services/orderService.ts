@@ -15,6 +15,7 @@ import { checkResourceOwnership, isManagerUp, orderScope, Requester } from '../u
 import { fullName } from '../utils/nameUtils';
 import { customerPhoneSearch, normalizePhone, normalizePhoneForStorage, phoneLookupVariants } from '../utils/phone';
 import { ORDER_EVENT_INCLUDE } from './orderSideEffects';
+import { getAvailableMany, RESERVING } from './stockService';
 import assignmentService from './assignmentService';
 import { transitionOrder, allowedTransitions, actorOf, ownsOrder, TransitionActor, TransitionOptions } from './orderStateMachine';
 import { hasPermission } from '../middleware/auth';
@@ -490,12 +491,13 @@ export class OrderService {
 
     // Create order in transaction
     const created = await prisma.$transaction(async (tx) => {
-      // Validate product availability (optional, as we already checked existence)
+      // Available to sell: on hand less the units reserved for open orders (M4-T16). A digital product has no stock (absent from the map).
+      const availableById = await getAvailableMany(productIds, tx);
       for (const item of data.orderItems) {
-        const product = productMap.get(item.productId);
-        if (product.stockQuantity < item.quantity) {
+        const available = availableById.get(item.productId);
+        if (available !== undefined && available < item.quantity) {
           throw new AppError(
-            `Insufficient stock for product ${product.name}.Current stock: ${product.stockQuantity} `,
+            `Insufficient stock for product ${productMap.get(item.productId).name}.Current stock: ${available} `,
             400
           );
         }
@@ -1198,7 +1200,7 @@ export class OrderService {
     // Lines, discount and total (F-318): lines first, then the total the user typed or the one the lines give
     let newItems: ItemInput[] | undefined;
     if (items && changed.includes('orderItems')) {
-      newItems = await this.checkEditedItems(items, order.orderItems, requester);
+      newItems = await this.checkEditedItems(items, order.orderItems, requester, RESERVING.includes(order.status) && order.deliveryAgentId != null);
       orderData.subtotal = Money.sum(newItems.map((i) => Money.mul(i.quantity, i.unitPrice)));
       note('orderItems', order.orderItems.map(itemSnapshot), newItems.map(itemSnapshot));
     }
@@ -1228,11 +1230,17 @@ export class OrderService {
   }
 
   /** Lines of an edit: at least one, known products, whole quantities, and stock for any line that is new or bigger. */
-  private async checkEditedItems(items: ItemInput[], current: Array<{ productId: number; quantity: number; unitPrice: Money.MoneyInput }>, requester?: Requester): Promise<ItemInput[]> {
+  private async checkEditedItems(items: ItemInput[], current: Array<{ productId: number; quantity: number; unitPrice: Money.MoneyInput }>, requester?: Requester, reservesStock = false): Promise<ItemInput[]> {
     if (items.length === 0) throw new AppError('An order needs at least one item', 400, 'ITEMS_REQUIRED');
     const products = await prisma.product.findMany({ where: { id: { in: [...new Set(items.map((i) => i.productId))] } } });
     const productMap = new Map(products.map((p) => [p.id, p]));
     const canGiveAway = !requester || requester.role === 'super_admin' || requester.role === 'admin';
+    // Available to sell (on hand less reserved, M4-T16) for the lines that are new or grew; one read for all of them
+    const grew = (item: ItemInput) => {
+      const was = current.find((c) => c.productId === item.productId);
+      return !was || item.quantity > was.quantity;
+    };
+    const availableById = await getAvailableMany(items.filter((i) => productMap.has(i.productId) && grew(i)).map((i) => i.productId));
     for (const item of items) {
       const product = productMap.get(item.productId);
       if (!product) throw new AppError(`Product ID ${item.productId} not found`, 404);
@@ -1242,9 +1250,11 @@ export class OrderService {
       if (Money.parse(item.unitPrice).isZero() && !canGiveAway && !(was && Money.parse(was.unitPrice).isZero())) {
         throw new AppError('Only the owner and admins can set a price to 0.', 403, 'PRICE_ZERO_ADMIN_ONLY');
       }
-      // Current stock number until M4 (available to sell); a line that did not grow is not checked again
-      if ((!was || item.quantity > was.quantity) && product.stockQuantity < item.quantity) {
-        throw new AppError(`Insufficient stock for product ${product.name}. Current stock: ${product.stockQuantity} `, 400);
+      // A line that did not grow is not checked again. A digital product has no stock (absent from the map).
+      // An order that reserves its units already has them taken out of available, so only the growth is needed.
+      const available = grew(item) ? availableById.get(item.productId) : undefined;
+      if (available !== undefined && available < item.quantity - (reservesStock ? was?.quantity ?? 0 : 0)) {
+        throw new AppError(`Insufficient stock for product ${product.name}. Current stock: ${available} `, 400);
       }
     }
     return items.map((item) => ({ ...item, itemType: item.itemType || 'package', metadata: item.metadata || null }));

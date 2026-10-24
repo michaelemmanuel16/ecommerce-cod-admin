@@ -1,5 +1,5 @@
 import apiClient from './api';
-import { Product } from '../types';
+import { Product, ProductInput } from '../types';
 
 export const productsService = {
   async getProducts(): Promise<Product[]> {
@@ -12,7 +12,7 @@ export const productsService = {
     return response.data.product || response.data;
   },
 
-  async createProduct(product: Partial<Product>): Promise<Product> {
+  async createProduct(product: ProductInput): Promise<Product> {
     const response = await apiClient.post('/api/products', product);
     return response.data.product || response.data;
   },

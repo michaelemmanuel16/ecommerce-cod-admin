@@ -12,6 +12,7 @@ import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
 import { clearCheckoutFormConfigCache } from '../../services/checkoutFormService';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
+import { stockUp } from './helpers/stock';
 
 jest.setTimeout(120_000);
 
@@ -47,6 +48,7 @@ beforeAll(async () => {
   const product = await prismaBase.product.create({
     data: { name: 'T19 product', sku: `T19-${Date.now()}`, category: 'test', price: 10, stockQuantity: 10, tenantId } as never,
   });
+  await stockUp(tenantId, product.id, 10); // available to sell comes from the levels (M4-T16)
   slug = `t19-${pair.a.slug}`;
   const form = await prismaBase.checkoutForm.create({
     data: {

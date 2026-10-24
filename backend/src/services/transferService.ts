@@ -35,7 +35,7 @@ export interface CreateTransferInput {
   note?: string;
 }
 
-const TRANSFER_INCLUDE = {
+export const TRANSFER_INCLUDE = {
   product: { select: { id: true, name: true, sku: true } },
   fromLocation: { select: { id: true, name: true, type: true } },
   toLocation: { select: { id: true, name: true, type: true } },
@@ -45,7 +45,7 @@ const TRANSFER_INCLUDE = {
 const isOpen = (status: string) => status === 'in_transit' || status === 'disputed';
 
 /** The transfer as the API returns it: the short quantity of a dispute and the Overdue tag (open and older than 3 days). */
-function present<T extends { status: string; quantity: number; receivedQuantity: number | null; createdAt: Date }>(row: T, now = new Date()) {
+export function present<T extends { status: string; quantity: number; receivedQuantity: number | null; createdAt: Date }>(row: T, now = new Date()) {
   const open = isOpen(row.status);
   return {
     ...row,

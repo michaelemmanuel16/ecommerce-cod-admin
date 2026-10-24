@@ -8,6 +8,13 @@ jest.mock('../../utils/logger', () => ({
   default: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
+// Available to sell (on hand less reserved) of every product asked for; tests set it
+let mockAvailable = 5;
+jest.mock('../../services/stockService', () => ({
+  __esModule: true,
+  getAvailableMany: async (ids: number[]) => new Map(ids.map((id) => [id, mockAvailable])),
+}));
+
 import { prismaMock } from '../mocks/prisma.mock';
 import { CheckoutFormService, clearCheckoutFormConfigCache } from '../../services/checkoutFormService';
 import { AppError } from '../../middleware/errorHandler';
@@ -174,7 +181,7 @@ describe('CheckoutFormService', () => {
 
   // ───────────────────────────── getCheckoutFormBySlug ─────────────────────────────
   describe('getCheckoutFormBySlug', () => {
-    beforeEach(() => clearCheckoutFormConfigCache()); // the page reads through the config cache, keyed by slug
+    beforeEach(() => { clearCheckoutFormConfigCache(); mockAvailable = 5; }); // the page reads through the config cache, keyed by slug
 
     it('returns sanitized form when found (hides stock quantity)', async () => {
       const form = {
@@ -194,7 +201,8 @@ describe('CheckoutFormService', () => {
       expect((result.product as any).inStock).toBe(true);
     });
 
-    it('inStock is false when stockQuantity is 0', async () => {
+    it('inStock is false when nothing is available to sell, whatever the cached on-hand says', async () => {
+      mockAvailable = 0;
       const form = {
         ...makeForm(),
         product: {
@@ -202,7 +210,7 @@ describe('CheckoutFormService', () => {
           description: 'Desc',
           price: 100,
           imageUrl: null,
-          stockQuantity: 0,
+          stockQuantity: 40,
         },
       };
       (prismaMock.checkoutForm.findUnique as any).mockResolvedValue(form as any);
@@ -367,9 +375,10 @@ describe('CheckoutFormService', () => {
       ).rejects.toThrow(AppError);
     });
 
-    it('translates stockQuantity into inStock boolean on the returned product', async () => {
+    it('translates available to sell into inStock boolean on the returned product', async () => {
+      mockAvailable = 0;
       (prismaMock.checkoutForm.findFirst as any).mockResolvedValue(
-        makeForm({ product: { ...makeForm().product, stockQuantity: 0 } }) as any
+        makeForm({ product: { ...makeForm().product, stockQuantity: 40 } }) as any
       );
       const out = await checkoutFormService.getCheckoutFormForPreview(1, null);
       expect((out.product as any).inStock).toBe(false);

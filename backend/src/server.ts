@@ -113,6 +113,7 @@ import { setupAgingCron } from './queues/agingQueue';
 import { setupFxRateCron } from './queues/fxRateQueue';
 import { setupFinancialReconciliationCron } from './queues/financialReconciliationQueue';
 import { setupLedgerCheckCron } from './queues/ledgerCheckQueue';
+import { setupStockCheckCron } from './queues/stockCheckQueue';
 import { setupMessageCleanupCron } from './queues/messageCleanupQueue';
 import { setupPendingCheckoutCleanupCron } from './queues/pendingCheckoutCleanupQueue';
 import * as Money from './utils/money';
@@ -364,6 +365,9 @@ if (process.env.NODE_ENV !== 'test') {
 
     // Setup nightly order-versus-ledger check (M1-T28)
     await setupLedgerCheckCron();
+
+    // Setup nightly product-total versus stock-levels check (M4-T17)
+    await setupStockCheckCron();
 
     // Setup Message Log Cleanup Cron Job
     await setupMessageCleanupCron();

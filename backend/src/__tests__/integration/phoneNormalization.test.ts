@@ -12,6 +12,7 @@ import { generateAccessToken } from '../../utils/jwt';
 import orderService from '../../services/orderService';
 import customerService from '../../services/customerService';
 import webhookService from '../../services/webhookService';
+import { stockUp } from './helpers/stock';
 
 jest.mock('../../utils/socketInstance', () => ({
   setSocketInstance: jest.fn(),
@@ -64,6 +65,7 @@ beforeAll(async () => {
     data: { name: `Phone Prod ${SUFFIX}`, sku: `PH-${SUFFIX}`, category: 'test', price: 10, stockQuantity: 1000, tenantId },
   });
   productId = product.id;
+  await stockUp(tenantId, productId, 1000); // available to sell comes from the levels (M4-T16)
   formSlug = `phone-form-${SUFFIX}`;
   const form = await (prismaBase as any).checkoutForm.create({
     data: { name: 'Phone form', slug: formSlug, productId, fields: [], styling: {}, regions: [], tenantId, codEnabled: true },

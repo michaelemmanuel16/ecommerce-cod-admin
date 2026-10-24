@@ -5,7 +5,7 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { ArrowLeft, Upload, X, Package, FileText } from 'lucide-react';
 import { productsService } from '../services/products.service';
-import { Product } from '../types';
+import { Product, ProductInput } from '../types';
 import { apiClient } from '../services/api';
 import { useConfigStore } from '../stores/configStore';
 import { getCurrencySymbol } from '../utils/countries';
@@ -191,13 +191,13 @@ export const ProductForm: React.FC = () => {
                 }
             }
 
-            const productData: Partial<Product> = {
+            // The server no longer takes stockQuantity (F-658): starting stock goes in as openingStock on create; an edit changes no stock
+            const productData: ProductInput = {
                 name: formData.name.trim(),
                 description: formData.description.trim(),
                 sku: formData.sku.trim().toUpperCase(),
                 price: parseFloat(formData.price),
                 cogs: parseFloat(formData.cogs),
-                stockQuantity: formData.productType === 'digital' ? 0 : parseInt(formData.stockQuantity),
                 lowStockThreshold: formData.productType === 'digital' ? 0 : parseInt(formData.lowStockThreshold),
                 category: formData.category.trim(),
                 imageUrl: finalImageUrl || undefined,
@@ -207,6 +207,8 @@ export const ProductForm: React.FC = () => {
                 digitalFileType: formData.productType === 'digital' ? (formData.digitalFileType || undefined) : undefined,
                 downloadLinkExpiryHours: formData.productType === 'digital' ? (parseInt(formData.downloadLinkExpiryHours) || 72) : undefined,
             };
+
+            if (!isEditMode && formData.productType === 'physical') productData.openingStock = { quantity: parseInt(formData.stockQuantity) };
 
             if (isEditMode && id) {
                 const numericId = parseInt(id, 10);
@@ -424,6 +426,7 @@ export const ProductForm: React.FC = () => {
                                         value={formData.stockQuantity}
                                         onChange={handleInputChange}
                                         placeholder="0"
+                                        disabled={isEditMode}
                                         required
                                     />
                                     <div className="flex items-center pt-7 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200">
