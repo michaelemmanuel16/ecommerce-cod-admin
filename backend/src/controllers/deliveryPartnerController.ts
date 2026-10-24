@@ -12,6 +12,7 @@ import {
   createPartner, getPartner, setPartnerAvailability, updatePartner,
 } from '../services/deliveryPartnerAdminService';
 import { unmappedRegions } from '../services/regionService';
+import { proofSummaries } from '../services/deliveryProofService';
 
 /** Money (fee rules, revenue, order totals) shows only to a role with financial:view (the M3 permission matrix). */
 const canSeeMoney = (req: AuthRequest) => hasPermission(req.user!, 'financial', 'view');
@@ -75,6 +76,17 @@ export const regionReview = async (_req: AuthRequest, res: Response): Promise<vo
 /** GET /api/delivery-partners/:id */
 export const getOne = async (req: AuthRequest, res: Response): Promise<void> => {
   res.json({ partner: await getPartner(partnerIdOf(req), { showMoney: await canSeeMoney(req) }) });
+};
+
+const MAX_PROOF_ORDERS = 50;
+
+/** GET /api/delivery-partners/:id/order-proofs?orderIds=1,2,3 (up to 50): photo link and attempt count of this partner's orders. */
+export const orderProofs = async (req: AuthRequest, res: Response): Promise<void> => {
+  const partnerId = partnerIdOf(req);
+  const ids = String(req.query.orderIds ?? '').split(',').filter(Boolean).map(Number);
+  if (ids.length === 0 || ids.some((n) => !Number.isInteger(n) || n <= 0)) throw new AppError('orderIds must be order IDs separated by commas', 400);
+  if (ids.length > MAX_PROOF_ORDERS) throw new AppError(`orderIds takes at most ${MAX_PROOF_ORDERS} orders`, 400);
+  res.json({ proofs: await proofSummaries(partnerId, ids) });
 };
 
 /** POST /api/delivery-partners */

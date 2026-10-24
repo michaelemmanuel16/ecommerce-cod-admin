@@ -8,7 +8,7 @@ import { API_URL, signIn, stamp } from './helpers/m3';
  *   backend: DATABASE_URL=<local ..._test_... db> npm run seed:fixture && npm run e2e:fixture-setup
  *            (the setup step sets the fixture admin's password, makes Logiswift and Kasapa companies, adds partner profiles
  *            and gives one delivered order of Kofi a proof photo; it refuses any other database)
- *   frontend: VITE_API_URL=relative VITE_PROXY_TARGET=http://localhost:3102 npx vite --port 5202 (a photo link on another origin is refused by the API)
+ *   frontend: VITE_API_URL=http://localhost:3102 VITE_WS_URL=http://localhost:3102 VITE_PROXY_TARGET=http://localhost:3102 npx vite --port 5202
  *   run:     E2E_BASE_URL=http://localhost:5202 E2E_API_URL=http://localhost:3102 npx playwright test e2e/m4-deliveries.spec.ts
  * The specs run in order and the last one adds a partner, so seed again before a second run.
  */

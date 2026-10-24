@@ -180,6 +180,13 @@ export interface StockLevelRow {
   inTransit: number;
 }
 
+/** One order of a partner in GET /api/delivery-partners/:id/order-proofs. */
+export interface OrderProofSummary {
+  orderId: number;
+  photoUrl: string | null;
+  attemptCount: number;
+}
+
 export interface RangeParams {
   from: string;
   to: string;
@@ -232,6 +239,12 @@ export const deliveryPartnersService = {
   },
 
   /** Rejects with 403 for a role that may not read stock; the Deliveries page then leaves the missing-units line out. */
+  /** Photo link and attempt count of up to 50 orders of this partner, in one call. */
+  async orderProofs(partnerId: number, orderIds: number[]): Promise<OrderProofSummary[]> {
+    const response = await apiClient.get(`/api/delivery-partners/${partnerId}/order-proofs`, { params: { orderIds: orderIds.join(',') }, skipCache: true, quiet: true });
+    return response.data.proofs;
+  },
+
   async returnsSummary(range: RangeParams, skipCache = false): Promise<ReturnsSummary> {
     const response = await apiClient.get('/api/inventory/returns/summary', { params: range, skipCache, quiet: true });
     return response.data;

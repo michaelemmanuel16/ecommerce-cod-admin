@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, EmptyState, Select, Skeleton, Tag } from '../../components/ui-v2';
-import { deliveryPartnersService, type OrderProof } from '../../services/delivery-partners.service';
+import { deliveryPartnersService, type OrderProof, type OrderProofSummary } from '../../services/delivery-partners.service';
 import { ordersService, type OrderListRow } from '../../services/orders.service';
 import type { OrderStatus } from '../../types';
 import { formatCurrency } from '../../utils/format';
@@ -22,7 +22,8 @@ const FILTERS: Array<{ id: string; label: string; statuses: OrderStatus[] }> = [
 
 /**
  * The orders of one partner with status, date, amount, a proof thumbnail and the attempt count (F-707, F-711, F-713).
- * Proof and attempts come from GET /api/deliveries/by-order/:orderId, once per closed order on the page.
+ * The photo link and attempt count of the closed orders come in one call per page (GET /api/delivery-partners/:id/order-proofs).
+ * The full proof of a row (recipient, time, cash) comes from GET /api/deliveries/by-order/:orderId when it is opened.
  */
 export function DrawerOrders({ partnerId }: { partnerId: number }) {
   const [filter, setFilter] = useState('all');
@@ -31,10 +32,12 @@ export function DrawerOrders({ partnerId }: { partnerId: number }) {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
-  const [proofs, setProofs] = useState<Record<number, OrderProof | 'error'>>({});
+  const [summaries, setSummaries] = useState<Record<number, OrderProofSummary>>({});
+  const [details, setDetails] = useState<Record<number, OrderProof | 'error'>>({});
   const [openId, setOpenId] = useState<number | null>(null);
-  const asked = useRef(new Set<number>());
   const ticket = useRef(0);
+  const alive = useRef(true);
+  useEffect(() => () => { alive.current = false; ticket.current++; }, []);
 
   const load = useCallback(async (nextPage: number, status: string) => {
     const mine = ++ticket.current;
@@ -49,6 +52,14 @@ export function DrawerOrders({ partnerId }: { partnerId: number }) {
       setRows((cur) => (nextPage === 1 ? res.rows : [...cur, ...res.rows]));
       setTotal(res.pagination.total);
       setPage(nextPage);
+      const closed = res.rows.filter((r) => CLOSED.includes(r.status)).map((r) => r.id);
+      if (closed.length > 0) {
+        // A role that may not read proofs, or a failed call, leaves the rows without a thumbnail
+        deliveryPartnersService.orderProofs(partnerId, closed).then(
+          (list) => mine === ticket.current && setSummaries((cur) => ({ ...cur, ...Object.fromEntries(list.map((p) => [p.orderId, p])) })),
+          () => undefined,
+        );
+      }
     } catch {
       if (mine === ticket.current) setFailed(true);
     } finally {
@@ -57,23 +68,21 @@ export function DrawerOrders({ partnerId }: { partnerId: number }) {
   }, [partnerId]);
 
   useEffect(() => {
-    asked.current = new Set();
-    setProofs({});
+    setSummaries({});
     setOpenId(null);
     void load(1, filter);
   }, [load, filter]);
 
-  // Proof and attempts of the closed orders now on the page
-  useEffect(() => {
-    for (const r of rows) {
-      if (!CLOSED.includes(r.status) || asked.current.has(r.id)) continue;
-      asked.current.add(r.id);
-      deliveryPartnersService.orderProof(r.id).then(
-        (p) => setProofs((cur) => ({ ...cur, [r.id]: p })),
-        () => setProofs((cur) => ({ ...cur, [r.id]: 'error' })),
+  const toggle = (id: number) => {
+    const opening = openId !== id;
+    setOpenId(opening ? id : null);
+    if (opening && !details[id]) {
+      deliveryPartnersService.orderProof(id).then(
+        (d) => alive.current && setDetails((cur) => ({ ...cur, [id]: d })),
+        () => alive.current && setDetails((cur) => ({ ...cur, [id]: 'error' })),
       );
     }
-  }, [rows]);
+  };
 
   return (
     <div className="dorders">
@@ -90,9 +99,9 @@ export function DrawerOrders({ partnerId }: { partnerId: number }) {
       ) : (
         <ul className="dolist" aria-label="Orders of this partner">
           {rows.map((r) => {
-            const p = proofs[r.id];
-            const attempts = p && p !== 'error' ? p.attempts.length : 0;
-            const photo = p && p !== 'error' ? p.proof.photoUrl : null;
+            const summary = summaries[r.id];
+            const attempts = summary?.attemptCount ?? 0;
+            const photo = summary?.photoUrl ?? null;
             return (
               <li key={r.id}>
                 <div className="dorow">
@@ -104,13 +113,13 @@ export function DrawerOrders({ partnerId }: { partnerId: number }) {
                   <div className="doside">
                     <Tag tone={STATUS_TONE[r.status]}>{ORDER_STATUS_LABELS[r.status]}</Tag>
                     {CLOSED.includes(r.status) && (
-                      <button type="button" className="linkbtn" aria-expanded={openId === r.id} onClick={() => setOpenId((cur) => (cur === r.id ? null : r.id))}>
+                      <button type="button" className="linkbtn" aria-expanded={openId === r.id} onClick={() => toggle(r.id)}>
                         {attempts > 0 ? `${attempts} ${attempts === 1 ? 'attempt' : 'attempts'}` : 'Proof'}
                       </button>
                     )}
                   </div>
                 </div>
-                {openId === r.id && <ProofBlock data={p ?? null} />}
+                {openId === r.id && <ProofBlock data={details[r.id] ?? null} />}
               </li>
             );
           })}

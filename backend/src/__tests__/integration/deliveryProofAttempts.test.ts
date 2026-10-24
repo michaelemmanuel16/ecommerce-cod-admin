@@ -198,6 +198,8 @@ describe('GET /api/deliveries/by-order/:orderId (F-711, F-713)', () => {
     expect(photoRes.status).toBe(200);
     expect(photoRes.headers['content-type']).toMatch(/image\/png/);
     expect(photoRes.headers['cache-control']).toContain('no-store');
+    // the app and the API can be on different origins; the signed link is the credential
+    expect(photoRes.headers['cross-origin-resource-policy']).toBe('cross-origin');
   });
 
   it('an expired link is 403, a link that expires in the future is 200', async () => {
@@ -263,6 +265,53 @@ describe('GET /api/deliveries/by-order/:orderId (F-711, F-713)', () => {
       recorded: false, proofType: null, recipientName: null, recipientPhone: null, time: null, cashCollected: null, photoUrl: null,
     });
     expect(res.body.attempts).toEqual([]);
+  });
+});
+
+describe('GET /api/delivery-partners/:id/order-proofs (batched proofs of a partner)', () => {
+  const proofs = (who: string, partner: number, ids: string) =>
+    request(app).get(`/api/delivery-partners/${partner}/order-proofs?orderIds=${ids}`).set(bearer(U[who].token));
+  let withPhoto: number;
+  let bare: number;
+  let otherPartnerOrder: number;
+  let deliveryId: number;
+
+  beforeAll(async () => {
+    withPhoto = await mkOrder('out_for_delivery');
+    deliveryId = (await prismaBase.delivery.create({ data: { tenantId, orderId: withPhoto, agentId: U.agent.id, proofType: 'photo', proofImageUrl: '/uploads/none.png' } })).id;
+    await move(withPhoto, 'failed_delivery', { failureReason: 'not_reachable' });
+    bare = await mkOrder('confirmed');
+    otherPartnerOrder = await mkOrder('confirmed', U.agent2.id);
+  });
+
+  it('gives the photo link and the attempt count of each order of the partner', async () => {
+    for (const who of ['admin', 'manager', 'acct']) {
+      const res = await proofs(who, U.agent.id, `${withPhoto},${bare}`);
+      expect([who, res.status]).toEqual([who, 200]);
+      expect(res.body.proofs).toEqual([
+        { orderId: withPhoto, photoUrl: expect.stringMatching(new RegExp(`^/api/deliveries/proof-photo/${deliveryId}\\?t=${tenantId}&exp=\\d+&sig=[0-9a-f]{64}$`)), attemptCount: 1 },
+        { orderId: bare, photoUrl: null, attemptCount: 0 },
+      ]);
+    }
+  });
+
+  it("leaves out an order of another partner or one that does not exist", async () => {
+    const res = await proofs('admin', U.agent.id, `${withPhoto},${otherPartnerOrder},99999999`);
+    expect(res.status).toBe(200);
+    expect(res.body.proofs.map((p: any) => p.orderId)).toEqual([withPhoto]);
+  });
+
+  it('refuses more than 50 ids, none and bad ids with 400', async () => {
+    const many = Array.from({ length: 51 }, (_, i) => i + 1).join(',');
+    expect((await proofs('admin', U.agent.id, many)).status).toBe(400);
+    expect((await proofs('admin', U.agent.id, '')).status).toBe(400);
+    expect((await proofs('admin', U.agent.id, '1,abc')).status).toBe(400);
+    const fifty = Array.from({ length: 50 }, (_, i) => i + 1).join(',');
+    expect((await proofs('admin', U.agent.id, fifty)).status).toBe(200);
+  });
+
+  it('a sales rep, a stock keeper and a delivery agent are refused', async () => {
+    for (const who of ['rep', 'stock', 'agent']) expect([who, (await proofs(who, U.agent.id, String(withPhoto))).status]).toEqual([who, 403]);
   });
 });
 

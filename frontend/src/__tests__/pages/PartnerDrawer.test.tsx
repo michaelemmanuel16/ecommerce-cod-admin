@@ -12,6 +12,7 @@ const get = vi.fn();
 const update = vi.fn();
 const setAvailability = vi.fn();
 const orderProof = vi.fn();
+const orderProofs = vi.fn();
 const listOrders = vi.fn();
 const stockLevels = vi.fn();
 vi.mock('../../services/delivery-partners.service', async (orig) => ({
@@ -21,6 +22,7 @@ vi.mock('../../services/delivery-partners.service', async (orig) => ({
     update: (...a: unknown[]) => update(...a),
     setAvailability: (...a: unknown[]) => setAvailability(...a),
     orderProof: (...a: unknown[]) => orderProof(...a),
+    orderProofs: (...a: unknown[]) => orderProofs(...a),
     stockLevels: (...a: unknown[]) => stockLevels(...a),
   },
 }));
@@ -51,7 +53,7 @@ function open(props: Partial<React.ComponentProps<typeof PartnerDrawer>> = {}) {
 }
 
 beforeEach(() => {
-  [get, update, setAvailability, orderProof, listOrders, stockLevels, onChanged].forEach((m) => m.mockReset());
+  [get, update, setAvailability, orderProof, orderProofs, listOrders, stockLevels, onChanged].forEach((m) => m.mockReset());
   get.mockResolvedValue(KOFI);
   update.mockImplementation((_id: number, patch: { daysToPay: number }) => Promise.resolve({ ...KOFI, profile: { ...KOFI.profile, daysToPay: patch.daysToPay } }));
   setAvailability.mockResolvedValue(undefined);
@@ -60,6 +62,7 @@ beforeEach(() => {
     { locationId: 9, productId: 2, productName: 'Magic pens', sku: 'MG-REFILL-PENS', onHand: 5, reserved: 0, inTransit: 3 },
   ]);
   listOrders.mockResolvedValue({ rows: [ORDER], pagination: { page: 1, limit: 10, total: 1, pages: 1 } });
+  orderProofs.mockResolvedValue([{ orderId: 24117, photoUrl: '/api/deliveries/proof-photo/1?sig=x', attemptCount: 1 }]);
   orderProof.mockResolvedValue({
     proof: { recorded: true, proofType: 'photo', recipientName: 'Abena Owusu', time: '2026-10-17T09:56:00Z', cashCollected: '289.00', photoUrl: '/api/deliveries/proof-photo/1?sig=x' },
     attempts: [{ id: 1, attemptedAt: '2026-10-16T09:00:00Z', reason: 'not_reachable', note: null, partner: { id: 2, name: 'Kofi Appiah' } }],
@@ -83,6 +86,9 @@ describe('Partner drawer (M4-T32)', () => {
     const list = await screen.findByRole('list', { name: 'Orders of this partner' });
     expect(await within(list).findByRole('button', { name: 'Open the delivery proof photo' })).toBeInTheDocument();
     expect(within(list).getByRole('img', { name: 'Delivery proof' })).toHaveAttribute('src', expect.stringContaining('/api/deliveries/proof-photo/1'));
+    expect(orderProofs).toHaveBeenCalledTimes(1);
+    expect(orderProofs).toHaveBeenCalledWith(2, [24117]);
+    expect(orderProof).not.toHaveBeenCalled(); // the detail loads when the row opens
     await userEvent.click(within(list).getByRole('button', { name: '1 attempt' }));
     expect(within(list).getByText(/not reachable/)).toBeInTheDocument();
     expect(within(list).getByText('Recipient', { exact: false })).toBeInTheDocument();

@@ -113,4 +113,15 @@ describe('tenant A never reaches tenant B (T20 proof and attempts)', () => {
     const link = signedProofPhotoUrl({ id: b.ids.delivery, tenantId: b.id });
     expect((await request(app).get(link.replace(`t=${b.id}`, `t=${a.id}`))).status).toBe(403);
   });
+
+  it('order-proofs gives A orders only; a B order id or a B partner id returns nothing', async () => {
+    const { a, b } = pair;
+    const ha = bearer(a.users.admin.token);
+    const own = await request(app).get(`/api/delivery-partners/${a.users.deliveryAgent.id}/order-proofs?orderIds=${a.ids.order},${b.ids.order}`).set(ha);
+    expect(own.status).toBe(200);
+    expect(own.body.proofs.map((p: any) => p.orderId)).toEqual([a.ids.order]);
+    expect(JSON.stringify(own.body)).not.toContain(b.id);
+    const other = await request(app).get(`/api/delivery-partners/${b.users.deliveryAgent.id}/order-proofs?orderIds=${b.ids.order}`).set(ha);
+    expect(other.body.proofs).toEqual([]);
+  });
 });
