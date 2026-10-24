@@ -322,7 +322,7 @@ export async function receiveShipment(actor: ShipmentActor, id: number, input: R
       const count = await tx.stockCount.create({
         data: {
           tenantId, locationId: location.id, countDate: new Date(`${ymd(receivedAt)}T00:00:00.000Z`), source: input.countSource as StockCountSource,
-          countedById: actor.id, note: `Shipment ${id} received`,
+          countedById: actor.id, note: `Shipment ${id} received`, shipmentId: id,
         },
       });
       await tx.stockCountLine.create({

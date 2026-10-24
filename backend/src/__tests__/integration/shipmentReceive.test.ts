@@ -190,6 +190,7 @@ describe('receive rules', () => {
     expect((await receive(id, { countSource: 'three_pl_dashboard' })).status).toBe(200);
     const counts = await prismaBase.stockCount.findMany({ where: { tenantId, note: `Shipment ${id} received` }, include: { lines: true } });
     expect(counts).toHaveLength(1);
+    expect(counts[0].shipmentId).toBe(id); // the stored link to its shipment
     expect([counts[0].source, counts[0].locationId, counts[0].countDate.toISOString().slice(0, 10)]).toEqual(['three_pl_dashboard', swift, YESTERDAY]);
     expect(counts[0].lines.map((l) => [l.productId, l.systemQuantity, l.countedQuantity, l.difference])).toEqual([[copybook, 300, 288, -12]]);
   });
@@ -197,7 +198,7 @@ describe('receive rules', () => {
   it('own_count and agent_count write no StockCount', async () => {
     const id = await newShipment({ quantity: 4, unitCost: 1, shippingCost: 0, otherCosts: 0 });
     await receive(id, { quantityCounted: 4, countSource: 'agent_count' });
-    expect(await prismaBase.stockCount.count({ where: { tenantId, note: `Shipment ${id} received` } })).toBe(0);
+    expect(await prismaBase.stockCount.count({ where: { tenantId, shipmentId: id } })).toBe(0);
   });
 
   it('a CNY shipment takes the rate of the received date, not of the day it was added', async () => {
