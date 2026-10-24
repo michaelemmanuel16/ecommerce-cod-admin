@@ -1,61 +1,41 @@
-import { useEffect, useState, useCallback } from 'react';
-import { Package, Boxes, AlertCircle, ChevronRight, X, Clock, ArrowDownLeft, ArrowUpRight, RotateCcw, Truck, Settings2 } from 'lucide-react';
-import { useAuthStore } from '../stores/authStore';
-import { useAgentInventoryStore } from '../stores/agentInventoryStore';
+import { useCallback, useEffect, useState } from 'react';
+import toast from 'react-hot-toast';
+import { AlertCircle, Boxes, Package, Truck } from 'lucide-react';
+import { inventoryService, type StockLevelRow, type Transfer } from '../services/inventory.service';
+import { ReceiveDialog } from './inventory/TransferDialogs';
+import { MOVE_LABEL, num, placeName, shortDateTime, signedQuantity, statusView } from './inventory/model';
 
-interface SelectedProduct {
-  id: number;
-  name: string;
-}
+const HISTORY_LIMIT = 20;
 
-const TRANSFER_TYPE_CONFIG: Record<string, { label: string; badgeClass: string; icon: React.ElementType; sign: '+' | '-' | 'dynamic' }> = {
-  allocation: { label: 'Allocated', badgeClass: 'bg-green-100 text-green-800', icon: ArrowDownLeft, sign: '+' },
-  order_fulfillment: { label: 'Fulfilled', badgeClass: 'bg-blue-100 text-blue-800', icon: Truck, sign: '-' },
-  agent_transfer: { label: 'Transfer', badgeClass: 'bg-purple-100 text-purple-800', icon: ArrowUpRight, sign: 'dynamic' },
-  return_to_warehouse: { label: 'Returned', badgeClass: 'bg-orange-100 text-orange-800', icon: RotateCcw, sign: '-' },
-  adjustment: { label: 'Adjusted', badgeClass: 'bg-gray-100 text-gray-800', icon: Settings2, sign: 'dynamic' },
-};
-
+/**
+ * The delivery agent's own stock (M4-T25, F-653). It reads /api/inventory/levels and /transfers, which the server limits to
+ * the agent's own stock location, and shows no cost. Stock sent to the agent waits here until the agent confirms what arrived
+ * (POST /transfers/:id/receive, own stock only). Agents do not count stock in the app: the owner enters an agent's count.
+ * Stays an old-style page until the agent app (M10) replaces it.
+ */
 export default function AgentMyInventory() {
-  const { user } = useAuthStore();
-  const {
-    agentInventory,
-    isLoadingInventory,
-    fetchAgentInventory,
-    transferHistory,
-    isLoadingHistory,
-    fetchTransferHistory,
-  } = useAgentInventoryStore();
+  const [levels, setLevels] = useState<StockLevelRow[] | null>(null);
+  const [transfers, setTransfers] = useState<Transfer[]>([]);
+  const [failed, setFailed] = useState(false);
+  const [receiving, setReceiving] = useState<Transfer | null>(null);
 
-  const [selectedProduct, setSelectedProduct] = useState<SelectedProduct | null>(null);
-  const [historyPage, setHistoryPage] = useState(1);
-
-  useEffect(() => {
-    if (user?.id) {
-      fetchAgentInventory(user.id);
+  const load = useCallback(async () => {
+    try {
+      const [rows, list] = await Promise.all([inventoryService.levels(true), inventoryService.transfers({ limit: HISTORY_LIMIT }, true)]);
+      setLevels(rows);
+      setTransfers(list.transfers);
+      setFailed(false);
+    } catch {
+      setFailed(true);
+      setLevels((l) => l ?? []);
     }
-  }, [user?.id, fetchAgentInventory]);
-
-  const openHistory = useCallback((productId: number, productName: string) => {
-    setSelectedProduct({ id: productId, name: productName });
-    setHistoryPage(1);
-    if (user?.id) {
-      fetchTransferHistory({ agentId: user.id, productId, page: 1, limit: 10 });
-    }
-  }, [user?.id, fetchTransferHistory]);
-
-  const loadMoreHistory = useCallback(() => {
-    if (!selectedProduct || !user?.id) return;
-    const nextPage = historyPage + 1;
-    setHistoryPage(nextPage);
-    fetchTransferHistory({ agentId: user.id, productId: selectedProduct.id, page: nextPage, limit: 10 });
-  }, [selectedProduct, user?.id, historyPage, fetchTransferHistory]);
-
-  const closeSheet = useCallback(() => {
-    setSelectedProduct(null);
   }, []);
 
-  if (isLoadingInventory) {
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (levels === null) {
     return (
       <div className="flex items-center justify-center h-64">
         <div role="status" className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600">
@@ -65,100 +45,104 @@ export default function AgentMyInventory() {
     );
   }
 
-  const items = agentInventory?.items || [];
-  const totalProducts = items.length;
-  const totalOnHand = items.reduce((sum, i) => sum + i.quantity, 0);
+  // Every row of the answer is at the agent's own location, so its id says which transfers are addressed to this agent.
+  const mine = levels[0]?.locationId ?? null;
+  const waiting = transfers.filter((t) => t.status === 'in_transit' && mine !== null && t.toLocation?.id === mine);
+  const onHand = levels.reduce((sum, l) => sum + l.onHand, 0);
+  const coming = levels.reduce((sum, l) => sum + l.inTransit, 0);
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">My Inventory</h1>
-        <p className="text-gray-600 mt-1">
-          View your currently assigned stock
-        </p>
+        <p className="text-gray-600 mt-1">The stock you hold, and the stock on its way to you</p>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg shadow-sm p-6 border border-blue-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-blue-700 font-medium">Total Products</p>
-              <p className="text-2xl font-bold text-blue-900 mt-1">{totalProducts}</p>
-            </div>
-            <div className="bg-blue-500 p-3 rounded-lg">
-              <Package className="w-6 h-6 text-white" />
-            </div>
-          </div>
+      {failed && (
+        <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          Your stock could not load. <button className="underline font-medium" onClick={() => void load()}>Try again</button>
         </div>
+      )}
 
-        <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg shadow-sm p-6 border border-green-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-green-700 font-medium">Total On Hand</p>
-              <p className="text-2xl font-bold text-green-900 mt-1">{totalOnHand}</p>
-            </div>
-            <div className="bg-green-500 p-3 rounded-lg">
-              <Boxes className="w-6 h-6 text-white" />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        {[
+          { label: 'Products', value: levels.length, Icon: Package, card: 'from-blue-50 to-blue-100 border-blue-200', text: 'text-blue-700', big: 'text-blue-900', chip: 'bg-blue-500' },
+          { label: 'On hand', value: onHand, Icon: Boxes, card: 'from-green-50 to-green-100 border-green-200', text: 'text-green-700', big: 'text-green-900', chip: 'bg-green-500' },
+          { label: 'On the way to you', value: coming, Icon: Truck, card: 'from-purple-50 to-purple-100 border-purple-200', text: 'text-purple-700', big: 'text-purple-900', chip: 'bg-purple-500' },
+        ].map(({ label, value, Icon, card, text, big, chip }) => (
+          <div key={label} className={`bg-gradient-to-br ${card} rounded-lg shadow-sm p-6 border`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className={`text-sm ${text} font-medium`}>{label}</p>
+                <p className={`text-2xl font-bold ${big} mt-1`}>{num(value)}</p>
+              </div>
+              <div className={`${chip} p-3 rounded-lg`}>
+                <Icon className="w-6 h-6 text-white" />
+              </div>
             </div>
           </div>
-        </div>
+        ))}
       </div>
 
-      {/* Inventory Table */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+      {waiting.length > 0 && (
+        <div className="mb-6 bg-white rounded-lg shadow-sm border border-purple-200 overflow-hidden">
+          <div className="px-6 py-4 border-b border-purple-200 bg-purple-50">
+            <h2 className="text-lg font-semibold text-gray-900">Waiting for you</h2>
+            <p className="text-sm text-gray-600">Count what arrived, then confirm it. Until you do, it is not in your stock.</p>
+          </div>
+          <ul className="divide-y divide-gray-100">
+            {waiting.map((t) => (
+              <li key={t.id} className="flex items-center justify-between gap-3 px-6 py-4">
+                <div>
+                  <p className="text-sm font-medium text-gray-900">{t.product.name} &times; {num(t.quantity)}</p>
+                  <p className="text-xs text-gray-500">From {placeName(t, 'from')}, {shortDateTime(t.createdAt)}{t.overdue ? ' · Overdue' : ''}</p>
+                </div>
+                <button
+                  className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                  aria-label={`Confirm received: ${t.product.name}`}
+                  onClick={() => setReceiving(t)}
+                >
+                  Confirm received
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden mb-6">
         <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
           <h2 className="text-lg font-semibold text-gray-900">Assigned Stock</h2>
         </div>
-
-        {items.length === 0 ? (
+        {levels.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 px-4">
             <div className="bg-gray-100 p-4 rounded-full mb-4">
               <AlertCircle className="w-8 h-8 text-gray-400" />
             </div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              No inventory assigned yet
-            </h3>
-            <p className="text-gray-600 text-center max-w-md">
-              Your assigned stock will appear here once an administrator allocates products to you.
-            </p>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No inventory assigned yet</h3>
+            <p className="text-gray-600 text-center max-w-md">Your assigned stock will appear here once an administrator allocates products to you.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
+            <table className="min-w-full divide-y divide-gray-200" aria-label="My stock">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product</th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">On Hand</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Allocated</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Reserved</th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">In Transit</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Fulfilled</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Returned</th>
-                  <th className="px-6 py-3 w-8"></th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {items.map((item) => (
-                  <tr
-                    key={item.productId}
-                    className="hover:bg-gray-50 cursor-pointer active:bg-gray-100"
-                    onClick={() => openHistory(item.productId, item.productName)}
-                  >
+                {levels.map((l) => (
+                  <tr key={l.productId}>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div>
-                        <div className="text-sm font-medium text-gray-900">{item.productName}</div>
-                        <div className="text-sm text-gray-500">{item.sku}</div>
-                      </div>
+                      <div className="text-sm font-medium text-gray-900">{l.productName}</div>
+                      <div className="text-sm text-gray-500">{l.sku}</div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold text-gray-900">{item.quantity}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{item.totalAllocated}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{item.totalInTransit}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{item.totalFulfilled}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{item.totalReturned}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
-                      <ChevronRight className="w-4 h-4 text-gray-400" />
-                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold text-gray-900">{num(l.onHand)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{num(l.reserved)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{num(l.inTransit)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -167,120 +151,43 @@ export default function AgentMyInventory() {
         )}
       </div>
 
-      {/* Allocation History Bottom Sheet */}
-      {selectedProduct && (
-        <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/40" onClick={closeSheet} />
-          <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-xl max-h-[70vh] overflow-y-auto">
-            {/* Sheet Header */}
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 rounded-t-2xl">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Clock className="w-5 h-5 text-gray-500" />
-                  <h3 className="text-lg font-semibold text-gray-900">{selectedProduct.name}</h3>
-                </div>
-                <button
-                  onClick={closeSheet}
-                  className="p-1 rounded-full hover:bg-gray-100"
-                >
-                  <X className="w-5 h-5 text-gray-500" />
-                </button>
-              </div>
-              <p className="text-sm text-gray-500 mt-1">Allocation History</p>
-            </div>
-
-            {/* Sheet Content */}
-            <div className="px-4 py-3">
-              {isLoadingHistory && !transferHistory ? (
-                <div className="space-y-3">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="animate-pulse flex gap-3 p-3">
-                      <div className="w-8 h-8 bg-gray-200 rounded-full" />
-                      <div className="flex-1 space-y-2">
-                        <div className="h-4 bg-gray-200 rounded w-1/3" />
-                        <div className="h-3 bg-gray-200 rounded w-2/3" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : !transferHistory?.transfers.length ? (
-                <div className="flex flex-col items-center justify-center py-8">
-                  <Clock className="w-10 h-10 text-gray-300 mb-3" />
-                  <p className="text-gray-500 text-sm">No allocation history for this product</p>
-                </div>
-              ) : (
-                <>
-                  <div className="space-y-2">
-                    {transferHistory.transfers.map((transfer) => {
-                      const config = TRANSFER_TYPE_CONFIG[transfer.transferType] || TRANSFER_TYPE_CONFIG.adjustment;
-                      const Icon = config.icon;
-
-                      let sign: string;
-                      if (config.sign === 'dynamic') {
-                        if (transfer.transferType === 'agent_transfer') {
-                          sign = transfer.toAgentId === user?.id ? '+' : '-';
-                        } else {
-                          sign = transfer.quantity >= 0 ? '+' : '';
-                        }
-                      } else {
-                        sign = config.sign === '+' ? '+' : '-';
-                      }
-
-                      let label = config.label;
-                      if (transfer.transferType === 'agent_transfer') {
-                        label = transfer.toAgentId === user?.id ? 'Transfer In' : 'Transfer Out';
-                      }
-
-                      const fromName = transfer.fromAgent
-                        ? `${transfer.fromAgent.firstName} ${transfer.fromAgent.lastName}`
-                        : null;
-                      const toName = transfer.toAgent
-                        ? `${transfer.toAgent.firstName} ${transfer.toAgent.lastName}`
-                        : null;
-
-                      return (
-                        <div key={transfer.id} className="flex items-start gap-3 p-3 rounded-lg border border-gray-100 hover:bg-gray-50">
-                          <div className={`p-1.5 rounded-full ${config.badgeClass}`}>
-                            <Icon className="w-4 h-4" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between">
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${config.badgeClass}`}>
-                                {label}
-                              </span>
-                              <span className={`text-sm font-semibold ${sign === '+' ? 'text-green-600' : 'text-red-600'}`}>
-                                {sign}{Math.abs(transfer.quantity)}
-                              </span>
-                            </div>
-                            <div className="mt-1 text-xs text-gray-500 space-y-0.5">
-                              <p>{new Date(transfer.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
-                              {fromName && <p>From: {fromName}</p>}
-                              {toName && <p>To: {toName}</p>}
-                              {transfer.order && <p>Order #{transfer.order.id}</p>}
-                              {transfer.notes && <p className="text-gray-400 italic">{transfer.notes}</p>}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {transferHistory.pagination.totalPages > 1 &&
-                    historyPage < transferHistory.pagination.totalPages && (
-                    <button
-                      onClick={loadMoreHistory}
-                      disabled={isLoadingHistory}
-                      className="w-full mt-3 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 disabled:opacity-50"
-                    >
-                      {isLoadingHistory ? 'Loading...' : 'Load More'}
-                    </button>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+          <h2 className="text-lg font-semibold text-gray-900">Recent moves</h2>
         </div>
-      )}
+        {transfers.length === 0 ? (
+          <p className="px-6 py-8 text-sm text-gray-500 text-center">No moves yet.</p>
+        ) : (
+          <ul className="divide-y divide-gray-100">
+            {transfers.map((t) => {
+              const s = statusView(t);
+              return (
+                <li key={t.id} className="flex items-start justify-between gap-3 px-6 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-900">{MOVE_LABEL[t.transferType]}: {t.product.name}</p>
+                    <p className="text-xs text-gray-500">{placeName(t, 'from')} &rarr; {placeName(t, 'to')} · {shortDateTime(t.createdAt)}</p>
+                    {s.sub && <p className="text-xs text-gray-400">{s.sub}</p>}
+                  </div>
+                  <div className="text-right whitespace-nowrap">
+                    <p className="text-sm font-semibold text-gray-900">{signedQuantity(t)}</p>
+                    <p className="text-xs text-gray-500">{s.text}</p>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
+      <ReceiveDialog
+        transfer={receiving}
+        onClose={() => setReceiving(null)}
+        onDone={(message) => {
+          setReceiving(null);
+          toast.success(message);
+          void load();
+        }}
+      />
     </div>
   );
 }

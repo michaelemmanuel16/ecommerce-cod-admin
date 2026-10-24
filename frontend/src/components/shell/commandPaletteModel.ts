@@ -41,7 +41,7 @@ export interface PaletteAction {
 
 export const ACTIONS: PaletteAction[] = [
   { key: 'payout', label: 'Record a 3PL payout', icon: Banknote, to: null, menuKey: 'finance' }, // the payout screen is not built yet
-  { key: 'stockCount', label: 'Start a stock count', icon: ClipboardCheck, to: null, menuKey: 'inventory' }, // the stock count screen is not built yet
+  { key: 'stockCount', label: 'Start a stock count', icon: ClipboardCheck, to: '/inventory?action=count', menuKey: 'inventory' },
 ];
 
 export function visibleActions(menu: string[] | null, actions: PaletteAction[] = ACTIONS): PaletteAction[] {

@@ -92,8 +92,9 @@ describe('CommandPalette (M3-T35)', () => {
 
   it('actions show only when their screen exists and the role has the menu key', () => {
     const payout: PaletteAction = { ...ACTIONS[0], to: '/finance/payout' };
-    // today: no screen, hidden for everyone
-    expect(visibleActions(['finance', 'inventory'])).toEqual([]);
+    // today only the stock count has a screen (M4-T27); the payout is hidden for everyone
+    expect(visibleActions(['finance', 'inventory']).map((a) => [a.key, a.to])).toEqual([['stockCount', '/inventory?action=count']]);
+    expect(visibleActions(['finance'])).toEqual([]);
     // screen exists, role without the key: hidden; with the key: shown
     expect(visibleActions(['orders'], [payout])).toEqual([]);
     expect(visibleActions(null, [payout])).toEqual([]);
