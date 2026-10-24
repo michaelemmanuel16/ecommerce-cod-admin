@@ -81,6 +81,17 @@ describe('Shipment modal (M4-T23)', () => {
     expect(create.mock.calls[0][0]).toMatchObject({ productId: 1, quantity: 100, currency: 'CNY', unitCost: 10, fxRate: 1.6 });
   });
 
+  it('products that arrive after the modal opened still fill the product field', async () => {
+    const { rerender } = wrap(<ShipmentModal shipment={null} products={[]} onClose={vi.fn()} onSaved={vi.fn()} />);
+    rerender(<ToastProvider><ShipmentModal shipment={null} products={PRODUCTS} onClose={vi.fn()} onSaved={vi.fn()} /></ToastProvider>);
+    expect(screen.getByLabelText('Product')).toHaveValue('1');
+    await userEvent.type(screen.getByLabelText('Quantity'), '5');
+    await userEvent.type(screen.getByLabelText(/^Unit cost/), '2');
+    await userEvent.click(screen.getByRole('button', { name: /Save shipment/ }));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0][0].productId).toBe(1);
+  });
+
   it('editing a foreign shipment shows its stored rate', async () => {
     wrap(<ShipmentModal shipment={FOREIGN} products={PRODUCTS} onClose={vi.fn()} onSaved={vi.fn()} />);
     expect(screen.getByTestId('rate-line')).toHaveTextContent('Stored rate: 1 CNY = 1.6 GHS. Total GH₵1,600.');

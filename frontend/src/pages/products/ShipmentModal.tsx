@@ -40,6 +40,8 @@ export function ShipmentModal({ shipment, products, onClose, onSaved }: Shipment
     setApiError(null);
   };
 
+  // The products can arrive after the modal opened: until one is picked, the first one stands
+  const productId = fields.productId || (products[0] ? String(products[0].id) : '');
   const currency = fields.currency.trim().toUpperCase() || store;
   const foreign = currency !== store;
   const total = totalOf(fields);
@@ -61,7 +63,7 @@ export function ShipmentModal({ shipment, products, onClose, onSaved }: Shipment
 
   const check = (): Errors => {
     const e: Errors = {};
-    if (!editing && !fields.productId) e.productId = 'Pick a product';
+    if (!editing && !productId) e.productId = 'Pick a product';
     const q = Number(fields.quantity);
     if (!Number.isInteger(q) || q < 1) e.quantity = 'Quantity must be a whole number above 0';
     if (fields.unitCost.trim() === '' || !(Number(fields.unitCost) >= 0)) e.unitCost = 'Unit cost must be 0 or more';
@@ -78,7 +80,7 @@ export function ShipmentModal({ shipment, products, onClose, onSaved }: Shipment
     setSaving(true);
     setApiError(null);
     const body: ShipmentPayload = {
-      ...(editing ? {} : { productId: Number(fields.productId) }),
+      ...(editing ? {} : { productId: Number(productId) }),
       supplier: fields.supplier.trim(),
       quantity: Number(fields.quantity),
       unitCost: Number(fields.unitCost),
@@ -120,7 +122,7 @@ export function ShipmentModal({ shipment, products, onClose, onSaved }: Shipment
           {editing ? (
             <Input label="Product" value={shipment.product.name} readOnly />
           ) : (
-            <Select label="Product" value={fields.productId} error={errors.productId} onChange={(e) => set('productId', e.target.value)}>
+            <Select label="Product" value={productId} error={errors.productId} onChange={(e) => set('productId', e.target.value)}>
               {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </Select>
           )}
