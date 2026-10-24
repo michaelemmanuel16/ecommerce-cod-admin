@@ -104,3 +104,44 @@ One service writes all stock quantities. Stock leaves once, when an order become
 - `backend/scripts/migrate-stock-to-levels.ts`
 - Tests: `stockService.test.ts`, `stockOnce.test.ts`, `transfersApi.test.ts`, `stockDoubleDecrement.test.ts`, `unit/stockWriteGrep.test.ts`, `integration/helpers/stock.ts`
 
+---
+
+## COD-40 — Shipments, receiving and landed cost
+**Date:** 2026-10-24 | **Type:** feat | **Branch:** feature/m4-stock-fulfilment | **Commits:** 32626c5, f65024b, 89a6022, 659f3cf (simplify), 9c0ca23 (merge)
+
+### Summary
+Incoming shipments get their own service and routes. Receiving a shipment counts the units, adds them to a location, sets the landed cost and the average product cost, posts one ledger entry and opens a supplier claim for short units. A delivered order stores its landed cost, and the ledger uses that amount. Plan tasks: M4-T11 to T13.
+
+### Changes
+- **`shipmentService`** and routes `/api/shipments`: list (filter by status and product), `/summary` (3 tiles: pending count, units on the way, cost to land in store currency), get, create, edit, delete. One currency per shipment. The rate comes from `fxService.rateOn`, or the user types one (`manual`). A foreign currency with no rate gives 400 with a clear message. Edit and delete work only while `pending` (409 otherwise). Audit rows on each write. The old `/api/products/shipments*` routes are removed; only the URLs in `frontend/src/services/shipments.service.ts` changed.
+- **Receive** (`POST /api/shipments/:id/receive`): one transaction under a shipment row lock, then the product lock. Location must be own store, 3PL or agent and active; the date not in the future; counted 0 to shipped. Writes:
+  - one `receipt` movement for the counted units (none when counted is 0);
+  - `totalCostStore` at the rate of the received date, landed cost per unit = total ÷ counted (D2);
+  - weighted-average `Product.cogs` (on hand before floored at 0);
+  - one ledger entry DR 1200 / CR 1010 for the full total, dated the received date (`createInventoryPurchaseEntry`, idempotent per shipment);
+  - for short units: an open claim of short × supplier unit cost (at the same rate) and one `stock_gap` Finding;
+  - for the 3PL dashboard source: one `StockCount` row with its line (system = shipped).
+- **Claim** (`POST /api/shipments/:id/claim`): settle with an amount recovered (above 0, not above the claim) posts one entry DR 1010 / CR 1200 with source type `inventory_claim`; write-off posts nothing. Both close the Finding as `explained`. Only an open claim (409 otherwise).
+- **Old rows:** a SQL migration maps `arrived` shipments to `received` (counted = quantity, short = 0, received date = arrived date). They keep their old ledger entry.
+- **Landed cost on orders:** `fulfilOrder` sets `Order.landedCostTotal` (quantity × product cost at delivery) when stock moves. The revenue entry's COGS leg uses that amount (`cogsOfOrder`). On leaving delivered, the reversal uses the COGS amount of the entry it reverses (`cogsBooked`), and `landedCostTotal` goes back to null. Orders delivered before this change keep null.
+- **Database:** new enum value `JournalSourceType.inventory_claim`; migrations `20261024100000_m4_arrived_shipments_to_received`, `20261024110000_m4_inventory_claim_source`.
+- **Fixture:** 3 pending shipments from the mockup (tiles 3 / 1,500 / GH₵24,950).
+
+### Verification
+- Milestone branch after the merge: integration 1437 pass (11 skipped), unit 1613, frontend vitest 1057; builds and lints pass.
+- Worked example on the fixture: total 8,700; counted 288; short 12; landed 30.21; product cost 30.1145; claim 324; one entry DR 1200 / CR 1010 of 8,700; second receive 409; settle 300 posts DR 1010 / CR 1200 once.
+- API check on the production-dump copy (port 3300): CNY shipment without a rate 400; with a typed rate 1.6 the store total is 83.20; edit while pending 200; tiles 1 / 10 / 83.20; receive into the in-transit location 400, future date 400, counted above shipped 400; receive 8 of 10 at rate 1.5 gives total 78.00, landed 9.75, claim 15.00; second receive, edit and delete 409; settle above the claim 400, settle 10 200, second settle and write-off 409; old `/api/products/shipments` 404; no token 401. Database: entry 1200/1010 of 78 on the received date, claim entry 1010/1200 of 10 (`inventory_claim`), Logiswift 5 → 13, cost (61 × 5 + 8 × 9.75) ÷ 69 = 5.5507, a `StockCount` line 8 of 10, the Finding `explained`.
+- The production-dump copies hold 0 `arrived` rows. The migration was proved on inserted test rows on `ecommerce_cod_m3copy_a`.
+- Simplify: API answers before and after are equal, except the claim entry's source type.
+
+### Open points
+- The 3PL-dashboard count line of a receive compares counted with shipped, not with the whole location. Check that the COD-41 overview does not read it as a full location count.
+- The `cogs` write in `receiveShipment` is a separate product update after the movement's cache update; one update would need an allow-list entry in the stock grep test.
+
+### Key Files
+- `backend/src/services/shipmentService.ts`, `routes/shipmentRoutes.ts` (new); `controllers/shipmentController.ts` (rewritten)
+- `backend/src/services/glAutomationService.ts`, `stockService.ts`, `orderSideEffects.ts`, `financialSyncService.ts`, `routes/productRoutes.ts`, `server.ts`
+- `backend/prisma/schema.prisma`, migrations `20261024100000_m4_arrived_shipments_to_received/`, `20261024110000_m4_inventory_claim_source/`
+- `frontend/src/services/shipments.service.ts`
+- Tests: `shipmentsApi.test.ts`, `shipmentReceive.test.ts`, `landedCostOrders.test.ts`; fixture `numbersFixture.ts`, `fixtureChecks/stock.ts`
+
