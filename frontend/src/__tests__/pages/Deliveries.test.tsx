@@ -6,12 +6,13 @@ import { Deliveries } from '../../pages/Deliveries';
 import { ToastProvider } from '../../components/ui-v2';
 import { useAuthStore } from '../../stores/authStore';
 import { useConfigStore } from '../../stores/configStore';
-import { LIST, PARTNERS, REASONS, SUMMARY, WAITING } from '../fixtures/deliveriesList';
+import { LIST, PARTNERS, REASONS, RETURNS, SUMMARY, WAITING } from '../fixtures/deliveriesList';
 
 const list = vi.fn();
 const summary = vi.fn();
 const failureReasons = vi.fn();
 const waiting = vi.fn();
+const returnsSummary = vi.fn();
 vi.mock('../../services/delivery-partners.service', async (orig) => ({
   ...(await orig<typeof import('../../services/delivery-partners.service')>()),
   deliveryPartnersService: {
@@ -19,6 +20,7 @@ vi.mock('../../services/delivery-partners.service', async (orig) => ({
     summary: (...a: unknown[]) => summary(...a),
     failureReasons: (...a: unknown[]) => failureReasons(...a),
     waiting: (...a: unknown[]) => waiting(...a),
+    returnsSummary: (...a: unknown[]) => returnsSummary(...a),
   },
 }));
 
@@ -42,12 +44,13 @@ function renderPage(url = '/delivery-agents') {
 }
 
 beforeEach(() => {
-  [list, summary, failureReasons, waiting].forEach((m) => m.mockReset());
+  [list, summary, failureReasons, waiting, returnsSummary].forEach((m) => m.mockReset());
   list.mockImplementation((_range: unknown, type: string) =>
     Promise.resolve({ ...LIST, type, rows: type === 'all' ? PARTNERS : PARTNERS.filter((p) => p.type === type) }));
   summary.mockResolvedValue(SUMMARY);
   failureReasons.mockResolvedValue(REASONS);
   waiting.mockResolvedValue(WAITING);
+  returnsSummary.mockResolvedValue(RETURNS);
   useConfigStore.setState({ currency: 'GHS', loaded: true });
   useAuthStore.setState({ user: { id: 1, role: 'admin', firstName: 'Manny', lastName: 'A' } as never, permissions: {} });
 });
@@ -123,9 +126,26 @@ describe('Deliveries cards (M4-T31)', () => {
   });
 
   it('a role that may not see the waiting list (403) still gets the page', async () => {
-    waiting.mockRejectedValue(new Error('403'));
+    waiting.mockResolvedValue(null);
     renderPage();
     await screen.findByRole('table', { name: 'Delivery partners' });
     expect(screen.queryByText('Waiting to dispatch', { selector: 'h3' })).not.toBeInTheDocument();
+  });
+
+  it('shows "Returned units missing" with the sent and received figures and a link to the 3PL stock', async () => {
+    renderPage();
+    const card = (await screen.findByText('Failed and returned by reason')).closest('.card') as HTMLElement;
+    const line = await within(card).findByText(/Returned units missing:/);
+    expect(returnsSummary).toHaveBeenCalledTimes(1); // it follows the dates, not every refresh
+    expect(line.closest('p')).toHaveTextContent('Returned units missing: 5. Logiswift sent back 41 units. We received 36.');
+    expect(within(card).getByRole('link', { name: 'See it in Inventory' })).toHaveAttribute('href', '/inventory?location=7');
+  });
+
+  it('a role that may not read stock (403) gets the card without the missing-units line', async () => {
+    returnsSummary.mockResolvedValue(null);
+    renderPage();
+    const card = (await screen.findByText('Failed and returned by reason')).closest('.card') as HTMLElement;
+    await within(card).findByText('165');
+    expect(screen.queryByText(/Returned units missing/)).not.toBeInTheDocument();
   });
 });

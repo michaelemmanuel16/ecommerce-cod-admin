@@ -8,6 +8,7 @@ import { API_URL, signIn, stamp } from './helpers/m3';
  *   backend: DATABASE_URL=<local ..._test_... db> npm run seed:fixture && npm run e2e:fixture-setup
  *            (the setup step sets the fixture admin's password, makes Logiswift and Kasapa companies, adds partner profiles
  *            and gives one delivered order of Kofi a proof photo; it refuses any other database)
+ *   frontend: VITE_API_URL=http://localhost:3102 VITE_WS_URL=http://localhost:3102 VITE_PROXY_TARGET=http://localhost:3102 npx vite --port 5202
  *   run:     E2E_BASE_URL=http://localhost:5202 E2E_API_URL=http://localhost:3102 npx playwright test e2e/m4-deliveries.spec.ts
  * The specs run in order and the last one adds a partner, so seed again before a second run.
  */
@@ -62,6 +63,14 @@ test('the reasons card adds up to 402 and a reason opens Orders filtered', async
   await expect(page.getByText('Showing 25 of 96 orders')).toBeVisible();
 });
 
+test('the reasons card shows 5 returned units missing (41 sent, 36 received) with a link to the 3PL stock', async ({ page }) => {
+  await openPage(page);
+  const card = page.locator('.card', { has: page.getByRole('heading', { name: 'Failed and returned by reason' }) });
+  const line = card.locator('p.note', { hasText: 'Returned units missing' });
+  await expect(line).toContainText('Returned units missing: 5. Logiswift sent back 41 units. We received 36.');
+  await expect(line.getByRole('link', { name: 'See it in Inventory' })).toHaveAttribute('href', /^\/inventory\?location=\d+$/);
+});
+
 test('open Kofi: the Orders tab shows a proof photo, a save writes an audit row', async ({ page, request }) => {
   await openPage(page);
   await row(page, 'Kofi Appiah').click();
@@ -74,6 +83,13 @@ test('open Kofi: the Orders tab shows a proof photo, a save writes an audit row'
   await expect(photo).toBeVisible();
   // the signed link really serves an image
   await expect.poll(() => photo.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
+
+  await drawer.getByRole('tab', { name: 'Stock' }).click();
+  const figs = drawer.locator('.dstock .dfig');
+  await expect(figs).toContainText('On hand');
+  await expect(figs).toContainText('Reserved');
+  await expect(drawer.getByRole('list', { name: 'Stock at Kofi Appiah' })).toBeVisible();
+  await expect(drawer.getByRole('link', { name: 'See Kofi Appiah in Inventory' })).toHaveAttribute('href', /^\/inventory\?location=\d+$/);
 
   await drawer.getByRole('tab', { name: 'Fees' }).click();
   const days = drawer.getByLabel('Days to pay');

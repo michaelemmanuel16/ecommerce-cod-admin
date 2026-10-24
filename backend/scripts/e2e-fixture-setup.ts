@@ -9,8 +9,9 @@ import { uploadDir } from '../src/config/multer';
 //   1. sets a real bcrypt password on the fixture admin (fixture-admin@fixture-numbers.test), and
 //   2. gives one delivered order of Kofi Appiah a delivery proof with a photo (the fixture has no deliveries), and
 //   3. makes Logiswift and Kasapa Express companies (3PLs) and gives the five partners a profile (base town, days to pay,
-//      data source, trial flag). The fixture makes every partner a person and writes no profile, so the Deliveries tabs
-//      would read 5 / 5 / 0 instead of 5 / 3 / 2.
+//      data source, trial flag). The fixture makes every partner a person (the default kind) and writes no profile, so the
+//      Deliveries tabs would read 5 / 5 / 0 instead of 5 / 3 / 2. The data source is set only for the two 3PLs (csv); the column
+//      default `app` already fits the agents.
 // It never edits the fixture itself and can run again (same result).
 // Refuses unless DATABASE_URL is a local database whose name contains `_test_`, and when NODE_ENV=production.
 // `--undo` removes the rows this script added (deliveries and partner profiles of the fixture tenant). The fixture re-seed and the
@@ -25,9 +26,9 @@ export const FIXTURE_PASSWORD = 'password123';
 const PROFILES = [
   { first: 'Logiswift', kind: 'company' as const, baseTown: 'Accra', daysToPay: 9, dataSource: 'csv' as const, isTrial: false },
   { first: 'Kasapa', kind: 'company' as const, baseTown: 'Cape Coast', daysToPay: 7, dataSource: 'csv' as const, isTrial: true },
-  { first: 'Kofi', kind: 'person' as const, baseTown: 'Kumasi', daysToPay: 2, dataSource: 'app' as const, isTrial: false },
-  { first: 'Esi', kind: 'person' as const, baseTown: 'Accra', daysToPay: 2, dataSource: 'app' as const, isTrial: false },
-  { first: 'Kwesi', kind: 'person' as const, baseTown: 'Takoradi', daysToPay: 3, dataSource: 'app' as const, isTrial: false },
+  { first: 'Kofi', kind: 'person' as const, baseTown: 'Kumasi', daysToPay: 2, isTrial: false },
+  { first: 'Esi', kind: 'person' as const, baseTown: 'Accra', daysToPay: 2, isTrial: false },
+  { first: 'Kwesi', kind: 'person' as const, baseTown: 'Takoradi', daysToPay: 3, isTrial: false },
 ];
 const PHOTO_FILE = 'e2e-proof.png';
 // A 1x1 green PNG
@@ -76,8 +77,7 @@ async function main() {
     for (const p of PROFILES) {
       const user = await prisma.user.findFirst({ where: { tenantId: tenant.id, role: 'delivery_agent', firstName: p.first }, select: { id: true } });
       if (!user) throw new Error(`Partner ${p.first} not found in the fixture`);
-      // The fixture names the 3PL "Logiswift 3PL"; the mockup says "Logiswift"
-      await prisma.user.update({ where: { id: user.id }, data: { kind: p.kind, ...(p.first === 'Logiswift' ? { lastName: '' } : {}) } });
+      await prisma.user.update({ where: { id: user.id }, data: { kind: p.kind } });
       const { first: _first, kind: _kind, ...profile } = p;
       await prisma.deliveryPartnerProfile.upsert({
         where: { userId: user.id },

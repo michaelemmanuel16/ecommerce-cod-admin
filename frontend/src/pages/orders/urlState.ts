@@ -1,6 +1,7 @@
 import type { OrderListParams } from '../../services/orders.service';
 import type { FailureReason } from '../../types';
 import { positive } from '../../utils/urlState';
+import { FAILURE_REASONS } from './reasons';
 import { isTabId, tabStatuses, type StatusTabId } from './model';
 import type { SortField, SortState } from './columns';
 
@@ -41,7 +42,6 @@ export const DEFAULT_VIEW: ListView = {
 /** The import can make 2,000 orders; the API takes no more. */
 export const MAX_IDS = 2000;
 
-const FAILURE_REASONS: FailureReason[] = ['not_reachable', 'refused', 'wrong_address', 'rescheduled', 'other'];
 const SORT_FIELDS: SortField[] = ['id', 'customer', 'totalAmount', 'createdAt'];
 const DAY = 86_400_000;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -78,7 +78,7 @@ export function parseView(search: URLSearchParams): ListView {
     agent: positive(search.get('agent')),
     rep: rep === 'none' ? 'none' : positive(rep),
     flagged: search.get('flagged') === '1',
-    failure: FAILURE_REASONS.includes(failure as FailureReason) ? (failure as FailureReason) : null,
+    failure: FAILURE_REASONS.some(([reason]) => reason === failure) ? (failure as FailureReason) : null,
     ids: readIds(search.get('ids')),
   };
 }

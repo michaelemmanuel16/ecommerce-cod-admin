@@ -8,7 +8,8 @@ import { verifyProofPhotoLink } from '../services/deliveryProofService';
 
 /**
  * GET /api/deliveries/proof-photo/:deliveryId?t&exp&sig (M4-T20). No bearer token: the signed, expiring link is the
- * credential (an <img> cannot send one). An expired or altered link is 403.
+ * credential (an <img> cannot send one). An expired or altered link is 403. The link works from another origin
+ * (the app and the API are on different origins in local dev), so the response is marked cross-origin for helmet's default.
  */
 export const getProofPhoto = async (req: Request, res: Response): Promise<void> => {
   const deliveryId = Number(req.params.deliveryId);
@@ -21,6 +22,7 @@ export const getProofPhoto = async (req: Request, res: Response): Promise<void> 
   const delivery = await runInTenant(t as string, () => prisma.delivery.findUnique({ where: { id: deliveryId }, select: { proofImageUrl: true } }));
   const url = delivery?.proofImageUrl;
   res.setHeader('Cache-Control', 'private, no-store');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   if (!url) {
     res.status(404).json({ error: 'No photo recorded' });

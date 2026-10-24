@@ -59,7 +59,7 @@
 .v2 .sheet .dtags{display:inline-flex;gap:6px;flex-wrap:wrap;margin-top:4px}
 .v2 .sheet h4{font-size:13.5px;font-weight:700;margin-bottom:8px}
 .v2 .sheet .mut{color:var(--ink-3);font-size:13px}
-.v2 .dsummary,.v2 .dfees,.v2 .dorders{display:flex;flex-direction:column;gap:18px}
+.v2 .dsummary,.v2 .dfees,.v2 .dorders,.v2 .dstock{display:flex;flex-direction:column;gap:18px}
 .v2 .dfig{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
 .v2 .dfig > div{border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:4px}
 .v2 .dfig span{color:var(--ink-3);font-size:12px}

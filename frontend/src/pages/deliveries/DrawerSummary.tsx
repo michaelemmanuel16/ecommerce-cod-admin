@@ -1,13 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Skeleton, Tag } from '../../components/ui-v2';
+import { Skeleton } from '../../components/ui-v2';
 import type { PartnerDetail, PartnerRow } from '../../services/delivery-partners.service';
 import { ordersService, type OrderListRow } from '../../services/orders.service';
-import { formatCurrency } from '../../utils/format';
-import { ORDER_STATUS_LABELS } from '../../utils/orderStatus';
-import { customerName, orderNumber, shortDate, STATUS_TONE } from '../orders/model';
 import { SuccessBar } from './SuccessBar';
-import { count, days, DATA_SOURCE_LABEL } from './model';
+import { CLOSED_STATUSES, count, days, DATA_SOURCE_LABEL } from './model';
+import { OrderRow } from './OrderRow';
 
 interface DrawerSummaryProps {
   partner: PartnerDetail;
@@ -23,7 +20,7 @@ export function DrawerSummary({ partner, row, target }: DrawerSummaryProps) {
     let live = true;
     setLast(null);
     ordersService
-      .listOrders({ deliveryAgentId: partner.id, status: ['delivered', 'failed_delivery', 'returned'], limit: 10, sortBy: 'createdAt', sortOrder: 'desc' })
+      .listOrders({ deliveryAgentId: partner.id, status: CLOSED_STATUSES, limit: 10, sortBy: 'createdAt', sortOrder: 'desc' })
       .then((r) => live && setLast(r.rows), () => live && setLast([]));
     return () => { live = false; };
   }, [partner.id]);
@@ -61,15 +58,7 @@ export function DrawerSummary({ partner, row, target }: DrawerSummaryProps) {
         ) : (
           <ul className="dolist" aria-label="Last closed orders">
             {last.map((r) => (
-              <li key={r.id}>
-                <div className="dorow">
-                  <div className="domain">
-                    <Link to={`/orders/${r.id}`}><b>{orderNumber(r.id)}</b></Link> {customerName(r)}
-                    <small>{shortDate(r.createdAt)} · {formatCurrency(r.totalAmount)}</small>
-                  </div>
-                  <div className="doside"><Tag tone={STATUS_TONE[r.status]}>{ORDER_STATUS_LABELS[r.status]}</Tag></div>
-                </div>
-              </li>
+              <li key={r.id}><OrderRow row={r} /></li>
             ))}
           </ul>
         )}

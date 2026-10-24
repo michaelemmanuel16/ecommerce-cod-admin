@@ -5,6 +5,7 @@ import {
   type PartnerList,
   type PartnerSummary,
   type PartnerTab,
+  type ReturnsSummary,
   type RangeParams,
   type WaitingList,
 } from '../../services/delivery-partners.service';
@@ -27,8 +28,8 @@ interface DeliveriesState {
 }
 
 /**
- * Everything the Deliveries page reads for one view: the table (tab = the API `type`), the five tiles, the reasons card
- * and the waiting list. One answer replaces the last, the newest ask wins. Order and availability events refresh it quietly.
+ * Everything the Deliveries page reads for one view: the table (tab = the API `type`), the five tiles, the reasons card,
+ * the waiting list and the returns summary (null when the role may not read stock). One answer replaces the last, the newest ask wins. Order and availability events refresh it quietly.
  */
 export function useDeliveries(range: RangeParams, tab: PartnerTab) {
   const [state, setState] = useState<DeliveriesState>({ list: null, summary: null, reasons: null, waiting: null, loading: true, error: null });
@@ -52,7 +53,7 @@ export function useDeliveries(range: RangeParams, tab: PartnerTab) {
       list: list.status === 'fulfilled' ? list.value : s.list,
       summary: summary.status === 'fulfilled' ? summary.value : s.summary,
       reasons: reasons.status === 'fulfilled' ? reasons.value : s.reasons,
-      waiting: waiting.status === 'fulfilled' ? waiting.value : null,
+      waiting: waiting.status === 'fulfilled' ? waiting.value : s.waiting, // null: the role may not see it (403)
       loading: false,
       error: list.status === 'rejected' ? 'The delivery partners could not load.' : null,
     }));
@@ -61,6 +62,14 @@ export function useDeliveries(range: RangeParams, tab: PartnerTab) {
   useEffect(() => {
     void load(false);
   }, [viewKey, load]);
+
+  // The returns line follows the dates only: an order or availability event does not change it.
+  const [returns, setReturns] = useState<ReturnsSummary | null>(null);
+  useEffect(() => {
+    let live = true;
+    deliveryPartnersService.returnsSummary(range, true).then((r) => live && setReturns(r), () => live && setReturns(null));
+    return () => { live = false; };
+  }, [range.from, range.to]);
 
   useEffect(() => {
     const socket = getSocket();
@@ -80,5 +89,5 @@ export function useDeliveries(range: RangeParams, tab: PartnerTab) {
   }, [load]);
 
   const refetch = useCallback(() => load(true), [load]);
-  return { ...state, refetch };
+  return { ...state, returns, refetch };
 }

@@ -1,20 +1,24 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Pencil } from 'lucide-react';
-import { Button, Drawer, Skeleton, Tabs, Tag, useToast } from '../../components/ui-v2';
+import { Button, Drawer, Tabs, Tag, useToast } from '../../components/ui-v2';
 import { AgentEditModal } from '../../components/admin/AgentEditModal';
 import type { DeliveryAgent } from '../../services/delivery-agents.service';
 import { deliveryPartnersService, type PartnerDetail, type PartnerRow } from '../../services/delivery-partners.service';
 import { apiErrorMessage } from '../../utils/apiError';
 import { DrawerFees } from './DrawerFees';
+import { fieldsOf } from './feesFields';
 import { DrawerOrders } from './DrawerOrders';
+import { DrawerStock } from './DrawerStock';
+import { ListSkeleton } from './ListSkeleton';
 import { DrawerSummary } from './DrawerSummary';
 import { AvailabilitySwitch } from './AvailabilitySwitch';
 import { rowTags, TYPE_LABEL, TYPE_TONE } from './model';
 
-export type DrawerTab = 'summary' | 'orders' | 'fees';
+export type DrawerTab = 'summary' | 'orders' | 'stock' | 'fees';
 const TABS: Array<{ id: DrawerTab; label: string }> = [
   { id: 'summary', label: 'Summary' },
   { id: 'orders', label: 'Orders' },
+  { id: 'stock', label: 'Stock' },
   { id: 'fees', label: 'Fees' },
 ];
 
@@ -28,7 +32,7 @@ interface PartnerDrawerProps {
   canEdit: boolean;
   /** Owner, admin and manager turn availability on and off. */
   canSwitch: boolean;
-  /** The tab to open on (a partner just added opens on Fees so setup can be finished, F-708). */
+  /** The tab to open on (a partner just added opens on Fees so setup can be finished, F-708). Read when the drawer mounts; the page keys it by partner. */
   startTab?: DrawerTab;
   onClose: () => void;
   /** The partner changed (profile, person, availability): the page reloads its table. */
@@ -43,12 +47,14 @@ const agentOf = (p: PartnerDetail): DeliveryAgent => ({
 });
 
 /**
- * The partner drawer (M4-T32, F-707, F-711, F-713, F-709). Tabs Summary, Orders, Fees. "Edit person" opens the existing user edit.
- * A save on Fees writes an audit row on the server. The Stock tab comes with the stock APIs (COD-41).
+ * The partner drawer (M4-T32, F-707, F-711, F-713, F-709). Tabs Summary, Orders, Stock, Fees. "Edit person" opens the existing user edit.
+ * A save on Fees writes an audit row on the server. The page gives the drawer a `key` per partner, so each partner starts clean.
  */
 export function PartnerDrawer({ id, row, target, canEdit, canSwitch, startTab = 'summary', onClose, onChanged }: PartnerDrawerProps) {
   const say = useToast();
-  const [tab, setTab] = useState<DrawerTab>('summary');
+  const [tab, setTab] = useState<DrawerTab>(startTab);
+  /** The Orders tab stays mounted once opened, so its rows and filter are still there when the user comes back. */
+  const [ordersOpened, setOrdersOpened] = useState(startTab === 'orders');
   const [partner, setPartner] = useState<PartnerDetail | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -64,12 +70,8 @@ export function PartnerDrawer({ id, row, target, canEdit, canSwitch, startTab = 
   }, [id]);
 
   useEffect(() => {
-    setPartner(null);
-    setFailed(null);
-    setTab(startTab);
     void load();
-    // startTab only matters when a partner opens
-  }, [id, load]);
+  }, [load]);
 
   const toggle = async (on: boolean) => {
     if (!partner) return;
@@ -106,17 +108,21 @@ export function PartnerDrawer({ id, row, target, canEdit, canSwitch, startTab = 
           )
         }
       >
-        <Tabs label="Partner details" items={TABS} value={tab} onChange={(t) => setTab(t as DrawerTab)} className="dtabs" />
+        <Tabs label="Partner details" items={TABS} value={tab} onChange={(t) => {
+          setTab(t as DrawerTab);
+          if (t === 'orders') setOrdersOpened(true);
+        }} className="dtabs" />
         {failed ? (
           <p className="mut">{failed}</p>
         ) : !partner ? (
-          <div aria-busy="true" aria-label="Loading partner"><Skeleton height={80} /><Skeleton height={80} className="skelgap" /></div>
-        ) : tab === 'summary' ? (
-          <DrawerSummary partner={partner} row={row} target={target} />
-        ) : tab === 'orders' ? (
-          <DrawerOrders partnerId={partner.id} />
+          <ListSkeleton label="Loading partner" height={80} />
         ) : (
-          <DrawerFees partner={partner} canEdit={canEdit} onSaved={(p) => { setPartner(p); onChanged(); }} />
+          <>
+            {tab === 'summary' && <DrawerSummary partner={partner} row={row} target={target} />}
+            {ordersOpened && <div hidden={tab !== 'orders'}><DrawerOrders partnerId={partner.id} /></div>}
+            {tab === 'stock' && <DrawerStock location={partner.stockLocation} />}
+            {tab === 'fees' && <DrawerFees key={JSON.stringify(fieldsOf(partner))} partner={partner} canEdit={canEdit} onSaved={(p) => { setPartner(p); onChanged(); }} />}
+          </>
         )}
       </Drawer>
       {editing && partner && (

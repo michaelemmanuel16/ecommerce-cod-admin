@@ -15,6 +15,8 @@ router.use(tenantRateLimiter);
 // Edit: owner and admin. The availability switch also takes the agent for self (checked in the service).
 const canRead = requireRole('super_admin', 'admin', 'manager', 'accountant', 'inventory_manager');
 const canOversee = requireRole('super_admin', 'admin', 'manager');
+// Photo links and attempts of a partner's orders: the roles of /api/deliveries/by-order that can also read partners (no agent, no stock keeper).
+const canSeeProofs = requireRole('super_admin', 'admin', 'manager', 'accountant');
 const canEdit = requireRole('super_admin', 'admin');
 
 const profileFields = [
@@ -48,6 +50,7 @@ router.post(
   controller.create,
 );
 router.get('/:id(\\d+)', canRead, controller.getOne);
+router.get('/:id(\\d+)/order-proofs', canSeeProofs, controller.orderProofs);
 router.patch('/:id(\\d+)', canEdit, [...profileFields, validate], controller.update);
 router.patch(
   '/:id(\\d+)/availability',

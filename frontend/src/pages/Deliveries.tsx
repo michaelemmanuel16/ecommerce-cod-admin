@@ -3,13 +3,14 @@ import { useSearchParams } from 'react-router-dom';
 import { Plus, Clock, Gauge, Hourglass, PackageCheck, Truck } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { useV2Page } from '../components/shell/useV2Page';
-import { Button, EmptyState, Skeleton, Table, Tabs, Tag, Tile, useToast } from '../components/ui-v2';
+import { Button, EmptyState, Table, Tabs, Tag, Tile, useToast } from '../components/ui-v2';
 import { formatCurrency } from '../utils/format';
 import { DateRange } from './orders/DateRange';
 import { presetOf, rangePhrase } from './orders/urlState';
 import { buildColumns } from './deliveries/columns';
+import { ListSkeleton } from './deliveries/ListSkeleton';
 import { AddPartnerModal } from './deliveries/AddPartnerModal';
-import { PartnerDrawer, type DrawerTab } from './deliveries/PartnerDrawer';
+import { PartnerDrawer } from './deliveries/PartnerDrawer';
 import { ReasonsCard } from './deliveries/ReasonsCard';
 import { OutNowCard, WaitingCard } from './deliveries/WaitingCards';
 import { deliveryPartnersService, type PartnerRow } from '../services/delivery-partners.service';
@@ -54,10 +55,9 @@ export function Deliveries() {
     [target, list?.total, isManager, switchAvailability],
   );
 
-  const tiles = summary;
-  const rate = tiles?.deliverySuccess.rate;
-  const gap = tiles?.deliverySuccess.gapPoints ?? null;
-  const delivered = tiles?.delivered;
+  const rate = summary?.deliverySuccess.rate;
+  const gap = summary?.deliverySuccess.gapPoints ?? null;
+  const delivered = summary?.delivered;
 
   return (
     <section className="deliveries">
@@ -81,19 +81,19 @@ export function Deliveries() {
         <Tile
           icon={<Truck />}
           tone="pine"
-          value={count(tiles?.outNow.orders)}
+          value={count(summary?.outNow.orders)}
           label="Out for delivery now"
-          footer={<><span>{tiles ? `Across ${tiles.outNow.partners} ${tiles.outNow.partners === 1 ? 'partner' : 'partners'}` : '—'}</span><Tag>Live</Tag></>}
+          footer={<><span>{summary ? `Across ${summary.outNow.partners} ${summary.outNow.partners === 1 ? 'partner' : 'partners'}` : '—'}</span><Tag>Live</Tag></>}
         />
         <Tile
           icon={<Clock />}
           tone="gold"
-          value={count(tiles?.waiting.orders)}
+          value={count(summary?.waiting.orders)}
           label="Waiting to dispatch"
           footer={
             <>
-              <span>{tiles?.waiting.oldestDays == null ? 'None waiting' : `Oldest ${tiles.waiting.oldestDays} ${tiles.waiting.oldestDays === 1 ? 'day' : 'days'}`}</span>
-              {tiles && tiles.waiting.orders > 0 && <Tag tone="warn">Dispatch</Tag>}
+              <span>{summary?.waiting.oldestDays == null ? 'None waiting' : `Oldest ${summary.waiting.oldestDays} ${summary.waiting.oldestDays === 1 ? 'day' : 'days'}`}</span>
+              {summary && summary.waiting.orders > 0 && <Tag tone="warn">Dispatch</Tag>}
             </>
           }
         />
@@ -139,11 +139,7 @@ export function Deliveries() {
         />
 
         {data.loading && !list ? (
-          <div style={{ padding: 20 }} aria-busy="true" aria-label="Loading delivery partners">
-            <Skeleton height={44} />
-            <Skeleton height={44} className="skelgap" />
-            <Skeleton height={44} className="skelgap" />
-          </div>
+          <ListSkeleton label="Loading delivery partners" rows={3} height={44} style={{ padding: 20 }} />
         ) : data.error && !list ? (
           <EmptyState title={data.error} action={<Button onClick={() => void data.refetch()}>Try again</Button>} />
         ) : list && list.rows.length === 0 ? (
@@ -159,7 +155,7 @@ export function Deliveries() {
       </div>
 
       <div className="grid two">
-        <ReasonsCard reasons={data.reasons} phrase={phrase} range={range} />
+        <ReasonsCard reasons={data.reasons} returns={data.returns} phrase={phrase} range={range} />
         <div className="stack">
           {data.waiting && <WaitingCard waiting={data.waiting} />}
           {list && <OutNowCard rows={list.rows} />}
@@ -167,12 +163,13 @@ export function Deliveries() {
       </div>
 
       <PartnerDrawer
+        key={view.partner ?? 'closed'}
         id={view.partner}
         row={list?.rows.find((r) => r.partnerId === view.partner) ?? null}
         target={target}
         canEdit={isAdmin}
         canSwitch={isManager}
-        startTab={(view.partner !== null && view.partner === addedId ? 'fees' : 'summary') satisfies DrawerTab}
+        startTab={view.partner !== null && view.partner === addedId ? 'fees' : 'summary'}
         onClose={() => go({ ...view, partner: null })}
         onChanged={() => void data.refetch()}
       />

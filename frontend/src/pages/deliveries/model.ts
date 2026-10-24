@@ -1,6 +1,8 @@
 import type { TagTone } from '../../components/ui-v2';
 import type { FeeRule, PartnerDataSource, PartnerRow, PartnerTab, PartnerType, RateResult } from '../../services/delivery-partners.service';
+import type { OrderStatus } from '../../types';
 import { formatCurrency } from '../../utils/format';
+import { AVATAR_TONES } from '../../utils/people';
 
 export const PARTNER_TABS: Array<{ id: PartnerTab; label: string }> = [
   { id: 'all', label: 'All partners' },
@@ -38,9 +40,8 @@ export function feeRuleText(rule: FeeRule | null | undefined): string | null {
   return [rule.delivered, rule.failed, rule.returned].map((v) => formatCurrency(v ?? 0)).join(' · ');
 }
 
-/** Initials and avatar tint of a partner. */
-export const TONES = ['pine', 'gold', 'violet', 'coral', 'mint'] as const;
-export const toneOf = (id: number): (typeof TONES)[number] => TONES[id % TONES.length];
+/** Avatar tint of a partner. */
+export const toneOf = (id: number): (typeof AVATAR_TONES)[number] => AVATAR_TONES[id % AVATAR_TONES.length];
 
 /** The small tags after a partner name: trial, inactive, unavailable (F-709). */
 export const rowTags = (row: Pick<PartnerRow, 'isActive' | 'isAvailable' | 'isTrial'>): Array<{ tone: TagTone; text: string }> => [
@@ -49,5 +50,6 @@ export const rowTags = (row: Pick<PartnerRow, 'isActive' | 'isAvailable' | 'isTr
   ...(row.isActive && !row.isAvailable ? [{ tone: 'bad' as const, text: 'Unavailable' }] : []),
 ];
 
-/** The order statuses a partner's closed work ends in. */
-export const CLOSED_STATUSES = ['delivered', 'failed_delivery', 'returned'] as const;
+/** The order statuses a partner's closed work ends in: they can have a delivery proof and attempts. */
+export const CLOSED_STATUSES: OrderStatus[] = ['delivered', 'failed_delivery', 'returned'];
+export const isClosed = (status: OrderStatus): boolean => CLOSED_STATUSES.includes(status);

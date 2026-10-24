@@ -104,3 +104,30 @@ export async function proofAndAttempts(orderId: number, delivery: LoadedDelivery
     })),
   };
 }
+
+export interface OrderProofSummary {
+  orderId: number;
+  photoUrl: string | null;
+  attemptCount: number;
+}
+
+/**
+ * The photo link and the attempt count of several orders in one read, for the partner drawer list. Only orders of this partner
+ * come back (an id of another partner, another tenant or no order is left out). `/by-order/:orderId` stays the full detail.
+ */
+export async function proofSummaries(partnerId: number, orderIds: number[]): Promise<OrderProofSummary[]> {
+  const orders = await prisma.order.findMany({
+    where: { id: { in: orderIds }, deliveryAgentId: partnerId },
+    select: { id: true, delivery: { select: { id: true, proofImageUrl: true } } },
+    orderBy: { id: 'asc' },
+  });
+  const ids = orders.map((o) => o.id);
+  const counts = await prisma.deliveryAttempt.groupBy({ by: ['orderId'], where: { orderId: { in: ids } }, _count: { _all: true } });
+  const attemptsOf = new Map(counts.map((c) => [c.orderId, c._count._all]));
+  const tenantId = resolveTenantId();
+  return orders.map((o) => ({
+    orderId: o.id,
+    photoUrl: o.delivery?.proofImageUrl ? signedProofPhotoUrl({ id: o.delivery.id, tenantId }) : null,
+    attemptCount: attemptsOf.get(o.id) ?? 0,
+  }));
+}

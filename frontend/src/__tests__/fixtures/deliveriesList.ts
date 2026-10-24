@@ -1,4 +1,4 @@
-import type { FailureReasons, PartnerList, PartnerRow, PartnerSummary, RateResult, WaitingList } from '../../services/delivery-partners.service';
+import type { FailureReasons, PartnerList, PartnerRow, PartnerSummary, RateResult, ReturnsSummary, WaitingList } from '../../services/delivery-partners.service';
 
 const rate = (value: number | null, delivered = 0, failed = 0, returned = 0): RateResult => ({
   value,
@@ -33,6 +33,11 @@ export const SUMMARY: PartnerSummary = {
   delivered: { orders: 376, revenue: '92000.00', currency: 'GHS' },
   deliverySuccess: { rate: rate(48.3, 376, 354, 48), target: 60, gapPoints: 11.7 },
   cashWithPartners: { amount: null, overdueOrders: null },
+};
+
+export const RETURNS: ReturnsSummary = {
+  partners: [{ locationId: 7, partnerId: 1, name: 'Logiswift', sent: 41, received: 36, missing: 5 }],
+  total: { sent: 41, received: 36, missing: 5 },
 };
 
 export const REASONS: FailureReasons = {
