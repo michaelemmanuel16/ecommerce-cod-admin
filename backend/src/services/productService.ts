@@ -9,6 +9,7 @@ import { productDeliveredUnits } from './kpi/products';
 import { DAY_MS, MONTH_RE, getStoreTimeZone, localDate, monthRange } from './kpi/dates';
 import { ratePercent } from './kpi/rates';
 import { canSeeCost } from '../utils/costAccess';
+import { successTargetPct } from './kpi/successTarget';
 
 /**
  * Products API (F-600, F-601, F-602, M4-T16). Stock figures are computed from the levels and the orders, never stored:
@@ -26,6 +27,13 @@ export function withoutCost<T extends { cogs?: unknown; marginPct?: unknown }>(p
 }
 /** Apply the role rule to a product row or a list of them. */
 export const forRole = <T extends { cogs?: unknown; marginPct?: unknown }>(role: string | undefined, product: T) => (canSeeCost(role) ? product : withoutCost(product));
+
+/** A request body without `cogs` for a role that may not see or set cost: the server never takes a cost it cannot show back. */
+export function withoutCostInput<T extends Record<string, unknown>>(role: string | undefined, body: T): T {
+  if (canSeeCost(role) || !('cogs' in body)) return body;
+  const { cogs: _cogs, ...rest } = body;
+  return rest as T;
+}
 
 const wholePercent = (num: Money.MoneyInput, den: Money.MoneyInput): number | null =>
   Money.parse(den).isZero() ? null : Money.roundHalfUp(Money.mul(Money.div(num, den), 100), 0).toNumber();
@@ -160,9 +168,10 @@ export async function listProducts(f: ListFilters) {
 /** GET /api/products/summary: the four tiles of the Products page. */
 export async function productsSummary(monthParam?: string) {
   const window = monthWindow(monthParam);
-  const [all, delivered] = await Promise.all([
+  const [all, delivered, target] = await Promise.all([
     withSoftDeleted(() => prisma.product.findMany({ select: { id: true, price: true, cogs: true, isActive: true, productType: true, lowStockDays: true } })),
     productDeliveredUnits(resolveTenantId(), 'all', window.from, window.to),
+    successTargetPct(resolveTenantId(), window.from),
   ]);
   const byProduct = delivered.byProduct ?? [];
   const priced = new Map(all.map((p) => [p.id, p]));
@@ -183,6 +192,7 @@ export async function productsSummary(monthParam?: string) {
     bestSeller: top ? { productId: top.productId, name: top.name, sku: top.sku, units: top.units } : null,
     averageMargin: revenue.isZero() ? null : wholePercent(margin, revenue),
     lowStock: (await lowStockIds(active)).length,
+    deliverySuccessTarget: target,
   };
 }
 
@@ -208,10 +218,22 @@ export async function lowStockProducts() {
   return rows.sort((a, b) => (a.daysOfCover ?? 0) - (b.daysOfCover ?? 0) || a.id - b.id);
 }
 
+/** What a product can no longer change: its type once it has order lines (F-601), its cost once a shipment was received (F-611). */
+export type LockedField = 'productType' | 'cogs';
+
+async function lockedFields(id: number): Promise<LockedField[]> {
+  const [orderLine, receipt] = await Promise.all([
+    prisma.orderItem.findFirst({ where: { productId: id }, select: { id: true } }),
+    prisma.inventoryShipment.findFirst({ where: { productId: id, status: 'received' }, select: { id: true } }),
+  ]);
+  return [...(orderLine ? ['productType' as const] : []), ...(receipt ? ['cogs' as const] : [])];
+}
+
+/** One product, archived or not (archive hides it from lists, it still exists). `lockedFields` tells the drawer what is read only. */
 export async function getProduct(id: number) {
-  const product = await prisma.product.findUnique({ where: { id } });
+  const product = await withSoftDeleted(() => prisma.product.findFirst({ where: { id } }));
   if (!product) throw new AppError('Product not found', 404);
-  return { ...product, marginPct: marginPercent(product.price, product.cogs, product.productType) };
+  return { ...product, marginPct: marginPercent(product.price, product.cogs, product.productType), lockedFields: await lockedFields(id) };
 }
 
 const FIELDS = [
@@ -272,8 +294,12 @@ export async function updateProduct(id: number, body: Record<string, unknown>) {
   if (data.sku !== undefined && data.sku !== current.sku) {
     if (await withSoftDeleted(() => prisma.product.findFirst({ where: { sku: data.sku as string, NOT: { id } } }))) throw new AppError('Product with this SKU already exists', 400);
   }
-  if (data.productType !== undefined && data.productType !== current.productType && (await prisma.orderItem.count({ where: { productId: id } })) > 0) {
+  const locked = await lockedFields(id);
+  if (data.productType !== undefined && data.productType !== current.productType && locked.includes('productType')) {
     throw new AppError('The product type cannot change once the product has orders', 409);
+  }
+  if (data.cogs !== undefined && locked.includes('cogs') && !Money.orZero(current.cogs).eq(Money.parse(data.cogs as Money.MoneyInput))) {
+    throw new AppError('The cost is set by the landed cost of the received shipments and cannot be typed', 409);
   }
   return prisma.product.update({ where: { id }, data: data as Prisma.ProductUncheckedUpdateInput });
 }

@@ -1,297 +1,174 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Package, AlertTriangle, Edit2, Trash2, ChevronDown, ChevronRight, Users, Truck } from 'lucide-react';
-import { productsService } from '../services/products.service';
-import { formatCurrency } from '../utils/format';
-import { Product } from '../types';
-import { Button } from '../components/ui/Button';
-import { Card } from '../components/ui/Card';
-import { AgentStockPanel } from '../components/inventory/AgentStockPanel';
-import { IncomingInventoryView } from '../components/inventory/IncomingInventoryView';
-import { useAgentInventoryStore } from '../stores/agentInventoryStore';
+import { useCallback, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { Package, PackageX, Plus, Percent, Trophy, Truck } from 'lucide-react';
+import { usePermissions } from '../hooks/usePermissions';
+import { useV2Page } from '../components/shell/useV2Page';
+import { Button, EmptyState, Skeleton, Tabs, Tag, Tile } from '../components/ui-v2';
+import { ProductDrawer } from './products/ProductDrawer';
+import { ProductsTable } from './products/ProductsTable';
+import { ShipmentsPane } from './products/ShipmentsPane';
+import { monthNow, monthShort, PRODUCT_TABS } from './products/model';
+import { parseView, writeView, type ProductsView } from './products/urlState';
+import { useProducts } from './products/useProducts';
 
-export const Products: React.FC = () => {
-    const navigate = useNavigate();
-    const [products, setProducts] = useState<Product[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [searchQuery, setSearchQuery] = useState('');
-    const [expandedProductId, setExpandedProductId] = useState<number | null>(null);
-    const [showIncomingInventory, setShowIncomingInventory] = useState(false);
-    const { productAgentStock } = useAgentInventoryStore();
+/**
+ * The Products page (M4-T21, F-600 to F-603) with the Incoming shipments tab (M4-T23). Built from docs/mockups/v2/products.html.
+ * The pane, the tab, the month and the open drawer are in the URL, so a copied link opens the same view. Cost and margin show
+ * only when the API sends them for the signed-in role.
+ */
+export function Products() {
+  useV2Page();
+  const [search, setSearch] = useSearchParams();
+  const view = useMemo(() => parseView(search), [search]);
+  const { can } = usePermissions();
+  // The shipments tab offers the active products, whatever tab the products table was left on
+  const data = useProducts(view.pane === 'shipments' ? 'active' : view.tab, view.month);
+  const [addingShipment, setAddingShipment] = useState(false);
 
-    useEffect(() => {
-        loadProducts();
-    }, []);
+  const go = useCallback((next: ProductsView, replace = false) => setSearch(writeView(next), { replace }), [setSearch]);
+  const { list, summary } = data;
+  const month = view.month ?? list?.month ?? monthNow();
+  const canCreate = can('products', 'create');
+  const canEdit = can('products', 'update');
+  const canStock = can('products', 'update_stock');
+  const showCost = !!list?.canSeeCost;
+  const shippable = (list?.products ?? []).filter((p) => p.isActive && p.productType === 'physical').map((p) => ({ id: p.id, name: p.name }));
+  const shipments = view.pane === 'shipments';
 
-    const { fetchProductAgentStock } = useAgentInventoryStore();
-
-    const loadProducts = async () => {
-        try {
-            setIsLoading(true);
-            const data = await productsService.getProducts();
-            setProducts(data);
-            // Fetch agent stock for all products so "With Agents" column shows immediately
-            data.forEach((p: Product) => fetchProductAgentStock(p.id));
-        } catch (error) {
-            console.error('Failed to load products:', error);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const handleAddProduct = () => {
-        navigate('/products/new');
-    };
-
-    const handleEditProduct = (productId: number) => {
-        navigate(`/products/${productId}/edit`);
-    };
-
-    const handleDeleteProduct = async (productId: number, productName: string) => {
-        if (!confirm(`Are you sure you want to delete "${productName}"? This action cannot be undone.`)) {
-            return;
-        }
-
-        try {
-            await productsService.deleteProduct(productId);
-            loadProducts();
-        } catch (error) {
-            console.error('Failed to delete product:', error);
-            alert('Failed to delete product. It may be associated with existing orders.');
-        }
-    };
-
-    const toggleExpand = (productId: number) => {
-        setExpandedProductId((prev) => (prev === productId ? null : productId));
-    };
-
-    const filteredProducts = products.filter((product) =>
-        product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        product.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        product.category.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-
-    const getStockStatus = (product: Product) => {
-        const stock = product.stockQuantity ?? product.stock ?? 0;
-        if (stock <= 0) {
-            return { label: 'Out of Stock', color: 'bg-red-100 text-red-800' };
-        } else if (stock <= product.lowStockThreshold) {
-            return { label: 'Low Stock', color: 'bg-yellow-100 text-yellow-800' };
-        }
-        return { label: 'In Stock', color: 'bg-green-100 text-green-800' };
-    };
-
-    const getAgentStockTotal = (productId: number): number => {
-        return productAgentStock[productId]?.totalWithAgents ?? 0;
-    };
-
-    return (
+  return (
+    <section className="products">
+      <div className="head">
         <div>
-            <div className="mb-6 flex items-center justify-between">
-                <h1 className="text-2xl font-bold text-gray-900">Products</h1>
-                <div className="flex items-center gap-2">
-                    <Button variant="secondary" onClick={() => setShowIncomingInventory(true)}>
-                        <Truck className="w-4 h-4 mr-2" />
-                        Incoming Inventory
-                    </Button>
-                    <Button variant="primary" onClick={handleAddProduct}>
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add Product
-                    </Button>
-                </div>
-            </div>
-
-            <Card className="mb-6">
-                <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                    <input
-                        type="text"
-                        placeholder="Search products by name, SKU, or category..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                </div>
-            </Card>
-
-            {isLoading ? (
-                <Card>
-                    <div className="text-center py-12">
-                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-                        <p className="mt-4 text-gray-600">Loading products...</p>
-                    </div>
-                </Card>
-            ) : filteredProducts.length === 0 ? (
-                <Card>
-                    <div className="text-center py-12">
-                        <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                        <p className="text-gray-600">
-                            {searchQuery ? 'No products found matching your search.' : 'No products yet. Add your first product to get started.'}
-                        </p>
-                    </div>
-                </Card>
-            ) : (
-                <Card>
-                    <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
-                                <tr>
-                                    <th className="w-8 px-2 py-3"></th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Product
-                                    </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        SKU
-                                    </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Category
-                                    </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Price
-                                    </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Warehouse
-                                    </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        <div className="flex items-center gap-1">
-                                            <Users className="w-3 h-3" />
-                                            With Agents
-                                        </div>
-                                    </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Status
-                                    </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Actions
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
-                                {filteredProducts.map((product) => {
-                                    const stockStatus = getStockStatus(product);
-                                    const isExpanded = expandedProductId === product.id;
-                                    const agentTotal = getAgentStockTotal(product.id);
-                                    const warehouseStock = product.stockQuantity ?? product.stock ?? 0;
-                                    return (
-                                        <React.Fragment key={product.id}>
-                                            <tr
-                                                className="hover:bg-gray-50 cursor-pointer"
-                                                onClick={() => toggleExpand(product.id)}
-                                            >
-                                                <td className="px-2 py-4 text-center">
-                                                    {isExpanded ? (
-                                                        <ChevronDown className="w-4 h-4 text-gray-400 mx-auto" />
-                                                    ) : (
-                                                        <ChevronRight className="w-4 h-4 text-gray-400 mx-auto" />
-                                                    )}
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <div className="flex items-center">
-                                                        <div className="flex-shrink-0 h-10 w-10 bg-gray-100 rounded overflow-hidden flex items-center justify-center">
-                                                            {product.imageUrl ? (
-                                                                <img
-                                                                    src={product.imageUrl}
-                                                                    alt={product.name}
-                                                                    className="w-full h-full object-cover"
-                                                                />
-                                                            ) : (
-                                                                <Package className="w-6 h-6 text-gray-400" />
-                                                            )}
-                                                        </div>
-                                                        <div className="ml-4">
-                                                            <div className="text-sm font-medium text-gray-900">{product.name}</div>
-                                                            {product.description && (
-                                                                <div className="text-sm text-gray-500 truncate max-w-xs">
-                                                                    {product.description}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <span className="text-sm text-gray-900 font-mono">{product.sku}</span>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                                                        {product.category}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    {formatCurrency(product.price)}
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <div className="flex items-center">
-                                                        <span className="text-sm text-gray-900">{warehouseStock}</span>
-                                                        {warehouseStock <= product.lowStockThreshold && (
-                                                            <AlertTriangle className="w-4 h-4 text-yellow-500 ml-2" />
-                                                        )}
-                                                    </div>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    {agentTotal > 0 ? (
-                                                        <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-100 text-purple-800">
-                                                            {agentTotal}
-                                                        </span>
-                                                    ) : (
-                                                        <span className="text-sm text-gray-400">-</span>
-                                                    )}
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${stockStatus.color}`}>
-                                                        {stockStatus.label}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                    <div className="flex items-center gap-2">
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                handleEditProduct(product.id);
-                                                            }}
-                                                            className="text-blue-600 hover:text-blue-800 transition-colors"
-                                                            title="Edit Product"
-                                                        >
-                                                            <Edit2 className="w-4 h-4" />
-                                                        </button>
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                handleDeleteProduct(product.id, product.name);
-                                                            }}
-                                                            className="text-red-600 hover:text-red-800 transition-colors"
-                                                            title="Delete Product"
-                                                        >
-                                                            <Trash2 className="w-4 h-4" />
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                            {isExpanded && (
-                                                <tr>
-                                                    <td colSpan={9} className="p-0">
-                                                        <AgentStockPanel
-                                                            productId={product.id}
-                                                            productName={product.name}
-                                                            warehouseStock={warehouseStock}
-                                                            onStockChanged={loadProducts}
-                                                        />
-                                                    </td>
-                                                </tr>
-                                            )}
-                                        </React.Fragment>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
-                </Card>
-            )}
-            <IncomingInventoryView
-                isOpen={showIncomingInventory}
-                onClose={() => setShowIncomingInventory(false)}
-                products={products}
-                onShipmentArrived={loadProducts}
-            />
+          <h1>Products</h1>
+          <p>
+            {summary ? `${summary.activeProducts.active} active products.` : 'Your catalogue, its stock and what is on the way.'}
+            {summary?.bestSeller && ` ${summary.bestSeller.name} sold the most in ${monthShort(summary.month)}.`}
+          </p>
         </div>
-    );
-};
+        <div className="hd-actions">
+          {!shipments && (
+            <label className="mut" style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+              Month
+              <input
+                type="month"
+                className="psel"
+                aria-label="Month"
+                value={month}
+                max={monthNow()}
+                onChange={(e) => go({ ...view, month: e.target.value && e.target.value !== monthNow() ? e.target.value : null })}
+              />
+            </label>
+          )}
+          {canStock && (
+            <Button onClick={() => { go({ ...view, pane: 'shipments' }); setAddingShipment(true); }}>
+              <Truck />
+              Add shipment
+            </Button>
+          )}
+          {canCreate && (
+            <Button variant="primary" onClick={() => go({ ...view, edit: 'new' })}>
+              <Plus />
+              Add product
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <Tabs
+        label="Products sections"
+        className="panetabs"
+        items={[
+          { id: 'products', label: 'Products', count: list?.counts.all },
+          { id: 'shipments', label: 'Incoming shipments' },
+        ]}
+        value={view.pane}
+        onChange={(id) => go({ ...view, pane: id as ProductsView['pane'] })}
+      />
+
+      {shipments ? (
+        <ShipmentsPane
+          filter={view.ships}
+          onFilter={(ships) => go({ ...view, ships })}
+          canWrite={canStock}
+          products={shippable}
+          adding={addingShipment}
+          onAddingChange={setAddingShipment}
+          onStockChanged={() => void data.refetch()}
+        />
+      ) : (
+        <>
+          {summary && (
+            <div className="grid kpis" style={{ marginTop: 0 }}>
+              <Tile
+                icon={<Package />}
+                tone="pine"
+                value={summary.activeProducts.active}
+                label="Active products"
+                footer={<><span>{summary.activeProducts.archived} archived</span><Tag tone="ok">Live</Tag></>}
+              />
+              <Tile
+                icon={<Trophy />}
+                tone="gold"
+                value={summary.bestSeller?.name ?? '—'}
+                label="Best seller this month"
+                footer={<><span>{summary.bestSeller ? `${summary.bestSeller.units} delivered` : 'Nothing delivered yet'}</span>{summary.bestSeller && <Tag>Main product</Tag>}</>}
+              />
+              <Tile
+                icon={<Percent />}
+                tone="mint"
+                value={summary.averageMargin == null ? '—' : `${summary.averageMargin}%`}
+                label="Average margin"
+                footer={<><span>After product cost</span><Tag>Before delivery</Tag></>}
+              />
+              <Tile
+                icon={<PackageX />}
+                tone="coral"
+                value={summary.lowStock}
+                label="Low stock"
+                footer={<><span>Under the days of cover limit</span>{summary.lowStock > 0 && <Tag tone="bad">Reorder</Tag>}</>}
+              />
+            </div>
+          )}
+
+          <div className="card" style={{ marginTop: 16 }}>
+            <Tabs
+              label="Product status"
+              className="ptabs"
+              items={PRODUCT_TABS.map((t) => ({ id: t.id, label: t.label, count: list?.counts[t.id] }))}
+              value={view.tab}
+              onChange={(id) => go({ ...view, tab: id as ProductsView['tab'] })}
+            />
+            {data.loading && !list ? (
+              <div style={{ padding: 20 }} aria-busy="true" aria-label="Loading products">
+                <Skeleton height={44} />
+                <Skeleton height={44} className="skelgap" />
+                <Skeleton height={44} className="skelgap" />
+              </div>
+            ) : data.error && !list ? (
+              <EmptyState title={data.error} action={<Button onClick={() => void data.refetch()}>Try again</Button>} />
+            ) : list && list.products.length === 0 ? (
+              <EmptyState
+                title={view.tab === 'archived' ? 'No archived products.' : 'No products yet.'}
+                action={canCreate && view.tab !== 'archived' ? <Button variant="primary" onClick={() => go({ ...view, edit: 'new' })}>Add product</Button> : undefined}
+              />
+            ) : list ? (
+              <ProductsTable rows={list.products} showCost={showCost} target={summary?.deliverySuccessTarget ?? null} monthLabel={monthShort(list.month)} canEdit={canEdit} onEdit={(id) => go({ ...view, edit: id })} />
+            ) : null}
+            <div className="pfoot">
+              <span>Stock adds up across every holder.{summary ? ` Delivery success target is ${summary.deliverySuccessTarget}%.` : ''}</span>
+              {showCost && <span>Margin is price minus product cost</span>}
+            </div>
+          </div>
+        </>
+      )}
+
+      <ProductDrawer
+        target={view.edit}
+        canStock={canStock}
+        canSeeCost={showCost}
+        onClose={() => go({ ...view, edit: null })}
+        onChanged={() => void data.refetch()}
+      />
+    </section>
+  );
+}

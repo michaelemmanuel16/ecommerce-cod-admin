@@ -633,6 +633,11 @@ export async function deleteFixtureRows(prisma: PrismaClient, tenantId: string):
   await prisma.expense.deleteMany({ where: t });
   await prisma.agentBalance.deleteMany({ where: t });
   await prisma.agentCollection.deleteMany({ where: t }); // something else may have written drafts for fixture orders
+  // Rows the e2e setup step adds (delivery proofs, partner profiles) hang on fixture orders and users
+  await prisma.deliveryAttempt.deleteMany({ where: t });
+  await prisma.delivery.deleteMany({ where: t });
+  await prisma.deliveryPartnerProfile.deleteMany({ where: t });
+  await prisma.feeRule.deleteMany({ where: t });
   await prisma.orderItem.deleteMany({ where: { order: t } });
   await prisma.orderHistory.deleteMany({ where: t });
   await prisma.call.deleteMany({ where: t });

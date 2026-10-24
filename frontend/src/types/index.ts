@@ -157,45 +157,6 @@ export interface Product {
   updatedAt: string;
 }
 
-/** What the product form sends. Starting stock goes in `openingStock` on create; the server takes no `stockQuantity` (F-658). */
-export interface ProductInput extends Partial<Product> {
-  openingStock?: { locationId?: number; quantity: number };
-}
-
-export interface InventoryShipment {
-  id: number;
-  productId: number;
-  supplier: string | null;
-  quantity: number;
-  unitCost: number;
-  shippingCost: number;
-  customsDuties: number;
-  otherCosts: number;
-  totalCost: number;
-  status: 'pending' | 'arrived';
-  expectedArrivalDate: string | null;
-  arrivedAt: string | null;
-  glJournalEntryId: number | null;
-  notes: string | null;
-  createdById: number;
-  createdAt: string;
-  updatedAt: string;
-  product: { id: number; name: string; sku: string };
-  createdBy: { id: number; firstName: string; lastName: string };
-}
-
-export interface CreateShipmentPayload {
-  productId: number;
-  supplier?: string;
-  quantity: number;
-  unitCost: number;
-  shippingCost?: number;
-  customsDuties?: number;
-  otherCosts?: number;
-  expectedArrivalDate?: string;
-  notes?: string;
-}
-
 export interface Notification {
   id: number;
   type: 'order:created' | 'order:updated' | 'order:status_changed' | 'system';

@@ -1053,6 +1053,7 @@ model InventoryShipment {
   claimJournalEntry   JournalEntry?       @relation("ShipmentClaimEntry", fields: [claimJournalEntryId], references: [id])
   destinationLocation StockLocation?      @relation("ShipmentDestination", fields: [destinationLocationId], references: [id])
   inventoryTransfers  InventoryTransfer[]
+  stockCounts         StockCount[]
   tenantId            String?             @map("tenant_id")
   tenant              Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -1608,22 +1609,26 @@ enum StockCountSource {
 
 /// A count of stock at one location against our records (F-653).
 model StockCount {
-  id          Int              @id @default(autoincrement())
-  locationId  Int              @map("location_id")
-  countDate   DateTime         @map("count_date") @db.Date
+  id          Int                @id @default(autoincrement())
+  locationId  Int                @map("location_id")
+  countDate   DateTime           @map("count_date") @db.Date
   source      StockCountSource
-  countedById Int              @map("counted_by_id")
+  countedById Int                @map("counted_by_id")
   note        String?
-  createdAt   DateTime         @default(now()) @map("created_at")
-  tenantId    String           @map("tenant_id")
-  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  location    StockLocation    @relation(fields: [locationId], references: [id])
-  countedBy   User             @relation("StockCountCounter", fields: [countedById], references: [id])
+  /// Set on the one-line count a 3PL-dashboard receive writes: it counts the arrival, not the whole location.
+  shipmentId  Int?               @map("shipment_id")
+  createdAt   DateTime           @default(now()) @map("created_at")
+  tenantId    String             @map("tenant_id")
+  tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  shipment    InventoryShipment? @relation(fields: [shipmentId], references: [id])
+  location    StockLocation      @relation(fields: [locationId], references: [id])
+  countedBy   User               @relation("StockCountCounter", fields: [countedById], references: [id])
   lines       StockCountLine[]
 
   @@index([tenantId])
   @@index([locationId, countDate])
   @@index([countedById])
+  @@index([shipmentId])
   @@map("stock_counts")
 }
 

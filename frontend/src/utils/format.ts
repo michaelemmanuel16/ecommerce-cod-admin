@@ -42,6 +42,9 @@ export const formatDate = (date: string | Date, formatStr: string = 'MMM dd, yyy
   return format(new Date(date), formatStr);
 };
 
+/** Today as YYYY-MM-DD in the viewer's own zone (toISOString is UTC and gives tomorrow after 23:00 in Lagos). */
+export const todayYmd = (now: Date = new Date()): string => format(now, 'yyyy-MM-dd');
+
 export const formatDateTime = (date: string | Date): string => {
   return format(new Date(date), 'MMM dd, yyyy HH:mm');
 };

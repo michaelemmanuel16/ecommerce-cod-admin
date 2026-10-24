@@ -13,7 +13,7 @@ export const getAllProducts = async (req: AuthRequest, res: Response): Promise<v
     tab: tab as products.TabName | undefined, month: month as string | undefined,
     page: Number(page), limit: Number(limit),
   });
-  res.json({ ...result, products: result.products.map((p) => products.forRole(role(req), p)) });
+  res.json({ ...result, canSeeCost: canSeeCost(role(req)), products: result.products.map((p) => products.forRole(role(req), p)) });
 };
 
 export const getProductsSummary = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -26,24 +26,25 @@ export const getProductsSummary = async (req: AuthRequest, res: Response): Promi
 };
 
 export const createProduct = async (req: AuthRequest, res: Response): Promise<void> => {
-  const product = await products.createProduct(req.user!.id, req.body);
-  res.status(201).json({ product });
+  const product = await products.createProduct(req.user!.id, products.withoutCostInput(role(req), req.body));
+  res.status(201).json({ product: products.forRole(role(req), product) });
 };
 
 export const getProduct = async (req: AuthRequest, res: Response): Promise<void> => {
-  res.json({ product: products.forRole(role(req), await products.getProduct(Number(req.params.id))) });
+  res.json({ canSeeCost: canSeeCost(role(req)), product: products.forRole(role(req), await products.getProduct(Number(req.params.id))) });
 };
 
 export const updateProduct = async (req: AuthRequest, res: Response): Promise<void> => {
-  res.json({ product: await products.updateProduct(Number(req.params.id), req.body) });
+  res.json({ product: products.forRole(role(req), await products.updateProduct(Number(req.params.id), products.withoutCostInput(role(req), req.body))) });
 };
 
 export const archiveProduct = async (req: AuthRequest, res: Response): Promise<void> => {
-  res.json(await products.archiveProduct(Number(req.params.id)));
+  const result = await products.archiveProduct(Number(req.params.id));
+  res.json({ ...result, product: products.forRole(role(req), result.product) });
 };
 
 export const restoreProduct = async (req: AuthRequest, res: Response): Promise<void> => {
-  res.json({ product: await products.restoreProduct(Number(req.params.id)) });
+  res.json({ product: products.forRole(role(req), await products.restoreProduct(Number(req.params.id))) });
 };
 
 export const deleteProduct = async (req: AuthRequest, res: Response): Promise<void> => {

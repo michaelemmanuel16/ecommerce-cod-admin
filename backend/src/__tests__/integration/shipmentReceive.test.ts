@@ -190,6 +190,7 @@ describe('receive rules', () => {
     expect((await receive(id, { countSource: 'three_pl_dashboard' })).status).toBe(200);
     const counts = await prismaBase.stockCount.findMany({ where: { tenantId, note: `Shipment ${id} received` }, include: { lines: true } });
     expect(counts).toHaveLength(1);
+    expect(counts[0].shipmentId).toBe(id); // the stored link to its shipment
     expect([counts[0].source, counts[0].locationId, counts[0].countDate.toISOString().slice(0, 10)]).toEqual(['three_pl_dashboard', swift, YESTERDAY]);
     expect(counts[0].lines.map((l) => [l.productId, l.systemQuantity, l.countedQuantity, l.difference])).toEqual([[copybook, 300, 288, -12]]);
   });
@@ -197,7 +198,7 @@ describe('receive rules', () => {
   it('own_count and agent_count write no StockCount', async () => {
     const id = await newShipment({ quantity: 4, unitCost: 1, shippingCost: 0, otherCosts: 0 });
     await receive(id, { quantityCounted: 4, countSource: 'agent_count' });
-    expect(await prismaBase.stockCount.count({ where: { tenantId, note: `Shipment ${id} received` } })).toBe(0);
+    expect(await prismaBase.stockCount.count({ where: { tenantId, shipmentId: id } })).toBe(0);
   });
 
   it('a CNY shipment takes the rate of the received date, not of the day it was added', async () => {
@@ -313,5 +314,35 @@ describe('old arrived rows (migration 20261024100000)', () => {
     expect([row.status, row.quantityCounted, row.shortQuantity, row.receivedAt?.toISOString(), row.glJournalEntryId]).toEqual(['received', 120, 0, arrivedAt.toISOString(), null]);
     expect((await prismaBase.inventoryShipment.findUniqueOrThrow({ where: { id: pending.id } })).status).toBe('pending');
     expect(await entries(old.id)).toHaveLength(0);
+  });
+});
+
+describe('counts written before StockCount.shipmentId (migration 20261024130000 backfill)', () => {
+  it('links the one-line 3PL count of a received shipment; leaves a whole-location count and a count of another day alone', async () => {
+    const day = new Date('2026-09-20T00:00:00Z');
+    const shipment = await prismaBase.inventoryShipment.create({
+      data: {
+        tenantId, productId: copybook, quantity: 10, unitCost: 1, totalCost: 10, status: 'received', quantityCounted: 8, shortQuantity: 2,
+        receivedAt: new Date('2026-09-20T10:00:00Z'), receivedById: owner.id, destinationLocationId: swift, createdById: owner.id,
+      },
+    });
+    const count = (data: { source?: 'three_pl_dashboard' | 'own_count'; countDate?: Date; system: number; counted: number }) =>
+      prismaBase.stockCount.create({
+        data: {
+          tenantId, locationId: swift, countDate: data.countDate ?? day, source: data.source ?? 'three_pl_dashboard', countedById: owner.id,
+          lines: { create: [{ tenantId, productId: copybook, systemQuantity: data.system, countedQuantity: data.counted, difference: data.counted - data.system }] },
+        },
+      });
+    const receive = await count({ system: 10, counted: 8 });
+    const whole = await count({ system: 150, counted: 148 }); // a count of the whole location
+    const own = await count({ source: 'own_count', system: 10, counted: 8 });
+    const otherDay = await count({ countDate: new Date('2026-09-21T00:00:00Z'), system: 10, counted: 8 });
+
+    const sql = fs.readFileSync(path.join(__dirname, '../../../prisma/migrations/20261024130000_m4_stock_count_shipment/migration.sql'), 'utf8');
+    await prismaBase.$executeRawUnsafe(sql.slice(sql.indexOf('UPDATE "stock_counts"')));
+
+    const linked = async (id: number) => (await prismaBase.stockCount.findUniqueOrThrow({ where: { id } })).shipmentId;
+    expect(await linked(receive.id)).toBe(shipment.id);
+    expect([await linked(whole.id), await linked(own.id), await linked(otherDay.id)]).toEqual([null, null, null]);
   });
 });

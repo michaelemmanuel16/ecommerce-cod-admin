@@ -173,6 +173,7 @@ describe('a shipment received with the 3PL dashboard count (M4-T12)', () => {
     const line = await prismaBase.stockCountLine.findFirstOrThrow({ where: { tenantId, productId: bolts }, include: { count: true } });
     expect([line.systemQuantity, line.countedQuantity, line.count.locationId]).toEqual([10, 8, kasapa]);
 
+    expect(line.count.shipmentId).toBe(made.body.id); // the stored link
     const after = (await get('owner', '/overview')).body;
     expect(row(after, kasapa, bolts)).toMatchObject({ onHand: 8, count: null }); // not "5 units off"
     expect(card(after, kasapa)).toMatchObject({ onHand: 8, latestCount: null });

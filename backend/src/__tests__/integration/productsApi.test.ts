@@ -12,6 +12,8 @@ import { generateAccessToken } from '../../utils/jwt';
 import { createTenant, deleteTenantRows } from './helpers/twoTenants';
 import { bearer } from './helpers/superAdminToken';
 import { cacheOf, levelAt, stockUp } from './helpers/stock';
+import { withoutCostInput } from '../../services/productService';
+import { clearPermissionsCache } from '../../middleware/auth';
 import { makeCustomer, makeOrder } from './helpers/kpiOrders';
 
 jest.mock('../../utils/socketInstance', () => ({
@@ -191,6 +193,103 @@ describe('cost and margin by role', () => {
   });
 });
 
+describe('GET /api/products/:id drawer facts (M4-T22)', () => {
+  it('lockedFields: the type once there are order lines, the cost once a shipment was received; for every role', async () => {
+    const shipment = await prismaBase.inventoryShipment.create({
+      data: { tenantId, productId: pens, quantity: 10, unitCost: 5, totalCost: 50, status: 'received', quantityCounted: 10, shortQuantity: 0, createdById: U.owner.id },
+    });
+    const detail = async (who: string, id: number) => (await get(who, `/${id}`)).body;
+    expect((await detail('owner', copybook)).product.lockedFields).toEqual(['productType']);
+    expect((await detail('owner', pens)).product.lockedFields).toEqual(['productType', 'cogs']);
+    expect((await detail('owner', ebook)).product.lockedFields).toEqual(['productType']); // it has an order line too
+    // A pending shipment locks nothing
+    const pending = await prismaBase.inventoryShipment.create({ data: { tenantId, productId: archived, quantity: 1, unitCost: 1, totalCost: 1, createdById: U.owner.id } });
+    expect((await detail('owner', archived)).product.lockedFields).toEqual([]);
+    // The facts carry no money: a rep gets them too, still without cost
+    const rep = await detail('rep', pens);
+    expect(rep.product.lockedFields).toEqual(['productType', 'cogs']);
+    expect(rep.product.cogs).toBeUndefined();
+    expect(rep.canSeeCost).toBe(false);
+    await prismaBase.inventoryShipment.deleteMany({ where: { id: { in: [shipment.id, pending.id] } } });
+  });
+
+  it('canSeeCost on the list and the detail follows the cost roles (utils/costAccess)', async () => {
+    for (const who of ['owner', 'admin', 'manager', 'clerk', 'keeper']) {
+      expect([who, (await get(who, '')).body.canSeeCost, (await get(who, `/${copybook}`)).body.canSeeCost]).toEqual([who, true, true]);
+    }
+    for (const who of ['rep', 'agent']) {
+      expect([who, (await get(who, '')).body.canSeeCost, (await get(who, `/${copybook}`)).body.canSeeCost]).toEqual([who, false, false]);
+    }
+  });
+
+  it('an archived product is found by id (archive hides it from lists, it still exists)', async () => {
+    const res = await get('owner', `/${archived}`);
+    expect(res.status).toBe(200);
+    expect(res.body.product).toMatchObject({ id: archived, isActive: false });
+  });
+
+  it('a received shipment locks the cost: 409 for a new value, 200 for the same value or any other field', async () => {
+    const shipment = await prismaBase.inventoryShipment.create({
+      data: { tenantId, productId: pens, quantity: 10, unitCost: 5, totalCost: 50, status: 'received', quantityCounted: 10, shortQuantity: 0, createdById: U.owner.id },
+    });
+    const cost = (await prismaBase.product.findUniqueOrThrow({ where: { id: pens } })).cogs!;
+    const res = await send('put', 'owner', `/${pens}`, { cogs: 99 });
+    expect(res.status).toBe(409);
+    expect(JSON.stringify(res.body)).toMatch(/landed cost/);
+    expect((await prismaBase.product.findUniqueOrThrow({ where: { id: pens } })).cogs!.eq(cost)).toBe(true);
+    expect((await send('put', 'owner', `/${pens}`, { cogs: cost.toString(), name: 'Pens' })).status).toBe(200);
+    expect((await send('put', 'owner', `/${pens}`, { name: 'Pens', price: 41 })).status).toBe(200);
+    await prismaBase.inventoryShipment.deleteMany({ where: { id: shipment.id } });
+    expect((await send('put', 'owner', `/${pens}`, { cogs: 13 })).status).toBe(200); // no received shipment: the cost may change
+    await send('put', 'owner', `/${pens}`, { cogs: cost.toString(), price: 40 });
+  });
+});
+
+describe('cost in a request body (F-600)', () => {
+  it('a role that cannot see cost has cogs dropped from the body; the others keep it', () => {
+    const body = { name: 'x', cogs: 5 };
+    expect(withoutCostInput('sales_rep', body)).toEqual({ name: 'x' });
+    expect(withoutCostInput('delivery_agent', body)).toEqual({ name: 'x' });
+    expect(withoutCostInput('admin', body)).toBe(body);
+    expect(withoutCostInput(undefined, body)).toEqual({ name: 'x' });
+    expect(withoutCostInput('manager', { name: 'y' })).toEqual({ name: 'y' });
+  });
+});
+
+describe('a role that may write products but not see cost (custom permission matrix)', () => {
+  it('create, update, archive and restore answer without cogs or marginPct, and a typed cogs is not stored', async () => {
+    const config = await prismaBase.systemConfig.create({ data: { tenantId, rolePermissions: { sales_rep: { products: ['view', 'create', 'update'] } } as any } });
+    clearPermissionsCache();
+    try {
+      const sku = newProduct().sku;
+      const created = await send('post', 'rep', '', newProduct({ sku, cogs: 77 }));
+      expect(created.status).toBe(201);
+      const id = created.body.product.id;
+      expect(JSON.stringify(created.body)).not.toMatch(/cogs|marginPct/);
+      expect(Number((await prismaBase.product.findUniqueOrThrow({ where: { id } })).cogs)).toBe(0); // the cost it typed is dropped
+
+      const updated = await send('put', 'rep', `/${id}`, { name: 'Renamed', cogs: 55 });
+      expect(updated.status).toBe(200);
+      expect(JSON.stringify(updated.body)).not.toMatch(/cogs|marginPct/);
+      expect(Number((await prismaBase.product.findUniqueOrThrow({ where: { id } })).cogs)).toBe(0);
+
+      const archivedRes = await send('post', 'rep', `/${id}/archive`);
+      expect(archivedRes.status).toBe(200);
+      expect(archivedRes.body).toMatchObject({ openOrders: 0, unitsOnHand: 0 });
+      expect(JSON.stringify(archivedRes.body)).not.toMatch(/cogs|marginPct/);
+
+      const restored = await send('post', 'rep', `/${id}/restore`);
+      expect(restored.status).toBe(200);
+      expect(JSON.stringify(restored.body)).not.toMatch(/cogs|marginPct/);
+      // The owner still gets the cost in the same responses
+      expect((await send('put', 'owner', `/${id}`, { name: 'Renamed again' })).body.product).toHaveProperty('cogs');
+    } finally {
+      await prismaBase.systemConfig.delete({ where: { id: config.id } });
+      clearPermissionsCache();
+    }
+  });
+});
+
 describe('GET /api/products/summary', () => {
   it('four tiles: active and archived counts, best seller, revenue-weighted margin, low stock', async () => {
     const { body, status } = await get('manager', '/summary');
@@ -199,6 +298,19 @@ describe('GET /api/products/summary', () => {
     expect(body.bestSeller).toMatchObject({ productId: copybook, units: 28 });
     expect(body.lowStock).toBeGreaterThanOrEqual(1);
     expect(typeof body.averageMargin).toBe('number');
+  });
+
+  it('the delivery success target comes from the tenant setting (the Deliveries page rule), 60 by default', async () => {
+    expect((await get('owner', '/summary')).body.deliverySuccessTarget).toBe(60);
+    const month = new Date();
+    const target = await prismaBase.target.create({
+      data: {
+        tenantId, scope: 'month', metric: 'delivery_success_rate', unit: 'percent', value: 55,
+        periodStart: new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth(), 1)), periodEnd: new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 0)),
+      },
+    });
+    expect((await get('owner', '/summary')).body.deliverySuccessTarget).toBe(55);
+    await prismaBase.target.delete({ where: { id: target.id } });
   });
 
   it('average margin is sum of units x (price - cost) over sum of units x price', async () => {
@@ -350,7 +462,9 @@ describe('archive, restore, delete', () => {
     expect((await prismaBase.product.findUniqueOrThrow({ where: { id: copybook } })).isActive).toBe(true);
     const fresh = (await send('post', 'owner', '', newProduct())).body.product.id;
     expect((await send('delete', 'owner', `/${fresh}`)).status).toBe(200);
-    expect((await get('owner', `/${fresh}`)).status).toBe(404);
+    // Delete is the same soft delete as archive: the product leaves the lists, the row stays
+    expect(row((await get('owner', '')).body, fresh)).toBeUndefined();
+    expect((await get('owner', `/${fresh}`)).body.product).toMatchObject({ id: fresh, isActive: false });
   });
 });
 
