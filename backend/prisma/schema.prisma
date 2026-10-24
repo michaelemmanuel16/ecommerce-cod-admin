@@ -268,6 +268,7 @@ model Product {
   digitalFileUrl          String?                @map("digital_file_url")
   digitalFileType         String?                @map("digital_file_type")
   downloadLinkExpiryHours Int?                   @default(72) @map("download_link_expiry_hours")
+  maxDownloads            Int?                   @map("max_downloads")
   checkoutForms           CheckoutForm[]
   formUpsells             FormUpsell[]
   orderItems              OrderItem[]
