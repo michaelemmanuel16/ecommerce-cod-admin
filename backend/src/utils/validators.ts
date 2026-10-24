@@ -1,3 +1,4 @@
+import { canSeeCost } from './costAccess';
 import { body, param, query, ValidationChain } from 'express-validator';
 import { DeclineReason, FailureReason, OrderStatus } from '@prisma/client';
 import { ORDER_FLAG_CODES } from '../services/orderFlagService';
@@ -99,7 +100,8 @@ export const createProductValidation: ValidationChain[] = [
   body('name').notEmpty(),
   body('category').notEmpty(),
   body('price').isFloat({ min: 0 }),
-  body('cogs').isFloat({ min: 0 }),
+  // A role that may not see cost sends none (the controller drops it); the product then starts at cost 0
+  body('cogs').if((_v, { req }) => canSeeCost(req.user?.role)).isFloat({ min: 0 }),
   ...productFieldRules(),
   body('openingStock').optional().isObject().withMessage('openingStock must be { locationId, quantity }'),
   body('openingStock.locationId').optional().isInt({ min: 1 }).withMessage('openingStock.locationId must be a whole number above 0').toInt(),

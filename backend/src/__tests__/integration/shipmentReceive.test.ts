@@ -316,3 +316,33 @@ describe('old arrived rows (migration 20261024100000)', () => {
     expect(await entries(old.id)).toHaveLength(0);
   });
 });
+
+describe('counts written before StockCount.shipmentId (migration 20261024130000 backfill)', () => {
+  it('links the one-line 3PL count of a received shipment; leaves a whole-location count and a count of another day alone', async () => {
+    const day = new Date('2026-09-20T00:00:00Z');
+    const shipment = await prismaBase.inventoryShipment.create({
+      data: {
+        tenantId, productId: copybook, quantity: 10, unitCost: 1, totalCost: 10, status: 'received', quantityCounted: 8, shortQuantity: 2,
+        receivedAt: new Date('2026-09-20T10:00:00Z'), receivedById: owner.id, destinationLocationId: swift, createdById: owner.id,
+      },
+    });
+    const count = (data: { source?: 'three_pl_dashboard' | 'own_count'; countDate?: Date; system: number; counted: number }) =>
+      prismaBase.stockCount.create({
+        data: {
+          tenantId, locationId: swift, countDate: data.countDate ?? day, source: data.source ?? 'three_pl_dashboard', countedById: owner.id,
+          lines: { create: [{ tenantId, productId: copybook, systemQuantity: data.system, countedQuantity: data.counted, difference: data.counted - data.system }] },
+        },
+      });
+    const receive = await count({ system: 10, counted: 8 });
+    const whole = await count({ system: 150, counted: 148 }); // a count of the whole location
+    const own = await count({ source: 'own_count', system: 10, counted: 8 });
+    const otherDay = await count({ countDate: new Date('2026-09-21T00:00:00Z'), system: 10, counted: 8 });
+
+    const sql = fs.readFileSync(path.join(__dirname, '../../../prisma/migrations/20261024130000_m4_stock_count_shipment/migration.sql'), 'utf8');
+    await prismaBase.$executeRawUnsafe(sql.slice(sql.indexOf('UPDATE "stock_counts"')));
+
+    const linked = async (id: number) => (await prismaBase.stockCount.findUniqueOrThrow({ where: { id } })).shipmentId;
+    expect(await linked(receive.id)).toBe(shipment.id);
+    expect([await linked(whole.id), await linked(own.id), await linked(otherDay.id)]).toEqual([null, null, null]);
+  });
+});
