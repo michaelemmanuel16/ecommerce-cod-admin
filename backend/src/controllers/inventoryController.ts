@@ -3,6 +3,7 @@ import { AuthRequest } from '../types';
 import * as transfers from '../services/transferService';
 import * as counts from '../services/stockCountService';
 import * as reads from '../services/inventoryReadService';
+import * as locations from '../services/stockLocationService';
 
 const intQuery = (v: unknown) => (v === undefined || v === '' ? undefined : Number(v));
 const text = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undefined);
@@ -87,4 +88,14 @@ export const listTransfers = async (req: AuthRequest, res: Response): Promise<vo
 /** GET /api/inventory/returns/summary (F-656) */
 export const returnsSummary = async (req: AuthRequest, res: Response): Promise<void> => {
   res.json(await reads.returnsSummary({ from: text(req.query.from), to: text(req.query.to), partnerId: intQuery(req.query.partnerId) }));
+};
+
+/** GET /api/inventory/transfers/:id/trail: the audit rows of one transfer */
+export const transferTrail = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.json(await reads.transferTrail(Number(req.params.id)));
+};
+
+/** POST /api/inventory/locations: set up the own store (F-652) */
+export const createOwnStore = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.status(201).json({ location: await locations.createOwnStore({ id: req.user!.id }, req.body) });
 };

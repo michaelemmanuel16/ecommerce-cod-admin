@@ -345,3 +345,23 @@ export async function returnsSummary(f: { from?: string; to?: string; partnerId?
   };
 }
 
+
+/** The stock location a delivery agent holds, or null when the account has none. */
+export async function locationOfUser(userId: number): Promise<number | null> {
+  const loc = await prisma.stockLocation.findFirst({ where: { userId }, select: { id: true } });
+  return loc?.id ?? null;
+}
+
+/** The audit rows of one transfer, oldest first: who sent, received, resolved or cancelled it, and when (F-659). */
+export async function transferTrail(id: number) {
+  const exists = await prisma.inventoryTransfer.findUnique({ where: { id }, select: { id: true } });
+  if (!exists) throw new AppError('Transfer not found', 404);
+  const rows = await prisma.auditLog.findMany({
+    where: { resource: 'inventory_transfer', resourceId: String(id) },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    include: { user: { select: { id: true, firstName: true, lastName: true } } },
+  });
+  return {
+    trail: rows.map((r) => ({ id: r.id, action: r.action, at: r.createdAt, by: r.user, details: r.metadata })),
+  };
+}

@@ -11,6 +11,7 @@ import { AuthRequest } from '../types';
 import { COUNT_REASONS, COUNT_SOURCES } from '../services/stockCountService';
 import { TransferStatus, TransferType, StockLocationType } from '@prisma/client';
 import { ADJUST_REASONS, CREATE_TYPES, DISPUTE_REASONS, RETURN_REASONS } from '../services/transferService';
+import { locationOfUser } from '../services/inventoryReadService';
 
 const router = Router();
 
@@ -29,6 +30,21 @@ const canView = [
   (req: AuthRequest, res: Response, next: NextFunction) =>
     canSeeCost(req.user?.role) ? next() : res.status(403).json({ error: 'You do not have access to stock figures' }),
 ];
+
+// A delivery agent reads /levels and /transfers for their own stock location only (F-653). The server forces the filter;
+// another location is 403. These two routes skip the stock-figures gate for agents; nothing else in this file does.
+const unlessAgent = (mw: (req: AuthRequest, res: Response, next: NextFunction) => unknown) =>
+  (req: AuthRequest, res: Response, next: NextFunction) => (req.user?.role === 'delivery_agent' ? next() : mw(req, res, next));
+const ownLocationOnly = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  if (req.user?.role !== 'delivery_agent') return next();
+  const own = await locationOfUser(req.user.id);
+  if (own == null) return res.status(403).json({ error: 'You have no stock location' });
+  const asked = req.query.locationId;
+  if (asked !== undefined && asked !== '' && Number(asked) !== own) return res.status(403).json({ error: 'You can only see your own stock' });
+  req.query.locationId = String(own);
+  return next();
+};
+const canViewOrOwn = [...canView.map(unlessAgent), ownLocationOnly];
 
 const id = param('id').isInt({ min: 1 }).withMessage('Invalid transfer ID').toInt();
 const countId = param('id').isInt({ min: 1 }).withMessage('Invalid count ID').toInt();
@@ -75,6 +91,9 @@ router.post(
   controller.adjustStock,
 );
 
+// Set up the own store (F-652)
+router.post('/locations', canWriteStock, [body('name').isString().trim().isLength({ min: 1, max: 100 }).withMessage('Give the store a name'), body('address').optional({ nullable: true }).isString().trim().isLength({ max: 200 }), validate], controller.createOwnStore);
+
 // Reads (F-651, F-652, F-603, F-659, F-656)
 const optInt = (name: string) => query(name).optional().isInt({ min: 1 }).withMessage(`${name} must be a whole number above 0`);
 const optDay = (name: string) => query(name).optional().matches(YMD).withMessage(`${name} must be a date, YYYY-MM-DD`);
@@ -84,11 +103,11 @@ router.get(
   [optInt('product'), query('type').optional().isIn(Object.values(StockLocationType)), query('onlyDifferences').optional().isBoolean(), validate],
   controller.overview,
 );
-router.get('/levels', canView, [optInt('locationId'), optInt('productId'), validate], controller.levels);
+router.get('/levels', canViewOrOwn, [optInt('locationId'), optInt('productId'), validate], controller.levels);
 router.get('/product/:productId/holders', canView, [param('productId').isInt({ min: 1 }).withMessage('Invalid product ID').toInt(), validate], controller.holders);
 router.get(
   '/transfers',
-  canView,
+  canViewOrOwn,
   [
     query('type').optional().isIn(Object.values(TransferType)).withMessage('Unknown type'),
     query('status').optional().isIn(Object.values(TransferStatus)).withMessage('Unknown status'),
@@ -97,6 +116,7 @@ router.get(
   ],
   controller.listTransfers,
 );
+router.get('/transfers/:id/trail', canView, [id, validate], controller.transferTrail);
 router.get('/returns/summary', canView, [optDay('from'), optDay('to'), optInt('partnerId'), validate], controller.returnsSummary);
 
 // Stock counts (F-653)
