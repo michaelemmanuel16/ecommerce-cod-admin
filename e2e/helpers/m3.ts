@@ -80,7 +80,7 @@ export interface TestProduct { id: number; name: string }
 export async function createProduct(request: APIRequestContext, owner: string): Promise<TestProduct> {
   const ts = stamp();
   const res = await request.post(`${API_URL}/api/products`, {
-    data: { sku: `E2E-${ts}`, name: `E2E Product ${ts}`, category: 'e2e', price: 249, cogs: 80, stockQuantity: 100 },
+    data: { sku: `E2E-${ts}`, name: `E2E Product ${ts}`, category: 'e2e', price: 249, cogs: 80, openingStock: { quantity: 100 } },
     headers: auth(owner),
   });
   expect(res.status(), `create product: ${await res.text()}`).toBe(201);

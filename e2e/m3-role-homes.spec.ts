@@ -28,9 +28,9 @@ test.describe('each role lands on its own home', () => {
     await expect(page.getByText(NO_ACCESS)).toHaveCount(0);
   });
 
-  test('stock keeper lands on Products', async ({ page }) => {
+  test('stock keeper lands on Inventory', async ({ page }) => {
     await signIn(page, email.stock);
-    await expect(page).toHaveURL(/\/products$/);
+    await expect(page).toHaveURL(/\/inventory$/);
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
     await expect(page.getByText(NO_ACCESS)).toHaveCount(0);
   });
@@ -58,8 +58,8 @@ test.describe('the no access page', () => {
     await page.goto('/finance');
     await expect(page.getByText(NO_ACCESS)).toBeVisible();
     await expect(page).toHaveURL(/\/finance$/);
-    await page.getByRole('link', { name: 'Go to Products' }).click();
-    await expect(page).toHaveURL(/\/products$/);
+    await page.getByRole('link', { name: 'Go to Inventory & stock' }).click();
+    await expect(page).toHaveURL(/\/inventory$/);
     await expect(page.getByText(NO_ACCESS)).toHaveCount(0);
   });
 

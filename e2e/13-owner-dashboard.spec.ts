@@ -88,13 +88,13 @@ test.describe('T41 role homes (real dev API)', () => {
     await expect(page.getByText('Delivered revenue vs target')).toBeVisible();
   });
 
-  test('finance clerk lands on Finance, stock keeper on Products', async ({ page }) => {
+  test('finance clerk lands on Finance, stock keeper on Inventory', async ({ page }) => {
     await signIn(page, 'e2e-finance@codadmin.com');
     await expect(page).toHaveURL(/\/finance$/);
     await page.context().clearCookies();
     await page.evaluate(() => localStorage.clear());
     await signIn(page, 'e2e-stock@codadmin.com');
-    await expect(page).toHaveURL(/\/products$/);
+    await expect(page).toHaveURL(/\/inventory$/);
   });
 
   test('flags off: call rep and delivery agent keep the old dashboard, not the owner one', async ({ page }) => {
