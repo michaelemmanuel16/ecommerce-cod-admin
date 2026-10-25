@@ -114,6 +114,11 @@ export const transferTrail = async (req: AuthRequest, res: Response): Promise<vo
   res.json(await reads.transferTrail(Number(req.params.id)));
 };
 
+/** GET /api/inventory/products: every physical product for the pickers, not capped at one page */
+export const listPhysicalProducts = async (_req: AuthRequest, res: Response): Promise<void> => {
+  res.json({ products: await reads.physicalProducts() });
+};
+
 /** POST /api/inventory/locations: set up the own store (F-652) */
 export const createOwnStore = async (req: AuthRequest, res: Response): Promise<void> => {
   res.status(201).json({ location: await locations.createOwnStore({ id: req.user!.id }, req.body) });

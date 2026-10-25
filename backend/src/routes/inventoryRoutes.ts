@@ -120,6 +120,7 @@ router.get(
   controller.exportTransfers,
 );
 router.get('/locations', canView, controller.listLocations);
+router.get('/products', canView, controller.listPhysicalProducts);
 router.get('/transfers/:id/trail', canView, [id, validate], controller.transferTrail);
 router.get('/returns/summary', canView, [optDay('from'), optDay('to'), optInt('partnerId'), validate], controller.returnsSummary);
 

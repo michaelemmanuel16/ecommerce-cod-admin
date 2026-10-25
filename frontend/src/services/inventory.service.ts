@@ -281,12 +281,10 @@ export const inventoryService = {
     return res.data;
   },
 
-  /** Active physical products, for the pickers in the stock modals and the count sheet. */
+  /** Every physical product, for the pickers in the stock modals and the count sheet. The server filters and does not page. */
   async products(): Promise<PhysicalProduct[]> {
-    const res = await apiClient.get('/api/products', { params: { limit: 100 }, quiet: true });
-    return (res.data.products ?? [])
-      .filter((p: PhysicalProduct & { productType?: string }) => p.productType !== 'digital')
-      .map((p: PhysicalProduct) => ({ id: p.id, name: p.name, sku: p.sku }));
+    const res = await apiClient.get('/api/inventory/products', { quiet: true });
+    return res.data.products ?? [];
   },
 
   async lowStock(): Promise<LowStockProduct[]> {

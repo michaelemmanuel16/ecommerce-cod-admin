@@ -85,6 +85,20 @@ describe('GET /locations', () => {
   });
 });
 
+describe('GET /products (the stock picker)', () => {
+  it('lists every physical product with no 100 cap, never a digital one; a rep and an agent get 403', async () => {
+    await prismaBase.product.createMany({ data: Array.from({ length: 105 }, (_, i) => ({ sku: `PK-${i}-${Date.now()}`, name: `Picker ${String(i).padStart(3, '0')}`, category: 'x', price: 5, cogs: 1, stockQuantity: 0, tenantId })) });
+    await prismaBase.product.create({ data: { sku: `PK-DIG-${Date.now()}`, name: 'Picker ebook', category: 'x', price: 5, stockQuantity: 0, tenantId, productType: 'digital' } });
+    const res = await get('keeper', '/products');
+    expect(res.status).toBe(200);
+    const names: string[] = res.body.products.map((p: any) => p.name);
+    expect(names.filter((n) => n.startsWith('Picker ') && n !== 'Picker ebook')).toHaveLength(105);
+    expect(names).not.toContain('Picker ebook');
+    expect(Object.keys(res.body.products[0]).sort()).toEqual(['id', 'name', 'sku']);
+    for (const who of ['rep', 'agent']) expect([who, (await get(who, '/products')).status]).toEqual([who, 403]);
+  });
+});
+
 describe('GET /transfers: counts only on request', () => {
   it('no includeCounts: no total, no tab counts; with it: both, and the total is the sum of the tabs', async () => {
     const plain = await get('owner', '/transfers?limit=2');
