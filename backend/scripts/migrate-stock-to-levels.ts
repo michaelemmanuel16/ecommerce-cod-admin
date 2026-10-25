@@ -38,6 +38,8 @@ const CLOSED: OrderStatus[] = ['delivered', 'digital_delivered', 'cancelled', 'r
 /** Open statuses from confirmed on (order state machine). Only these get the (b) put-back. */
 const CHECKOUT_RESTORE_STATUSES: OrderStatus[] = ['confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery', 'failed_delivery'];
 const KASAPA = 'Kasapa Express';
+/** Partner users that are 3PLs, not agents (owner decision 2026-10-25). A 3PL location only when the user or location exists. */
+const IF_PRESENT_3PL = ['VDL Fulfilment'];
 const NOTE_A = 'Migration: stock moved from out-for-delivery to delivery';
 const NOTE_B = 'Migration: checkout decrement moved to delivery';
 const NOTE_OPEN = 'Migration: opening balance';
@@ -166,13 +168,14 @@ async function migrateInContext(tenantId: string, opts: MigrateOptions): Promise
   const locs: Loc[] = [];
   const keyOfUser = new Map<number, string>();
   const threePl: Array<{ location: string; user: string | null; setCompany: boolean }> = [];
-  for (const name of [...new Set([opts.defaultLocation, KASAPA])]) {
+  for (const name of [...new Set([opts.defaultLocation, KASAPA, ...IF_PRESENT_3PL])]) {
     const existing = locByName.get(name);
     let userId = existing?.userId ?? null;
     if (userId == null) {
       const match = users.find((u) => !keyOfUser.has(u.id) && !locByUser.has(u.id) && fullName(u).toLowerCase().startsWith(name.toLowerCase()));
       userId = match?.id ?? null;
     }
+    if (IF_PRESENT_3PL.includes(name) && name !== opts.defaultLocation && !existing && userId == null) continue;
     if (userId != null) keyOfUser.set(userId, `3pl:${name}`);
     // A user the script links to a 3PL location is a company: the partners API reads the type from User.kind.
     const setCompany = existing?.userId == null && userId != null && userById.get(userId)?.kind !== 'company';

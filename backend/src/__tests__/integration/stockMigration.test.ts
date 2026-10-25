@@ -18,6 +18,7 @@ let p1: number; // copybook: warehouse 100
 let p2: number; // second product: warehouse 50
 let logiswiftUser: number;
 let kofi: number;
+let vdl: number;
 let orders: Record<string, number> = {};
 
 const levelOf = async (locationName: string, productId: number) => {
@@ -31,9 +32,10 @@ beforeAll(async () => {
   tenantId = tenant.id;
   const mkUser = (first: string, last: string, role: 'admin' | 'delivery_agent') =>
     db.user.create({ data: { email: `${first}-${tenantId}@codadmin.test`, password: 'x', firstName: first, lastName: last, role, tenantId } });
-  const [admin, lw, k] = await Promise.all([mkUser('Boss', 'Owner', 'admin'), mkUser('Logiswift', 'Delivery', 'delivery_agent'), mkUser('Kofi', 'Appiah', 'delivery_agent')]);
+  const [admin, lw, k, v] = await Promise.all([mkUser('Boss', 'Owner', 'admin'), mkUser('Logiswift', 'Delivery', 'delivery_agent'), mkUser('Kofi', 'Appiah', 'delivery_agent'), mkUser('VDL', 'Fulfilment', 'delivery_agent')]);
   logiswiftUser = lw.id;
   kofi = k.id;
+  vdl = v.id;
   const [a, b] = await Promise.all([
     db.product.create({ data: { name: 'Copybook', sku: `CB-${tenantId}`, category: 't', price: 50, stockQuantity: 100, tenantId } }),
     db.product.create({ data: { name: 'Pens', sku: `PN-${tenantId}`, category: 't', price: 10, stockQuantity: 50, tenantId } }),
@@ -112,6 +114,9 @@ describe('migrate-stock-to-levels', () => {
     // The partners API reads the partner type from User.kind, so the linked 3PL user becomes a company.
     expect((await db.user.findUniqueOrThrow({ where: { id: logiswiftUser } })).kind).toBe('company');
     expect(await db.stockLocation.findFirst({ where: { tenantId, name: 'Kasapa Express', type: 'partner_3pl' } })).not.toBeNull();
+    // VDL Fulfilment is a 3PL (owner decision 2026-10-25), not an agent.
+    expect(await db.stockLocation.findFirstOrThrow({ where: { tenantId, name: 'VDL Fulfilment' } })).toMatchObject({ type: 'partner_3pl', userId: vdl });
+    expect((await db.user.findUniqueOrThrow({ where: { id: vdl } })).kind).toBe('company');
     expect(await db.stockLocation.findFirst({ where: { tenantId, type: 'in_transit' } })).not.toBeNull();
     expect(await db.stockLocation.findFirst({ where: { tenantId, userId: kofi, type: 'agent' } })).not.toBeNull();
     // Logiswift copybook: warehouse 100 + Logiswift user's own 20 + (a) no-agent order 1 + (b) confirmed checkout order 2 (the pending one is not put back).
