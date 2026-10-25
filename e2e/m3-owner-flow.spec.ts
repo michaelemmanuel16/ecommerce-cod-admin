@@ -30,6 +30,10 @@ test.describe.serial('M3 owner flow', () => {
   const findOrderRow = async (page: Page) => {
     await page.goto('/orders');
     await page.getByLabel('Search orders').fill(lastName);
+    // The search applies after a short pause and swaps the table for a skeleton while it loads. The unfiltered first page
+    // can already hold this order, so wait for the filtered table (the header row and the one order) before the caller
+    // opens a row menu. A menu opened earlier closes when the table is swapped.
+    await expect(page.getByRole('row')).toHaveCount(2);
     const row = page.getByRole('row').filter({ hasText: customerName });
     await expect(row).toHaveCount(1);
     return row;
