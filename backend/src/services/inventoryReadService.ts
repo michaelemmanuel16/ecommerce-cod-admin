@@ -452,6 +452,11 @@ export async function returnsSummary(f: { from?: string; to?: string; partnerId?
 }
 
 
+/** Every physical product (id, name, sku), no page cap, for the stock pickers. Digital products have no stock. */
+export async function physicalProducts() {
+  return prisma.product.findMany({ where: { productType: { not: 'digital' } }, select: { id: true, name: true, sku: true }, orderBy: { name: 'asc' } });
+}
+
 /** The stock location a delivery agent holds, or null when the account has none. */
 export async function locationOfUser(userId: number): Promise<number | null> {
   const loc = await prisma.stockLocation.findFirst({ where: { userId }, select: { id: true } });

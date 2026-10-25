@@ -1,18 +1,20 @@
 import fs from 'fs';
 import path from 'path';
 import bcrypt from 'bcrypt';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { uploadDir } from '../src/config/multer';
 
 // M4-T30 to T33. Makes the fixture tenant (`npm run seed:fixture`) usable by the Playwright spec e2e/m4-deliveries.spec.ts.
 // The fixture users have `password: 'x'`, which is not a hash, so nobody can sign in. This script
 //   1. sets a real bcrypt password on the fixture admin (fixture-admin@fixture-numbers.test), and
 //   2. gives one delivered order of Kofi Appiah a delivery proof with a photo (the fixture has no deliveries), and
-//   3. makes Logiswift and Kasapa Express companies (3PLs) and gives the five partners a profile (base town, days to pay,
+//   3. gives the disputed Logiswift return a destination (an own store, which the fixture does not set up), so Resolve finds it, and
+//      gives the admin role `orders:force_status` for the tenant (m3-owner-flow moves an order outside the normal flow), and
+//   4. makes Logiswift and Kasapa Express companies (3PLs) and gives the five partners a profile (base town, days to pay,
 //      data source, trial flag). The fixture makes every partner a person (the default kind) and writes no profile, so the
 //      Deliveries tabs would read 5 / 5 / 0 instead of 5 / 3 / 2. The data source is set only for the two 3PLs (csv); the column
 //      default `app` already fits the agents.
-// It never edits the fixture itself and can run again (same result).
+// It patches the seeded rows and never edits the fixture seed code; it can run again (same result).
 // Refuses unless DATABASE_URL is a local database whose name contains `_test_`, and when NODE_ENV=production.
 // `--undo` removes the rows this script and the specs added (deliveries, partner profiles, notifications and checkout forms with their submissions of the fixture tenant). The fixture re-seed and the
 // integration suites that seed it cannot delete a tenant while those rows exist, so run `--undo` before them on the same database.
@@ -21,6 +23,9 @@ import { uploadDir } from '../src/config/multer';
 export const FIXTURE_SLUG = 'fixture-numbers';
 export const FIXTURE_ADMIN_EMAIL = 'fixture-admin@fixture-numbers.test';
 export const FIXTURE_PASSWORD = 'password123';
+const RETURN_STORE = 'Main store';
+// The admin role's default orders permissions plus force_status. The stored role replaces the default per resource, so the whole list goes in.
+const ADMIN_ORDERS = ['create', 'view', 'update', 'delete', 'bulk_import', 'assign', 'update_status', 'force_status'];
 
 /** Partner profiles of docs/mockups/v2/NUMBERS.md (days to pay) and deliveries.html (towns, trial, data source). */
 const PROFILES = [
@@ -70,6 +75,35 @@ export async function undoFixtureRows(prisma: PrismaClient, tenantId: string): P
   return `Removed ${deliveries.count} deliveries, ${profiles.count} partner profiles, ${notifications.count} notifications, ${submissions.count} form submissions, ${pending.count} pending checkouts, ${packages.count} packages, ${upsells.count} upsells and ${forms.count} checkout forms of ${FIXTURE_SLUG}.`;
 }
 
+/**
+ * The app creates a return toward an own store (F-652), but the fixture seeds none, so its disputed return has no destination and
+ * Resolve fails "Transfer not found". Sets up the store and points that return at it; grants the admin role orders:force_status.
+ */
+export async function giveFixtureReturnDestination(prisma: PrismaClient, tenantId: string): Promise<string> {
+  const store = (await prisma.stockLocation.findFirst({ where: { tenantId, type: 'own_store' } }))
+    ?? (await prisma.stockLocation.create({ data: { tenantId, type: 'own_store', name: RETURN_STORE, address: 'Accra' } }));
+  const returns = await prisma.inventoryTransfer.updateMany({
+    where: { tenantId, transferType: 'return_to_warehouse', status: 'disputed', toLocationId: null },
+    data: { toLocationId: store.id },
+  });
+  const config = await prisma.systemConfig.findFirst({ where: { tenantId } });
+  const stored = (config?.rolePermissions ?? {}) as Record<string, Record<string, string[]>>;
+  const rolePermissions = { ...stored, admin: { ...stored.admin, orders: ADMIN_ORDERS } };
+  if (config) await prisma.systemConfig.update({ where: { id: config.id }, data: { rolePermissions } });
+  else await prisma.systemConfig.create({ data: { tenantId, rolePermissions } });
+  return `${returns.count} disputed return(s) now go to ${store.name}; admin has orders:force_status.`;
+}
+
+/** Reverses giveFixtureReturnDestination: the return loses the store this script made, and the stored role permissions go. */
+export async function undoFixtureReturnDestination(prisma: PrismaClient, tenantId: string): Promise<void> {
+  const store = await prisma.stockLocation.findFirst({ where: { tenantId, type: 'own_store', name: RETURN_STORE } });
+  if (store) {
+    await prisma.inventoryTransfer.updateMany({ where: { tenantId, toLocationId: store.id, transferType: 'return_to_warehouse', status: 'disputed' }, data: { toLocationId: null } });
+    await prisma.stockLocation.deleteMany({ where: { tenantId, id: store.id } });
+  }
+  await prisma.systemConfig.updateMany({ where: { tenantId }, data: { rolePermissions: Prisma.DbNull } });
+}
+
 async function main() {
   const why = refusal(process.env.DATABASE_URL, process.env.NODE_ENV);
   if (why) {
@@ -84,6 +118,7 @@ async function main() {
     if (!tenant) throw new Error(`Tenant ${FIXTURE_SLUG} not found. Run npm run seed:fixture first.`);
 
     if (process.argv.includes('--undo')) {
+      await undoFixtureReturnDestination(prisma, tenant.id);
       console.log(await undoFixtureRows(prisma, tenant.id));
       return;
     }
@@ -125,6 +160,7 @@ async function main() {
     };
     await prisma.delivery.upsert({ where: { orderId: order.id }, update: proof, create: { orderId: order.id, ...proof } });
 
+    console.log(await giveFixtureReturnDestination(prisma, tenant.id));
     console.log(`Fixture admin can sign in as ${FIXTURE_ADMIN_EMAIL} / ${FIXTURE_PASSWORD}.`);
     console.log(`Order ${order.id} (Kofi Appiah) has a delivery proof with a photo.`);
   } finally {

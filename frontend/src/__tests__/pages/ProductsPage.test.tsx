@@ -131,6 +131,16 @@ describe('Products page (M4-T21)', () => {
     expect(within(table).queryByRole('columnheader', { name: 'Margin' })).not.toBeInTheDocument();
     expect(screen.queryByText('Average margin')).not.toBeInTheDocument();
     expect(screen.queryByText('Active products')).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Incoming shipments' })).not.toBeInTheDocument();
+  });
+
+  it('a role without cost gets no shipments tab, even from a /products?pane=shipments link', async () => {
+    list.mockResolvedValue({ ...PRODUCT_LIST, canSeeCost: false, products: [withoutCost(COPYBOOK), withoutCost(PENS)] });
+    summary.mockRejectedValue(Object.assign(new Error('forbidden'), { isAxiosError: true, response: { status: 403 } }));
+    renderPage('/products?pane=shipments');
+    expect(await screen.findByRole('table', { name: 'Products' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Incoming shipments' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('table', { name: 'Incoming shipments' })).not.toBeInTheDocument();
   });
 
   it('the expansion shows the holders and the count gap, links to Inventory and has no Allocate or Transfer', async () => {

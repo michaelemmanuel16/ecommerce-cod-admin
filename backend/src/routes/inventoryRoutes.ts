@@ -1,10 +1,9 @@
 import { NextFunction, Response, Router } from 'express';
 import { body, param, query } from 'express-validator';
 import * as controller from '../controllers/inventoryController';
-import { authenticate, requireResourcePermission } from '../middleware/auth';
+import { authenticate, requireResourcePermission, requireStockView } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate } from '../middleware/validation';
-import { canSeeCost } from '../utils/costAccess';
 import { paginationValidation } from '../utils/validators';
 import { YMD } from '../services/kpi/dates';
 import { AuthRequest } from '../types';
@@ -24,13 +23,8 @@ const canWriteStock = requireResourcePermission('products', 'update_stock');
 const canReceive = (req: AuthRequest, res: Response, next: NextFunction) =>
   req.user?.role === 'delivery_agent' ? next() : canWriteStock(req, res, next);
 
-// Reads: products:view, but never for a call rep or a delivery agent. They get no cost and no per-holder stock (F-600).
-const canViewPermission = requireResourcePermission('products', 'view');
-const canView = (req: AuthRequest, res: Response, next: NextFunction) =>
-  canViewPermission(req, res, (err?: unknown) => {
-    if (err) return next(err);
-    return canSeeCost(req.user?.role) ? next() : res.status(403).json({ error: 'You do not have access to stock figures' });
-  });
+// Reads: requireStockView (products:view, never a call rep or a delivery agent, F-600).
+const canView = requireStockView;
 // The one exception: a delivery agent reads /levels and /transfers for their own stock location only (F-653). The agent's
 // location goes to the service as req.scopeLocationId, and another location is 403. Every other role takes canView.
 const canViewOrOwn = async (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -126,6 +120,7 @@ router.get(
   controller.exportTransfers,
 );
 router.get('/locations', canView, controller.listLocations);
+router.get('/products', canView, controller.listPhysicalProducts);
 router.get('/transfers/:id/trail', canView, [id, validate], controller.transferTrail);
 router.get('/returns/summary', canView, [optDay('from'), optDay('to'), optInt('partnerId'), validate], controller.returnsSummary);
 

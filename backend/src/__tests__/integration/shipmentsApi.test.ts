@@ -35,7 +35,7 @@ const create = (extra: Record<string, unknown> = {}) =>
 beforeAll(async () => {
   tenantId = (await createTenant('Shipments Api', { currency: 'GHS' })).id;
   otherTenantId = (await createTenant('Shipments Api Other', { currency: 'GHS' })).id;
-  for (const [label, role] of [['owner', 'super_admin'], ['keeper', 'inventory_manager'], ['admin', 'admin'], ['manager', 'manager'], ['rep', 'sales_rep']]) {
+  for (const [label, role] of [['owner', 'super_admin'], ['keeper', 'inventory_manager'], ['admin', 'admin'], ['manager', 'manager'], ['rep', 'sales_rep'], ['agent', 'delivery_agent'], ['clerk', 'accountant']]) {
     token[label] = (await mkUser(tenantId, label, role as any)).token;
   }
   otherToken = (await mkUser(otherTenantId, 'other-owner', 'super_admin')).token;
@@ -162,7 +162,7 @@ describe('list and tiles', () => {
 });
 
 describe('roles (403)', () => {
-  it('a manager and a sales rep read but cannot write', async () => {
+  it('a manager reads but cannot write; a sales rep cannot write', async () => {
     const made = await create();
     const id = made.body.id;
     expect((await call('get', 'manager', '')).status).toBe(200);
@@ -172,9 +172,22 @@ describe('roles (403)', () => {
     expect((await call('delete', 'manager', `/${id}`)).status).toBe(403);
     expect((await call('post', 'manager', `/${id}/receive`, {})).status).toBe(403);
     expect((await call('post', 'manager', `/${id}/claim`, {})).status).toBe(403);
-    expect((await call('get', 'rep', '')).status).toBe(200);
     expect((await call('post', 'rep', '', { productId: copybook, quantity: 1 })).status).toBe(403);
     expect((await call('delete', 'rep', `/${id}`)).status).toBe(403);
+  });
+
+  it('a sales rep and a delivery agent cannot read shipments or their cost (F-600)', async () => {
+    const id = (await create()).body.id;
+    for (const who of ['rep', 'agent']) {
+      for (const path of ['', '/summary', `/${id}`]) {
+        const res = await call('get', who, path);
+        expect([who, path, res.status]).toEqual([who, path, 403]);
+        expect(JSON.stringify(res.body)).not.toMatch(/unitCost|supplier/);
+      }
+    }
+    for (const who of ['manager', 'clerk', 'keeper']) {
+      for (const path of ['', '/summary', `/${id}`]) expect([who, path, (await call('get', who, path)).status]).toEqual([who, path, 200]);
+    }
   });
 
   it('an admin and a stock keeper can write', async () => {

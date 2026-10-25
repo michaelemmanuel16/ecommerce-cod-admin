@@ -6,6 +6,7 @@ import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { enterTenant, getTenantId, withoutTenant } from '../utils/tenantContext';
 import { isPlatformAdmin } from '../utils/platformAdmin';
+import { canSeeCost } from '../utils/costAccess';
 
 // Per-tenant cache for role permissions to avoid database hits on every request.
 // Keyed by tenantId to prevent cross-tenant permission leakage.
@@ -316,6 +317,14 @@ export const requireResourcePermission = (resource: string, ...actions: string[]
     }
   };
 };
+
+// Stock reads (inventory, shipments): products:view, but never for a call rep or a delivery agent. They get no cost and no per-holder stock (F-600).
+const canViewProducts = requireResourcePermission('products', 'view');
+export const requireStockView = (req: AuthRequest, res: Response, next: NextFunction) =>
+  canViewProducts(req, res, (err?: unknown) => {
+    if (err) return next(err);
+    return canSeeCost(req.user?.role) ? next() : res.status(403).json({ error: 'You do not have access to stock figures' });
+  });
 
 /**
  * Middleware to restrict access to the resource owner or an admin.

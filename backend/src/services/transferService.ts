@@ -39,15 +39,12 @@ export const TRANSFER_INCLUDE = {
   createdBy: { select: { id: true, firstName: true, lastName: true } },
 } as const;
 
-const isOpen = (status: string) => status === 'in_transit' || status === 'disputed';
-
-/** The transfer as the API returns it: the short quantity of a dispute and the Overdue tag (open and older than 3 days). */
+/** The transfer as the API returns it: the short quantity of a dispute and the Overdue tag (in transit and older than 3 days). A disputed transfer waits for the owner's resolve, so it is never overdue. */
 export function present<T extends { status: string; quantity: number; receivedQuantity: number | null; createdAt: Date }>(row: T, now = new Date()) {
-  const open = isOpen(row.status);
   return {
     ...row,
     shortQuantity: row.status === 'disputed' && row.receivedQuantity != null ? row.quantity - row.receivedQuantity : 0,
-    overdue: open && now.getTime() - row.createdAt.getTime() > OVERDUE_DAYS * 24 * 3600 * 1000,
+    overdue: row.status === 'in_transit' && now.getTime() - row.createdAt.getTime() > OVERDUE_DAYS * 24 * 3600 * 1000,
   };
 }
 

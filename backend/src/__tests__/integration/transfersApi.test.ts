@@ -218,13 +218,17 @@ describe('POST /api/inventory/transfers/:id/receive', () => {
     expect(await level(esi)).toBe(before);
   });
 
-  it('an open transfer older than 3 days carries the Overdue tag, a younger one does not', async () => {
+  it('an in-transit transfer older than 3 days carries the Overdue tag, a younger one does not, and a disputed one never does', async () => {
     const old = (await allocate('owner', esi, 1)).body.transfer;
     const young = (await allocate('owner', esi, 1)).body.transfer;
     await prismaBase.inventoryTransfer.update({ where: { id: old.id }, data: { createdAt: new Date(Date.now() - 4 * 24 * 3600 * 1000) } });
     await prismaBase.inventoryTransfer.update({ where: { id: young.id }, data: { createdAt: new Date(Date.now() - 2 * 24 * 3600 * 1000) } });
-    expect((await post('owner', `/transfers/${old.id}/receive`, { quantity: 0, reason: 'not_received' })).body.transfer.overdue).toBe(true);
-    expect((await post('owner', `/transfers/${young.id}/receive`, { quantity: 0, reason: 'not_received' })).body.transfer.overdue).toBe(false);
+    const listed = (await request(app).get('/api/inventory/transfers?status=in_transit&limit=100').set(bearer(U.owner.token))).body.transfers as Array<{ id: number; overdue: boolean }>;
+    expect(listed.find((t) => t.id === old.id)?.overdue).toBe(true);
+    expect(listed.find((t) => t.id === young.id)?.overdue).toBe(false);
+    // A dispute waits for the owner's resolve; it is not late in transit
+    const disputed = (await post('owner', `/transfers/${old.id}/receive`, { quantity: 0, reason: 'not_received' })).body.transfer;
+    expect([disputed.status, disputed.overdue]).toEqual(['disputed', false]);
   });
 
   it('two receipts at once: one wins and the destination is credited once', async () => {
