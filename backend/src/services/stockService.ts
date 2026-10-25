@@ -70,6 +70,24 @@ export async function lockProduct(tx: TransactionClient, productId: number): Pro
   return rows[0];
 }
 
+/**
+ * `lockProduct` for many products in one statement, in id order (two callers never lock in opposite orders). The error is the
+ * one `lockProduct` gives for the lowest id that fails: 404 for a product not in this tenant, 400 for a digital one.
+ */
+export async function lockProducts(tx: TransactionClient, productIds: number[]): Promise<Map<number, LockedProduct>> {
+  const ids = [...new Set(productIds)].sort((a, b) => a - b);
+  const rows = await tx.$queryRaw<LockedProduct[]>`
+    SELECT id, product_type AS "productType", cogs, name FROM products
+    WHERE id = ANY(${ids}::int[]) AND tenant_id = ${resolveTenantId()} ORDER BY id FOR UPDATE`;
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  for (const id of ids) {
+    const row = byId.get(id);
+    if (!row) throw new AppError('Product not found', 404);
+    if (row.productType === 'digital') throw new AppError(`"${row.name}" is a digital product and has no stock`, 400);
+  }
+  return byId;
+}
+
 /** A stock location of this tenant (404 otherwise), with its user when `withUser`. */
 export async function getLocation(db: Db, id: number, withUser = false): Promise<StockLocation & { user?: { id: number; isActive: boolean } | null }> {
   const location = await db.stockLocation.findUnique({ where: { id }, include: withUser ? { user: { select: { id: true, isActive: true } } } : undefined });
@@ -302,8 +320,7 @@ export async function fulfilOrder(tx: TransactionClient, order: FulfilOrder, act
 
   const todo = lines.filter((line) => !active.has(`${line.productId}:${line.id}`));
   // Lock each product once, in id order, then hand the lock to every movement of that product
-  const locked = new Map<number, LockedProduct>();
-  for (const productId of [...new Set(todo.map((l) => l.productId))].sort((a, b) => a - b)) locked.set(productId, await lockProduct(tx, productId));
+  const locked = await lockProducts(tx, todo.map((l) => l.productId));
 
   const moved = new Set<number>();
   for (const line of todo) {

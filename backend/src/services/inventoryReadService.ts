@@ -6,7 +6,6 @@ import { withSoftDeleted } from '../utils/prismaExtensions';
 import * as Money from '../utils/money';
 import { RESERVING } from './stockService';
 import { TRANSFER_INCLUDE, present as presentTransfer } from './transferService';
-import { openFindingOnce } from './findingService';
 import { getStoreTimeZone, parseBound } from './kpi/dates';
 
 /**
@@ -413,6 +412,7 @@ export async function returnsSummary(f: { from?: string; to?: string; partnerId?
     orderBy: { id: 'asc' },
   });
 
+  const gaps: Prisma.FindingCreateManyInput[] = [];
   const partners = new Map<number, { locationId: number; partnerId: number | null; name: string; sent: number; received: number; missing: number; value: Money.Money }>();
   for (const r of returns) {
     const received = r.receivedQuantity ?? r.quantity;
@@ -425,12 +425,21 @@ export async function returnsSummary(f: { from?: string; to?: string; partnerId?
     p.value = Money.add(p.value, Money.mul(missing, Money.orZero(r.product.cogs)));
     partners.set(loc.id, p);
     if (missing > 0) {
-      await openFindingOnce({
+      gaps.push({
         tenantId: resolveTenantId(), type: 'stock_gap', subjectType: 'return_missing', subjectId: String(r.id),
         amount: Money.mul(missing, Money.orZero(r.product.cogs)),
         note: `${loc.name} sent back ${r.quantity} ${r.product.name}; ${received} received, ${missing} missing`,
       });
     }
+  }
+  // One Finding per return with missing units, none twice: read the open ones once, create the rest
+  if (gaps.length > 0) {
+    const open = new Set((await prisma.finding.findMany({
+      where: { type: 'stock_gap', subjectType: 'return_missing', status: 'open', subjectId: { in: gaps.map((g) => g.subjectId) } },
+      select: { subjectId: true },
+    })).map((f) => f.subjectId));
+    const fresh = gaps.filter((g) => !open.has(g.subjectId));
+    if (fresh.length > 0) await prisma.finding.createMany({ data: fresh });
   }
   const list = [...partners.values()].map((p) => ({ ...p, value: Money.toApi(p.value) }));
   return {

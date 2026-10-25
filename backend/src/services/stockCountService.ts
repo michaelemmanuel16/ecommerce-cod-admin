@@ -3,8 +3,7 @@ import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
-import { applyMovement, getLocation, lockProduct, LockedProduct } from './stockService';
-import { openFindingOnce } from './findingService';
+import { applyMovement, getLocation, lockProduct, lockProducts } from './stockService';
 import { auditService } from './auditService';
 import type { StockActor } from '../utils/stockActor';
 import { getStoreTimeZone, localDate, parseYmd } from './kpi/dates';
@@ -78,24 +77,33 @@ export async function createCount(actor: StockActor, input: CreateCountInput) {
     const count = await tx.stockCount.create({
       data: { tenantId, locationId: location.id, countDate: new Date(Date.UTC(day.year, day.month - 1, day.day)), source: input.source, countedById: actor.id, note: input.note ?? null },
     });
-    const products = new Map<number, LockedProduct>();
-    for (const l of lines) products.set(l.productId, await lockProduct(tx, l.productId));
+    const products = await lockProducts(tx, lines.map((l) => l.productId));
     const levels = new Map((await tx.stockLevel.findMany({ where: { locationId: location.id, productId: { in: lines.map((l) => l.productId) } } })).map((lv) => [lv.productId, lv.quantity]));
 
-    for (const l of lines) {
-      const product = products.get(l.productId)!;
+    const rows = lines.map((l) => {
       const systemQuantity = levels.get(l.productId) ?? 0;
-      const difference = l.countedQuantity - systemQuantity;
-      const line = await tx.stockCountLine.create({
-        data: { tenantId, countId: count.id, productId: l.productId, systemQuantity, countedQuantity: l.countedQuantity, difference },
+      return { productId: l.productId, systemQuantity, countedQuantity: l.countedQuantity, difference: l.countedQuantity - systemQuantity };
+    });
+    await tx.stockCountLine.createMany({ data: rows.map((r) => ({ tenantId, countId: count.id, ...r })) });
+    // The lines are new, so no Finding for them exists yet: create them directly (no openFindingOnce lookup per line)
+    const gaps = rows.filter((r) => r.difference !== 0);
+    if (gaps.length > 0) {
+      const lineIds = new Map((await tx.stockCountLine.findMany({ where: { countId: count.id }, select: { id: true, productId: true } })).map((l) => [l.productId, l.id]));
+      await tx.finding.createMany({
+        data: gaps.map((r) => ({
+          tenantId, type: 'stock_gap' as const, subjectType: 'stock_count_line', subjectId: String(lineIds.get(r.productId)),
+          amount: Money.mul(Math.abs(r.difference), Money.orZero(products.get(r.productId)!.cogs)),
+          note: `${location.name}: counted ${r.countedQuantity}, our records say ${r.systemQuantity} (${products.get(r.productId)!.name})`,
+        })),
       });
-      if (difference === 0) continue;
-      const findingId = await openFindingOnce({
-        tenantId, type: 'stock_gap', subjectType: 'stock_count_line', subjectId: String(line.id),
-        amount: Money.mul(Math.abs(difference), Money.orZero(product.cogs)),
-        note: `${location.name}: counted ${l.countedQuantity}, our records say ${systemQuantity} (${product.name})`,
-      }, {}, tx);
-      await tx.stockCountLine.update({ where: { id: line.id }, data: { findingId } });
+      const findingIds = new Map((await tx.finding.findMany({
+        where: { type: 'stock_gap', subjectType: 'stock_count_line', subjectId: { in: gaps.map((r) => String(lineIds.get(r.productId))) } },
+        select: { id: true, subjectId: true },
+      })).map((f) => [f.subjectId, f.id]));
+      for (const r of gaps) {
+        const lineId = lineIds.get(r.productId)!;
+        await tx.stockCountLine.update({ where: { id: lineId }, data: { findingId: findingIds.get(String(lineId)) } });
+      }
     }
     await auditService.record({
       tx, actorId: actor.id, actorKind: 'person', channel: 'app', action: 'create', resource: 'stock_count', resourceId: String(count.id),
