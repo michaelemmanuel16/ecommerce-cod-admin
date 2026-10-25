@@ -5,7 +5,8 @@ import {
   inventoryService, type CountLine, type CountReason, type CountSource, type Overview, type PhysicalProduct, type ReceivedShipment, type StockCount,
 } from '../../services/inventory.service';
 import { apiErrorMessage } from '../../utils/apiError';
-import { COUNT_REASONS, COUNT_SOURCES, DEFAULT_SOURCE, REASON_LABEL, shortDate, SOURCE_LABEL, today } from './model';
+import { todayYmd } from '../../utils/format';
+import { COUNT_REASONS, COUNT_SOURCES, DEFAULT_SOURCE, REASON_LABEL, shortDate, SOURCE_LABEL } from './model';
 import { count } from '../deliveries/model';
 
 interface CountSheetProps {
@@ -43,7 +44,7 @@ export function CountSheet({ open, overview, products, initialLocationId, onClos
 
   const first = locations.find((l) => l.id === initialLocationId) ?? locations[0];
   const [locationId, setLocationId] = useState<number | undefined>(first?.id);
-  const [date, setDate] = useState(today());
+  const [date, setDate] = useState(todayYmd());
   const [source, setSource] = useState<CountSource>(first ? DEFAULT_SOURCE[first.type] : 'own_count');
   const [note, setNote] = useState('');
   const [rows, setRows] = useState<Row[]>(() => rowsFor(first?.id));
@@ -51,12 +52,11 @@ export function CountSheet({ open, overview, products, initialLocationId, onClos
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<StockCount | null>(null);
-  /** Something was saved or applied: the page reloads once, when the sheet closes. */
-  const [dirty, setDirty] = useState(false);
 
   const close = () => {
     onClose();
-    if (dirty) onChanged();
+    // a saved count (or a line applied to it) changes the stock figures: the page reloads once, when the sheet closes
+    if (saved !== null) onChanged();
   };
 
   const changeLocation = (id: number) => {
@@ -76,7 +76,7 @@ export function CountSheet({ open, overview, products, initialLocationId, onClos
   };
 
   const countedOf = (r: Row): number | null => (r.counted.trim() === '' || !Number.isInteger(Number(r.counted)) || Number(r.counted) < 0 ? null : Number(r.counted));
-  const ready = locationId !== undefined && rows.length > 0 && rows.every((r) => countedOf(r) !== null) && date !== '' && date <= today();
+  const ready = locationId !== undefined && rows.length > 0 && rows.every((r) => countedOf(r) !== null) && date !== '' && date <= todayYmd();
   const off = rows.reduce((sum, r) => sum + Math.abs((countedOf(r) ?? r.records) - r.records), 0);
 
   const save = async () => {
@@ -89,7 +89,6 @@ export function CountSheet({ open, overview, products, initialLocationId, onClos
         lines: rows.map((r) => ({ productId: r.productId, countedQuantity: countedOf(r)! })),
       });
       setSaved(made);
-      setDirty(true);
     } catch (e) {
       setError(apiErrorMessage(e, 'The count could not be saved.'));
     }
@@ -114,14 +113,14 @@ export function CountSheet({ open, overview, products, initialLocationId, onClos
       }
     >
       {saved ? (
-        <SavedCount saved={saved} onApplied={(next) => { setSaved(next); setDirty(true); }} />
+        <SavedCount saved={saved} onApplied={setSaved} />
       ) : (
         <>
           <div className="fg">
             <Select label="Location" value={locationId ?? ''} onChange={(e) => changeLocation(Number(e.target.value))}>
               {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </Select>
-            <Input label="Count date" type="date" max={today()} value={date} onChange={(e) => setDate(e.target.value)} />
+            <Input label="Count date" type="date" max={todayYmd()} value={date} onChange={(e) => setDate(e.target.value)} />
             <Select label="Who counted" value={source} onChange={(e) => setSource(e.target.value as CountSource)}>
               {COUNT_SOURCES.map((s) => <option key={s} value={s}>{SOURCE_LABEL[s]}</option>)}
             </Select>

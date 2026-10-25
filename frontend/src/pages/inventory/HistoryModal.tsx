@@ -8,6 +8,7 @@ import {
 import { apiErrorMessage } from '../../utils/apiError';
 import { personName } from '../../utils/people';
 import { count } from '../deliveries/model';
+import { saveBlob } from '../orders/importText';
 import { MOVE_LABEL, MOVE_TONE, MOVE_TYPES, placeName, REASON_LABEL, shortDateTime, signedQuantity, statusView } from './model';
 import { StatusCell, TransferActions } from './TransferParts';
 
@@ -103,12 +104,7 @@ export function HistoryModal({ overview, products, initialId, canMove, canExport
   const exportCsv = async () => {
     setExporting(true);
     try {
-      const url = URL.createObjectURL(await inventoryService.exportCsv(apiFilters(filters)));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'stock-moves.csv';
-      a.click();
-      URL.revokeObjectURL(url);
+      saveBlob(await inventoryService.exportCsv(apiFilters(filters)), 'stock-moves.csv');
     } catch (e) {
       setError(apiErrorMessage(e, 'The export failed.'));
     }

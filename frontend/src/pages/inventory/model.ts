@@ -103,9 +103,6 @@ export const COUNT_REASONS: CountReason[] = ['physical_count_correction', 'damag
 export const shortDate = (iso: string): string => formatDate(iso.length === 10 ? `${iso}T00:00:00` : iso, 'd MMM');
 export const shortDateTime = (iso: string): string => formatDate(iso, 'd MMM, HH:mm');
 
-/** Today as YYYY-MM-DD in the browser's zone (the count date input). */
-export const today = (): string => formatDate(new Date(), 'yyyy-MM-dd');
-
 /**
  * The tag for a count against our records. `difference` is counted minus our records, the sign of a count line: -12 is 12
  * units fewer than we thought. A card says "12 units off" (`wording: 'off'`), a table row says "−12 units".

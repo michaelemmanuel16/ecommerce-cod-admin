@@ -66,6 +66,15 @@ describe('Deliveries page (M4-T30)', () => {
     expect(screen.getByText('Cash still with agents and 3PLs')).toBeInTheDocument();
   });
 
+  it('a tab click reloads only the table (F10)', async () => {
+    renderPage();
+    await screen.findByRole('table', { name: 'Delivery partners' });
+    const before = [list, summary, failureReasons, waiting, returnsSummary].map((m) => m.mock.calls.length);
+    await userEvent.click(screen.getByRole('tab', { name: /3PLs/ }));
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(before[0] + 1));
+    expect([summary, failureReasons, waiting, returnsSummary].map((m) => m.mock.calls.length)).toEqual(before.slice(1));
+  });
+
   it('draws the table with a total row and the tab counts', async () => {
     renderPage();
     const table = await screen.findByRole('table', { name: 'Delivery partners' });

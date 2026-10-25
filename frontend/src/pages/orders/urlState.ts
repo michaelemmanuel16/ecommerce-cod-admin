@@ -46,6 +46,10 @@ const SORT_FIELDS: SortField[] = ['id', 'customer', 'totalAmount', 'createdAt'];
 const DAY = 86_400_000;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** A from/to pair from the URL: both valid YYYY-MM-DD dates, or neither. */
+export const parseRange = (from: string | null, to: string | null): { from: string; to: string } | null =>
+  from !== null && to !== null && DATE.test(from) && DATE.test(to) ? { from, to } : null;
+
 const readIds = (v: string | null): number[] | null => {
   if (!v || !/^\d+(,\d+)*$/.test(v)) return null;
   const ids = v.split(',').map(Number);
@@ -61,7 +65,7 @@ export function parseView(search: URLSearchParams): ListView {
   const to = search.get('to');
   const rep = search.get('rep');
   const failure = search.get('failure');
-  const dated = from !== null && to !== null && DATE.test(from) && DATE.test(to);
+  const dated = parseRange(from, to);
   return {
     tab: isTabId(tab) ? tab : DEFAULT_VIEW.tab,
     page: page ?? 1,
@@ -71,8 +75,8 @@ export function parseView(search: URLSearchParams): ListView {
       dir: search.get('dir') === 'asc' ? 'asc' : search.get('dir') === 'desc' ? 'desc' : DEFAULT_SORT.dir,
     },
     size: size !== null && (PAGE_SIZES as readonly number[]).includes(size) ? size : null,
-    from: dated ? from : null,
-    to: dated ? to : null,
+    from: dated?.from ?? null,
+    to: dated?.to ?? null,
     basis: search.get('basis') === 'delivery' ? 'delivery' : 'created',
     product: positive(search.get('product')),
     agent: positive(search.get('agent')),

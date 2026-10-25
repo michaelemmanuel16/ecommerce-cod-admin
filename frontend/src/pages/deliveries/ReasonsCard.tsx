@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Card, EmptyState } from '../../components/ui-v2';
 import type { FailureReasons, ReturnsSummary } from '../../services/delivery-partners.service';
-import { FAILURE_REASONS } from '../orders/reasons';
+import { failureReasonLabel } from '../orders/reasons';
 import { count } from './model';
 
 const COLOR: Record<string, string> = {
@@ -11,7 +11,6 @@ const COLOR: Record<string, string> = {
   rescheduled: 'var(--ink-3)',
   other: 'var(--ink-3)',
 };
-const LABEL = new Map(FAILURE_REASONS);
 
 interface ReasonsCardProps {
   reasons: FailureReasons | null;
@@ -61,9 +60,9 @@ export function ReasonsCard({ reasons, returns, phrase, range }: ReasonsCardProp
                 key={r.reason}
                 className="bar-row reasonlink"
                 to={`/orders?failure=${r.reason}&from=${range.from}&to=${range.to}`}
-                aria-label={`${LABEL.get(r.reason) ?? r.reason}, ${r.count} orders. Open them in Orders`}
+                aria-label={`${failureReasonLabel(r.reason)}, ${r.count} orders. Open them in Orders`}
               >
-                <span>{LABEL.get(r.reason) ?? r.reason}</span>
+                <span>{failureReasonLabel(r.reason)}</span>
                 <div className="track"><i style={{ width: `${(r.count / top) * 100}%`, background: COLOR[r.reason] }} /></div>
                 <span className="val num">{r.percent === null ? '—' : `${Math.round(r.percent)}%`} <small>{count(r.count)}</small></span>
               </Link>

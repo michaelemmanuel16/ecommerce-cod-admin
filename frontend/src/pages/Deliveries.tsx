@@ -5,6 +5,7 @@ import { usePermissions } from '../hooks/usePermissions';
 import { useV2Page } from '../components/shell/useV2Page';
 import { Button, EmptyState, Table, Tabs, Tag, Tile, useToast } from '../components/ui-v2';
 import { formatCurrency } from '../utils/format';
+import { wholePercent } from './dashboard/format';
 import { DateRange } from './orders/DateRange';
 import { presetOf, rangePhrase } from './orders/urlState';
 import { buildColumns } from './deliveries/columns';
@@ -13,10 +14,10 @@ import { AddPartnerModal } from './deliveries/AddPartnerModal';
 import { PartnerDrawer } from './deliveries/PartnerDrawer';
 import { ReasonsCard } from './deliveries/ReasonsCard';
 import { OutNowCard, WaitingCard } from './deliveries/WaitingCards';
-import { deliveryPartnersService, type PartnerRow } from '../services/delivery-partners.service';
-import { apiErrorMessage } from '../utils/apiError';
+import type { PartnerRow } from '../services/delivery-partners.service';
 import { count, PARTNER_TABS } from './deliveries/model';
 import { parseView, rangeOf, writeView, type DeliveriesView } from './deliveries/urlState';
+import { useAvailabilitySwitch } from './deliveries/useAvailabilitySwitch';
 import { useDeliveries } from './deliveries/useDeliveries';
 
 /**
@@ -39,15 +40,10 @@ export function Deliveries() {
 
   const { list, summary } = data;
 
+  const setAvailability = useAvailabilitySwitch();
   const switchAvailability = useCallback(async (row: PartnerRow, on: boolean) => {
-    try {
-      await deliveryPartnersService.setAvailability(row.partnerId, on);
-      say(on ? `${row.name} is available for new orders` : `${row.name} is unavailable for new orders`);
-      await data.refetch();
-    } catch (e) {
-      say(apiErrorMessage(e, 'The availability could not be changed.'));
-    }
-  }, [say, data.refetch]);
+    if (await setAvailability({ id: row.partnerId, name: row.name }, on)) await data.refetch();
+  }, [setAvailability, data.refetch]);
   const target = summary?.deliverySuccess.target ?? 60;
   const phrase = rangePhrase(range);
   const columns = useMemo(
@@ -107,7 +103,7 @@ export function Deliveries() {
         <Tile
           icon={<Gauge />}
           tone="coral"
-          value={rate?.value == null ? '—' : `${Math.round(rate.value)}%`}
+          value={rate?.value == null ? '—' : wholePercent(rate.value)}
           label="Delivery success"
           footer={
             <>

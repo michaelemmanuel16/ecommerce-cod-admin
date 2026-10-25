@@ -9,59 +9,75 @@ import {
   type RangeParams,
   type WaitingList,
 } from '../../services/delivery-partners.service';
-import { getSocket } from '../../services/socket';
-import { ORDER_EVENTS, SOCKET_REFRESH_MS } from '../orders/useOrderList';
+import { ORDER_EVENTS, useSocketRefresh } from '../orders/useOrderList';
 
 /** The waiting list is a short card on the page; the full list is in Orders. */
 const WAITING_LIMIT = 5;
 const PARTNER_EVENTS = ['agent:availability_changed', 'agent:updated'] as const;
-
-interface DeliveriesState {
-  list: PartnerList | null;
-  summary: PartnerSummary | null;
-  reasons: FailureReasons | null;
-  /** null: the role may not see it (the API answered 403) or it has not loaded. */
-  waiting: WaitingList | null;
-  /** True until the first answer for the current view. */
-  loading: boolean;
-  error: string | null;
-}
+const DELIVERY_EVENTS = [...ORDER_EVENTS, ...PARTNER_EVENTS];
 
 /**
- * Everything the Deliveries page reads for one view: the table (tab = the API `type`), the five tiles, the reasons card,
- * the waiting list and the returns summary (null when the role may not read stock). One answer replaces the last, the newest ask wins. Order and availability events refresh it quietly.
+ * Everything the Deliveries page reads for one view: the table (tab = the API `type`, so it follows the range and the tab),
+ * the five tiles and the reasons card (range only), the waiting list (no view: loaded on mount) and the returns summary
+ * (null when the role may not read stock; range only). One answer replaces the last, the newest ask wins. Order and
+ * availability events refresh all of it quietly, except the returns line.
  */
 export function useDeliveries(range: RangeParams, tab: PartnerTab) {
-  const [state, setState] = useState<DeliveriesState>({ list: null, summary: null, reasons: null, waiting: null, loading: true, error: null });
+  const [list, setList] = useState<PartnerList | null>(null);
+  const [summary, setSummary] = useState<PartnerSummary | null>(null);
+  const [reasons, setReasons] = useState<FailureReasons | null>(null);
+  /** null: the role may not see it (the API answered 403) or it has not loaded. */
+  const [waiting, setWaiting] = useState<WaitingList | null>(null);
+  /** True until the first answer for the current view of the table. */
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const latest = useRef({ range, tab });
   latest.current = { range, tab };
-  const ticket = useRef(0);
-  const viewKey = `${range.from}|${range.to}|${tab}`;
+  const listTicket = useRef(0);
+  const tilesTicket = useRef(0);
+  const waitingTicket = useRef(0);
 
-  const load = useCallback(async (quiet: boolean) => {
-    const mine = ++ticket.current;
+  const loadList = useCallback(async (quiet: boolean) => {
+    const mine = ++listTicket.current;
     const wanted = latest.current;
-    if (!quiet) setState((s) => ({ ...s, loading: true, error: null }));
-    const [list, summary, reasons, waiting] = await Promise.allSettled([
-      deliveryPartnersService.list(wanted.range, wanted.tab, quiet),
-      deliveryPartnersService.summary(wanted.range, quiet),
-      deliveryPartnersService.failureReasons(wanted.range, quiet),
-      deliveryPartnersService.waiting(WAITING_LIMIT, quiet),
+    if (!quiet) {
+      setLoading(true);
+      setError(null);
+    }
+    const [next] = await Promise.allSettled([deliveryPartnersService.list(wanted.range, wanted.tab, quiet)]);
+    if (mine !== listTicket.current) return; // a newer view asked meanwhile
+    if (next.status === 'fulfilled') setList(next.value);
+    setLoading(false);
+    setError(next.status === 'rejected' ? 'The delivery partners could not load.' : null);
+  }, []);
+
+  const loadTiles = useCallback(async (quiet: boolean) => {
+    const mine = ++tilesTicket.current;
+    const wanted = latest.current.range;
+    const [nextSummary, nextReasons] = await Promise.allSettled([
+      deliveryPartnersService.summary(wanted, quiet),
+      deliveryPartnersService.failureReasons(wanted, quiet),
     ]);
-    if (mine !== ticket.current) return; // a newer view asked meanwhile
-    setState((s) => ({
-      list: list.status === 'fulfilled' ? list.value : s.list,
-      summary: summary.status === 'fulfilled' ? summary.value : s.summary,
-      reasons: reasons.status === 'fulfilled' ? reasons.value : s.reasons,
-      waiting: waiting.status === 'fulfilled' ? waiting.value : s.waiting, // null: the role may not see it (403)
-      loading: false,
-      error: list.status === 'rejected' ? 'The delivery partners could not load.' : null,
-    }));
+    if (mine !== tilesTicket.current) return;
+    if (nextSummary.status === 'fulfilled') setSummary(nextSummary.value);
+    if (nextReasons.status === 'fulfilled') setReasons(nextReasons.value);
+  }, []);
+
+  const loadWaiting = useCallback(async (quiet: boolean) => {
+    const mine = ++waitingTicket.current;
+    const [next] = await Promise.allSettled([deliveryPartnersService.waiting(WAITING_LIMIT, quiet)]);
+    if (mine === waitingTicket.current && next.status === 'fulfilled') setWaiting(next.value); // null: the role may not see it (403)
   }, []);
 
   useEffect(() => {
-    void load(false);
-  }, [viewKey, load]);
+    void loadList(false);
+  }, [range.from, range.to, tab, loadList]);
+  useEffect(() => {
+    void loadTiles(false);
+  }, [range.from, range.to, loadTiles]);
+  useEffect(() => {
+    void loadWaiting(false);
+  }, [loadWaiting]);
 
   // The returns line follows the dates only: an order or availability event does not change it.
   const [returns, setReturns] = useState<ReturnsSummary | null>(null);
@@ -71,23 +87,11 @@ export function useDeliveries(range: RangeParams, tab: PartnerTab) {
     return () => { live = false; };
   }, [range.from, range.to]);
 
-  useEffect(() => {
-    const socket = getSocket();
-    if (!socket) return;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const refresh = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => void load(true), SOCKET_REFRESH_MS);
-    };
-    const events = [...ORDER_EVENTS, ...PARTNER_EVENTS];
-    events.forEach((e) => socket.on(e, refresh));
-    return () => {
-      clearTimeout(timer);
-      // this page's handler only: the toast and the other stores listen to the same events
-      events.forEach((e) => socket.off(e, refresh));
-    };
-  }, [load]);
+  const refetch = useCallback(
+    () => Promise.all([loadList(true), loadTiles(true), loadWaiting(true)]).then(() => undefined),
+    [loadList, loadTiles, loadWaiting],
+  );
+  useSocketRefresh(DELIVERY_EVENTS, refetch);
 
-  const refetch = useCallback(() => load(true), [load]);
-  return { ...state, returns, refetch };
+  return { list, summary, reasons, waiting, returns, loading, error, refetch };
 }

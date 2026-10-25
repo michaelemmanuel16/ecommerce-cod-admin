@@ -14,7 +14,12 @@ export const problemLine = (p: { row: number; problems: string[] }) => `Row ${p.
 
 /** Saves text as a file in the browser. */
 export function saveText(text: string, name: string, type = 'text/csv;charset=utf-8') {
-  const url = window.URL.createObjectURL(new Blob([text], { type }));
+  saveBlob(new Blob([text], { type }), name);
+}
+
+/** Saves a file the server built (a blob answer) in the browser. */
+export function saveBlob(blob: Blob, name: string) {
+  const url = window.URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
   link.setAttribute('download', name);

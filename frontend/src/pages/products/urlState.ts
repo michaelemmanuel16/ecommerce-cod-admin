@@ -1,4 +1,5 @@
 import type { ProductTab } from '../../services/products.service';
+import { positive } from '../../utils/urlState';
 import { isProductTab } from './model';
 
 export type Pane = 'products' | 'shipments';
@@ -25,13 +26,12 @@ export function parseView(search: URLSearchParams): ProductsView {
   const month = search.get('month');
   const ships = search.get('ships');
   const edit = search.get('edit');
-  const id = Number(edit);
   return {
     pane: search.get('pane') === 'shipments' ? 'shipments' : 'products',
     tab: isProductTab(tab) ? tab : DEFAULT_VIEW.tab,
     month: month && MONTH.test(month) ? month : null,
     ships: ships === 'pending' || ships === 'received' ? ships : 'all',
-    edit: edit === 'new' ? 'new' : Number.isInteger(id) && id > 0 ? id : null,
+    edit: edit === 'new' ? 'new' : positive(edit),
   };
 }
 

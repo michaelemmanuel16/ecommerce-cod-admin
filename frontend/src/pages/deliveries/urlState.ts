@@ -1,8 +1,7 @@
 import type { PartnerTab } from '../../services/delivery-partners.service';
-import { presetRange } from '../orders/urlState';
+import { positive } from '../../utils/urlState';
+import { parseRange, presetRange } from '../orders/urlState';
 import { isPartnerTab } from './model';
-
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** What the Deliveries view depends on. It lives in the URL, so a copied link opens the same table, range and drawer. */
 export interface DeliveriesView {
@@ -18,15 +17,13 @@ export const DEFAULT_VIEW: DeliveriesView = { tab: 'all', from: null, to: null, 
 
 export function parseView(search: URLSearchParams): DeliveriesView {
   const tab = search.get('tab');
-  const from = search.get('from');
-  const to = search.get('to');
-  const partner = Number(search.get('partner'));
-  const dated = from !== null && to !== null && DATE.test(from) && DATE.test(to) && from <= to;
+  const range = parseRange(search.get('from'), search.get('to'));
+  const dated = range && range.from <= range.to ? range : null;
   return {
     tab: isPartnerTab(tab) ? tab : DEFAULT_VIEW.tab,
-    from: dated ? from : null,
-    to: dated ? to : null,
-    partner: Number.isInteger(partner) && partner > 0 ? partner : null,
+    from: dated?.from ?? null,
+    to: dated?.to ?? null,
+    partner: positive(search.get('partner')),
   };
 }
 

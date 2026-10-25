@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getSocket } from '../../services/socket';
 import { inventoryService, type LowStockProduct, type Overview, type PhysicalProduct, type Transfer } from '../../services/inventory.service';
-import { ORDER_EVENTS, SOCKET_REFRESH_MS } from '../orders/useOrderList';
+import { ORDER_EVENTS, useSocketRefresh } from '../orders/useOrderList';
 
 const RECENT_LIMIT = 6;
 
@@ -52,21 +51,7 @@ export function useInventory() {
     inventoryService.products().then(setProducts).catch(() => undefined);
   }, [load]);
 
-  useEffect(() => {
-    const socket = getSocket();
-    if (!socket) return;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const refresh = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => void load(true), SOCKET_REFRESH_MS);
-    };
-    ORDER_EVENTS.forEach((e) => socket.on(e, refresh));
-    return () => {
-      clearTimeout(timer);
-      // this page's handler only: the toast and the other stores listen to the same events
-      ORDER_EVENTS.forEach((e) => socket.off(e, refresh));
-    };
-  }, [load]);
+  useSocketRefresh(ORDER_EVENTS, () => load(true));
 
   const refetch = useCallback(() => load(true), [load]);
   return { ...state, products, refetch };
