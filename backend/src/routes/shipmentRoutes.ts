@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { body, param, query } from 'express-validator';
 import * as controller from '../controllers/shipmentController';
-import { authenticate, requireResourcePermission } from '../middleware/auth';
+import { authenticate, requireResourcePermission, requireStockView } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate } from '../middleware/validation';
 import { CLAIM_ACTIONS } from '../services/shipmentService';
@@ -12,8 +12,8 @@ const router = Router();
 router.use(authenticate);
 router.use(tenantRateLimiter);
 
-// F-604 to F-608: anyone with products:view reads; the owner, an admin and a stock keeper write (products:update_stock).
-const canView = requireResourcePermission('products', 'view');
+// F-604 to F-608, F-600: products:view reads, but never a call rep or a delivery agent (they get no cost); the owner, an admin and a stock keeper write (products:update_stock).
+const canView = requireStockView;
 const canWrite = requireResourcePermission('products', 'update_stock');
 
 const id = param('id').isInt({ min: 1 }).withMessage('Invalid shipment ID').toInt();

@@ -33,7 +33,9 @@ export function Products() {
   const canStock = can('products', 'update_stock');
   const showCost = !!list?.canSeeCost;
   const shippable = (list?.products ?? []).filter((p) => p.isActive && p.productType === 'physical').map((p) => ({ id: p.id, name: p.name }));
-  const shipments = view.pane === 'shipments';
+  // Shipments carry supplier and cost, so a role without cost (call rep, delivery agent) gets no shipments tab (F-600)
+  const noShipments = !!list && !list.canSeeCost;
+  const shipments = view.pane === 'shipments' && !noShipments;
 
   return (
     <section className="products">
@@ -74,16 +76,18 @@ export function Products() {
         </div>
       </div>
 
-      <Tabs
-        label="Products sections"
-        className="panetabs"
-        items={[
-          { id: 'products', label: 'Products', count: list?.counts.all },
-          { id: 'shipments', label: 'Incoming shipments' },
-        ]}
-        value={view.pane}
-        onChange={(id) => go({ ...view, pane: id as ProductsView['pane'] })}
-      />
+      {!noShipments && (
+        <Tabs
+          label="Products sections"
+          className="panetabs"
+          items={[
+            { id: 'products', label: 'Products', count: list?.counts.all },
+            { id: 'shipments', label: 'Incoming shipments' },
+          ]}
+          value={view.pane}
+          onChange={(id) => go({ ...view, pane: id as ProductsView['pane'] })}
+        />
+      )}
 
       {shipments ? (
         <ShipmentsPane
