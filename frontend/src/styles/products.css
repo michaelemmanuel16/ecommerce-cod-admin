@@ -63,7 +63,7 @@
 .v2 .products .shp td,.v2 .products .shp th{padding-left:5px;padding-right:5px;white-space:nowrap}
 .v2 .products .shp th{white-space:normal;vertical-align:bottom}
 .v2 .products .shp td:nth-child(2),.v2 .products .shp td:nth-child(11){white-space:normal;min-width:76px}
-.v2 .products .shp td:first-child{white-space:normal;min-width:124px}
+.v2 .products .shp td:first-child{white-space:normal;min-width:100px}
 .v2 .products .shp td:first-child,.v2 .products .shp th:first-child{padding-left:20px}
 .v2 .products .shp td:last-child,.v2 .products .shp th:last-child{padding-right:20px}
 .v2 .products .shp td small{display:block;color:var(--ink-3);font-size:12px;font-weight:500}
