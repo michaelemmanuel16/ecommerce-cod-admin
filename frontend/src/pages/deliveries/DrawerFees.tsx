@@ -4,7 +4,7 @@ import { deliveryPartnersService, type PartnerDataSource, type PartnerDetail } f
 import { apiErrorMessage } from '../../utils/apiError';
 import { formatCurrency } from '../../utils/format';
 import { fieldsOf, type Fields } from './feesFields';
-import { DATA_SOURCES, DATA_SOURCE_LABEL, VEHICLE_TYPES } from './model';
+import { DATA_SOURCES, DATA_SOURCE_LABEL, hasFeeRule, VEHICLE_TYPES } from './model';
 
 interface DrawerFeesProps {
   partner: PartnerDetail;
@@ -64,7 +64,7 @@ export function DrawerFees({ partner, canEdit, onSaved }: DrawerFeesProps) {
         <h4>Delivery fee rule</h4>
         {rule === undefined ? (
           <p className="mut">Fee rules show to roles that can see money.</p>
-        ) : rule.delivered === null && rule.failed === null && rule.returned === null ? (
+        ) : !hasFeeRule(rule) ? (
           <p className="mut">No fee rule yet. Fee rules arrive with the payouts release.</p>
         ) : (
           <dl className="kv">

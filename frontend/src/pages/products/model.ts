@@ -67,5 +67,3 @@ export function noneNote(names: string[]): string | null {
   const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
   return `${list} ${names.length === 1 ? 'holds' : 'hold'} none of this product right now.`;
 }
-
-export const HOLDER_TYPE: Record<Holder['type'], string> = { own_store: 'Own store', partner_3pl: '3PL', agent: 'Agent' };

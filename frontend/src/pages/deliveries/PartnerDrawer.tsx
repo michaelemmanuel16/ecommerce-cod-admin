@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Pencil } from 'lucide-react';
-import { Button, Drawer, Tabs, Tag, useToast } from '../../components/ui-v2';
+import { Button, Drawer, Tabs, Tag } from '../../components/ui-v2';
 import { AgentEditModal } from '../../components/admin/AgentEditModal';
 import type { DeliveryAgent } from '../../services/delivery-agents.service';
 import { deliveryPartnersService, type PartnerDetail, type PartnerRow } from '../../services/delivery-partners.service';
@@ -12,6 +12,7 @@ import { DrawerStock } from './DrawerStock';
 import { ListSkeleton } from './ListSkeleton';
 import { DrawerSummary } from './DrawerSummary';
 import { AvailabilitySwitch } from './AvailabilitySwitch';
+import { useAvailabilitySwitch } from './useAvailabilitySwitch';
 import { rowTags, TYPE_LABEL, TYPE_TONE } from './model';
 
 export type DrawerTab = 'summary' | 'orders' | 'stock' | 'fees';
@@ -51,7 +52,7 @@ const agentOf = (p: PartnerDetail): DeliveryAgent => ({
  * A save on Fees writes an audit row on the server. The page gives the drawer a `key` per partner, so each partner starts clean.
  */
 export function PartnerDrawer({ id, row, target, canEdit, canSwitch, startTab = 'summary', onClose, onChanged }: PartnerDrawerProps) {
-  const say = useToast();
+  const switchAvailability = useAvailabilitySwitch();
   const [tab, setTab] = useState<DrawerTab>(startTab);
   /** The Orders tab stays mounted once opened, so its rows and filter are still there when the user comes back. */
   const [ordersOpened, setOrdersOpened] = useState(startTab === 'orders');
@@ -75,13 +76,9 @@ export function PartnerDrawer({ id, row, target, canEdit, canSwitch, startTab = 
 
   const toggle = async (on: boolean) => {
     if (!partner) return;
-    try {
-      await deliveryPartnersService.setAvailability(partner.id, on);
+    if (await switchAvailability(partner, on)) {
       setPartner({ ...partner, isAvailable: on });
       onChanged();
-      say(on ? `${partner.name} is available for new orders` : `${partner.name} is unavailable for new orders`);
-    } catch (e) {
-      say(apiErrorMessage(e, 'The availability could not be changed.'));
     }
   };
 

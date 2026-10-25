@@ -34,9 +34,13 @@ export const days = (n: number | null): string => (n === null ? '—' : `${n.toL
 
 export const count = (n: number | undefined): string => (n === undefined ? '—' : n.toLocaleString('en-GB'));
 
+/** True when the partner has a fee rule with at least one fee set. */
+export const hasFeeRule = (rule: FeeRule | null | undefined): rule is FeeRule =>
+  !!rule && (rule.delivered !== null || rule.failed !== null || rule.returned !== null);
+
 /** "GH₵35 · GH₵0 · GH₵0" (delivered · failed · returned). null: the partner has no fee rule yet. */
 export function feeRuleText(rule: FeeRule | null | undefined): string | null {
-  if (!rule || (rule.delivered === null && rule.failed === null && rule.returned === null)) return null;
+  if (!hasFeeRule(rule)) return null;
   return [rule.delivered, rule.failed, rule.returned].map((v) => formatCurrency(v ?? 0)).join(' · ');
 }
 

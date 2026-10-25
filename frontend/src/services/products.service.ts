@@ -1,5 +1,6 @@
 import apiClient from './api';
 import { Product } from '../types';
+import type { CountSource, StockLocationType } from './inventory.service';
 
 /** The Products page API (backend productRoutes.ts, inventoryRoutes.ts). The api client turns money strings into numbers (utils/money). */
 
@@ -56,7 +57,7 @@ export interface HolderCount {
   countId: number;
   lineId: number;
   date: string;
-  source: 'own_count' | 'three_pl_dashboard' | 'agent_count';
+  source: CountSource;
   counted: number;
   /** The count minus our records (the sign of a count line: -12 is 12 units fewer than we thought). Null when stock moved after the count ("old"). */
   difference: number | null;
@@ -66,7 +67,7 @@ export interface HolderCount {
 export interface Holder {
   locationId: number;
   name: string;
-  type: 'own_store' | 'partner_3pl' | 'agent';
+  type: StockLocationType;
   isActive: boolean;
   allocated: number;
   inTransit: number;

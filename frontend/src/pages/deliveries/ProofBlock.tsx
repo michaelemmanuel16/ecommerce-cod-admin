@@ -3,10 +3,8 @@ import { Modal, Skeleton } from '../../components/ui-v2';
 import type { OrderProof } from '../../services/delivery-partners.service';
 import { formatCurrency } from '../../utils/format';
 import { photoSrc } from '../../utils/photoSrc';
-import { FAILURE_REASONS } from '../orders/reasons';
+import { failureReasonLabel } from '../orders/reasons';
 import { shortDate } from '../orders/model';
-
-const REASON_LABEL = new Map<string, string>(FAILURE_REASONS);
 
 /** A small proof photo that opens large. A photo that fails to load shows a placeholder (F-711). */
 export function ProofThumb({ url, big, onOpen }: { url: string; big?: boolean; onOpen?: () => void }) {
@@ -42,7 +40,7 @@ export function ProofBlock({ data }: { data: OrderProof | 'error' | null }) {
         <ol className="attempts" aria-label="Delivery attempts">
           {attempts.map((a) => (
             <li key={a.id}>
-              <b>{shortDate(a.attemptedAt)}</b> {a.reason ? REASON_LABEL.get(a.reason) ?? a.reason : 'No reason'}
+              <b>{shortDate(a.attemptedAt)}</b> {a.reason ? failureReasonLabel(a.reason) : 'No reason'}
               {a.note ? `. ${a.note}` : ''} <span className="mut">by {a.partner.name}</span>
             </li>
           ))}

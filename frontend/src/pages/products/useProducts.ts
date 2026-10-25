@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { productsService, type ProductList, type ProductsSummary, type ProductTab } from '../../services/products.service';
-import { getSocket } from '../../services/socket';
-import { ORDER_EVENTS, SOCKET_REFRESH_MS } from '../orders/useOrderList';
+import { ORDER_EVENTS, useSocketRefresh } from '../orders/useOrderList';
 
 /**
  * The Products page reads: the table (server tab and month) and the four tiles (month only). One answer replaces the last, the
@@ -54,20 +53,8 @@ export function useProducts(tab: ProductTab, month: string | null) {
 
   const refetch = useCallback(() => Promise.all([loadList(true), loadSummary(true)]).then(() => undefined), [loadList, loadSummary]);
 
-  useEffect(() => {
-    const socket = getSocket();
-    if (!socket) return;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const refresh = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => void refetch(), SOCKET_REFRESH_MS);
-    };
-    ORDER_EVENTS.forEach((e) => socket.on(e, refresh));
-    return () => {
-      clearTimeout(timer);
-      ORDER_EVENTS.forEach((e) => socket.off(e, refresh));
-    };
-  }, [refetch]);
+
+  useSocketRefresh(ORDER_EVENTS, refetch);
 
   return { list, summary, loading, error, refetch };
 }
