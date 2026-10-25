@@ -105,13 +105,16 @@ router.get(
 );
 router.get('/levels', canViewOrOwn, [optInt('locationId'), optInt('productId'), validate], controller.levels);
 router.get('/product/:productId/holders', canView, [param('productId').isInt({ min: 1 }).withMessage('Invalid product ID').toInt(), validate], controller.holders);
+const transferFilterRules = [
+  query('type').optional().isIn(Object.values(TransferType)).withMessage('Unknown type'),
+  query('status').optional().isIn(Object.values(TransferStatus)).withMessage('Unknown status'),
+  optInt('locationId'), optInt('productId'), optDay('from'), optDay('to'),
+];
 router.get(
   '/transfers',
   canViewOrOwn,
   [
-    query('type').optional().isIn(Object.values(TransferType)).withMessage('Unknown type'),
-    query('status').optional().isIn(Object.values(TransferStatus)).withMessage('Unknown status'),
-    optInt('locationId'), optInt('productId'), optDay('from'), optDay('to'),
+    ...transferFilterRules,
     query('includeCounts').optional().isBoolean(), ...paginationValidation, validate,
   ],
   controller.listTransfers,
@@ -119,11 +122,7 @@ router.get(
 router.get(
   '/transfers/export.csv',
   canView, canExport,
-  [
-    query('type').optional().isIn(Object.values(TransferType)).withMessage('Unknown type'),
-    query('status').optional().isIn(Object.values(TransferStatus)).withMessage('Unknown status'),
-    optInt('locationId'), optInt('productId'), optDay('from'), optDay('to'), validate,
-  ],
+  [...transferFilterRules, validate],
   controller.exportTransfers,
 );
 router.get('/locations', canView, controller.listLocations);

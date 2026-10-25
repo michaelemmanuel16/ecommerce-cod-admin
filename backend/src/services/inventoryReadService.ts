@@ -53,7 +53,7 @@ interface CountRow {
 
 /** The latest whole-location count line per (location, product); with `productId`, only for that product. */
 async function latestCountLines(productId?: number): Promise<CountRow[]> {
-  const rows = await prisma.$queryRaw<Array<{ countId: number; lineId: number; locationId: number; productId: number; counted: number; source: string; date: string; createdAt: Date }>>(Prisma.sql`
+  const rows = await prisma.$queryRaw<CountRow[]>(Prisma.sql`
     SELECT DISTINCT ON (c.location_id, l.product_id)
       c.id AS "countId", l.id AS "lineId", c.location_id AS "locationId", l.product_id AS "productId", l.counted_quantity AS counted,
       c.source::text AS source, TO_CHAR(c.count_date, 'YYYY-MM-DD') AS date, c.created_at AS "createdAt"
@@ -103,17 +103,26 @@ async function oldCounts(counts: CountRow[]): Promise<Set<string>> {
   });
   const settledAt = new Map(settledRows.map((r) => [r.id, r]));
 
+  // Latest change time per (location, product), in one pass: a count is old when that time is after the count was saved
+  const latest = new Map<string, number>();
+  const note = (loc: number | null, prod: number, at: Date | null) => {
+    if (loc == null || at == null) return;
+    const k = key(loc, prod);
+    latest.set(k, Math.max(latest.get(k) ?? 0, at.getTime()));
+  };
+  for (const m of moves) {
+    note(m.fromLocationId, m.productId, m.createdAt);
+    if (m.status === 'received' || m.status === 'disputed') note(m.toLocationId, m.productId, m.receivedAt ?? m.createdAt);
+  }
+  for (const a of settled) {
+    const row = settledAt.get(Number(a.resourceId));
+    if (row) note(row.fromLocationId, row.productId, a.createdAt);
+  }
+
   const old = new Set<string>();
   for (const c of counts) {
-    const after = (at: Date | null) => at != null && at > c.createdAt;
-    const changed = moves.some((m) => m.productId === c.productId && (
-      (m.fromLocationId === c.locationId && after(m.createdAt))
-      || (m.toLocationId === c.locationId && (m.status === 'received' || m.status === 'disputed') && after(m.receivedAt ?? m.createdAt))
-    )) || settled.some((a) => {
-      const row = settledAt.get(Number(a.resourceId));
-      return row != null && row.productId === c.productId && row.fromLocationId === c.locationId && after(a.createdAt);
-    });
-    if (changed) old.add(key(c.locationId, c.productId));
+    const k = key(c.locationId, c.productId);
+    if ((latest.get(k) ?? 0) > c.createdAt.getTime()) old.add(k);
   }
   return old;
 }
@@ -145,7 +154,10 @@ async function levelRows(f: { locationId?: number; productId?: number; type?: St
         ...(f.productId != null ? { productId: f.productId } : {}),
         location: { type: f.type ?? { not: 'in_transit' }, ...(f.locationId != null ? { id: f.locationId } : {}), ...(f.activeOnly ? { isActive: true } : {}) },
       },
-      include: { location: true, product: { select: { name: true, sku: true, isActive: true } } },
+      include: {
+        location: { select: { id: true, name: true, type: true, isActive: true, userId: true } },
+        product: { select: { name: true, sku: true, isActive: true } },
+      },
     }),
     reservedByHolder(f.productId),
     incomingUnits(f.productId),
@@ -230,35 +242,47 @@ export async function overview(f: OverviewFilters) {
   return { hasOwnStore: locations.some((l) => l.type === 'own_store'), locations: cards, stockByLocation: filtered };
 }
 
+/** Units that came in (allocated), left for a customer (delivered) and went back (returned) per location, summed in SQL. Cancelled rows count nothing. */
+async function holderMovementTotals(productId: number) {
+  const IN: TransferType[] = ['allocation', 'agent_transfer', 'receipt', 'opening'];
+  const rows = await prisma.$queryRaw<Array<{ kind: string; locationId: number; units: bigint }>>(Prisma.sql`
+    SELECT 'allocated' AS kind, to_location_id AS "locationId",
+      -- Units that reached the holder: a settled row counts what was received, an open one counts nothing yet.
+      SUM(CASE WHEN status::text = 'in_transit' THEN 0 ELSE COALESCE(received_quantity, CASE WHEN status::text = 'disputed' THEN 0 ELSE quantity END) END) AS units
+    FROM inventory_transfers
+    WHERE tenant_id = ${resolveTenantId()} AND product_id = ${productId} AND status::text <> 'cancelled'
+      AND transfer_type::text IN (${Prisma.join(IN)}) AND to_location_id IS NOT NULL
+    GROUP BY 2
+    UNION ALL
+    SELECT 'delivered', from_location_id, SUM(quantity)
+    FROM inventory_transfers
+    WHERE tenant_id = ${resolveTenantId()} AND product_id = ${productId} AND status::text <> 'cancelled'
+      AND transfer_type::text = 'order_fulfillment' AND reversed_at IS NULL AND from_location_id IS NOT NULL
+    GROUP BY 2
+    UNION ALL
+    SELECT 'returned', from_location_id, SUM(quantity)
+    FROM inventory_transfers
+    WHERE tenant_id = ${resolveTenantId()} AND product_id = ${productId} AND status::text <> 'cancelled'
+      AND transfer_type::text = 'return_to_warehouse' AND from_location_id IS NOT NULL
+    GROUP BY 2`);
+  const out = { allocated: new Map<number, number>(), delivered: new Map<number, number>(), returned: new Map<number, number>() };
+  for (const r of rows) out[r.kind as keyof typeof out].set(r.locationId, num(r.units));
+  return out;
+}
+
 /** Per holder of one product: allocated, in transit, delivered, returned, on hand, value; a total row (F-603). */
 export async function holders(productId: number) {
-  const [product, levelRowsList, locations, moves, counts] = await Promise.all([
+  const [product, levelRowsList, locations, { allocated, delivered, returned }, counts] = await Promise.all([
     withSoftDeleted(() => prisma.product.findFirst({ where: { id: productId }, select: { id: true, name: true, sku: true, productType: true, cogs: true, isActive: true } })),
     levelRows({ productId }),
     prisma.stockLocation.findMany({ where: { type: { not: 'in_transit' } }, orderBy: { name: 'asc' } }),
-    prisma.inventoryTransfer.findMany({
-      where: { productId, status: { not: 'cancelled' } },
-      select: { transferType: true, fromLocationId: true, toLocationId: true, quantity: true, receivedQuantity: true, status: true, reversedAt: true },
-    }),
+    holderMovementTotals(productId),
     latestCountLines(productId),
   ]);
   if (!product) throw new AppError('Product not found', 404);
   if (product.productType === 'digital') throw new AppError('A digital product has no stock to hold', 400);
   const old = await oldCounts(counts);
   const cost = Money.orZero(product.cogs);
-
-  const allocated = new Map<number, number>();
-  const delivered = new Map<number, number>();
-  const returned = new Map<number, number>();
-  const bump = (m: Map<number, number>, loc: number | null, n: number) => { if (loc != null) m.set(loc, (m.get(loc) ?? 0) + n); };
-  const IN: TransferType[] = ['allocation', 'agent_transfer', 'receipt', 'opening'];
-  for (const m of moves) {
-    // Units that reached the holder: a settled row counts what was received, an open one counts nothing yet.
-    const credited = m.status === 'in_transit' ? 0 : m.receivedQuantity ?? (m.status === 'disputed' ? 0 : m.quantity);
-    if (IN.includes(m.transferType)) bump(allocated, m.toLocationId, credited);
-    if (m.transferType === 'order_fulfillment' && m.reversedAt == null) bump(delivered, m.fromLocationId, m.quantity);
-    if (m.transferType === 'return_to_warehouse') bump(returned, m.fromLocationId, m.quantity);
-  }
 
   const byLocation = new Map(levelRowsList.map((r) => [r.locationId, r]));
   const rows = locations.flatMap((loc) => {
@@ -348,13 +372,26 @@ export async function transfers(f: TransferFilters) {
   };
 }
 
-/** Every move the filters match, newest first, in batches (the CSV export). */
+/** The fields the CSV export prints. */
+const EXPORT_SELECT = {
+  id: true, createdAt: true, transferType: true, status: true, quantity: true, receivedQuantity: true, reason: true, orderId: true, notes: true,
+  product: { select: { name: true, sku: true } },
+  fromLocation: { select: { name: true } },
+  toLocation: { select: { name: true } },
+  createdBy: { select: { firstName: true, lastName: true } },
+} satisfies Prisma.InventoryTransferSelect;
+
+/** Every move the filters match, newest first, in batches by cursor (the CSV export). */
 export async function* transferBatches(f: Omit<TransferFilters, 'page' | 'limit'>, size = 500) {
   const where: Prisma.InventoryTransferWhereInput = { ...baseWhere(f), ...(f.type ? { transferType: f.type } : {}) };
-  for (let skip = 0; ; skip += size) {
-    const rows = await prisma.inventoryTransfer.findMany({ where, include: TRANSFER_INCLUDE, orderBy: [...NEWEST_FIRST], skip, take: size });
+  let cursor: number | undefined;
+  for (;;) {
+    const rows = await prisma.inventoryTransfer.findMany({
+      where, select: EXPORT_SELECT, orderBy: [...NEWEST_FIRST], take: size, ...(cursor !== undefined ? { cursor: { id: cursor }, skip: 1 } : {}),
+    });
     if (rows.length > 0) yield rows;
     if (rows.length < size) return;
+    cursor = rows[rows.length - 1].id;
   }
 }
 

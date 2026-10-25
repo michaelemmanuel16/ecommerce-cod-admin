@@ -1,4 +1,4 @@
-import { FxSource, Prisma, StockCountSource, UserRole } from '@prisma/client';
+import { FxSource, Prisma, StockCountSource } from '@prisma/client';
 import prisma, { TransactionClient } from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { resolveTenantId } from '../utils/tenantContext';
@@ -6,7 +6,11 @@ import { getCurrency } from '../utils/currency';
 import * as Money from '../utils/money';
 import { GLAutomationService } from './glAutomationService';
 import { rateOn } from './fxService';
+import { ymdOfUtc } from './kpi/dates';
 import { openFindingOnce } from './findingService';
+import { auditService } from './auditService';
+import { COUNT_SOURCES } from './stockCountService';
+import type { StockActor } from '../utils/stockActor';
 import { applyMovement, getLocation, getOnHand, lockProduct, PHYSICAL } from './stockService';
 
 /**
@@ -16,13 +20,7 @@ import { applyMovement, getLocation, getOnHand, lockProduct, PHYSICAL } from './
  * full total, and a supplier claim for the short units. A claim is settled (money recovered) or written off.
  */
 
-export const COUNT_SOURCES = ['own_count', 'three_pl_dashboard', 'agent_count'] as const;
 export const CLAIM_ACTIONS = ['settle', 'write_off'] as const;
-
-export interface ShipmentActor {
-  id: number;
-  role: UserRole;
-}
 
 export interface ShipmentInput {
   productId?: number;
@@ -43,7 +41,7 @@ export interface ReceiveInput {
   locationId: number;
   receivedAt: string | Date;
   quantityCounted: number;
-  countSource: (typeof COUNT_SOURCES)[number];
+  countSource: StockCountSource;
   note?: string | null;
   fxRate?: Money.MoneyInput | null;
 }
@@ -84,15 +82,6 @@ function present(row: Row, storeCurrency: string) {
   return { ...row, currency, storeCurrency, totalCostStore, landedCostPerUnit };
 }
 
-async function audit(tx: TransactionClient, actor: ShipmentActor, action: string, resourceId: number, metadata: Prisma.InputJsonObject) {
-  await tx.auditLog.create({
-    data: {
-      tenantId: resolveTenantId(), userId: actor.id, actorKind: 'person', channel: 'app',
-      action, resource: 'inventory_shipment', resourceId: String(resourceId), metadata,
-    },
-  });
-}
-
 /** Row lock on the shipment, so a receive, an edit, a delete and a claim of the same shipment run one after the other. */
 async function lockShipment(tx: TransactionClient, id: number) {
   const locked = await tx.$queryRaw<Array<{ id: number }>>`SELECT id FROM inventory_shipments WHERE id = ${id} AND tenant_id = ${resolveTenantId()} FOR UPDATE`;
@@ -111,7 +100,6 @@ function parseRate(value: unknown): Money.Money {
   return rate;
 }
 
-const ymd = (date: Date) => date.toISOString().slice(0, 10);
 
 /**
  * Rate of a shipment currency into the store currency on a day. A hand-typed rate wins (`manual`). The store currency
@@ -121,7 +109,7 @@ async function resolveRate(tenantId: string, currency: string, storeCurrency: st
   if (currency === storeCurrency) return { fxRate: null, fxRateSource: null };
   if (manual != null && manual !== '') return { fxRate: parseRate(manual), fxRateSource: 'manual' };
   const found = await rateOn(tenantId, currency, storeCurrency, date);
-  if (!found) throw new AppError(`No exchange rate from ${currency} to ${storeCurrency} for ${ymd(date)}. Add a rate in Settings or type one for this shipment.`, 400);
+  if (!found) throw new AppError(`No exchange rate from ${currency} to ${storeCurrency} for ${ymdOfUtc(date)}. Add a rate in Settings or type one for this shipment.`, 400);
   return { fxRate: found.rate, fxRateSource: found.source };
 }
 
@@ -161,7 +149,7 @@ export async function getShipment(id: number) {
   return present(row, await getCurrency());
 }
 
-export async function createShipment(actor: ShipmentActor, input: ShipmentInput) {
+export async function createShipment(actor: StockActor, input: ShipmentInput) {
   const tenantId = resolveTenantId();
   const { productId, quantity } = input;
   if (!productId || quantity == null || !Number.isInteger(quantity) || quantity < 1) throw new AppError('Product and quantity (>= 1) are required', 400);
@@ -189,13 +177,16 @@ export async function createShipment(actor: ShipmentActor, input: ShipmentInput)
       },
       include: INCLUDE,
     });
-    await audit(tx, actor, 'create', row.id, { productId: product.id, quantity: row.quantity, currency, total: Money.toApi(row.totalCost) });
+    await auditService.record({
+      tx, actorId: actor.id, actorKind: 'person', channel: 'app', action: 'create', resource: 'inventory_shipment', resourceId: String(row.id),
+      metadata: { productId: product.id, quantity: row.quantity, currency, total: Money.toApi(row.totalCost) },
+    });
     return row;
   });
   return present(created, storeCurrency);
 }
 
-export async function updateShipment(actor: ShipmentActor, id: number, input: ShipmentInput) {
+export async function updateShipment(actor: StockActor, id: number, input: ShipmentInput) {
   const tenantId = resolveTenantId();
   const storeCurrency = await getCurrency();
   const peek = await prisma.inventoryShipment.findUnique({ where: { id }, select: { id: true, status: true, currency: true, fxRate: true, fxRateSource: true, createdAt: true } });
@@ -230,18 +221,24 @@ export async function updateShipment(actor: ShipmentActor, id: number, input: Sh
       },
       include: INCLUDE,
     });
-    await audit(tx, actor, 'update', id, { quantity, currency, total: Money.toApi(totalCost), before: { quantity: shipment.quantity, total: Money.toApi(shipment.totalCost) } });
+    await auditService.record({
+      tx, actorId: actor.id, actorKind: 'person', channel: 'app', action: 'update', resource: 'inventory_shipment', resourceId: String(id),
+      metadata: { quantity, currency, total: Money.toApi(totalCost), before: { quantity: shipment.quantity, total: Money.toApi(shipment.totalCost) } },
+    });
     return row;
   });
   return present(updated, storeCurrency);
 }
 
-export async function deleteShipment(actor: ShipmentActor, id: number) {
+export async function deleteShipment(actor: StockActor, id: number) {
   await prisma.$transaction(async (tx) => {
     const shipment = await lockShipment(tx, id);
     if (shipment.status !== 'pending') throw new AppError('A received shipment cannot be deleted: it has stock and ledger entries', 409);
     await tx.inventoryShipment.delete({ where: { id } });
-    await audit(tx, actor, 'delete', id, { productId: shipment.productId, quantity: shipment.quantity, total: Money.toApi(shipment.totalCost) });
+    await auditService.record({
+      tx, actorId: actor.id, actorKind: 'person', channel: 'app', action: 'delete', resource: 'inventory_shipment', resourceId: String(id),
+      metadata: { productId: shipment.productId, quantity: shipment.quantity, total: Money.toApi(shipment.totalCost) },
+    });
   });
 }
 
@@ -249,7 +246,7 @@ export async function deleteShipment(actor: ShipmentActor, id: number) {
  * Receive a shipment: once, atomically. The shipment row is locked first, then the product. Counted 0 to shipped; the units
  * counted go to `locationId` as one `receipt` movement. Landed cost per unit = total in store currency / counted (D2).
  */
-export async function receiveShipment(actor: ShipmentActor, id: number, input: ReceiveInput) {
+export async function receiveShipment(actor: StockActor, id: number, input: ReceiveInput) {
   const tenantId = resolveTenantId();
   const receivedAt = new Date(input.receivedAt);
   if (Number.isNaN(receivedAt.getTime())) throw new AppError('receivedAt must be a date', 400);
@@ -321,7 +318,7 @@ export async function receiveShipment(actor: ShipmentActor, id: number, input: R
     if (input.countSource === 'three_pl_dashboard') {
       const count = await tx.stockCount.create({
         data: {
-          tenantId, locationId: location.id, countDate: new Date(`${ymd(receivedAt)}T00:00:00.000Z`), source: input.countSource as StockCountSource,
+          tenantId, locationId: location.id, countDate: new Date(`${ymdOfUtc(receivedAt)}T00:00:00.000Z`), source: input.countSource as StockCountSource,
           countedById: actor.id, note: `Shipment ${id} received`, shipmentId: id,
         },
       });
@@ -329,9 +326,12 @@ export async function receiveShipment(actor: ShipmentActor, id: number, input: R
         data: { tenantId, countId: count.id, productId: shipment.productId, systemQuantity: shipment.quantity, countedQuantity: counted, difference: counted - shipment.quantity },
       });
     }
-    await audit(tx, actor, 'receive', id, {
-      productId: shipment.productId, shipped: shipment.quantity, counted, short, locationId: location.id, countSource: input.countSource,
-      totalCostStore: Money.toApi(totalCostStore), landedCostPerUnit: landedCostPerUnit ? Money.toApi(landedCostPerUnit) : null, claimAmount: Money.toApi(claimAmount),
+    await auditService.record({
+      tx, actorId: actor.id, actorKind: 'person', channel: 'app', action: 'receive', resource: 'inventory_shipment', resourceId: String(id),
+      metadata: {
+        productId: shipment.productId, shipped: shipment.quantity, counted, short, locationId: location.id, countSource: input.countSource,
+        totalCostStore: Money.toApi(totalCostStore), landedCostPerUnit: landedCostPerUnit ? Money.toApi(landedCostPerUnit) : null, claimAmount: Money.toApi(claimAmount),
+      },
     });
     return row;
   }, { timeout: 30_000 });
@@ -351,7 +351,7 @@ async function closeFinding(tx: TransactionClient, id: number, note: string) {
  * recovered: one ledger entry, DR 1010 cash / CR 1200 inventory, for that amount. Written off: no entry (the loss is already
  * in the landed cost per unit). Either way the Finding closes.
  */
-export async function settleClaim(actor: ShipmentActor, id: number, input: ClaimInput) {
+export async function settleClaim(actor: StockActor, id: number, input: ClaimInput) {
   if (!CLAIM_ACTIONS.includes(input.action)) throw new AppError('action must be settle or write_off', 400);
   const storeCurrency = await getCurrency();
   const updated = await prisma.$transaction(async (tx) => {
@@ -366,12 +366,18 @@ export async function settleClaim(actor: ShipmentActor, id: number, input: Claim
       const { name } = await tx.product.findUniqueOrThrow({ where: { id: shipment.productId }, select: { name: true } });
       const entry = await GLAutomationService.createInventoryClaimEntry(tx as any, shipment, name, amount, actor.id);
       await closeFinding(tx, id, `Claim on shipment ${id} settled: ${Money.toApi(recovered)} recovered`);
-      await audit(tx, actor, 'claim_settle', id, { claimAmount: Money.toApi(shipment.claimAmount), amountRecovered: Money.toApi(recovered), journalEntryId: entry.id });
+      await auditService.record({
+        tx, actorId: actor.id, actorKind: 'person', channel: 'app', action: 'claim_settle', resource: 'inventory_shipment', resourceId: String(id),
+        metadata: { claimAmount: Money.toApi(shipment.claimAmount), amountRecovered: Money.toApi(recovered), journalEntryId: entry.id },
+      });
       return tx.inventoryShipment.update({ where: { id }, data: { claimStatus: 'settled', claimRecovered: amount, claimJournalEntryId: entry.id }, include: INCLUDE });
     }
     const note = input.note?.trim() || null;
     await closeFinding(tx, id, `Claim on shipment ${id} written off${note ? `: ${note}` : ''}`);
-    await audit(tx, actor, 'claim_write_off', id, { claimAmount: Money.toApi(shipment.claimAmount), note });
+    await auditService.record({
+      tx, actorId: actor.id, actorKind: 'person', channel: 'app', action: 'claim_write_off', resource: 'inventory_shipment', resourceId: String(id),
+      metadata: { claimAmount: Money.toApi(shipment.claimAmount), note },
+    });
     return tx.inventoryShipment.update({ where: { id }, data: { claimStatus: 'written_off', claimNote: note ?? shipment.claimNote }, include: INCLUDE });
   });
   return present(updated, storeCurrency);

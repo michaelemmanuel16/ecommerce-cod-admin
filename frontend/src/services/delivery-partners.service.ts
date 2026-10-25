@@ -74,7 +74,6 @@ export interface PartnerSummary {
   waiting: { orders: number; oldestDays: number | null };
   delivered: { orders: number; revenue?: string; currency?: string };
   deliverySuccess: { rate: RateResult; target: number; gapPoints: number | null };
-  cashWithPartners: { amount: string | null; overdueOrders: number | null };
 }
 
 export interface WaitingOrder {

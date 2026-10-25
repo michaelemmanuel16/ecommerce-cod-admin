@@ -226,10 +226,16 @@ export async function getAvailableMany(productIds: number[], db: Db = prisma): P
   const ids = [...new Set(productIds)];
   const out = new Map<number, number>();
   if (ids.length === 0) return out;
-  // One after the other: `db` may be an interactive transaction
-  const physical = await withSoftDeleted(() => db.product.findMany({ where: { id: { in: ids }, productType: { not: 'digital' } }, select: { id: true } }));
-  const onHand = await getOnHandMany(ids, db);
-  const reserved = await getReservedMany(ids, db);
+  const readPhysical = () => withSoftDeleted(() => db.product.findMany({ where: { id: { in: ids }, productType: { not: 'digital' } }, select: { id: true } }));
+  let physical, onHand, reserved;
+  if (db === prisma) {
+    [physical, onHand, reserved] = await Promise.all([readPhysical(), getOnHandMany(ids, db), getReservedMany(ids, db)]);
+  } else {
+    // One after the other: an interactive transaction runs one query at a time
+    physical = await readPhysical();
+    onHand = await getOnHandMany(ids, db);
+    reserved = await getReservedMany(ids, db);
+  }
   for (const { id } of physical) out.set(id, (onHand.get(id) ?? 0) - (reserved.get(id) ?? 0));
   return out;
 }
@@ -294,13 +300,16 @@ export async function fulfilOrder(tx: TransactionClient, order: FulfilOrder, act
     select: { productId: true, itemKey: true },
   })).map((r) => `${r.productId}:${r.itemKey}`));
 
+  const todo = lines.filter((line) => !active.has(`${line.productId}:${line.id}`));
+  // Lock each product once, in id order, then hand the lock to every movement of that product
+  const locked = new Map<number, LockedProduct>();
+  for (const productId of [...new Set(todo.map((l) => l.productId))].sort((a, b) => a - b)) locked.set(productId, await lockProduct(tx, productId));
+
   const moved = new Set<number>();
-  for (const line of lines) {
-    const itemKey = String(line.id);
-    if (active.has(`${line.productId}:${itemKey}`)) continue;
+  for (const line of todo) {
     const { fromQuantity } = await applyMovement(tx, {
       type: 'order_fulfillment', productId: line.productId, quantity: line.quantity, createdById,
-      fromLocationId: holder.id, orderId: order.id, itemKey, refreshCache: false,
+      fromLocationId: holder.id, orderId: order.id, itemKey: String(line.id), refreshCache: false, lockedProduct: locked.get(line.productId),
     });
     moved.add(line.productId);
     if (fromQuantity != null && fromQuantity < 0) {

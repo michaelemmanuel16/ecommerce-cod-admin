@@ -5,6 +5,8 @@ import { resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 import { applyMovement, getLocation, lockProduct, LockedProduct } from './stockService';
 import { openFindingOnce } from './findingService';
+import { auditService } from './auditService';
+import type { StockActor } from '../utils/stockActor';
 import { getStoreTimeZone, localDate, parseYmd } from './kpi/dates';
 
 /**
@@ -16,8 +18,6 @@ import { getStoreTimeZone, localDate, parseYmd } from './kpi/dates';
 
 export const COUNT_SOURCES: StockCountSource[] = ['own_count', 'three_pl_dashboard', 'agent_count'];
 export const COUNT_REASONS = ['physical_count_correction', 'damaged', 'lost_or_stolen', 'found_extra_stock', 'short_on_arrival', 'other'] as const;
-
-export interface CountActor { id: number }
 
 export interface CreateCountInput {
   locationId: number;
@@ -54,7 +54,7 @@ function present(count: CountRow) {
 }
 
 /** Save a count. The system quantity of each line is read under the product lock, so it is the number at save time. */
-export async function createCount(actor: CountActor, input: CreateCountInput) {
+export async function createCount(actor: StockActor, input: CreateCountInput) {
   if (!COUNT_SOURCES.includes(input.source)) throw new AppError(`source must be one of: ${COUNT_SOURCES.join(', ')}`, 400);
   let day: ReturnType<typeof parseYmd>;
   try {
@@ -97,11 +97,9 @@ export async function createCount(actor: CountActor, input: CreateCountInput) {
       }, {}, tx);
       await tx.stockCountLine.update({ where: { id: line.id }, data: { findingId } });
     }
-    await tx.auditLog.create({
-      data: {
-        tenantId, userId: actor.id, actorKind: 'person', channel: 'app', action: 'create', resource: 'stock_count', resourceId: String(count.id),
-        metadata: { locationId: location.id, source: input.source, lines: lines.length },
-      },
+    await auditService.record({
+      tx, actorId: actor.id, actorKind: 'person', channel: 'app', action: 'create', resource: 'stock_count', resourceId: String(count.id),
+      metadata: { locationId: location.id, source: input.source, lines: lines.length },
     });
     return count.id;
   });
@@ -130,7 +128,7 @@ export interface ApplyInput { reason?: (typeof COUNT_REASONS)[number]; shipmentI
  * (below: units out, above: units in). A second apply is refused (409). When the level is not the one the count froze,
  * the answer carries a warning, because stock moved after the count.
  */
-export async function applyLine(actor: CountActor, countId: number, lineId: number, input: ApplyInput) {
+export async function applyLine(actor: StockActor, countId: number, lineId: number, input: ApplyInput) {
   const result = await prisma.$transaction(async (tx) => {
     const found = await tx.stockCountLine.findFirst({ where: { id: lineId, countId }, include: { count: true } });
     if (!found) throw new AppError('Stock count line not found', 404);
@@ -164,11 +162,9 @@ export async function applyLine(actor: CountActor, countId: number, lineId: numb
     });
     await tx.stockCountLine.update({ where: { id: lineId }, data: { appliedMovementId: row.id } });
     if (line.findingId != null) await tx.finding.update({ where: { id: line.findingId }, data: { status: 'explained' } });
-    await tx.auditLog.create({
-      data: {
-        tenantId: resolveTenantId(), userId: actor.id, actorKind: 'person', channel: 'app', action: 'apply', resource: 'stock_count', resourceId: String(countId),
-        metadata: { lineId, productId: line.productId, difference: line.difference, reason, shipmentId: input.shipmentId ?? null, movementId: row.id },
-      },
+    await auditService.record({
+      tx, actorId: actor.id, actorKind: 'person', channel: 'app', action: 'apply', resource: 'stock_count', resourceId: String(countId),
+      metadata: { lineId, productId: line.productId, difference: line.difference, reason, shipmentId: input.shipmentId ?? null, movementId: row.id },
     });
     return {
       movement: row,

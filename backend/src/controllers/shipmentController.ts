@@ -1,9 +1,8 @@
 import { Response } from 'express';
 import { AuthRequest } from '../types';
 import * as shipments from '../services/shipmentService';
+import { actorOf } from '../utils/stockActor';
 
-/** The signed-in user as the shipment service sees them. */
-const actorOf = (req: AuthRequest): shipments.ShipmentActor => ({ id: req.user!.id, role: req.user!.role });
 
 /** GET /api/shipments */
 export const listShipments = async (req: AuthRequest, res: Response): Promise<void> => {

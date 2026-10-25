@@ -32,7 +32,6 @@ export const SUMMARY: PartnerSummary = {
   waiting: { orders: 100, oldestDays: 3 },
   delivered: { orders: 376, revenue: '92000.00', currency: 'GHS' },
   deliverySuccess: { rate: rate(48.3, 376, 354, 48), target: 60, gapPoints: 11.7 },
-  cashWithPartners: { amount: null, overdueOrders: null },
 };
 
 export const RETURNS: ReturnsSummary = {

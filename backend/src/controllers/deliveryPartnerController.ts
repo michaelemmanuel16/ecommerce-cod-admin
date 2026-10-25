@@ -3,7 +3,7 @@ import { AuthRequest } from '../types';
 import { AppError } from '../middleware/errorHandler';
 import { hasPermission } from '../middleware/auth';
 import { resolveTenantId } from '../utils/tenantContext';
-import { invalidRange, readRange } from '../utils/kpiRequest';
+import { invalidRange, readId, readRange } from '../utils/kpiRequest';
 import { getStoreTimeZone, localDate, monthRange } from '../services/kpi/dates';
 import {
   failureReasonBreakdown, listPartners, partnerSummary, waitingList, PartnerTypeFilter,
@@ -60,11 +60,7 @@ export const waiting = async (req: AuthRequest, res: Response): Promise<void> =>
 export const failureReasons = async (req: AuthRequest, res: Response): Promise<void> => {
   const tenantId = resolveTenantId();
   const { from, to } = rangeOf(req, tenantId);
-  let partnerId: number | undefined;
-  if (req.query.partnerId !== undefined) {
-    partnerId = Number(req.query.partnerId);
-    if (!Number.isInteger(partnerId) || partnerId <= 0) throw invalidRange('partnerId must be a positive integer');
-  }
+  const partnerId = readId(req.query.partnerId, 'partnerId');
   res.json(await failureReasonBreakdown(tenantId, from, to, partnerId));
 };
 
