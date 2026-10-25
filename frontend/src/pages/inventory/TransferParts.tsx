@@ -14,13 +14,13 @@ export function Move({ transfer }: { transfer: Transfer }) {
   );
 }
 
-/** The status tag, the Overdue tag of an open transfer, and the line under them. */
+/** The status tag, the Overdue tag of an in-transit transfer (a dispute waits for the owner, so it is never late), and the line under them. */
 export function StatusCell({ transfer }: { transfer: Transfer }) {
   const s = statusView(transfer);
   return (
     <>
       <Tag tone={s.tone}>{s.text}</Tag>
-      {transfer.overdue && <Tag tone="warn" className="after">Overdue</Tag>}
+      {transfer.overdue && transfer.status === 'in_transit' && <Tag tone="warn" className="after">Overdue</Tag>}
       {s.sub && <small className="sub">{s.sub}</small>}
     </>
   );

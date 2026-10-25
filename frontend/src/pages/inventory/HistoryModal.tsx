@@ -193,7 +193,7 @@ function TransferDetail({ transfer: t, canMove, refreshKey, onReceive, onResolve
       </div>
       <p className="hd-move">{placeName(t, 'from')} &rarr; {placeName(t, 'to')}</p>
       <dl className="kv">
-        <div><dt>Status</dt><dd><Tag tone={s.tone}>{s.text}</Tag>{t.overdue && <Tag tone="warn" className="after">Overdue</Tag>}</dd></div>
+        <div><dt>Status</dt><dd><Tag tone={s.tone}>{s.text}</Tag>{t.overdue && t.status === 'in_transit' && <Tag tone="warn" className="after">Overdue</Tag>}</dd></div>
         {t.receivedQuantity !== null && <div><dt>Counted</dt><dd>{count(t.receivedQuantity)} of {count(t.quantity)}</dd></div>}
         {t.reason && <div><dt>Reason</dt><dd>{REASON_LABEL[t.reason]}</dd></div>}
         {t.notes && <div><dt>Note</dt><dd>{t.notes}</dd></div>}
