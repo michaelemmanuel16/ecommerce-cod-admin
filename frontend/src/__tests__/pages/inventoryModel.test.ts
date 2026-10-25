@@ -28,6 +28,10 @@ describe('transfer status text (F-654)', () => {
     const v = statusView(transfer({ id: 2, status: 'disputed', quantity: 10, receivedQuantity: 8, shortQuantity: 2, reason: 'short_in_package' }));
     expect(v).toEqual({ tone: 'bad', text: 'Received 2 short', sub: 'Counted 8 of 10 · Short in package' });
   });
+  it('a "not received" shortage says how many units did not arrive', () => {
+    const v = statusView(transfer({ id: 3, status: 'disputed', quantity: 41, receivedQuantity: 36, shortQuantity: 5, reason: 'not_received' }));
+    expect(v).toEqual({ tone: 'bad', text: 'Received 5 short', sub: 'Counted 36 of 41 · 5 not received' });
+  });
   it('received in full, and a resolved dispute', () => {
     expect(statusView(transfer({ id: 3, status: 'received', quantity: 30, receivedQuantity: 30 }))).toMatchObject({ tone: 'ok', text: 'Received', sub: 'Counted 30 of 30' });
     expect(statusView(transfer({ id: 4, status: 'received', quantity: 10, receivedQuantity: 8, reason: 'damaged' }))).toMatchObject({ tone: 'n', text: 'Resolved' });
