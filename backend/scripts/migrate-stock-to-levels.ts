@@ -24,7 +24,9 @@ import { assertNotProduction, hasFlag, option } from './lib/scriptArgs';
 // From T07 stock leaves a location once, at delivered, and units of an open order count as on hand at the holder.
 // So this script puts back every unit the legacy code took for an order that is still open:
 //   (a) out_for_delivery orders: every order line, unless the dispatch came through deliveryService
-//   (b) open COD checkout-form orders: the package line (the creation decrement)
+//   (b) open COD checkout-form orders that are confirmed or later: the package line (the creation decrement).
+//       An order still in pending_confirmation (or payment_pending / payment_failed) is not put back: stale unpaid
+//       checkouts would inflate stock. The statuses that count are CHECKOUT_RESTORE_STATUSES below.
 // "Before" per product = Product.stockQuantity + all AgentStock.quantity + (a) + (b).
 // "After" per product = sum of all StockLevel rows + units of open in_transit transfers. They must be equal.
 // AgentStock.totalInTransit is NOT used (it drifts and is negative in places); it is printed as information only.
@@ -33,6 +35,8 @@ import { assertNotProduction, hasFlag, option } from './lib/scriptArgs';
 // is the sum of on-hand over the locations. The report prints the cache before and after per product.
 
 const CLOSED: OrderStatus[] = ['delivered', 'digital_delivered', 'cancelled', 'returned'];
+/** Open statuses from confirmed on (order state machine). Only these get the (b) put-back. */
+const CHECKOUT_RESTORE_STATUSES: OrderStatus[] = ['confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery', 'failed_delivery'];
 const KASAPA = 'Kasapa Express';
 const NOTE_A = 'Migration: stock moved from out-for-delivery to delivery';
 const NOTE_B = 'Migration: checkout decrement moved to delivery';
@@ -144,7 +148,7 @@ async function migrateInContext(tenantId: string, opts: MigrateOptions): Promise
   };
   const kindA = orderSet(ofd.filter((o) => !viaDelivery.has(o.id)), NOTE_A, (o) => o.orderItems);
   const kindB = orderSet(
-    openOrders.filter((o) => o.source === 'checkout_form' && o.paymentProvider == null && o.formSubmissions.length > 0),
+    openOrders.filter((o) => CHECKOUT_RESTORE_STATUSES.includes(o.status) && o.source === 'checkout_form' && o.paymentProvider == null && o.formSubmissions.length > 0),
     NOTE_B, (o) => o.orderItems.filter((i) => i.itemType === 'package'));
   const unitsA = kindA.units;
   const unitsB = kindB.units;
