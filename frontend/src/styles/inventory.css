@@ -88,11 +88,12 @@
 .v2 .dlg .hist .datein{padding:6px 10px}
 .v2 .dlg .hist table th,.v2 .dlg .hist table td{padding:10px 10px;white-space:nowrap}
 .v2 .dlg .hist table th:first-child,.v2 .dlg .hist table td:first-child{padding-left:20px}
-.v2 .histbody{display:grid;grid-template-columns:1fr;border-top:1px solid var(--line)}
-.v2 .histbody.with-detail{grid-template-columns:minmax(0,1fr) 340px}
-.v2 .histlist{min-width:0}
+.v2 .histbody{position:relative;border-top:1px solid var(--line)}
+.v2 .histbody.with-detail{min-height:460px}
+.v2 .histlist{min-width:0;overflow-x:auto}
+.v2 .dlg .hist .tt .tag.after{display:flex;width:fit-content;margin:4px 0 0}
 .v2 .histlist tr.picked{background:var(--pine-soft)}
-.v2 .histdetail{border-left:1px solid var(--line);padding:16px 18px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.v2 .histdetail{position:absolute;top:0;right:0;bottom:0;width:340px;max-width:100%;z-index:2;overflow-y:auto;background:var(--card);border-left:1px solid var(--line);box-shadow:-14px 0 28px -14px rgba(0,0,0,.35);padding:16px 18px;display:flex;flex-direction:column;gap:10px;min-width:0}
 .v2 .histdetail .hd-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
 .v2 .histdetail h4{font-size:15px;font-weight:700}
 .v2 .histdetail h5{font-size:13px;font-weight:700;margin-top:6px}
@@ -107,6 +108,6 @@
 .v2 .histdetail .trail b{display:block;font-size:13px}
 .v2 .histdetail .trail small{color:var(--ink-3);font-size:12px}
 @media (max-width:900px){
-  .v2 .histbody.with-detail{grid-template-columns:1fr}
-  .v2 .histdetail{border-left:0;border-top:1px solid var(--line)}
+  .v2 .histbody.with-detail{min-height:0}
+  .v2 .histdetail{position:static;width:auto;max-width:none;box-shadow:none;border-left:0;border-top:1px solid var(--line)}
 }
