@@ -58,9 +58,12 @@ beforeAll(async () => {
   await mk('ofdNobody', { status: 'out_for_delivery', orderItems: { create: [item(p1, 1)] } });
   await mk('ofdViaDelivery', { status: 'out_for_delivery', deliveryAgentId: kofi, orderItems: { create: [item(p1, 7)] } });
   await db.orderHistory.create({ data: { tenantId, orderId: orders.ofdViaDelivery, status: 'out_for_delivery', metadata: { deliveryId: 1 } } });
-  // (b) COD checkout order, still pending: package line 2 copybooks (the upsell line is not decremented at creation).
+  // (b) COD checkout order, confirmed: package line 2 copybooks (the upsell line is not decremented at creation).
   const form = await db.checkoutForm.create({ data: { name: 'F', slug: `f-${tenantId}`, productId: p1, fields: [], styling: {}, regions: [], tenantId } });
-  await mk('publicPending', { status: 'pending_confirmation', source: 'checkout_form', orderItems: { create: [item(p1, 2, 'package'), item(p2, 1, 'upsell')] } });
+  await mk('publicConfirmed', { status: 'confirmed', source: 'checkout_form', orderItems: { create: [item(p1, 2, 'package'), item(p2, 1, 'upsell')] } });
+  await db.formSubmission.create({ data: { tenantId, formId: form.id, orderId: orders.publicConfirmed, formData: {}, selectedPackage: {}, totalAmount: '10' } });
+  // Still pending_confirmation (stale, unpaid): not put back, so it adds nothing to either side of the sums.
+  await mk('publicPending', { status: 'pending_confirmation', source: 'checkout_form', orderItems: { create: [item(p1, 3, 'package')] } });
   await db.formSubmission.create({ data: { tenantId, formId: form.id, orderId: orders.publicPending, formData: {}, selectedPackage: {}, totalAmount: '10' } });
   // A paid checkout order (no creation decrement) and closed orders get no correction.
   await mk('publicPaid', { status: 'confirmed', source: 'checkout_form', paymentProvider: 'paystack', orderItems: { create: [item(p1, 4, 'package')] } });
@@ -111,7 +114,7 @@ describe('migrate-stock-to-levels', () => {
     expect(await db.stockLocation.findFirst({ where: { tenantId, name: 'Kasapa Express', type: 'partner_3pl' } })).not.toBeNull();
     expect(await db.stockLocation.findFirst({ where: { tenantId, type: 'in_transit' } })).not.toBeNull();
     expect(await db.stockLocation.findFirst({ where: { tenantId, userId: kofi, type: 'agent' } })).not.toBeNull();
-    // Logiswift copybook: warehouse 100 + Logiswift user's own 20 + (a) no-agent order 1 + (b) public pending 2.
+    // Logiswift copybook: warehouse 100 + Logiswift user's own 20 + (a) no-agent order 1 + (b) confirmed checkout order 2 (the pending one is not put back).
     expect(await levelOf('Logiswift', p1)).toBe(123);
     expect(await levelOf('Logiswift', p2)).toBe(50);
     // Kofi copybook: AgentStock 36 + (a) 3. Pens: (a) 2.
@@ -140,6 +143,8 @@ describe('migrate-stock-to-levels', () => {
       'Migration: stock moved from out-for-delivery to delivery',
     ]);
     expect(rows.every((r) => r.orderId != null && r.status === 'received')).toBe(true);
+    expect(rows.filter((r) => r.orderId === orders.publicConfirmed)).toHaveLength(1);
+    expect(rows.some((r) => r.orderId === orders.publicPending)).toBe(false);
   });
 
   it('never writes AgentStock; rebuilds Product.stockQuantity from the levels (M4-T06)', async () => {
