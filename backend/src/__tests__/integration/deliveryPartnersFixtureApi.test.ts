@@ -163,7 +163,7 @@ describe('GET /api/delivery-partners/summary (F-701)', () => {
     expect(Math.round(res.body.deliverySuccess.rate.value)).toBe(48);
     expect(res.body.deliverySuccess.target).toBe(60);
     expect(res.body.deliverySuccess.gapPoints).toBeGreaterThan(11);
-    expect(res.body.cashWithPartners).toEqual({ amount: null, overdueOrders: null });
+    expect(res.body).not.toHaveProperty('cashWithPartners');
   });
 
   it('the tenant\'s delivery success target is read (the fixture holds 60); with no target row the default is 60', async () => {

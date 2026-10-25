@@ -80,14 +80,14 @@ async function deliverySuccess(ids: number[], from: Date, to: Date): Promise<Map
            COUNT(DISTINCT o.id) FILTER (WHERE o.status = 'delivered') AS delivered,
            COUNT(DISTINCT o.id) AS closed
     FROM order_items i JOIN orders o ON o.id = i.order_id
+    CROSS JOIN LATERAL (
+      SELECT CASE o.status WHEN 'delivered' THEN COALESCE(o.delivery_date, o.updated_at)
+                           WHEN 'returned' THEN COALESCE(o.returned_at, o.updated_at)
+                           ELSE o.updated_at END AS closed_at
+    ) c
     WHERE o.tenant_id = ${resolveTenantId()} AND o.deleted_at IS NULL AND o.status IN ('delivered', 'failed_delivery', 'returned')
       AND i.product_id IN (${Prisma.join(ids)})
-      AND (CASE o.status WHEN 'delivered' THEN COALESCE(o.delivery_date, o.updated_at)
-                         WHEN 'returned' THEN COALESCE(o.returned_at, o.updated_at)
-                         ELSE o.updated_at END) >= ${from}
-      AND (CASE o.status WHEN 'delivered' THEN COALESCE(o.delivery_date, o.updated_at)
-                         WHEN 'returned' THEN COALESCE(o.returned_at, o.updated_at)
-                         ELSE o.updated_at END) < ${to}
+      AND c.closed_at >= ${from} AND c.closed_at < ${to}
     GROUP BY 1`);
   return new Map(rows.map((r) => [r.productId, ratePercent(Number(r.delivered), Number(r.closed))]));
 }
@@ -100,7 +100,7 @@ function coverOf(p: { productType: string }, onHand: number, units14: number): n
 /** Units delivered per product over the last 14 days, for the given ids. */
 async function recentUnits(ids: number[]): Promise<Map<number, number>> {
   const now = new Date();
-  const recent = await productDeliveredUnits(resolveTenantId(), ids, new Date(now.getTime() - COVER_WINDOW_DAYS * DAY_MS), now);
+  const recent = await productDeliveredUnits(resolveTenantId(), ids, new Date(now.getTime() - COVER_WINDOW_DAYS * DAY_MS), now, { idsOnly: true });
   return new Map((recent.byProduct ?? []).map((l) => [l.productId, l.units]));
 }
 
@@ -111,7 +111,7 @@ async function figures(products: Row[], window: { from: Date; to: Date }) {
   const [onHand, reserved, inMonth, last14, success] = await Promise.all([
     getOnHandMany(ids),
     getReservedMany(ids),
-    productDeliveredUnits(resolveTenantId(), ids, window.from, window.to),
+    productDeliveredUnits(resolveTenantId(), ids, window.from, window.to, { idsOnly: true }),
     recentUnits(ids),
     deliverySuccess(ids, window.from, window.to),
   ]);
@@ -210,11 +210,10 @@ async function lowStockIds(active: Array<{ id: number; isActive: boolean; produc
     .map((p) => p.id);
 }
 
-/** GET /api/products/low-stock: the active physical products under their days-of-cover limit, with the list columns, fewest days first. */
+/** GET /api/products/low-stock (one figures() read over the active physical products): the active physical products under their days-of-cover limit, with the list columns, fewest days first. */
 export async function lowStockProducts() {
   const active = await prisma.product.findMany({ where: { isActive: true, productType: { not: 'digital' } } });
-  const low = new Set(await lowStockIds(active));
-  const rows = await figures(active.filter((p) => low.has(p.id)), monthWindow());
+  const rows = (await figures(active, monthWindow())).filter((r) => r.status === 'low_stock');
   return rows.sort((a, b) => (a.daysOfCover ?? 0) - (b.daysOfCover ?? 0) || a.id - b.id);
 }
 
@@ -229,10 +228,16 @@ async function lockedFields(id: number): Promise<LockedField[]> {
   return [...(orderLine ? ['productType' as const] : []), ...(receipt ? ['cogs' as const] : [])];
 }
 
-/** One product, archived or not (archive hides it from lists, it still exists). `lockedFields` tells the drawer what is read only. */
-export async function getProduct(id: number) {
+/** The product with this id, archived or not. 404 when there is none. */
+async function findProductOr404(id: number) {
   const product = await withSoftDeleted(() => prisma.product.findFirst({ where: { id } }));
   if (!product) throw new AppError('Product not found', 404);
+  return product;
+}
+
+/** One product, archived or not (archive hides it from lists, it still exists). `lockedFields` tells the drawer what is read only. */
+export async function getProduct(id: number) {
+  const product = await findProductOr404(id);
   return { ...product, marginPct: marginPercent(product.price, product.cogs, product.productType), lockedFields: await lockedFields(id) };
 }
 
@@ -288,8 +293,7 @@ export async function createProduct(actorId: number, body: Record<string, unknow
 export async function updateProduct(id: number, body: Record<string, unknown>) {
   refuseStockInput(body);
   if ('openingStock' in body) throw new AppError('Starting stock can only be given when the product is created. Change stock with Allocate or Adjust quantity.', 400);
-  const current = await withSoftDeleted(() => prisma.product.findFirst({ where: { id } }));
-  if (!current) throw new AppError('Product not found', 404);
+  const current = await findProductOr404(id);
   const data = pick(body);
   if (data.sku !== undefined && data.sku !== current.sku) {
     if (await withSoftDeleted(() => prisma.product.findFirst({ where: { sku: data.sku as string, NOT: { id } } }))) throw new AppError('Product with this SKU already exists', 400);
@@ -306,8 +310,7 @@ export async function updateProduct(id: number, body: Record<string, unknown>) {
 
 /** Archive (F-602): the product leaves new orders and forms, keeps its history and stock. Says what it still holds. */
 export async function archiveProduct(id: number) {
-  const current = await withSoftDeleted(() => prisma.product.findFirst({ where: { id } }));
-  if (!current) throw new AppError('Product not found', 404);
+  const current = await findProductOr404(id);
   const [openOrders, onHand] = await Promise.all([
     prisma.order.count({ where: { status: { in: ['pending_confirmation', ...RESERVING] }, orderItems: { some: { productId: id } } } }),
     prisma.stockLevel.aggregate({ _sum: { quantity: true }, where: { productId: id, location: { isActive: true, type: { in: PHYSICAL } } } }),
@@ -317,15 +320,13 @@ export async function archiveProduct(id: number) {
 }
 
 export async function restoreProduct(id: number) {
-  const current = await withSoftDeleted(() => prisma.product.findFirst({ where: { id } }));
-  if (!current) throw new AppError('Product not found', 404);
+  const current = await findProductOr404(id);
   return current.isActive ? current : prisma.product.update({ where: { id }, data: { isActive: true } });
 }
 
 /** DELETE: only a product with no orders. The delete is the same soft delete as before (the row stays, inactive). */
 export async function deleteProduct(id: number) {
-  const current = await withSoftDeleted(() => prisma.product.findFirst({ where: { id } }));
-  if (!current) throw new AppError('Product not found', 404);
+  await findProductOr404(id);
   if ((await prisma.orderItem.count({ where: { productId: id } })) > 0) throw new AppError('This product has orders. Archive it instead.', 409);
   await prisma.product.update({ where: { id }, data: { isActive: false } });
 }

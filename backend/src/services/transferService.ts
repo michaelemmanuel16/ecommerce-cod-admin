@@ -1,10 +1,12 @@
-import { Prisma, TransferReason, TransferType, UserRole } from '@prisma/client';
+import { TransferReason, TransferType } from '@prisma/client';
 import prisma, { TransactionClient } from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 import { applyMovement, getLocation, lockProduct } from './stockService';
 import { openFindingOnce } from './findingService';
+import { auditService } from './auditService';
+import type { StockActor } from '../utils/stockActor';
 
 /**
  * Transfers and adjustments (F-654, F-655, M4-T09). A transfer is one `InventoryTransfer` row: the source level goes down
@@ -19,11 +21,6 @@ export const CREATE_TYPES = ['allocation', 'agent_transfer', 'return_to_warehous
 export const DISPUTE_REASONS = ['short_in_package', 'damaged', 'not_received'] as const;
 export const RETURN_REASONS = ['failed_deliveries', 'customer_refused', 'damaged', 'agent_stopped_delivering', 'other'] as const;
 export const ADJUST_REASONS = ['physical_count_correction', 'damaged', 'lost_or_stolen', 'found_extra_stock', 'other'] as const;
-
-export interface TransferActor {
-  id: number;
-  role: UserRole;
-}
 
 export interface CreateTransferInput {
   type: (typeof CREATE_TYPES)[number];
@@ -54,15 +51,6 @@ export function present<T extends { status: string; quantity: number; receivedQu
   };
 }
 
-async function audit(tx: TransactionClient, actor: TransferActor, action: string, resourceId: number | string, metadata: Prisma.InputJsonObject) {
-  await tx.auditLog.create({
-    data: {
-      tenantId: resolveTenantId(), userId: actor.id, actorKind: 'person', channel: 'app',
-      action, resource: 'inventory_transfer', resourceId: String(resourceId), metadata,
-    },
-  });
-}
-
 /** Row lock on the transfer, so two receipts or a receipt and a cancel of the same transfer run one after the other. */
 async function lockTransfer(tx: TransactionClient, id: number) {
   const locked = await tx.$queryRaw<Array<{ id: number }>>`SELECT id FROM inventory_transfers WHERE id = ${id} AND tenant_id = ${resolveTenantId()} FOR UPDATE`;
@@ -77,7 +65,7 @@ async function fresh(tx: TransactionClient, id: number) {
 }
 
 /** Allocate, transfer between agents, or return: the source level goes down at once and the units wait in transit. */
-export async function createTransfer(actor: TransferActor, input: CreateTransferInput) {
+export async function createTransfer(actor: StockActor, input: CreateTransferInput) {
   if (!CREATE_TYPES.includes(input.type)) throw new AppError('Type must be allocation, agent_transfer or return_to_warehouse', 400);
   if (!Number.isInteger(input.quantity) || input.quantity <= 0) throw new AppError('Quantity must be a whole number above 0', 400);
   if (input.fromLocationId === input.toLocationId) throw new AppError('Cannot transfer to the same location', 400);
@@ -110,7 +98,10 @@ export async function createTransfer(actor: TransferActor, input: CreateTransfer
         },
       });
     }
-    await audit(tx, actor, 'create', row.id, { type: input.type, productId: input.productId, quantity: input.quantity, fromLocationId: from.id, toLocationId: to.id });
+    await auditService.record({
+      tx, actorId: actor.id, actorKind: 'person', channel: 'app', action: 'create', resource: 'inventory_transfer', resourceId: String(row.id),
+      metadata: { type: input.type, productId: input.productId, quantity: input.quantity, fromLocationId: from.id, toLocationId: to.id },
+    });
     return fresh(tx, row.id);
   });
 }
@@ -120,7 +111,7 @@ export async function createTransfer(actor: TransferActor, input: CreateTransfer
  * a reason (the short units stay in transit until the owner resolves it); above is refused. An agent confirms only stock
  * addressed to them; the owner, an admin or a stock keeper may confirm for anyone, which is how a 3PL or a store is received.
  */
-export async function receiveTransfer(actor: TransferActor, id: number, input: { quantity?: number; reason?: TransferReason }) {
+export async function receiveTransfer(actor: StockActor, id: number, input: { quantity?: number; reason?: TransferReason }) {
   return prisma.$transaction(async (tx) => {
     const transfer = await lockTransfer(tx, id);
     const own = transfer.toLocation.userId != null && transfer.toLocation.userId === actor.id;
@@ -148,9 +139,12 @@ export async function receiveTransfer(actor: TransferActor, id: number, input: {
     } else {
       await tx.inventoryTransfer.update({ where: { id }, data: row });
     }
-    await audit(tx, actor, 'receive', id, {
-      quantitySent: transfer.quantity, quantityReceived: counted, status: row.status, reason: row.reason,
-      locationId: transfer.toLocationId, onBehalf: !own,
+    await auditService.record({
+      tx, actorId: actor.id, actorKind: 'person', channel: 'app', action: 'receive', resource: 'inventory_transfer', resourceId: String(id),
+      metadata: {
+        quantitySent: transfer.quantity, quantityReceived: counted, status: row.status, reason: row.reason,
+        locationId: transfer.toLocationId, onBehalf: !own,
+      },
     });
     return fresh(tx, id);
   });
@@ -160,7 +154,7 @@ export async function receiveTransfer(actor: TransferActor, id: number, input: {
  * Close a dispute. "Return to source" puts the short units back at the source level. "Write off" records the loss as an
  * `adjustment` with the dispute reason and a Finding with the cost. Either way the transfer ends `received`.
  */
-export async function resolveTransfer(actor: TransferActor, id: number, input: { action: 'return_to_source' | 'write_off'; note?: string }) {
+export async function resolveTransfer(actor: StockActor, id: number, input: { action: 'return_to_source' | 'write_off'; note?: string }) {
   if (input.action !== 'return_to_source' && input.action !== 'write_off') throw new AppError('Action must be return_to_source or write_off', 400);
   return prisma.$transaction(async (tx) => {
     const transfer = await lockTransfer(tx, id);
@@ -189,13 +183,16 @@ export async function resolveTransfer(actor: TransferActor, id: number, input: {
         note: `Written off: ${short} ${transfer.product.name} short on transfer ${id}${input.note ? ` (${input.note})` : ''}`,
       }, { includeClosed: true }, tx);
     }
-    await audit(tx, actor, 'resolve', id, { action: input.action, shortQuantity: short, note: input.note ?? null });
+    await auditService.record({
+      tx, actorId: actor.id, actorKind: 'person', channel: 'app', action: 'resolve', resource: 'inventory_transfer', resourceId: String(id),
+      metadata: { action: input.action, shortQuantity: short, note: input.note ?? null },
+    });
     return fresh(tx, id);
   });
 }
 
 /** The owner cancels an in-transit transfer: the units go back to the source level. */
-export async function cancelTransfer(actor: TransferActor, id: number) {
+export async function cancelTransfer(actor: StockActor, id: number) {
   return prisma.$transaction(async (tx) => {
     const transfer = await lockTransfer(tx, id);
     if (transfer.status !== 'in_transit') throw new AppError(`Only an in-transit transfer can be cancelled; this one is ${transfer.status}`, 409);
@@ -203,7 +200,10 @@ export async function cancelTransfer(actor: TransferActor, id: number) {
       type: transfer.transferType, productId: transfer.productId, quantity: transfer.quantity, createdById: actor.id,
       toLocationId: transfer.fromLocationId, settle: { transferId: id, row: { status: 'cancelled' } },
     });
-    await audit(tx, actor, 'cancel', id, { quantity: transfer.quantity, locationId: transfer.fromLocationId });
+    await auditService.record({
+      tx, actorId: actor.id, actorKind: 'person', channel: 'app', action: 'cancel', resource: 'inventory_transfer', resourceId: String(id),
+      metadata: { quantity: transfer.quantity, locationId: transfer.fromLocationId },
+    });
     return fresh(tx, id);
   });
 }
@@ -217,7 +217,7 @@ export interface AdjustInput {
 }
 
 /** Set the on-hand quantity of one product at one location to a counted number. Writes one `adjustment` movement. */
-export async function adjustStock(actor: TransferActor, input: AdjustInput) {
+export async function adjustStock(actor: StockActor, input: AdjustInput) {
   if (!Number.isInteger(input.newQuantity) || input.newQuantity < 0) throw new AppError('New quantity must be a whole number, 0 or more', 400);
   if (!ADJUST_REASONS.includes(input.reason)) throw new AppError('Reason must be physical_count_correction, damaged, lost_or_stolen, found_extra_stock or other', 400);
   const note = input.note?.trim();
@@ -243,7 +243,10 @@ export async function adjustStock(actor: TransferActor, input: AdjustInput) {
       _sum: { quantity: true },
       where: { toLocationId: location.id, productId: input.productId, status: { in: ['in_transit', 'disputed'] } },
     });
-    await audit(tx, actor, 'adjust', row.id, { locationId: location.id, productId: input.productId, from: current, to: input.newQuantity, reason: input.reason });
+    await auditService.record({
+      tx, actorId: actor.id, actorKind: 'person', channel: 'app', action: 'adjust', resource: 'inventory_transfer', resourceId: String(row.id),
+      metadata: { locationId: location.id, productId: input.productId, from: current, to: input.newQuantity, reason: input.reason },
+    });
     const units = incoming._sum.quantity ?? 0;
     return {
       movement: await fresh(tx, row.id),

@@ -51,6 +51,8 @@ export async function productDeliveredUnits(
   productId: number | number[] | 'all',
   from: Date,
   to: Date,
+  /** `idsOnly`: the caller reads only productId and units, so skip the currency and the sku / name lookups (sku and name come back empty, no currency). */
+  opts: { idsOnly?: boolean } = {},
 ): Promise<ProductDeliveredUnits> {
   return runInTenant(tenantId, async () => {
     const window = {
@@ -78,10 +80,10 @@ export async function productDeliveredUnits(
     };
 
     const [currency, groups] = await Promise.all([
-      getCurrency(),
+      opts.idsOnly ? undefined : getCurrency(),
       prisma.orderItem.groupBy({ by: ['productId'], where, _sum: { quantity: true, totalPrice: true } }),
     ]);
-    const products = typeof productId !== 'number' && groups.length
+    const products = typeof productId !== 'number' && !opts.idsOnly && groups.length
       ? await prisma.product.findMany({ where: { id: { in: groups.map((g) => g.productId) } }, select: { id: true, sku: true, name: true } })
       : [];
 

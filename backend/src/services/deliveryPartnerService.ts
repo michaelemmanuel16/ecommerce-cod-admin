@@ -198,8 +198,6 @@ export interface PartnerSummary {
   waiting: { orders: number; oldestDays: number | null };
   delivered: { orders: number; /** Delivered revenue, left out for a role that may not see money. */ revenue?: string; currency?: string };
   deliverySuccess: { rate: KpiResult<number | null>; target: number; /** Points under the target; negative above it; null with no closed order. */ gapPoints: number | null };
-  /** M5 (F-704). */
-  cashWithPartners: { amount: null; overdueOrders: null };
 }
 
 /** The five tiles above the partner table (F-701). */
@@ -235,7 +233,6 @@ export async function partnerSummary(tenantId: string, from: Date, to: Date, opt
       target: targetPct,
       gapPoints: value === null ? null : Money.roundHalfUp(Money.sub(targetPct, value), 1).toNumber(),
     },
-    cashWithPartners: { amount: null, overdueOrders: null },
   };
 }
 

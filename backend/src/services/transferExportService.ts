@@ -1,7 +1,8 @@
 import { TransferStatus, TransferType } from '@prisma/client';
-import prisma from '../utils/prisma';
-import { resolveTenantId } from '../utils/tenantContext';
+import { fullName } from '../utils/nameUtils';
 import { transferBatches, type TransferFilters } from './inventoryReadService';
+import { FORMULA_START } from './exportStream';
+import { auditService } from './auditService';
 
 const COLUMNS = ['Date', 'Type', 'From', 'To', 'Product', 'SKU', 'Quantity', 'Status', 'Counted', 'Reason', 'Order', 'Started by', 'Note'] as const;
 const STATUS: Record<TransferStatus, string> = { in_transit: 'In transit', received: 'Received', disputed: 'Received short', cancelled: 'Cancelled' };
@@ -10,9 +11,9 @@ const SOLO: TransferType[] = ['adjustment', 'count_adjustment'];
 /** "short_in_package" -> "Short in package" */
 const humanize = (v: string): string => (v.charAt(0).toUpperCase() + v.slice(1)).replace(/_/g, ' ');
 
-/** A text cell: quoted, with a leading = + - @ (or tab / return) defused so a spreadsheet never runs it as a formula. */
-export function csvText(value: string): string {
-  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+/** A text cell: always quoted, with a leading = + - @ (or tab / return) defused so a spreadsheet never runs it as a formula. */
+function csvText(value: string): string {
+  const safe = FORMULA_START.test(value) ? `'${value}` : value;
   return `"${safe.replace(/"/g, '""')}"`;
 }
 
@@ -33,7 +34,7 @@ function line(t: Row): string {
     csvText(t.createdAt.toISOString()), csvText(humanize(t.transferType)), csvText(from), csvText(to), csvText(t.product.name), csvText(t.product.sku),
     String(quantity), csvText(STATUS[t.status]), t.receivedQuantity === null ? '' : String(t.receivedQuantity),
     csvText(t.reason ? humanize(t.reason) : ''), t.orderId === null ? '' : String(t.orderId),
-    csvText(`${t.createdBy.firstName} ${t.createdBy.lastName}`.trim()), csvText(t.notes ?? ''),
+    csvText(fullName(t.createdBy)), csvText(t.notes ?? ''),
   ].join(',');
 }
 
@@ -42,11 +43,9 @@ export async function exportTransfers(actor: { id: number }, filters: Omit<Trans
   const lines: string[] = [COLUMNS.join(',')];
   for await (const batch of transferBatches(filters)) for (const t of batch) lines.push(line(t));
   const { includeCounts: _c, scopeLocationId: _s, ...shown } = filters;
-  await prisma.auditLog.create({
-    data: {
-      tenantId: resolveTenantId(), userId: actor.id, actorKind: 'person', channel: 'app', action: 'export', resource: 'inventory_transfer',
-      metadata: { rows: lines.length - 1, filters: shown },
-    },
+  await auditService.record({
+    actorId: actor.id, actorKind: 'person', channel: 'app', action: 'export', resource: 'inventory_transfer',
+    metadata: { rows: lines.length - 1, filters: shown },
   });
   return lines.join('\r\n');
 }

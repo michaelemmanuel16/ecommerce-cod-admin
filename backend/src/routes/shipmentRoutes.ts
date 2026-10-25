@@ -4,7 +4,8 @@ import * as controller from '../controllers/shipmentController';
 import { authenticate, requireResourcePermission } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate } from '../middleware/validation';
-import { CLAIM_ACTIONS, COUNT_SOURCES } from '../services/shipmentService';
+import { CLAIM_ACTIONS } from '../services/shipmentService';
+import { COUNT_SOURCES } from '../services/stockCountService';
 
 const router = Router();
 

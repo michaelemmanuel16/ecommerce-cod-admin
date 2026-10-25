@@ -15,7 +15,7 @@ import { metaCapiService } from '../services/metaCapiService';
 import * as Money from '../utils/money';
 import { cleanText, deliveryAddressOf, slotRule, CheckoutSlot } from '../utils/checkoutLocation';
 import { isUpsellAvailable } from '../utils/checkoutFormRules';
-import { getAvailableMany, getAvailableToSell } from '../services/stockService';
+import { getAvailableMany } from '../services/stockService';
 import { formatOrderNumber } from '../utils/orderNumber';
 import { getFrontendUrl } from '../utils/url';
 
@@ -180,7 +180,10 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       return;
     }
     // Available to sell: on hand less the units reserved for open orders (M4-T16). A digital product has no stock.
-    if (!isDigital && (await getAvailableToSell(form.productId)) <= 0) {
+    // One read covers the form product and the add-ons the buyer chose, not every add-on of the form.
+    const pickedUpsells = Array.isArray(selectedUpsells) ? selectedUpsells.map((upsell) => form.upsells.find((u) => u.id === Number(upsell?.id))) : [];
+    const stockById = await getAvailableMany([form.productId, ...pickedUpsells.flatMap((u) => (u?.productId != null ? [u.productId] : []))]);
+    if (!isDigital && (stockById.get(form.productId) ?? 0) <= 0) {
       reject('This product is sold out');
       return;
     }
@@ -269,12 +272,9 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
     const dbUpsells = form.upsells;
     const resolvedUpsells: typeof dbUpsells = [];
     if (selectedUpsells && Array.isArray(selectedUpsells)) {
-      const picked = selectedUpsells.map((upsell) => dbUpsells.find((u) => u.id === Number(upsell?.id)));
-      // Stock is looked up for the add-ons the buyer chose, not for every add-on of the form
-      const upsellStock = await getAvailableMany(picked.flatMap((u) => (u?.productId != null ? [u.productId] : [])));
-      for (const dbUpsell of picked) {
+      for (const dbUpsell of pickedUpsells) {
         // An add-on the public form no longer shows (its product is off or out of stock) cannot be bought either.
-        if (!dbUpsell || !isUpsellAvailable(dbUpsell, upsellStock)) {
+        if (!dbUpsell || !isUpsellAvailable(dbUpsell, stockById)) {
           res.status(400).json({ error: 'Selected add-on is not available' });
           return;
         }

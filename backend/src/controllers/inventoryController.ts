@@ -5,12 +5,10 @@ import * as counts from '../services/stockCountService';
 import * as reads from '../services/inventoryReadService';
 import * as locations from '../services/stockLocationService';
 import * as exporter from '../services/transferExportService';
+import { actorOf } from '../utils/stockActor';
 
 const intQuery = (v: unknown) => (v === undefined || v === '' ? undefined : Number(v));
 const text = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undefined);
-
-/** The signed-in user as the transfer service sees them. */
-const actorOf = (req: AuthRequest): transfers.TransferActor => ({ id: req.user!.id, role: req.user!.role });
 
 /** POST /api/inventory/transfers: allocate, transfer between agents, or return (F-654). */
 export const createTransfer = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -39,7 +37,7 @@ export const adjustStock = async (req: AuthRequest, res: Response): Promise<void
 
 /** POST /api/inventory/counts (F-653) */
 export const createCount = async (req: AuthRequest, res: Response): Promise<void> => {
-  res.status(201).json({ count: await counts.createCount({ id: req.user!.id }, req.body) });
+  res.status(201).json({ count: await counts.createCount(actorOf(req), req.body) });
 };
 
 /** GET /api/inventory/counts?locationId= */
@@ -55,7 +53,7 @@ export const getCount = async (req: AuthRequest, res: Response): Promise<void> =
 
 /** POST /api/inventory/counts/:id/lines/:lineId/apply */
 export const applyCountLine = async (req: AuthRequest, res: Response): Promise<void> => {
-  res.json(await counts.applyLine({ id: req.user!.id }, Number(req.params.id), Number(req.params.lineId), req.body));
+  res.json(await counts.applyLine(actorOf(req), Number(req.params.id), Number(req.params.lineId), req.body));
 };
 
 /** GET /api/inventory/overview (F-652) */
