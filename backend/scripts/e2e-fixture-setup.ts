@@ -14,7 +14,7 @@ import { uploadDir } from '../src/config/multer';
 //      default `app` already fits the agents.
 // It never edits the fixture itself and can run again (same result).
 // Refuses unless DATABASE_URL is a local database whose name contains `_test_`, and when NODE_ENV=production.
-// `--undo` removes the rows this script added (deliveries and partner profiles of the fixture tenant). The fixture re-seed and the
+// `--undo` removes the rows this script and the specs added (deliveries, partner profiles, notifications and checkout forms with their submissions of the fixture tenant). The fixture re-seed and the
 // integration suites that seed it cannot delete a tenant while those rows exist, so run `--undo` before them on the same database.
 // Run: npm run e2e:fixture-setup [-- --undo]
 
@@ -50,6 +50,26 @@ export function refusal(databaseUrl: string | undefined, nodeEnv: string | undef
   return null;
 }
 
+/**
+ * Removes the rows the setup and the Playwright specs add to the fixture tenant. Every delete is scoped by the tenant id.
+ * m4-flows.spec.ts (public order) leaves a checkout form, a submission and a pending checkout, none of which the fixture seeds.
+ * FK order: submissions and pending checkouts first (the submission points at the form), then the form packages and upsells
+ * (no tenant column, scoped through their form), then the forms. The public order itself is not deleted here: the fixture re-seed
+ * removes the tenant's orders, and the submission that pointed at it is gone by then.
+ */
+export async function undoFixtureRows(prisma: PrismaClient, tenantId: string): Promise<string> {
+  const deliveries = await prisma.delivery.deleteMany({ where: { tenantId } });
+  const profiles = await prisma.deliveryPartnerProfile.deleteMany({ where: { tenantId } });
+  // m4-inventory.spec.ts allocates stock to agents, which leaves inbox notifications that block the fixture re-seed
+  const notifications = await prisma.notification.deleteMany({ where: { tenantId } });
+  const submissions = await prisma.formSubmission.deleteMany({ where: { tenantId } });
+  const pending = await prisma.pendingCheckout.deleteMany({ where: { tenantId } });
+  const packages = await prisma.formPackage.deleteMany({ where: { form: { tenantId } } });
+  const upsells = await prisma.formUpsell.deleteMany({ where: { form: { tenantId } } });
+  const forms = await prisma.checkoutForm.deleteMany({ where: { tenantId } });
+  return `Removed ${deliveries.count} deliveries, ${profiles.count} partner profiles, ${notifications.count} notifications, ${submissions.count} form submissions, ${pending.count} pending checkouts, ${packages.count} packages, ${upsells.count} upsells and ${forms.count} checkout forms of ${FIXTURE_SLUG}.`;
+}
+
 async function main() {
   const why = refusal(process.env.DATABASE_URL, process.env.NODE_ENV);
   if (why) {
@@ -64,11 +84,7 @@ async function main() {
     if (!tenant) throw new Error(`Tenant ${FIXTURE_SLUG} not found. Run npm run seed:fixture first.`);
 
     if (process.argv.includes('--undo')) {
-      const deliveries = await prisma.delivery.deleteMany({ where: { tenantId: tenant.id } });
-      const profiles = await prisma.deliveryPartnerProfile.deleteMany({ where: { tenantId: tenant.id } });
-      // m4-inventory.spec.ts allocates stock to agents, which leaves inbox notifications that block the fixture re-seed
-      const notifications = await prisma.notification.deleteMany({ where: { tenantId: tenant.id } });
-      console.log(`Removed ${deliveries.count} deliveries, ${profiles.count} partner profiles and ${notifications.count} notifications of ${FIXTURE_SLUG}.`);
+      console.log(await undoFixtureRows(prisma, tenant.id));
       return;
     }
 
