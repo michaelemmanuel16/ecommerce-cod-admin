@@ -160,6 +160,7 @@ export function statusView(t: Transfer): StatusView {
       return { tone: 'v', text: 'In transit', sub: null };
     case 'disputed': {
       const short = t.shortQuantity;
+      if (counted !== null && t.reason === 'not_received') return { tone: 'bad', text: `Received ${count(short)} short`, sub: `Counted ${count(counted)} of ${count(t.quantity)} · ${count(short)} not received` };
       return { tone: 'bad', text: `Received ${count(short)} short`, sub: [counted !== null ? `Counted ${count(counted)} of ${count(t.quantity)}` : null, reason].filter(Boolean).join(' · ') };
     }
     case 'cancelled':
