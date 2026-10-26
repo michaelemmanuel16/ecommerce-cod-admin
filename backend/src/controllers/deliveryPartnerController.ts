@@ -11,7 +11,7 @@ import {
 import {
   createPartner, getPartner, setPartnerAvailability, updatePartner,
 } from '../services/deliveryPartnerAdminService';
-import { createFeeRule, listFeeRules } from '../services/feeRuleService';
+import { createFeeRule, createFeeRules, listFeeRules } from '../services/feeRuleService';
 import { unmappedRegions } from '../services/regionService';
 import { proofSummaries } from '../services/deliveryProofService';
 
@@ -109,7 +109,12 @@ export const feeRules = async (req: AuthRequest, res: Response): Promise<void> =
   res.json(await listFeeRules(partnerIdOf(req)));
 };
 
-/** POST /api/delivery-partners/:id/fee-rules: one rule for one outcome, valid from a date (F-703). */
+/** POST /api/delivery-partners/:id/fee-rules: one rule for one outcome, or `{ rules: [...] }` for several together, valid from a date (F-703). */
 export const addFeeRule = async (req: AuthRequest, res: Response): Promise<void> => {
+  // `{ rules: [...] }` saves the changed outcomes together and answers with the list as GET gives it; one rule keeps the old shape
+  if (Array.isArray(req.body?.rules)) {
+    res.status(201).json(await createFeeRules(req.user!, partnerIdOf(req), req.body.rules));
+    return;
+  }
   res.status(201).json({ rule: await createFeeRule(req.user!, partnerIdOf(req), req.body ?? {}) });
 };

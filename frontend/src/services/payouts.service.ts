@@ -15,7 +15,7 @@ export interface OwedEntry {
 
 /** GET /api/payouts/owed/:payeeId: what the form shows before a save. */
 export interface OwedPreview {
-  payee: { id: number; firstName: string; lastName: string; role: string; kind: PayoutKind };
+  payee: { id: number; firstName: string; lastName: string; kind: PayoutKind };
   commission: string;
   upsellReward: string;
   targetReward: string;
@@ -30,16 +30,24 @@ export interface RepOwedRow {
   id: number;
   firstName: string;
   lastName: string;
-  role: string;
-  isActive: boolean;
   delivered: number;
   commission: string;
   upsellReward: string;
   targetReward: string;
   earned: string;
   paid: string;
+  /** Paid in the month the list was asked for. */
+  paidInMonth: string;
   owed: string;
   lastPayout: string | null;
+}
+
+/** GET /api/payouts/owed: the reps and the totals the server adds up (Money, no float in the browser). */
+export interface RepsOwed {
+  /** YYYY-MM the paid-in-month figures are for. */
+  month: string;
+  reps: RepOwedRow[];
+  totals: { owed: string; paid: string; paidInMonth: string; repsOwed: number };
 }
 
 export interface PayoutRow {
@@ -69,9 +77,9 @@ export interface RecordPayout {
 
 // `quiet`: the form shows a refusal ("Owed is GH₵2,034", "Already paid") itself, so the client raises no second toast.
 export const payoutsService = {
-  async repsOwed(): Promise<RepOwedRow[]> {
-    const response = await apiClient.get('/api/payouts/owed', { skipCache: true, quiet: true });
-    return response.data.reps;
+  async repsOwed(params: { month?: string; includeInactive?: boolean } = {}): Promise<RepsOwed> {
+    const response = await apiClient.get('/api/payouts/owed', { params, skipCache: true, quiet: true });
+    return response.data;
   },
 
   async owed(payeeId: number): Promise<OwedPreview> {
@@ -80,7 +88,7 @@ export const payoutsService = {
   },
 
   async history(payeeId: number): Promise<PayoutRow[]> {
-    const response = await apiClient.get('/api/payouts', { params: { payeeId, limit: 50 }, skipCache: true, quiet: true });
+    const response = await apiClient.get('/api/payouts', { params: { payeeId, limit: 10 }, skipCache: true, quiet: true });
     return response.data.payouts;
   },
 

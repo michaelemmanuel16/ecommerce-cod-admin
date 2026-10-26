@@ -106,10 +106,35 @@ describe('the owed preview (F-913)', () => {
     expect(byId.get(U.adwoa.id)).toMatchObject({ delivered: 2, commission: '2024.00', upsellReward: '610.00', earned: '2634.00', paid: '600.00', owed: '2034.00' });
     expect(byId.get(U.nana.id)).toMatchObject({ owed: '134.00', paid: '0.00' });
     expect(byId.get(U.rep.id)).toMatchObject({ owed: '0.00', delivered: 0 });
+    // Totals come from the server: owed 2,034 + 134 = 2,168 (R3 fixture), the earlier 600 paid and in this month
+    expect(res.body.totals).toEqual({ owed: '2168.00', paid: '600.00', paidInMonth: '600.00', repsOwed: 2 });
+    expect(res.body.month).toMatch(/^\d{4}-\d{2}$/);
+    expect(byId.get(U.adwoa.id).paidInMonth).toBe('600.00');
     expect(byId.has(U.kofi.id)).toBe(false);
     expect(byId.has(U.bot.id)).toBe(false);
     expect((await request(app).get('/api/payouts/owed').set(auth(U.rep))).status).toBe(403);
     expect((await request(app).get('/api/payouts/owed').set(auth(U.otherAdmin))).body.reps.map((r: any) => r.id)).not.toContain(U.adwoa.id);
+  });
+
+  it('Paid in month follows ?month=YYYY-MM, and a bad month is refused', async () => {
+    const other = await request(app).get('/api/payouts/owed?month=2020-01').set(auth(U.admin));
+    expect(other.body.month).toBe('2020-01');
+    expect(other.body.totals).toMatchObject({ paidInMonth: '0.00', paid: '600.00', owed: '2168.00' });
+    expect((await request(app).get('/api/payouts/owed?month=2020-13').set(auth(U.admin))).status).toBe(400);
+  });
+
+  it('inactive reps show only while owed something, unless ?includeInactive=true', async () => {
+    const gone = await mkUser('gone', 'sales_rep', { isActive: false });
+    const goneOwed = await mkUser('goneowed', 'sales_rep', { isActive: false });
+    await prismaBase.commissionEntry.create({ data: { tenantId, userId: goneOwed.id, kind: 'base', status: 'earned', amount: 12, earnedAt: new Date() } });
+    const ids = async (q = '') => (await request(app).get(`/api/payouts/owed${q}`).set(auth(U.admin))).body.reps.map((r: any) => r.id);
+    const def = await ids();
+    expect(def).toContain(goneOwed.id);
+    expect(def).not.toContain(gone.id);
+    expect(await ids('?includeInactive=true')).toEqual(expect.arrayContaining([gone.id, goneOwed.id]));
+    // A person who left can still be paid what they are owed
+    expect((await request(app).get(`/api/payouts/owed/${goneOwed.id}`).set(auth(U.admin))).body.owed).toBe('12.00');
+    await prismaBase.commissionEntry.deleteMany({ where: { userId: goneOwed.id } });
   });
 
   it('an agent preview counts target rewards only; an AI agent has no payout', async () => {
@@ -178,6 +203,13 @@ describe('recording a payout (F-913, M5-T19)', () => {
     expect(owed.body.owed).toBe('14.00');
     // The ledger agrees: 2020 holds exactly the open entries (Nana's 14 and Kofi's 105)
     expect(await balance('2020')).toBe(14 + 105);
+    // The tab and the form read one owed rule: after a split payment both show 14, for Adwoa (paid in full) 0
+    const tab = await request(app).get('/api/payouts/owed').set(auth(U.admin));
+    for (const person of [U.nana, U.adwoa]) {
+      const preview = await request(app).get(`/api/payouts/owed/${person.id}`).set(auth(U.admin));
+      expect(tab.body.reps.find((r: any) => r.id === person.id).owed).toBe(preview.body.owed);
+    }
+    expect(tab.body.reps.find((r: any) => r.id === U.nana.id).owed).toBe('14.00');
   });
 
   it('keeps a reference unique per payee and method', async () => {

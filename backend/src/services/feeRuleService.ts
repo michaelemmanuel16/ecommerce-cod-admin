@@ -65,29 +65,25 @@ const ruleView = (r: { id: number; outcome: FeeOutcome; basis: FeeBasis; amount:
 
 /** All rules of a partner (history, newest first), the rule in force today for each outcome, and the weighted fee over its delivered orders. */
 export async function listFeeRules(partnerId: number) {
-  await loadPartner(partnerId);
-  const rules = await prisma.feeRule.findMany({
-    where: { partnerUserId: partnerId },
-    orderBy: [{ outcome: 'asc' }, { validFrom: 'desc' }],
-  });
+  const [, rules, delivered] = await Promise.all([
+    loadPartner(partnerId),
+    prisma.feeRule.findMany({ where: { partnerUserId: partnerId }, orderBy: [{ outcome: 'asc' }, { validFrom: 'desc' }] }),
+    // The fee actually stamped on this partner's delivered orders, averaged (decision R5): what the fee costs in practice
+    prisma.order.aggregate({
+      where: { deliveryAgentId: partnerId, status: 'delivered', deletedAt: null, deliveryFee: { not: null } },
+      _avg: { deliveryFee: true },
+      _count: { _all: true },
+    }),
+  ]);
   const inForce = currentFeeRules(rules, storeToday(resolveTenantId()));
   const current = Object.fromEntries(FEE_OUTCOMES.map((o) => [o, inForce[o] ? ruleView(inForce[o]!) : null])) as
     Record<FeeOutcome, ReturnType<typeof ruleView> | null>;
-  // The fee actually stamped on this partner's delivered orders, averaged (decision R5): what the fee costs in practice
-  const delivered = await prisma.order.aggregate({
-    where: { deliveryAgentId: partnerId, status: 'delivered', deletedAt: null, deliveryFee: { not: null } },
-    _avg: { deliveryFee: true },
-    _count: { _all: true },
-  });
   const weightedFee = delivered._count._all > 0 && delivered._avg.deliveryFee ? Money.toApi(delivered._avg.deliveryFee) : null;
   return { rules: rules.map(ruleView), current, weightedFee, deliveredOrders: delivered._count._all };
 }
 
-/** Validates and stores one rule. Percent above 100 and a second rule with the same valid-from are rejected. */
-export async function createFeeRule(requester: Requester, partnerId: number, input: FeeRuleInput) {
-  await loadPartner(partnerId);
-  const tenantId = resolveTenantId();
-
+/** One rule input, checked: outcome, basis, amount (percent up to 100) and the YYYY-MM-DD it starts on (today when left out). */
+function parseRule(input: FeeRuleInput, tenantId: string) {
   if (!FEE_OUTCOMES.includes(input.outcome as FeeOutcome)) throw new AppError('Outcome must be delivered, failed or returned', 400, 'INVALID_OUTCOME');
   const outcome = input.outcome as FeeOutcome;
   const basis = (input.basis ?? 'flat') as FeeBasis;
@@ -104,27 +100,93 @@ export async function createFeeRule(requester: Requester, partnerId: number, inp
   } catch {
     throw new AppError('Valid from must be a date written YYYY-MM-DD', 400, 'INVALID_DATE');
   }
+  return { outcome, basis, amount, ymd };
+}
+
+const sameDateMessage = (outcome: FeeOutcome, ymd: string) => `This partner already has a ${outcome} fee rule from ${ymd}`;
+
+/** The create and its audit row, in the caller's transaction. */
+async function insertRule(
+  tx: TransactionClient, requester: Requester, tenantId: string, partnerId: number,
+  r: { outcome: FeeOutcome; basis: FeeBasis; amount: Money.Money; ymd: string },
+) {
+  const created = await tx.feeRule.create({
+    data: { tenantId, partnerUserId: partnerId, outcome: r.outcome, basis: r.basis, amount: r.amount, validFrom: utcDateOfYmd(r.ymd), createdById: requester.id },
+  });
+  await auditService.record({
+    actorId: requester.id, actorKind: 'person', channel: 'app',
+    action: 'create', resource: 'fee_rule', resourceId: String(created.id),
+    metadata: { partnerId, outcome: r.outcome, basis: r.basis, amount: Money.toApi(r.amount), validFrom: r.ymd },
+    tx,
+  });
+  return created;
+}
+
+const isUniqueViolation = (error: unknown) => error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+
+/** Validates and stores one rule. Percent above 100 and a second rule with the same valid-from are rejected. */
+export async function createFeeRule(requester: Requester, partnerId: number, input: FeeRuleInput) {
+  await loadPartner(partnerId);
+  const tenantId = resolveTenantId();
+  const rule = parseRule(input, tenantId);
+  try {
+    return ruleView(await prisma.$transaction((tx) => insertRule(tx, requester, tenantId, partnerId, rule)));
+  } catch (error) {
+    if (isUniqueViolation(error)) throw new AppError(sameDateMessage(rule.outcome, rule.ymd), 409, 'FEE_RULE_EXISTS');
+    throw error;
+  }
+}
+
+/**
+ * Stores the changed outcomes of one partner together, all or none, and returns the list as GET gives it (rules, rule in
+ * force per outcome, weighted fee). Problems come back per outcome in `errors` (a bad value, a second rule with the same
+ * valid-from, the same outcome twice); when there is any, nothing is stored.
+ */
+export async function createFeeRules(requester: Requester, partnerId: number, inputs: FeeRuleInput[]) {
+  await loadPartner(partnerId);
+  const tenantId = resolveTenantId();
+  if (inputs.length === 0) throw new AppError('Send at least one fee rule', 400, 'NO_RULES');
+
+  const errors: Partial<Record<FeeOutcome, string>> = {};
+  const rules: Array<ReturnType<typeof parseRule>> = [];
+  for (const input of inputs) {
+    try {
+      const rule = parseRule(input, tenantId);
+      if (rules.some((r) => r.outcome === rule.outcome)) errors[rule.outcome] = `Send ${rule.outcome} only once`;
+      else rules.push(rule);
+    } catch (e) {
+      const outcome = FEE_OUTCOMES.includes(input.outcome as FeeOutcome) ? (input.outcome as FeeOutcome) : null;
+      if (!outcome || !(e instanceof AppError)) throw e;
+      errors[outcome] = e.message;
+    }
+  }
+  if (rules.length > 0) {
+    const taken = await prisma.feeRule.findMany({
+      where: { partnerUserId: partnerId, OR: rules.map((r) => ({ outcome: r.outcome, validFrom: utcDateOfYmd(r.ymd) })) },
+      select: { outcome: true },
+    });
+    for (const t of taken) errors[t.outcome] = sameDateMessage(t.outcome, rules.find((r) => r.outcome === t.outcome)!.ymd);
+  }
+  const fail = (conflict: boolean) => {
+    const error = new AppError(Object.values(errors)[0]!, conflict ? 409 : 400, conflict ? 'FEE_RULE_EXISTS' : 'INVALID_FEE_RULE');
+    error.details = { errors };
+    return error;
+  };
+  if (Object.keys(errors).length > 0) throw fail(Object.values(errors).every((m) => m!.startsWith('This partner already has')));
 
   try {
-    const rule = await prisma.$transaction(async (tx) => {
-      const created = await tx.feeRule.create({
-        data: { tenantId, partnerUserId: partnerId, outcome, basis, amount, validFrom: utcDateOfYmd(ymd), createdById: requester.id },
-      });
-      await auditService.record({
-        actorId: requester.id, actorKind: 'person', channel: 'app',
-        action: 'create', resource: 'fee_rule', resourceId: String(created.id),
-        metadata: { partnerId, outcome, basis, amount: Money.toApi(amount), validFrom: ymd },
-        tx,
-      });
-      return created;
+    await prisma.$transaction(async (tx) => {
+      for (const rule of rules) await insertRule(tx, requester, tenantId, partnerId, rule);
     });
-    return ruleView(rule);
   } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-      throw new AppError(`This partner already has a ${outcome} fee rule from ${ymd}`, 409, 'FEE_RULE_EXISTS');
+    // Two saves at the same moment: the unique key answers the second
+    if (isUniqueViolation(error)) {
+      for (const r of rules) errors[r.outcome] = sameDateMessage(r.outcome, r.ymd);
+      throw fail(true);
     }
     throw error;
   }
+  return listFeeRules(partnerId);
 }
 
 interface ResolvedFee {

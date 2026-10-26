@@ -17,7 +17,7 @@ let canCreate = true;
 vi.mock('../../hooks/usePermissions', () => ({ usePermissions: () => ({ can: (r: string, a: string) => (r === 'payouts' && a === 'create' ? canCreate : true) }) }));
 
 const ADWOA: OwedPreview = {
-  payee: { id: 7, firstName: 'Adwoa', lastName: 'Mensah', role: 'sales_rep', kind: 'rep' },
+  payee: { id: 7, firstName: 'Adwoa', lastName: 'Mensah', kind: 'rep' },
   commission: '2024.00', upsellReward: '610.00', targetReward: '0.00', earned: '2634.00', paid: '600.00', owed: '2034.00',
   entries: [
     { id: 1, orderId: 101, kind: 'base', amount: '1424.00', earnedAt: '2026-10-02T10:00:00Z' },
@@ -31,7 +31,7 @@ const PAST: PayoutRow = {
 };
 
 const refuse = (message: string, status = 400) => Object.assign(new axios.AxiosError('refused'), { response: { status, data: { error: message } } });
-const open = () => render(<PayoutForm personId={7} isOpen onClose={vi.fn()} onRecorded={onRecorded} />);
+const open = () => render(<PayoutForm personId={7} onClose={vi.fn()} onRecorded={onRecorded} />);
 const onRecorded = vi.fn();
 const save = () => screen.getByRole('button', { name: /Record payout/ });
 const amountField = () => screen.getByLabelText('Amount') as HTMLInputElement;

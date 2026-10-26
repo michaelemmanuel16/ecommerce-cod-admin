@@ -16,6 +16,7 @@ const orderProofs = vi.fn();
 const listOrders = vi.fn();
 const stockLevels = vi.fn();
 const feeRules = vi.fn();
+const addFeeRules = vi.fn();
 vi.mock('../../services/delivery-partners.service', async (orig) => ({
   ...(await orig<typeof import('../../services/delivery-partners.service')>()),
   deliveryPartnersService: {
@@ -26,6 +27,7 @@ vi.mock('../../services/delivery-partners.service', async (orig) => ({
     orderProofs: (...a: unknown[]) => orderProofs(...a),
     stockLevels: (...a: unknown[]) => stockLevels(...a),
     feeRules: (...a: unknown[]) => feeRules(...a),
+    addFeeRules: (...a: unknown[]) => addFeeRules(...a),
   },
 }));
 vi.mock('../../services/orders.service', () => ({ ordersService: { listOrders: (...a: unknown[]) => listOrders(...a) } }));
@@ -44,18 +46,19 @@ const ORDER = {
 };
 
 const onChanged = vi.fn();
+const onFeeRulesSaved = vi.fn();
 function open(props: Partial<React.ComponentProps<typeof PartnerDrawer>> = {}) {
   return render(
     <MemoryRouter>
       <ToastProvider>
-        <PartnerDrawer id={2} row={PARTNERS[1]} target={60} canEdit canSwitch onClose={vi.fn()} onChanged={onChanged} {...props} />
+        <PartnerDrawer id={2} row={PARTNERS[1]} target={60} canEdit canSwitch onClose={vi.fn()} onChanged={onChanged} onFeeRulesSaved={onFeeRulesSaved} {...props} />
       </ToastProvider>
     </MemoryRouter>,
   );
 }
 
 beforeEach(() => {
-  [get, update, setAvailability, orderProof, orderProofs, listOrders, stockLevels, feeRules, onChanged].forEach((m) => m.mockReset());
+  [get, update, setAvailability, orderProof, orderProofs, listOrders, stockLevels, feeRules, addFeeRules, onChanged, onFeeRulesSaved].forEach((m) => m.mockReset());
   get.mockResolvedValue(KOFI);
   const rule = (id: number, outcome: string, amount: string) => ({ id, outcome, basis: 'flat', amount, validFrom: '2026-01-01', createdAt: '2026-01-01T00:00:00Z' });
   feeRules.mockResolvedValue({
@@ -113,6 +116,29 @@ describe('Partner drawer (M4-T32)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
     await waitFor(() => expect(update).toHaveBeenCalledWith(2, expect.objectContaining({ daysToPay: 5, dataSource: 'app', isTrial: false, vehicleType: 'Motorbike' })));
     expect(onChanged).toHaveBeenCalled();
+  });
+
+  it('saving delivery fees updates the table row from the response; a profile save does not reload the fee rules', async () => {
+    const rule = (id: number, outcome: string, amount: string) => ({ id, outcome, basis: 'flat', amount, validFrom: '2026-10-26' });
+    addFeeRules.mockResolvedValue({
+      rules: [rule(5, 'returned', '3.00'), rule(1, 'delivered', '25.00')],
+      current: { delivered: rule(1, 'delivered', '25.00'), failed: null, returned: rule(5, 'returned', '3.00') },
+      weightedFee: null, deliveredOrders: 0,
+    });
+    open();
+    await userEvent.click(await screen.findByRole('tab', { name: 'Fees' }));
+    await userEvent.type(await screen.findByLabelText('Returned delivery fee'), '3');
+    await userEvent.click(screen.getByRole('button', { name: 'Save delivery fees' }));
+    await waitFor(() => expect(onFeeRulesSaved).toHaveBeenCalledWith({ delivered: '25.00', failed: null, returned: '3.00' }));
+    expect(onChanged).not.toHaveBeenCalled(); // the page does not refetch its table
+    expect(get).toHaveBeenCalledTimes(1);
+
+    const days = screen.getByLabelText('Days to pay');
+    await userEvent.clear(days);
+    await userEvent.type(days, '5');
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    expect(feeRules).toHaveBeenCalledTimes(1); // the profile save starts the profile form again, not the fee rules
   });
 
   it('refuses days to pay that is not a whole number from 0 to 365', async () => {

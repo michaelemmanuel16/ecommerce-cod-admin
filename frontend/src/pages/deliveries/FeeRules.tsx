@@ -1,28 +1,30 @@
 import { useCallback, useEffect, useState } from 'react';
+import axios from 'axios';
 import { Button, Input, Select, Tag, Tooltip, useToast } from '../../components/ui-v2';
 import {
   deliveryPartnersService,
   type FeeBasis,
   type FeeOutcome,
-  type FeeRuleRow,
   type FeeRulesResponse,
 } from '../../services/delivery-partners.service';
 import { apiErrorMessage } from '../../utils/apiError';
 import { formatCurrency, todayYmd } from '../../utils/format';
-import { feeAmountText, FEE_OUTCOMES, FEE_OUTCOME_LABEL } from './model';
+import { DELIVERY_FEE, feeAmountText, FEE_OUTCOMES, FEE_OUTCOME_LABEL } from './model';
 
 interface FeeRulesProps {
   partnerId: number;
   /** Owner and admin write rules; the others read them. */
   canEdit: boolean;
-  /** A rule was saved: the page reloads its table (the "Delivery fee" column). */
-  onChanged: () => void;
+  /** A save went through: the page updates the partner's row from the rules in force (no table refetch). */
+  onSaved: (saved: FeeRulesResponse) => void;
 }
 
+/** One outcome's inputs and the sentence the server refused it with. */
 interface Row {
   amount: string;
   basis: FeeBasis;
   validFrom: string;
+  error?: string;
 }
 
 /** The form starts from the rule in force: its amount and basis, dated today (a new rule closes the old one on its date). */
@@ -31,23 +33,16 @@ const startRows = (data: FeeRulesResponse): Record<FeeOutcome, Row> =>
     FEE_OUTCOMES.map((o) => [o, { amount: data.current[o]?.amount ?? '', basis: data.current[o]?.basis ?? 'flat', validFrom: todayYmd() }]),
   ) as Record<FeeOutcome, Row>;
 
-const isDirty = (data: FeeRulesResponse, outcome: FeeOutcome, row: Row): boolean => {
-  const held = data.current[outcome];
-  if (row.amount.trim() === '') return false;
-  return !held || Number(held.amount) !== Number(row.amount) || held.basis !== row.basis;
-};
-
 /**
  * Delivery fee rules of one partner (F-703, M5-T32): one rule per outcome (delivered, failed, returned), the history of
- * rules, and the weighted fee over its delivered orders. A save sends one rule per changed outcome. A second rule with the
- * same date for an outcome is refused by the server, and its sentence shows under that outcome.
+ * rules, and the weighted fee over its delivered orders. Save sends the changed outcomes in one request, all or none. A second
+ * rule with the same date for an outcome is refused by the server, and its sentence shows under that outcome.
  */
-export function FeeRules({ partnerId, canEdit, onChanged }: FeeRulesProps) {
+export function FeeRules({ partnerId, canEdit, onSaved }: FeeRulesProps) {
   const say = useToast();
   const [data, setData] = useState<FeeRulesResponse | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [rows, setRows] = useState<Record<FeeOutcome, Row> | null>(null);
-  const [errors, setErrors] = useState<Partial<Record<FeeOutcome, string>>>({});
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -57,7 +52,7 @@ export function FeeRules({ partnerId, canEdit, onChanged }: FeeRulesProps) {
       setRows(startRows(loaded));
       setFailed(null);
     } catch (e) {
-      setFailed(apiErrorMessage(e, 'The delivery fee rules could not load.'));
+      setFailed(apiErrorMessage(e, `The ${DELIVERY_FEE.toLowerCase()} rules could not load.`));
     }
   }, [partnerId]);
 
@@ -66,58 +61,52 @@ export function FeeRules({ partnerId, canEdit, onChanged }: FeeRulesProps) {
   }, [load]);
 
   if (failed) return <p className="mut">{failed}</p>;
-  if (!data || !rows) return <p className="mut">Loading delivery fee rules…</p>;
+  if (!data || !rows) return <p className="mut">Loading {DELIVERY_FEE.toLowerCase()} rules…</p>;
 
-  const set = (outcome: FeeOutcome, patch: Partial<Row>) => {
-    setRows({ ...rows, [outcome]: { ...rows[outcome], ...patch } });
-    setErrors((e) => ({ ...e, [outcome]: undefined }));
-  };
-  const dirty = FEE_OUTCOMES.filter((o) => isDirty(data, o, rows[o]));
+  const set = (outcome: FeeOutcome, patch: Partial<Row>) => setRows({ ...rows, [outcome]: { ...rows[outcome], error: undefined, ...patch } });
+
+  const changed = FEE_OUTCOMES.filter((o) => {
+    const held = data.current[o];
+    const row = rows[o];
+    return row.amount.trim() !== '' && (!held || Number(held.amount) !== Number(row.amount) || held.basis !== row.basis);
+  });
 
   const save = async () => {
-    const next: Partial<Record<FeeOutcome, string>> = {};
-    for (const outcome of dirty) {
-      const row = rows[outcome];
-      const amount = Number(row.amount);
-      if (!Number.isFinite(amount) || amount < 0) {
-        next[outcome] = 'The delivery fee must be a number of 0 or more';
-        continue;
-      }
-      try {
-        await deliveryPartnersService.addFeeRule(partnerId, { outcome, basis: row.basis, amount: row.amount.trim(), validFrom: row.validFrom });
-      } catch (e) {
-        next[outcome] = apiErrorMessage(e, 'The delivery fee could not be saved.');
-      }
+    const bad = changed.filter((o) => !Number.isFinite(Number(rows[o].amount)) || Number(rows[o].amount) < 0);
+    if (bad.length > 0) {
+      setRows({ ...rows, ...Object.fromEntries(bad.map((o) => [o, { ...rows[o], error: `The ${DELIVERY_FEE.toLowerCase()} must be a number of 0 or more` }])) });
+      return;
     }
-    setErrors(next);
-    const saved = dirty.length - Object.keys(next).length;
-    if (saved > 0) {
-      say(saved === 1 ? 'Delivery fee saved' : 'Delivery fees saved');
-      onChanged();
-    }
-    // Reload from the server: the rows that saved show as the rule in force, the ones that failed keep what was typed
-    const loaded = await deliveryPartnersService.feeRules(partnerId).catch(() => null);
-    if (loaded) {
-      setData(loaded);
-      setRows((prev) => {
-        const fresh = startRows(loaded);
-        return Object.fromEntries(FEE_OUTCOMES.map((o) => [o, next[o] && prev ? prev[o] : fresh[o]])) as Record<FeeOutcome, Row>;
-      });
+    setSaving(true);
+    try {
+      const saved = await deliveryPartnersService.addFeeRules(
+        partnerId,
+        changed.map((o) => ({ outcome: o, basis: rows[o].basis, amount: rows[o].amount.trim(), validFrom: rows[o].validFrom })),
+      );
+      setData(saved);
+      setRows(startRows(saved));
+      say(changed.length === 1 ? `${DELIVERY_FEE} saved` : `${DELIVERY_FEE}s saved`);
+      onSaved(saved);
+    } catch (e) {
+      // All or none: nothing was saved. The server names the outcomes it refused; what was typed stays so the date can change.
+      const byOutcome = axios.isAxiosError(e) ? (e.response?.data?.errors as Partial<Record<FeeOutcome, string>> | undefined) : undefined;
+      if (byOutcome) setRows({ ...rows, ...Object.fromEntries(Object.entries(byOutcome).map(([o, error]) => [o, { ...rows[o as FeeOutcome], error }])) });
+      else say(apiErrorMessage(e, `The ${DELIVERY_FEE.toLowerCase()} could not be saved.`));
+    } finally {
+      setSaving(false);
     }
   };
 
-  const inForce = new Set(FEE_OUTCOMES.flatMap((o) => (data.current[o] ? [data.current[o]!.id] : [])));
-  const history: FeeRuleRow[] = [...data.rules].sort((a, b) => b.validFrom.localeCompare(a.validFrom) || a.outcome.localeCompare(b.outcome) || b.id - a.id);
   const saveButton = (
-    <Button variant="primary" disabled={!canEdit || saving || dirty.length === 0} onClick={() => { setSaving(true); void save().finally(() => setSaving(false)); }}>
-      Save delivery fees
+    <Button variant="primary" disabled={!canEdit || saving || changed.length === 0} onClick={() => void save()}>
+      Save {DELIVERY_FEE.toLowerCase()}s
     </Button>
   );
 
   return (
     <div className="dfeerules">
       <section>
-        <h4>Delivery fee</h4>
+        <h4>{DELIVERY_FEE}</h4>
         <p className="mut">What we pay this partner for each outcome. A new fee starts on its date and never changes orders already closed.</p>
         <div className="dfr-rows">
           {FEE_OUTCOMES.map((outcome) => {
@@ -126,15 +115,15 @@ export function FeeRules({ partnerId, canEdit, onChanged }: FeeRulesProps) {
             return (
               <div key={outcome} className="dfr">
                 <Input
-                  label={`${FEE_OUTCOME_LABEL[outcome]} delivery fee`}
+                  label={`${FEE_OUTCOME_LABEL[outcome]} ${DELIVERY_FEE.toLowerCase()}`}
                   type="number"
                   min={0}
                   step="0.01"
                   inputMode="decimal"
                   value={row.amount}
                   disabled={!canEdit}
-                  hint={held ? `Now ${feeAmountText(held)} since ${held.validFrom}` : 'No delivery fee yet'}
-                  error={errors[outcome]}
+                  hint={held ? `Now ${feeAmountText(held)} since ${held.validFrom}` : `No ${DELIVERY_FEE.toLowerCase()} yet`}
+                  error={row.error}
                   onChange={(e) => set(outcome, { amount: e.target.value })}
                 />
                 <Select label="Basis" value={row.basis} disabled={!canEdit} onChange={(e) => set(outcome, { basis: e.target.value as FeeBasis })}>
@@ -147,38 +136,38 @@ export function FeeRules({ partnerId, canEdit, onChanged }: FeeRulesProps) {
           })}
         </div>
         <div className="dfoot">
-          {canEdit ? saveButton : <Tooltip label="Only the owner and admins change delivery fees"><span>{saveButton}</span></Tooltip>}
+          {canEdit ? saveButton : <Tooltip label={`Only the owner and admins change ${DELIVERY_FEE.toLowerCase()}s`}><span>{saveButton}</span></Tooltip>}
         </div>
       </section>
 
       <section>
-        <h4>Weighted delivery fee</h4>
+        <h4>Weighted {DELIVERY_FEE.toLowerCase()}</h4>
         {data.weightedFee !== null ? (
           <p>
             <b>{formatCurrency(data.weightedFee)}</b> per delivered order, over {data.deliveredOrders.toLocaleString('en-GB')} delivered {data.deliveredOrders === 1 ? 'order' : 'orders'}
           </p>
         ) : (
-          <p className="mut">No delivered order with a delivery fee yet.</p>
+          <p className="mut">No delivered order with a {DELIVERY_FEE.toLowerCase()} yet.</p>
         )}
       </section>
 
       <section>
-        <h4>History of delivery fee rules</h4>
-        {history.length === 0 ? (
-          <p className="mut">No delivery fee saved yet. Orders of this partner carry a delivery fee of {formatCurrency(0)} until one is saved.</p>
+        <h4>History of {DELIVERY_FEE.toLowerCase()} rules</h4>
+        {data.rules.length === 0 ? (
+          <p className="mut">No {DELIVERY_FEE.toLowerCase()} saved yet. Orders of this partner carry a {DELIVERY_FEE.toLowerCase()} of {formatCurrency(0)} until one is saved.</p>
         ) : (
-          <div className="dfr-hist" role="region" aria-label="History of delivery fee rules" tabIndex={0}>
+          <div className="dfr-hist" role="region" aria-label={`History of ${DELIVERY_FEE.toLowerCase()} rules`} tabIndex={0}>
             <table>
               <thead>
-                <tr><th scope="col">Valid from</th><th scope="col">Outcome</th><th scope="col">Delivery fee</th><th scope="col" /></tr>
+                <tr><th scope="col">Valid from</th><th scope="col">Outcome</th><th scope="col">{DELIVERY_FEE}</th><th scope="col" /></tr>
               </thead>
               <tbody>
-                {history.map((r) => (
+                {data.rules.map((r) => (
                   <tr key={r.id}>
                     <td>{r.validFrom}</td>
                     <td>{FEE_OUTCOME_LABEL[r.outcome]}</td>
                     <td>{feeAmountText(r)}</td>
-                    <td>{inForce.has(r.id) && <Tag tone="ok">In force</Tag>}</td>
+                    <td>{data.current[r.outcome]?.id === r.id && <Tag tone="ok">In force</Tag>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -187,7 +176,7 @@ export function FeeRules({ partnerId, canEdit, onChanged }: FeeRulesProps) {
         )}
       </section>
 
-      <p className="mut">Delivery fee is what the partner keeps from the cash it collects. Expected cash = cash collected minus fees.</p>
+      <p className="mut">{DELIVERY_FEE} is what the partner keeps from the cash it collects. Expected cash = cash collected minus fees.</p>
     </div>
   );
 }

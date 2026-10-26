@@ -1,5 +1,5 @@
 import type { TagTone } from '../../components/ui-v2';
-import type { FeeBasis, FeeOutcome, FeeRule, PartnerDataSource, PartnerRow, PartnerTab, PartnerType, RateResult } from '../../services/delivery-partners.service';
+import type { FeeBasis, FeeOutcome, FeeRule, FeeRulesResponse, PartnerDataSource, PartnerRow, PartnerTab, PartnerType, RateResult } from '../../services/delivery-partners.service';
 import type { OrderStatus } from '../../types';
 import { formatCurrency } from '../../utils/format';
 import { AVATAR_TONES } from '../../utils/people';
@@ -57,6 +57,16 @@ export const rowTags = (row: Pick<PartnerRow, 'isActive' | 'isAvailable' | 'isTr
 /** The order statuses a partner's closed work ends in: they can have a delivery proof and attempts. */
 export const CLOSED_STATUSES: OrderStatus[] = ['delivered', 'failed_delivery', 'returned'];
 export const isClosed = (status: OrderStatus): boolean => CLOSED_STATUSES.includes(status);
+
+/** The one name of the fee on every screen (decision F1). */
+export const DELIVERY_FEE = 'Delivery fee';
+
+/** The fee per outcome as the table row carries it, read from the rules in force. */
+export const feeRuleOf = (current: FeeRulesResponse['current']): FeeRule => ({
+  delivered: current.delivered?.amount ?? null,
+  failed: current.failed?.amount ?? null,
+  returned: current.returned?.amount ?? null,
+});
 
 export const FEE_OUTCOMES: FeeOutcome[] = ['delivered', 'failed', 'returned'];
 export const FEE_OUTCOME_LABEL: Record<FeeOutcome, string> = { delivered: 'Delivered', failed: 'Failed', returned: 'Returned' };

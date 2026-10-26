@@ -134,7 +134,7 @@ export const CustomerReps: React.FC = () => {
       />
 
       {isPayoutModalOpen && selectedRep && (
-        <PayoutForm personId={Number(selectedRep.id)} personName={selectedRep.name} isOpen onClose={handleCloseModal} />
+        <PayoutForm personId={Number(selectedRep.id)} personName={selectedRep.name} onClose={handleCloseModal} />
       )}
     </div>
   );

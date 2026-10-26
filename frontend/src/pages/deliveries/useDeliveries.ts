@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   deliveryPartnersService,
   type FailureReasons,
+  type FeeRule,
   type PartnerList,
   type PartnerSummary,
   type PartnerTab,
@@ -93,5 +94,12 @@ export function useDeliveries(range: RangeParams, tab: PartnerTab) {
   );
   useSocketRefresh(DELIVERY_EVENTS, refetch);
 
-  return { list, summary, reasons, waiting, returns, loading, error, refetch };
+  /** A fee rule save returns the rules in force: the partner's row takes them, with no refetch of the table. */
+  const setFeeRule = useCallback(
+    (partnerId: number, feeRule: FeeRule) =>
+      setList((l) => l && { ...l, rows: l.rows.map((r) => (r.partnerId === partnerId ? { ...r, feeRule } : r)) }),
+    [],
+  );
+
+  return { list, summary, reasons, waiting, returns, loading, error, refetch, setFeeRule };
 }

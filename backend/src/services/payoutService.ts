@@ -1,6 +1,7 @@
 import { CommissionKind, PayoutKind, Prisma } from '@prisma/client';
 import { resolveTenantId } from '../utils/tenantContext';
 import { currencyOfTenant } from '../utils/currency';
+import { withSoftDeleted } from '../utils/prismaExtensions';
 import prisma, { TransactionClient } from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { GLAutomationService } from './glAutomationService';
@@ -52,6 +53,39 @@ export function allocateOldestFirst(entries: OpenEntry[], amount: Money.Money): 
   return out;
 }
 
+interface SummaryRow {
+  kind: CommissionKind;
+  status: string;
+  amount: Money.MoneyInput;
+  /** An `earned` entry never has a payout (paying it makes it `paid`); a row read without the link counts as open. */
+  payoutId?: number | null;
+}
+
+export interface Summary {
+  /** Per kind: commission (base), upsell reward, target reward. */
+  base: Money.Money;
+  upsell: Money.Money;
+  reward: Money.Money;
+  earned: Money.Money;
+  paid: Money.Money;
+  /** The one owed rule: `earned` and not yet on a payout. The form, the tab and the payout check all read this. */
+  owed: Money.Money;
+}
+
+/** Earned, paid and owed of a set of entries (only `earned` and `paid` entries count). One reducer for every screen. */
+export function summarize(rows: Iterable<SummaryRow>): Summary {
+  const t = { base: Money.ZERO, upsell: Money.ZERO, reward: Money.ZERO, earned: Money.ZERO, paid: Money.ZERO, owed: Money.ZERO };
+  for (const r of rows) {
+    if (r.status !== 'earned' && r.status !== 'paid') continue;
+    const amount = Money.parse(r.amount);
+    t[r.kind] = t[r.kind].plus(amount);
+    t.earned = t.earned.plus(amount);
+    if (r.status === 'paid') t.paid = t.paid.plus(amount);
+    else if (!r.payoutId) t.owed = t.owed.plus(amount);
+  }
+  return t;
+}
+
 /** What the lock query returns for an entry. */
 interface LockedEntry extends OpenEntry {
   userId: number;
@@ -78,10 +112,11 @@ export interface RecordPayoutInput {
 class PayoutService {
   /** The payee, and the kind of payout they get. AI agents and companies get none. */
   private async loadPayee(tx: TransactionClient | typeof prisma, payeeId: number) {
-    const payee = await tx.user.findFirst({
+    // Soft delete skipped: a person who left (inactive) can still be owed, and paid
+    const payee = await withSoftDeleted(() => tx.user.findFirst({
       where: { id: payeeId },
-      select: { id: true, tenantId: true, firstName: true, lastName: true, role: true, kind: true, isActive: true },
-    });
+      select: { id: true, tenantId: true, firstName: true, lastName: true, role: true, kind: true },
+    }));
     if (!payee) throw new AppError('Person not found', 404);
     if (payee.kind === 'ai_agent') throw new AppError('No payout for AI agents', 400);
     if (payee.kind !== 'person') throw new AppError('Only people are paid through a payout', 400);
@@ -97,22 +132,16 @@ class PayoutService {
       orderBy: [{ earnedAt: 'asc' }, { id: 'asc' }],
       select: { id: true, orderId: true, kind: true, status: true, amount: true, earnedAt: true, payoutId: true },
     });
-    const total = { base: Money.ZERO, upsell: Money.ZERO, reward: Money.ZERO, paid: Money.ZERO, owed: Money.ZERO };
-    const entries: Array<{ id: number; orderId: number | null; kind: CommissionKind; amount: Money.Money; earnedAt: Date | null }> = [];
-    for (const r of rows) {
-      total[r.kind] = total[r.kind].plus(r.amount);
-      if (r.status === 'paid') total.paid = total.paid.plus(r.amount);
-      else if (r.payoutId === null) {
-        total.owed = total.owed.plus(r.amount);
-        entries.push({ id: r.id, orderId: r.orderId, kind: r.kind, amount: r.amount, earnedAt: r.earnedAt });
-      }
-    }
+    const total = summarize(rows);
+    const entries = rows
+      .filter((r) => r.status === 'earned' && r.payoutId === null)
+      .map((r) => ({ id: r.id, orderId: r.orderId, kind: r.kind, amount: r.amount, earnedAt: r.earnedAt }));
     return {
-      payee: { id: payee.id, firstName: payee.firstName, lastName: payee.lastName, role: payee.role, kind: payee.payoutKind },
+      payee: { id: payee.id, firstName: payee.firstName, lastName: payee.lastName, kind: payee.payoutKind },
       commission: total.base,
       upsellReward: total.upsell,
       targetReward: total.reward,
-      earned: total.base.plus(total.upsell).plus(total.reward),
+      earned: total.earned,
       paid: total.paid,
       owed: total.owed,
       entries,
@@ -120,41 +149,70 @@ class PayoutService {
   }
 
   /**
-   * The Rep commissions tab (F-914): one row per rep with what was earned, paid and is owed. Reps with no entry yet still show
-   * (owed 0). Delivery agents and companies are not listed; an agent's target reward is paid from the Staff form.
+   * The Rep commissions tab (F-914): one row per rep with what was earned, paid and is owed, and what was paid in `month`
+   * (YYYY-MM, this month by default). Reps with no entry yet still show (owed 0). Inactive reps show only while they are
+   * still owed something, unless `includeInactive`. Delivery agents and companies are not listed. `totals` add up the rows.
    */
-  async listOwed() {
-    const [reps, sums, lastPaid] = await Promise.all([
-      prisma.user.findMany({
-        where: { kind: 'person', role: { not: 'delivery_agent' }, OR: [{ role: 'sales_rep' }, { commissionEntries: { some: { status: { in: ['earned', 'paid'] } } } }] },
-        select: { id: true, firstName: true, lastName: true, role: true, isActive: true },
-        orderBy: [{ firstName: 'asc' }, { id: 'asc' }],
-      }),
+  async listOwed(opts: { month?: string; includeInactive?: boolean } = {}) {
+    const month = opts.month ?? new Date().toISOString().slice(0, 7);
+    const [year, mon] = month.split('-').map(Number);
+    const from = new Date(Date.UTC(year, mon - 1, 1));
+    const to = new Date(Date.UTC(year, mon, 1));
+
+    const candidates = await withSoftDeleted(() => prisma.user.findMany({
+      where: { kind: 'person', role: { not: 'delivery_agent' }, OR: [{ role: 'sales_rep' }, { commissionEntries: { some: { status: { in: ['earned', 'paid'] } } } }] },
+      select: { id: true, firstName: true, lastName: true, isActive: true },
+      orderBy: [{ firstName: 'asc' }, { id: 'asc' }],
+    }));
+    const ids = candidates.map((c) => c.id);
+    const [sums, lastPaid, inMonth] = await Promise.all([
       prisma.commissionEntry.groupBy({
         by: ['userId', 'kind', 'status'],
-        where: { status: { in: ['earned', 'paid'] } },
+        where: { userId: { in: ids }, status: { in: ['earned', 'paid'] } },
         _sum: { amount: true },
         _count: { _all: true },
       }),
-      prisma.payout.groupBy({ by: ['payeeId'], where: { kind: 'rep' }, _max: { payoutDate: true } }),
+      prisma.payout.groupBy({ by: ['payeeId'], where: { payeeId: { in: ids }, kind: 'rep' }, _max: { payoutDate: true } }),
+      prisma.payout.groupBy({ by: ['payeeId'], where: { payeeId: { in: ids }, kind: 'rep', payoutDate: { gte: from, lt: to } }, _sum: { amount: true } }),
     ]);
+    // Bucket the grouped rows once, by rep
+    const byRep = new Map<number, typeof sums>();
+    for (const row of sums) byRep.set(row.userId, [...(byRep.get(row.userId) ?? []), row]);
     const last = new Map(lastPaid.map((p) => [p.payeeId, p._max.payoutDate]));
-    return {
-      reps: reps.map((rep) => {
-        const mine = sums.filter((r) => r.userId === rep.id);
-        const sum = (f: (r: (typeof mine)[number]) => boolean) => Money.sum(mine.filter(f).map((r) => r._sum.amount ?? Money.ZERO));
+    const paidIn = new Map(inMonth.map((p) => [p.payeeId, Money.orZero(p._sum.amount)]));
+
+    const reps = candidates
+      .map(({ isActive, ...rep }) => {
+        const mine = byRep.get(rep.id) ?? [];
+        const total = summarize(mine.map((r) => ({ kind: r.kind, status: r.status, amount: r._sum.amount ?? Money.ZERO })));
         return {
-          ...rep,
-          delivered: mine.filter((r) => r.kind === 'base').reduce((n, r) => n + r._count._all, 0),
-          commission: sum((r) => r.kind === 'base'),
-          upsellReward: sum((r) => r.kind === 'upsell'),
-          targetReward: sum((r) => r.kind === 'reward'),
-          earned: sum(() => true),
-          paid: sum((r) => r.status === 'paid'),
-          owed: sum((r) => r.status === 'earned'),
-          lastPayout: last.get(rep.id) ?? null,
+          active: isActive,
+          row: {
+            ...rep,
+            delivered: mine.filter((r) => r.kind === 'base').reduce((n, r) => n + r._count._all, 0),
+            commission: total.base,
+            upsellReward: total.upsell,
+            targetReward: total.reward,
+            earned: total.earned,
+            paid: total.paid,
+            owed: total.owed,
+            paidInMonth: paidIn.get(rep.id) ?? Money.ZERO,
+            lastPayout: last.get(rep.id) ?? null,
+          },
         };
-      }),
+      })
+      .filter((r) => opts.includeInactive || r.active || r.row.owed.gt(0))
+      .map((r) => r.row);
+
+    return {
+      month,
+      reps,
+      totals: {
+        owed: Money.sum(reps.map((r) => r.owed)),
+        paid: Money.sum(reps.map((r) => r.paid)),
+        paidInMonth: Money.sum(reps.map((r) => r.paidInMonth)),
+        repsOwed: reps.filter((r) => r.owed.gt(0)).length,
+      },
     };
   }
 
@@ -214,7 +272,7 @@ class PayoutService {
           if (rewardOnly && entry.kind !== 'reward') throw new AppError('Delivery agents are paid target rewards only', 400);
         }
 
-        const owed = Money.sum(locked.map((e) => e.amount));
+        const owed = summarize(locked).owed;
         if (!owed.gt(0)) {
           const hasPaid = await tx.commissionEntry.count({ where: { userId: payee.id, status: 'paid', ...(rewardOnly ? { kind: 'reward' } : {}) } });
           if (hasPaid > 0) throw new AppError('Already paid', 409);

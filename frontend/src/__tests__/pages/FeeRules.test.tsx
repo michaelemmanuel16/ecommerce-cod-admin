@@ -8,49 +8,51 @@ import { useConfigStore } from '../../stores/configStore';
 import type { FeeOutcome, FeeRulesResponse } from '../../services/delivery-partners.service';
 
 const feeRules = vi.fn();
-const addFeeRule = vi.fn();
+const addFeeRules = vi.fn();
 vi.mock('../../services/delivery-partners.service', async (orig) => ({
   ...(await orig<typeof import('../../services/delivery-partners.service')>()),
-  deliveryPartnersService: { feeRules: (...a: unknown[]) => feeRules(...a), addFeeRule: (...a: unknown[]) => addFeeRule(...a) },
+  deliveryPartnersService: { feeRules: (...a: unknown[]) => feeRules(...a), addFeeRules: (...a: unknown[]) => addFeeRules(...a) },
 }));
 
 const rule = (id: number, outcome: FeeOutcome, amount: string, validFrom = '2026-01-01', basis: 'flat' | 'percent' = 'flat') =>
-  ({ id, outcome, basis, amount, validFrom, createdAt: `${validFrom}T00:00:00Z` });
+  ({ id, outcome, basis, amount, validFrom });
 
 const EMPTY: FeeRulesResponse = { rules: [], current: { delivered: null, failed: null, returned: null }, weightedFee: null, deliveredOrders: 0 };
 
-const onChanged = vi.fn();
+const onSaved = vi.fn();
 const open = (canEdit = true) =>
-  render(<ToastProvider><FeeRules partnerId={2} canEdit={canEdit} onChanged={onChanged} /></ToastProvider>);
+  render(<ToastProvider><FeeRules partnerId={2} canEdit={canEdit} onSaved={onSaved} /></ToastProvider>);
 
-/** A 409 as the COD-48 fee rule API sends it. */
-const conflict = (message: string) => Object.assign(new axios.AxiosError('conflict'), { response: { status: 409, data: { error: message } } });
+/** A 409 as the fee rule API sends it: the first sentence and the sentences per outcome. */
+const conflict = (errors: Partial<Record<FeeOutcome, string>>) =>
+  Object.assign(new axios.AxiosError('conflict'), { response: { status: 409, data: { error: Object.values(errors)[0], errors } } });
 
 beforeEach(() => {
-  [feeRules, addFeeRule, onChanged].forEach((m) => m.mockReset());
+  [feeRules, addFeeRules, onSaved].forEach((m) => m.mockReset());
   useConfigStore.setState({ currency: 'GHS' });
   feeRules.mockResolvedValue(EMPTY);
 });
 
 describe('FeeRules (M5-T32, F-703)', () => {
-  it('the owner sets Kofi to 25 delivered and 5 failed, and both are sent and shown as saved', async () => {
+  it('the owner sets Kofi to 25 delivered and 5 failed: one request with both, and both show as saved', async () => {
     const saved: FeeRulesResponse = {
-      rules: [rule(2, 'failed', '5.00', '2026-10-26'), rule(1, 'delivered', '25.00', '2026-10-26')],
+      rules: [rule(1, 'delivered', '25.00', '2026-10-26'), rule(2, 'failed', '5.00', '2026-10-26')],
       current: { delivered: rule(1, 'delivered', '25.00', '2026-10-26'), failed: rule(2, 'failed', '5.00', '2026-10-26'), returned: null },
       weightedFee: null, deliveredOrders: 0,
     };
-    feeRules.mockResolvedValueOnce(EMPTY).mockResolvedValue(saved);
-    addFeeRule.mockResolvedValue({});
+    addFeeRules.mockResolvedValue(saved);
     open();
     await userEvent.type(await screen.findByLabelText('Delivered delivery fee'), '25');
     await userEvent.type(screen.getByLabelText('Failed delivery fee'), '5');
     await userEvent.click(screen.getByRole('button', { name: 'Save delivery fees' }));
 
-    await waitFor(() => expect(addFeeRule).toHaveBeenCalledTimes(2));
-    expect(addFeeRule).toHaveBeenCalledWith(2, expect.objectContaining({ outcome: 'delivered', basis: 'flat', amount: '25' }));
-    expect(addFeeRule).toHaveBeenCalledWith(2, expect.objectContaining({ outcome: 'failed', basis: 'flat', amount: '5' }));
-    expect(onChanged).toHaveBeenCalled();
-    // Both show as saved: the rule in force under each field, and in the history with the "In force" tag
+    await waitFor(() => expect(addFeeRules).toHaveBeenCalledTimes(1));
+    expect(addFeeRules).toHaveBeenCalledWith(2, [
+      expect.objectContaining({ outcome: 'delivered', basis: 'flat', amount: '25' }),
+      expect.objectContaining({ outcome: 'failed', basis: 'flat', amount: '5' }),
+    ]);
+    expect(onSaved).toHaveBeenCalledWith(saved); // the page takes the rules in force from the response: no reload of the list
+    expect(feeRules).toHaveBeenCalledTimes(1);
     expect(await screen.findByText(/Now GH₵25 since 2026-10-26/)).toBeInTheDocument();
     expect(screen.getByText(/Now GH₵5 since 2026-10-26/)).toBeInTheDocument();
     const history = screen.getByRole('region', { name: 'History of delivery fee rules' });
@@ -63,7 +65,7 @@ describe('FeeRules (M5-T32, F-703)', () => {
       current: { delivered: rule(1, 'delivered', '25.00'), failed: rule(2, 'failed', '5.00'), returned: null },
       weightedFee: null, deliveredOrders: 0,
     });
-    addFeeRule.mockResolvedValue({});
+    addFeeRules.mockResolvedValue(EMPTY);
     open();
     expect(await screen.findByLabelText('Delivered delivery fee')).toHaveValue(25);
     expect(screen.getByLabelText('Failed delivery fee')).toHaveValue(5);
@@ -72,11 +74,11 @@ describe('FeeRules (M5-T32, F-703)', () => {
 
     await userEvent.type(screen.getByLabelText('Returned delivery fee'), '3');
     await userEvent.click(screen.getByRole('button', { name: 'Save delivery fees' }));
-    await waitFor(() => expect(addFeeRule).toHaveBeenCalledTimes(1));
-    expect(addFeeRule).toHaveBeenCalledWith(2, expect.objectContaining({ outcome: 'returned', amount: '3' }));
+    await waitFor(() => expect(addFeeRules).toHaveBeenCalledTimes(1));
+    expect(addFeeRules).toHaveBeenCalledWith(2, [expect.objectContaining({ outcome: 'returned', amount: '3' })]);
   });
 
-  it('shows the history of rules, newest first, with the one in force tagged', async () => {
+  it('shows the history in the order the server sends it, with the rule in force tagged', async () => {
     feeRules.mockResolvedValue({
       rules: [rule(3, 'delivered', '30.00', '2026-06-01'), rule(1, 'delivered', '25.00', '2026-01-01'), rule(2, 'failed', '10', '2026-02-01', 'percent')],
       current: { delivered: rule(3, 'delivered', '30.00', '2026-06-01'), failed: rule(2, 'failed', '10', '2026-02-01', 'percent'), returned: null },
@@ -87,10 +89,12 @@ describe('FeeRules (M5-T32, F-703)', () => {
     const rows = within(history).getAllByRole('row').slice(1);
     expect(rows.map((r) => within(r).getAllByRole('cell').slice(0, 3).map((c) => c.textContent))).toEqual([
       ['2026-06-01', 'Delivered', 'GH₵30'],
-      ['2026-02-01', 'Failed', '10%'],
       ['2026-01-01', 'Delivered', 'GH₵25'],
+      ['2026-02-01', 'Failed', '10%'],
     ]);
-    expect(within(history).getAllByText('In force')).toHaveLength(2);
+    expect(within(rows[0]).getByText('In force')).toBeInTheDocument();
+    expect(within(rows[1]).queryByText('In force')).not.toBeInTheDocument();
+    expect(within(rows[2]).getByText('In force')).toBeInTheDocument();
   });
 
   it('shows the weighted delivery fee over the delivered orders', async () => {
@@ -105,21 +109,23 @@ describe('FeeRules (M5-T32, F-703)', () => {
     expect(await screen.findByText('No delivered order with a delivery fee yet.')).toBeInTheDocument();
   });
 
-  it('a second rule with the same date shows the server message under that outcome', async () => {
+  it('a second rule with the same date shows the server message under that outcome, and nothing is saved', async () => {
     feeRules.mockResolvedValue({
       rules: [rule(1, 'delivered', '25.00', '2026-10-26')],
       current: { delivered: rule(1, 'delivered', '25.00', '2026-10-26'), failed: null, returned: null },
       weightedFee: null, deliveredOrders: 0,
     });
-    addFeeRule.mockRejectedValue(conflict('This partner already has a delivered fee rule from 2026-10-26'));
+    addFeeRules.mockRejectedValue(conflict({ delivered: 'This partner already has a delivered fee rule from 2026-10-26' }));
     open();
     const field = await screen.findByLabelText('Delivered delivery fee');
     await userEvent.clear(field);
     await userEvent.type(field, '30');
+    await userEvent.type(screen.getByLabelText('Failed delivery fee'), '4');
     await userEvent.click(screen.getByRole('button', { name: 'Save delivery fees' }));
     expect(await screen.findByText('This partner already has a delivered fee rule from 2026-10-26')).toBeInTheDocument();
     expect(field).toHaveValue(30); // what was typed stays, so the owner can pick another date
-    expect(onChanged).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Failed delivery fee')).toHaveValue(4);
+    expect(onSaved).not.toHaveBeenCalled();
   });
 
   it('says "delivery fee" and never "fee rule", "agent fee" or "agent pay" on screen', async () => {
@@ -144,6 +150,6 @@ describe('FeeRules (M5-T32, F-703)', () => {
     await userEvent.type(await screen.findByLabelText('Delivered delivery fee'), '-4');
     await userEvent.click(screen.getByRole('button', { name: 'Save delivery fees' }));
     expect(await screen.findByText('The delivery fee must be a number of 0 or more')).toBeInTheDocument();
-    expect(addFeeRule).not.toHaveBeenCalled();
+    expect(addFeeRules).not.toHaveBeenCalled();
   });
 });

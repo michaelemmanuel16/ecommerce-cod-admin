@@ -32,7 +32,6 @@ export interface FeeRuleRow {
   basis: FeeBasis;
   amount: string;
   validFrom: string;
-  createdAt: string;
 }
 
 export interface FeeRulesResponse {
@@ -268,10 +267,13 @@ export const deliveryPartnersService = {
     return response.data;
   },
 
-  /** One rule for one outcome from a date. A second rule with the same date is refused with a 409 sentence. `quiet`: the form shows it. */
-  async addFeeRule(id: number, rule: NewFeeRule): Promise<FeeRuleRow> {
-    const response = await apiClient.post(`/api/delivery-partners/${id}/fee-rules`, rule, { quiet: true });
-    return response.data.rule;
+  /**
+   * The changed outcomes in one request, all or none. The answer is the list as `feeRules` gives it. A refusal (a second rule
+   * with the same date, a bad value) is a 4xx whose body has `errors` per outcome; `quiet`: the form shows them.
+   */
+  async addFeeRules(id: number, rules: NewFeeRule[]): Promise<FeeRulesResponse> {
+    const response = await apiClient.post(`/api/delivery-partners/${id}/fee-rules`, { rules }, { quiet: true });
+    return response.data;
   },
 
   async create(body: NewPartner): Promise<PartnerDetail> {

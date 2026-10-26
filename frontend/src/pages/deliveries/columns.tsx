@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Tag, type Column } from '../../components/ui-v2';
 import type { PartnerRow, PartnerTotal } from '../../services/delivery-partners.service';
 import { initials } from '../../utils/people';
-import { count, DATA_SOURCE_LABEL, days, feeRuleText, rowTags, toneOf, TYPE_LABEL, TYPE_TONE } from './model';
+import { count, DATA_SOURCE_LABEL, DELIVERY_FEE, days, feeRuleText, rowTags, toneOf, TYPE_LABEL, TYPE_TONE } from './model';
 import { AvailabilitySwitch } from './AvailabilitySwitch';
 import { SuccessBar } from './SuccessBar';
 
@@ -65,12 +65,12 @@ export function buildColumns({ target, total, canSwitch, onSwitch }: ColumnConte
     },
     {
       key: 'fee',
-      header: <>Delivery fee <small>(delivered · failed · returned)</small></>,
+      header: <>{DELIVERY_FEE} <small>(delivered · failed · returned)</small></>,
       render: (p) => {
         // A role without financial:view gets no fee rule from the API at all
         if (p.feeRule === undefined) return dash;
         const text = feeRuleText(p.feeRule);
-        return text ? <span className="num">{text}</span> : <Tag>No delivery fee</Tag>;
+        return text ? <span className="num">{text}</span> : <Tag>No {DELIVERY_FEE.toLowerCase()}</Tag>;
       },
     },
     { key: 'source', header: 'Data source', render: (p) => <Tag>{DATA_SOURCE_LABEL[p.dataSource]}</Tag> },
