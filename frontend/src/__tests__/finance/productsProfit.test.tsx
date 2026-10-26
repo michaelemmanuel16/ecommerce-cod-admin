@@ -16,15 +16,15 @@ import { useAuthStore } from '../../stores/authStore';
 import { useConfigStore } from '../../stores/configStore';
 import { useFinancialStore } from '../../stores/financialStore';
 import { reportsFixture, withoutCompare } from '../fixtures/reports';
-import { balanceSheet, cohortProfit, failedCost, incomeStatement, monthlyPl, profitByProduct } from '../fixtures/financeProfit';
+import { balanceSheet, cohortProfit, failedCost, incomeStatement, monthlyPl, profitByProduct, profitTrend } from '../fixtures/financeProfit';
 
 const svc = {
-  monthlyPl: vi.fn(), incomeStatement: vi.fn(), balanceSheet: vi.fn(), profitByProduct: vi.fn(), cohortProfit: vi.fn(), failedDeliveryCost: vi.fn(),
+  monthlyPl: vi.fn(), incomeStatement: vi.fn(), balanceSheet: vi.fn(), profitByProduct: vi.fn(), profitTrend: vi.fn(), cohortProfit: vi.fn(), failedDeliveryCost: vi.fn(),
 };
 vi.mock('../../services/financeReports.service', () => ({
   financeReportsService: {
     monthlyPl: (...a: unknown[]) => svc.monthlyPl(...a), incomeStatement: (...a: unknown[]) => svc.incomeStatement(...a),
-    balanceSheet: (...a: unknown[]) => svc.balanceSheet(...a), profitByProduct: (...a: unknown[]) => svc.profitByProduct(...a),
+    balanceSheet: (...a: unknown[]) => svc.balanceSheet(...a), profitByProduct: (...a: unknown[]) => svc.profitByProduct(...a), profitTrend: (...a: unknown[]) => svc.profitTrend(...a),
     cohortProfit: (...a: unknown[]) => svc.cohortProfit(...a), failedDeliveryCost: (...a: unknown[]) => svc.failedDeliveryCost(...a),
   },
 }));
@@ -48,6 +48,7 @@ beforeEach(() => {
   svc.incomeStatement.mockResolvedValue(incomeStatement());
   svc.balanceSheet.mockResolvedValue(balanceSheet());
   svc.profitByProduct.mockResolvedValue(profitByProduct());
+  svc.profitTrend.mockResolvedValue(profitTrend());
   svc.cohortProfit.mockResolvedValue(cohortProfit());
   svc.failedDeliveryCost.mockResolvedValue(failedCost());
 });

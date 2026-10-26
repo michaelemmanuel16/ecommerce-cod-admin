@@ -145,6 +145,27 @@ describe('F-924 profit by product', () => {
   it('needs from and to', async () => {
     expect((await request(app).get('/api/financial/profit-by-product').set(auth(ownerA))).status).toBe(400);
   });
+
+  it('trend: profit of each product for the last 3 months equals the table, the current month to date', async () => {
+    const res = await request(app).get('/api/financial/profit-by-product/trend?months=3&asOf=2026-10-17').set(auth(ownerA));
+    expect(res.status).toBe(200);
+    expect(res.body.months.map((m: any) => [m.label, m.from, m.to])).toEqual([
+      ['Aug', '2026-08-01', '2026-08-31'], ['Sep', '2026-09-01', '2026-09-30'], ['Oct', '2026-10-01', '2026-10-17'],
+    ]);
+    const table = (await get('profit-by-product', ownerA, '2026-10-01', '2026-10-17')).body.products[0];
+    const copybook = res.body.products.find((p: any) => p.productId === copybookId);
+    expect(copybook.profits).toEqual(['0.00', '0.00', table.profit]);
+    expect(copybook.profits[2]).toBe('67800.00');
+    // tenant B's order never shows in A's trend
+    expect(JSON.stringify(res.body)).not.toContain('BCOPY');
+  });
+
+  it('trend: a month with a missing cost has null profit; bad months or asOf is a 400', async () => {
+    const nov = (await request(app).get('/api/financial/profit-by-product/trend?months=1&asOf=2026-11-30').set(auth(ownerA))).body;
+    expect(nov.products.find((p: any) => p.name === 'PENS').profits).toEqual([null]);
+    expect((await request(app).get('/api/financial/profit-by-product/trend?months=0').set(auth(ownerA))).status).toBe(400);
+    expect((await request(app).get('/api/financial/profit-by-product/trend?asOf=nope').set(auth(ownerA))).status).toBe(400);
+  });
 });
 
 describe('F-925 order cohort card', () => {

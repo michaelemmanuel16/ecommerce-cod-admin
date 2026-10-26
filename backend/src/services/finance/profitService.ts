@@ -8,11 +8,11 @@
 import prisma from '../../utils/prisma';
 import * as Money from '../../utils/money';
 import { GL_ACCOUNTS } from '../../config/glAccounts';
-import { getStoreTimeZone, localDate } from '../kpi/dates';
+import { daysInMonth, getStoreTimeZone, localDate, parseBound, parseYmd } from '../kpi/dates';
 import { getTenantId, resolveTenantId } from '../../utils/tenantContext';
 import { rates } from '../kpi/rates';
 import { resolveFee } from '../feeRuleService';
-import { incomeStatementOver, TARGET_NET_MARGIN } from './statementsService';
+import { incomeStatementOver, MONTH_NAMES, monthsBefore, TARGET_NET_MARGIN, ymdOf } from './statementsService';
 
 const COST_MISSING = 'Cost missing';
 
@@ -181,6 +181,41 @@ export async function profitByProduct(from: Date, to: Date): Promise<ProfitByPro
     profitPerDeliveredOrder: delivered > 0 ? Money.toApi(Money.roundHalfUp(Money.div(statement.netProfit, delivered), 2)) : null,
     costMissingProducts: rows.filter((r) => r.costMissing).length,
   };
+}
+
+export interface ProfitTrend {
+  months: Array<{ key: string; label: string; from: string; to: string }>;
+  /** One row per product that was delivered in any of the months. `profits[i]` is the profit of `months[i]`, or null when its cost is missing. */
+  products: Array<{ productId: number; name: string; revenue: string; profits: Array<string | null> }>;
+}
+
+/**
+ * Profit by product for the last `months` calendar months, the current one to date (the Finance chart "Profit by product,
+ * last 3 months"). Each month is one `profitByProduct` answer, so the figures equal the table for the same dates.
+ */
+export async function profitTrendByProduct(opts: { months?: number; asOf?: string } = {}): Promise<ProfitTrend> {
+  const zone = getStoreTimeZone(getTenantId());
+  const { year, month, day } = parseYmd(opts.asOf ?? localDate(new Date(), zone));
+  const count = Math.min(Math.max(Math.trunc(opts.months ?? 3), 1), 12);
+  const months = Array.from({ length: count }, (_, i) => {
+    const m = monthsBefore(year, month, count - 1 - i);
+    const last = i === count - 1 ? day : daysInMonth(m.year, m.month);
+    return { key: `${m.year}-${String(m.month).padStart(2, '0')}`, label: MONTH_NAMES[m.month - 1], from: ymdOf(m.year, m.month, 1), to: ymdOf(m.year, m.month, last) };
+  });
+  const answers = await Promise.all(months.map((m) => profitByProduct(parseBound(m.from, 'from', zone), parseBound(m.to, 'to', zone))));
+  const byProduct = new Map<number, { name: string; revenue: Money.Money; profits: Array<string | null> }>();
+  answers.forEach((answer, i) => {
+    for (const row of answer.products) {
+      let p = byProduct.get(row.productId);
+      if (!p) byProduct.set(row.productId, (p = { name: row.name, revenue: Money.ZERO, profits: months.map(() => Money.toApi(Money.ZERO)) }));
+      p.revenue = Money.add(p.revenue, row.revenue);
+      p.profits[i] = row.profit;
+    }
+  });
+  const products = [...byProduct.entries()]
+    .map(([productId, p]) => ({ productId, name: p.name, revenue: Money.toApi(p.revenue), profits: p.profits }))
+    .sort((x, y) => Money.compare(y.revenue, x.revenue) || x.productId - y.productId);
+  return { months, products };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

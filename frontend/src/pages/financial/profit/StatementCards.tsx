@@ -1,4 +1,3 @@
-import { Download } from 'lucide-react';
 import { Button, Card, Tag } from '../../../components/ui-v2';
 import type { BalanceSheetStatement, IncomeStatement } from '../../../services/financeReports.service';
 import { parseMoney } from '../../../utils/money';
@@ -13,7 +12,7 @@ export function IncomeStatementCard({ block }: { block: FinanceBlock<IncomeState
   return (
     <Part name="Income statement" block={block} height={380}>
       {(s) => (
-        <Card title="Income statement" aside={rangeLabel(s.from, s.to)} className="fincard">
+        <Card title="Income statement" aside={<>{rangeLabel(s.from, s.to)}<ExportButton name="income statement" /></>} className="fincard">
           <div className="tablewrap">
             <table className="dt" aria-label="Income statement">
               <tbody>
@@ -41,7 +40,7 @@ export function BalanceSheetCard({ block }: { block: FinanceBlock<BalanceSheetSt
   return (
     <Part name="Balance sheet" block={block} height={380}>
       {(b) => (
-        <Card title="Balance sheet" aside={`At ${shortDay(b.asOf)}`} className="fincard">
+        <Card title="Balance sheet" aside={<>{`At ${shortDay(b.asOf)}`}<ExportButton name="balance sheet" /></>} className="fincard">
           <div className="tablewrap">
             <table className="dt" aria-label="Balance sheet">
               <tbody>
@@ -71,7 +70,7 @@ export function BalanceSheetCard({ block }: { block: FinanceBlock<BalanceSheetSt
   );
 }
 
-/** The PDF of the statements is the browser's print dialog, as before (F-922): Save as PDF there. */
-export function ExportPdfButton() {
-  return <Button onClick={() => window.print()}><Download />Export PDF</Button>;
+/** Export on each statement card (F-922). The PDF is the browser's print dialog, as before: Save as PDF there. */
+function ExportButton({ name }: { name: string }) {
+  return <Button size="mini" className="cardexport" aria-label={`Export ${name}`} onClick={() => window.print()}>Export</Button>;
 }

@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { Modal } from '../../ui/Modal';
-import { Button } from '../../ui/Button';
+import { Button, Modal } from '../../ui-v2';
 import { financialService } from '../../../services/financial.service';
 
 interface VoidJournalModalProps {
@@ -32,19 +31,24 @@ export const VoidJournalModal: React.FC<VoidJournalModalProps> = ({ entry, onClo
     };
 
     return (
-        <Modal closeOnEscape isOpen={!!entry} onClose={onClose} title={`Void ${entry?.entryNumber ?? ''}`} size="sm">
-            <form onSubmit={submit} className="space-y-4">
-                <p className="text-sm text-gray-600">A reversing entry is posted. The original stays in the ledger, marked as voided.</p>
-                <div>
-                    <label htmlFor="void-reason" className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
-                    <textarea id="void-reason" required minLength={3} maxLength={500} rows={3} value={reason}
-                        onChange={(e) => setReason(e.target.value)} className="w-full border border-gray-300 rounded-md p-2" />
+        <Modal
+            open={!!entry}
+            onClose={onClose}
+            title={`Void ${entry?.entryNumber ?? ''}`}
+            description="A reversing entry is posted. The original stays in the ledger, marked as voided."
+            footer={
+                <>
+                    <Button onClick={onClose}>Cancel</Button>
+                    <Button type="submit" form="void-journal-form" variant="danger" disabled={busy || reason.trim().length < 3}>{busy ? 'Voiding...' : 'Void entry'}</Button>
+                </>
+            }
+        >
+            <form id="void-journal-form" onSubmit={submit} className="fform">
+                <div className="fl">
+                    <label htmlFor="void-reason">Reason</label>
+                    <textarea id="void-reason" required minLength={3} maxLength={500} rows={3} value={reason} onChange={(e) => setReason(e.target.value)} />
                 </div>
-                {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
-                <div className="flex justify-end gap-3">
-                    <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-                    <Button type="submit" variant="danger" disabled={busy || reason.trim().length < 3}>{busy ? 'Voiding...' : 'Void entry'}</Button>
-                </div>
+                {error && <p role="alert" className="err">{error}</p>}
             </form>
         </Modal>
     );

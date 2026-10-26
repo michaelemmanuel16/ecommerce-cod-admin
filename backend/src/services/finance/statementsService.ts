@@ -21,7 +21,7 @@ export const DEFAULT_PERIOD_NOTES: Record<string, string> = {
   '2026-09': 'Booked with the older cost per set. Not restated.',
 };
 
-const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+export const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export interface LedgerAccount {
   id: number;
@@ -247,11 +247,11 @@ export interface MonthlyPl {
   columns: PlColumn[];
 }
 
-const ymdOf = (year: number, month: number, day: number) =>
+export const ymdOf = (year: number, month: number, day: number) =>
   `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
 /** Year and month n months before (year, month). */
-function monthsBefore(year: number, month: number, n: number) {
+export function monthsBefore(year: number, month: number, n: number) {
   const index = year * 12 + (month - 1) - n;
   return { year: Math.floor(index / 12), month: (index % 12) + 1 };
 }

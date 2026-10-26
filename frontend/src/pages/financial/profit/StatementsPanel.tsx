@@ -1,4 +1,4 @@
-import { BalanceSheetCard, ExportPdfButton, IncomeStatementCard } from './StatementCards';
+import { BalanceSheetCard, IncomeStatementCard } from './StatementCards';
 import { MonthlyPlCard } from './MonthlyPlCard';
 import { useBalanceSheet, useIncomeStatement, useMonthlyPl } from './blocks';
 import { useFinanceRange } from './range';
@@ -11,7 +11,6 @@ export function StatementsPanel() {
   const monthly = useMonthlyPl();
   return (
     <div className="fin">
-      <div className="fintools"><ExportPdfButton /></div>
       <div className="grid two even">
         <IncomeStatementCard block={income} />
         <BalanceSheetCard block={balance} />

@@ -54,6 +54,17 @@ const hoverReason = (button: HTMLElement, reason: string) => {
   expect(screen.getAllByText(reason)).toHaveLength(2);
 };
 
+/** A v2 guarded button: aria-disabled (it keeps focus), and its reason in a tooltip that shows on hover. */
+const inertWithReason = (button: HTMLElement, reason: string) => {
+  expect(button).toHaveAttribute('aria-disabled', 'true');
+  const wrap = button.closest('.tip') as HTMLElement;
+  const bubble = wrap.querySelector('[role="tooltip"]') as HTMLElement;
+  expect(bubble).toHaveTextContent(reason);
+  expect(bubble).toHaveAttribute('hidden');
+  fireEvent.mouseEnter(wrap);
+  expect(bubble).not.toHaveAttribute('hidden');
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   perms.granted = new Set(ALL);
@@ -92,19 +103,19 @@ describe('GuardedButton without the permission', () => {
 describe('journal entry modal', () => {
   const open = async () => {
     render(<JournalEntryModal isOpen onClose={() => {}} onSuccess={() => {}} />);
-    await screen.findAllByText(/1010 - Cash/);
+    await screen.findAllByText(/1010 Cash/);
   };
   const fill = (rows: Array<[string, string, string]>) => {
     const selects = screen.getAllByRole('combobox');
-    const debit = screen.getAllByPlaceholderText('Debit');
-    const credit = screen.getAllByPlaceholderText('Credit');
+    const debit = screen.getAllByLabelText('Debit');
+    const credit = screen.getAllByLabelText('Credit');
     rows.forEach(([account, dr, cr], i) => {
       fireEvent.change(selects[i], { target: { value: account } });
       fireEvent.change(debit[i], { target: { value: dr } });
       fireEvent.change(credit[i], { target: { value: cr } });
     });
   };
-  const post = () => screen.getByRole('button', { name: /Post Journal Entry/ });
+  const post = () => screen.getByRole('button', { name: /Post entry/ });
 
   it('shows Empty and blocks post', async () => {
     await open();
@@ -122,7 +133,7 @@ describe('journal entry modal', () => {
   it('shows Balanced and allows post, which sends the lines', async () => {
     svc.recordJournalEntry.mockResolvedValue({});
     await open();
-    fireEvent.change(screen.getByPlaceholderText(/Monthly interest/), { target: { value: 'Owner top-up' } });
+    fireEvent.change(screen.getByPlaceholderText(/Logiswift payout/), { target: { value: 'Owner top-up' } });
     fill([['1', '100', '0'], ['2', '0', '100']]);
     expect(screen.getByTestId('journal-state')).toHaveTextContent('Balanced');
     expect(post()).toBeEnabled();
@@ -135,8 +146,7 @@ describe('journal entry modal', () => {
     perms.granted = new Set();
     await open();
     fill([['1', '100', '0'], ['2', '0', '100']]);
-    expect(post()).toBeDisabled();
-    hoverReason(post(), 'You do not have permission to post journal entries.');
+    inertWithReason(post(), 'You do not have permission to post journal entries.');
   });
 });
 
@@ -150,7 +160,7 @@ describe('account ledger void button', () => {
       account: { id: 1, code: '1010', name: 'Cash', normalBalance: 'debit', currentBalance: 10, isActive: true },
       transactions: rows, pagination: { pages: 1 },
     });
-    render(<AccountLedger accountId={1} onBack={() => {}} />);
+    render(<AccountLedger accountId={1} />);
     await screen.findByText('JE-1');
   };
 
@@ -168,8 +178,7 @@ describe('account ledger void button', () => {
   it('a view-only user sees Void disabled with a tooltip', async () => {
     perms.granted = new Set();
     await load([entry({})]);
-    expect(screen.getByRole('button', { name: /Void/ })).toBeDisabled();
-    hoverReason(screen.getByRole('button', { name: /Void/ }), 'You do not have permission to void journal entries.');
+    inertWithReason(screen.getByRole('button', { name: /Void/ }), 'You do not have permission to void journal entries.');
   });
 });
 
@@ -200,11 +209,9 @@ describe('expenses tab', () => {
   it('a view-only user sees add, edit and delete disabled with tooltips', () => {
     perms.granted = new Set();
     render(<ExpenseManagementTab />);
-    expect(screen.getByRole('button', { name: /Add Expense/ })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /Edit expense/ })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /Delete expense/ })).toBeDisabled();
-    hoverReason(screen.getByRole('button', { name: /Edit expense/ }), 'You do not have permission to edit expenses.');
-    hoverReason(screen.getByRole('button', { name: /Delete expense/ }), 'You do not have permission to delete expenses.');
+    inertWithReason(screen.getByRole('button', { name: /Add expense/ }), 'You do not have permission to add expenses.');
+    inertWithReason(screen.getByRole('button', { name: /Edit expense/ }), 'You do not have permission to edit expenses.');
+    inertWithReason(screen.getByRole('button', { name: /Delete expense/ }), 'You do not have permission to delete expenses.');
   });
 
   it('opens a receipt in a viewer in the same tab, not a new window', () => {

@@ -5,7 +5,7 @@ import { resolveTenantId } from '../utils/tenantContext';
 import { YMD, getStoreTimeZone, localDate, parseBound, parseYmd } from '../services/kpi/dates';
 import { monthlyPl } from '../services/finance/statementsService';
 import { financeOverview } from '../services/finance/overviewService';
-import { cohortProfit, failedDeliveryCost, profitByProduct } from '../services/finance/profitService';
+import { cohortProfit, failedDeliveryCost, profitByProduct, profitTrendByProduct } from '../services/finance/profitService';
 
 /** GET /api/financial/monthly-pl?months=2&compare=to-date|none&asOf=YYYY-MM-DD (M5-T25, F-923) */
 export const getMonthlyPl = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -21,6 +21,15 @@ export const getMonthlyPl = async (req: AuthRequest, res: Response): Promise<voi
 export const getProfitByProduct = async (req: AuthRequest, res: Response): Promise<void> => {
   const { from, to } = readRange(req, resolveTenantId());
   res.json(await profitByProduct(from, to));
+};
+
+/** GET /api/financial/profit-by-product/trend?months=3&asOf=YYYY-MM-DD: profit of each product per month, for the Finance chart */
+export const getProfitTrendByProduct = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { months, asOf } = req.query;
+  const count = months === undefined ? undefined : Number(months);
+  if (count !== undefined && (!Number.isInteger(count) || count < 1 || count > 12)) throw invalidRange('months must be a whole number from 1 to 12');
+  if (asOf !== undefined && !(typeof asOf === 'string' && YMD.test(asOf))) throw invalidRange('asOf must be a date written YYYY-MM-DD');
+  res.json(await profitTrendByProduct({ months: count, asOf: asOf as string | undefined }));
 };
 
 /** GET /api/financial/cohort-profit?from&to (M5-T26, F-925) */
