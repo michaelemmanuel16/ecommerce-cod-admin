@@ -204,4 +204,18 @@ describe('Partner drawer (M4-T32)', () => {
     expect(listOrders).toHaveBeenCalledTimes(2); // the Summary tab list, then the Orders tab once
     expect(orderProofs).toHaveBeenCalledTimes(1);
   });
+
+  it('Edit person opens a dialog above the drawer (in the .mveil portal); Escape closes only the dialog', async () => {
+    const onClose = vi.fn();
+    open({ onClose });
+    await userEvent.click(await screen.findByRole('button', { name: /Edit person/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'Edit delivery agent' });
+    expect(dialog.closest('.mveil')).not.toBeNull();
+    await userEvent.type(within(dialog).getByLabelText(/First name/), 'x');
+    expect(within(dialog).getByLabelText(/First name/)).toHaveValue('Kofix');
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Edit delivery agent' })).not.toBeInTheDocument());
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByText('Kofi Appiah', { selector: 'h2' })).toBeInTheDocument();
+  });
 });
