@@ -3,7 +3,7 @@ export interface UserPreferences {
   onboardingCompletedAt?: string;
 }
 
-export type Resource = 'users' | 'orders' | 'customers' | 'products' | 'financial' | 'analytics' | 'workflows' | 'settings';
+export type Resource = 'users' | 'orders' | 'customers' | 'products' | 'financial' | 'payouts' | 'analytics' | 'workflows' | 'settings';
 export type Action = 'create' | 'view' | 'update' | 'delete' | 'bulk_import' | 'assign' | 'update_stock' | 'execute' | 'export';
 
 export type Permissions = Record<string, string[]> | string[];

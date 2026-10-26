@@ -5,9 +5,12 @@ import { DateRangePicker } from '../components/ui/DateRangePicker';
 import { FinancialDashboard } from './financial/FinancialDashboard';
 import { AgentCollections } from './financial/AgentCollections';
 import { AccountingAnalysis } from './financial/AccountingAnalysis';
+import { RepCommissions } from './financial/RepCommissions';
+import { usePermissions } from '../hooks/usePermissions';
 
 export const Financial: React.FC = () => {
   const { dateRange, setDateRange } = useFinancialStore();
+  const { can } = usePermissions();
 
   const handleDateRangeChange = (startDate: string | undefined, endDate: string | undefined) => {
     setDateRange(startDate, endDate);
@@ -24,6 +27,8 @@ export const Financial: React.FC = () => {
       label: 'Agent Collections',
       content: <AgentCollections />
     },
+    // F-914: the Rep commissions tab shows for roles that can view payouts
+    ...(can('payouts', 'view') ? [{ id: 'rep-commissions', label: 'Rep commissions', content: <RepCommissions /> }] : []),
     {
       id: 'accounting-analysis',
       label: 'Accounting & Analysis',

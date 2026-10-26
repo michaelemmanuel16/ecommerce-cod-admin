@@ -31,6 +31,15 @@ const idParam = (raw: string): number => {
   return id;
 };
 
+/** GET /api/payouts/owed: every rep with earned, paid and owed (the Rep commissions tab). */
+export const listOwed = async (_req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    res.json(await payoutService.listOwed());
+  } catch (error) {
+    next(error);
+  }
+};
+
 /** GET /api/payouts/owed/:payeeId: the form's preview (earned, paid, owed, open entries). */
 export const getOwed = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {

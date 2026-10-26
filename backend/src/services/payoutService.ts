@@ -119,6 +119,45 @@ class PayoutService {
     };
   }
 
+  /**
+   * The Rep commissions tab (F-914): one row per rep with what was earned, paid and is owed. Reps with no entry yet still show
+   * (owed 0). Delivery agents and companies are not listed; an agent's target reward is paid from the Staff form.
+   */
+  async listOwed() {
+    const [reps, sums, lastPaid] = await Promise.all([
+      prisma.user.findMany({
+        where: { kind: 'person', role: { not: 'delivery_agent' }, OR: [{ role: 'sales_rep' }, { commissionEntries: { some: { status: { in: ['earned', 'paid'] } } } }] },
+        select: { id: true, firstName: true, lastName: true, role: true, isActive: true },
+        orderBy: [{ firstName: 'asc' }, { id: 'asc' }],
+      }),
+      prisma.commissionEntry.groupBy({
+        by: ['userId', 'kind', 'status'],
+        where: { status: { in: ['earned', 'paid'] } },
+        _sum: { amount: true },
+        _count: { _all: true },
+      }),
+      prisma.payout.groupBy({ by: ['payeeId'], where: { kind: 'rep' }, _max: { payoutDate: true } }),
+    ]);
+    const last = new Map(lastPaid.map((p) => [p.payeeId, p._max.payoutDate]));
+    return {
+      reps: reps.map((rep) => {
+        const mine = sums.filter((r) => r.userId === rep.id);
+        const sum = (f: (r: (typeof mine)[number]) => boolean) => Money.sum(mine.filter(f).map((r) => r._sum.amount ?? Money.ZERO));
+        return {
+          ...rep,
+          delivered: mine.filter((r) => r.kind === 'base').reduce((n, r) => n + r._count._all, 0),
+          commission: sum((r) => r.kind === 'base'),
+          upsellReward: sum((r) => r.kind === 'upsell'),
+          targetReward: sum((r) => r.kind === 'reward'),
+          earned: sum(() => true),
+          paid: sum((r) => r.status === 'paid'),
+          owed: sum((r) => r.status === 'earned'),
+          lastPayout: last.get(rep.id) ?? null,
+        };
+      }),
+    };
+  }
+
   /** Payout history: one list for Finance and Staff. */
   async list(filter: { payeeId?: number; kind?: PayoutKind; page?: number; limit?: number }) {
     const page = Math.max(1, filter.page ?? 1);

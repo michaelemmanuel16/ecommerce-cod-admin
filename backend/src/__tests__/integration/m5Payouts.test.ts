@@ -99,6 +99,19 @@ describe('the owed preview (F-913)', () => {
     expect(await balance('2020')).toBe(2034 + 134 + 105);
   });
 
+  it('lists every rep with earned, paid and owed for the Rep commissions tab; agents and AI agents are left out', async () => {
+    const res = await request(app).get('/api/payouts/owed').set(auth(U.manager));
+    expect(res.status).toBe(200);
+    const byId = new Map<number, any>(res.body.reps.map((r: any) => [r.id, r]));
+    expect(byId.get(U.adwoa.id)).toMatchObject({ delivered: 2, commission: '2024.00', upsellReward: '610.00', earned: '2634.00', paid: '600.00', owed: '2034.00' });
+    expect(byId.get(U.nana.id)).toMatchObject({ owed: '134.00', paid: '0.00' });
+    expect(byId.get(U.rep.id)).toMatchObject({ owed: '0.00', delivered: 0 });
+    expect(byId.has(U.kofi.id)).toBe(false);
+    expect(byId.has(U.bot.id)).toBe(false);
+    expect((await request(app).get('/api/payouts/owed').set(auth(U.rep))).status).toBe(403);
+    expect((await request(app).get('/api/payouts/owed').set(auth(U.otherAdmin))).body.reps.map((r: any) => r.id)).not.toContain(U.adwoa.id);
+  });
+
   it('an agent preview counts target rewards only; an AI agent has no payout', async () => {
     const kofi = await request(app).get(`/api/payouts/owed/${U.kofi.id}`).set(auth(U.admin));
     expect(kofi.body.owed).toBe('100.00');

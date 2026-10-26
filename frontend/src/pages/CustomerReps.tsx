@@ -5,7 +5,7 @@ import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { RepTable, RepTableData } from '../components/reps/RepTable';
 import { EditRepModal } from '../components/reps/EditRepModal';
-import { RepPayoutModal } from '../components/reps/RepPayoutModal';
+import { PayoutForm } from '../components/payouts/PayoutForm';
 import { DateRangePicker } from '../components/ui/DateRangePicker';
 import type { RepPerformanceFigures } from '../services/customer-reps.service';
 
@@ -133,12 +133,9 @@ export const CustomerReps: React.FC = () => {
         onUpdate={handleUpdate}
       />
 
-      <RepPayoutModal
-        repId={selectedRep?.id || null}
-        repName={selectedRep?.name || ''}
-        isOpen={isPayoutModalOpen}
-        onClose={handleCloseModal}
-      />
+      {isPayoutModalOpen && selectedRep && (
+        <PayoutForm personId={Number(selectedRep.id)} personName={selectedRep.name} isOpen onClose={handleCloseModal} />
+      )}
     </div>
   );
 };
