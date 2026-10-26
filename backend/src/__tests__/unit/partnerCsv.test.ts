@@ -2,25 +2,19 @@
  * M5-T17 (COD-49): the partner CSV parser (F-712): delimiters, quotes, columns, bad rows with their line numbers, limits.
  */
 import { describe, it, expect } from '@jest/globals';
-import { CSV_MAX_ROWS, CsvFileError, parseCsvDate, parsePartnerCsv, splitCsv } from '../../utils/partnerCsv';
+import { CSV_MAX_ROWS, CsvFileError, parseCsvDate, parsePartnerCsv } from '../../utils/partnerCsv';
 
 const NOW = new Date('2026-10-26T10:00:00Z');
 const parse = (text: string) => parsePartnerCsv(text, NOW);
 
-describe('splitCsv', () => {
-  it('handles quotes, doubled quotes, delimiters and line breaks inside quotes, and records the start line', () => {
-    const rows = splitCsv('a,b\n"x, y","say ""hi"""\n"line\nbreak",z\nlast,row', ',');
-    expect(rows).toEqual([
-      { line: 1, fields: ['a', 'b'] },
-      { line: 2, fields: ['x, y', 'say "hi"'] },
-      { line: 3, fields: ['line\nbreak', 'z'] },
-      { line: 5, fields: ['last', 'row'] },
-    ]);
+describe('quotes and line numbers', () => {
+  it('reads quotes, doubled quotes and delimiters inside quotes, and numbers the lines', () => {
+    const rows = parse('order,status,reason\n1,failed,"no answer, twice"\n2,failed,"say ""hi"""\n\n3,returned,');
+    expect(rows.map((r) => [r.line, r.orderRef, r.reason])).toEqual([[2, '1', 'no answer, twice'], [3, '2', 'say "hi"'], [5, '3', null]]);
   });
 
-  it('skips blank lines but keeps the line numbers, and reads CRLF', () => {
-    const rows = splitCsv('a,b\r\n\r\n1,2\r\n', ',');
-    expect(rows.map((r) => r.line)).toEqual([1, 3]);
+  it('reads CRLF line ends', () => {
+    expect(parse('order,status\r\n1,delivered\r\n2,failed\r\n').map((r) => r.line)).toEqual([2, 3]);
   });
 });
 

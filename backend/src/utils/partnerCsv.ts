@@ -10,7 +10,9 @@
  *   cash collected (`cash`, `cash collected`, `amount`)          optional; a difference from the order amount is a warning
  * A row needs a status and an order number or a phone. Comma, semicolon or tab separated; quotes allowed; UTF-8 BOM allowed.
  */
+import { parse as readCsv } from 'csv-parse/sync';
 import * as Money from './money';
+import { parseYmd } from '../services/kpi/dates';
 
 export const CSV_MAX_ROWS = 2000;
 export const CSV_MAX_BYTES = 10 * 1024 * 1024;
@@ -32,7 +34,7 @@ export interface CsvRow {
 }
 
 export class CsvFileError extends Error {
-  constructor(message: string, readonly code: 'EMPTY_FILE' | 'MISSING_COLUMN' | 'TOO_MANY_ROWS' | 'FILE_TOO_LARGE') {
+  constructor(message: string, readonly code: 'EMPTY_FILE' | 'MISSING_COLUMN' | 'TOO_MANY_ROWS' | 'FILE_TOO_LARGE' | 'UNREADABLE') {
     super(message);
   }
 }
@@ -55,73 +57,31 @@ const STATUS_WORDS: Record<string, CsvStatus> = {
 
 const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 
-/** Split text into records of fields. Quotes may hold the delimiter, a line break and a doubled quote. Records keep their start line. */
-export function splitCsv(text: string, delimiter: string): Array<{ line: number; fields: string[] }> {
-  const records: Array<{ line: number; fields: string[] }> = [];
-  let fields: string[] = [];
-  let field = '';
-  let quoted = false;
-  let line = 1;
-  let start = 1;
-  const endField = () => { fields.push(field); field = ''; };
-  const endRecord = () => {
-    endField();
-    if (fields.some((f) => f.trim() !== '')) records.push({ line: start, fields });
-    fields = [];
-  };
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (quoted) {
-      if (ch === '"') {
-        if (text[i + 1] === '"') { field += '"'; i++; } else quoted = false;
-      } else {
-        if (ch === '\n') line++;
-        field += ch;
-      }
-    } else if (ch === '"' && field === '') {
-      quoted = true;
-    } else if (ch === delimiter) {
-      endField();
-    } else if (ch === '\n' || ch === '\r') {
-      if (ch === '\r' && text[i + 1] === '\n') i++;
-      endRecord();
-      line++;
-      start = line;
-    } else {
-      field += ch;
-    }
-  }
-  endRecord();
-  return records;
-}
-
-/** The delimiter the header line uses: the one of comma, semicolon and tab that occurs most. */
-function delimiterOf(text: string): string {
-  const header = text.split(/\r?\n/, 1)[0] ?? '';
-  const counts = [',', ';', '\t'].map((d) => [d, header.split(d).length - 1] as const);
-  return counts.sort((a, b) => b[1] - a[1])[0][1] > 0 ? counts[0][0] : ',';
-}
-
 /** YYYY-MM-DD from `2026-10-12` or `12/10/2026` (day first). Null when it is not a real calendar day. */
 export function parseCsvDate(value: string): string | null {
   const v = value.trim();
-  let y: number; let m: number; let d: number;
-  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(v);
   const local = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/.exec(v);
-  if (iso) { [y, m, d] = [Number(iso[1]), Number(iso[2]), Number(iso[3])]; }
-  else if (local) { [d, m, y] = [Number(local[1]), Number(local[2]), Number(local[3])]; }
-  else return null;
-  const date = new Date(Date.UTC(y, m - 1, d));
-  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) return null;
-  return date.toISOString().slice(0, 10);
+  const ymd = local ? `${local[3]}-${local[2].padStart(2, '0')}-${local[1].padStart(2, '0')}` : v;
+  try {
+    parseYmd(ymd);
+    return ymd;
+  } catch {
+    return null;
+  }
 }
 
 /** Parse a partner file. Throws CsvFileError for a file-level problem; a bad row is returned with its `errors`. */
 export function parsePartnerCsv(raw: string, now: Date = new Date()): CsvRow[] {
-  const text = raw.replace(/^﻿/, '');
+  const text = raw.replace(/^\uFEFF/, '');
   if (Buffer.byteLength(text, 'utf8') > CSV_MAX_BYTES) throw new CsvFileError('The file is larger than 10 MB', 'FILE_TOO_LARGE');
-  const delimiter = delimiterOf(text);
-  const records = splitCsv(text, delimiter);
+  let records: Array<{ line: number; fields: string[] }>;
+  try {
+    // Comma, semicolon or tab; a record's line is the line it ends on (the same for any row without a line break inside quotes)
+    records = (readCsv(text, { delimiter: [',', ';', '\t'], skip_empty_lines: true, relax_column_count: true, relax_quotes: true, trim: true, info: true }) as unknown as Array<{ record: string[]; info: { lines: number } }>)
+      .map((r) => ({ line: r.info.lines, fields: r.record }));
+  } catch {
+    throw new CsvFileError('This file could not be read as a CSV', 'UNREADABLE');
+  }
   if (records.length === 0) throw new CsvFileError('The file is empty', 'EMPTY_FILE');
 
   const header = records[0].fields.map(squash);

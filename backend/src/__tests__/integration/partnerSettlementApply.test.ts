@@ -171,7 +171,7 @@ describe('gaps', () => {
     const result = await payout(kofiId, ref('GAPS'), 700, [line(mine), line(theirs), line(onTheRoad), { externalOrderRef: 'ZZ-404', expAmount: 200, charge: 25 }]);
     expect(result).toMatchObject({ status: 'unmatched', matchedLines: 1, unmatchedLines: 3, expectedNet: '175.00', unappliedAmount: '525.00' });
     expect(result.lines.map((l) => l.note)).toEqual([
-      null, 'The order belongs to another delivery partner', 'The order is out for delivery, not delivered', 'No order matches this line',
+      null, 'This order is assigned to another delivery partner', 'The order is out for delivery, not delivered', 'No order matches this line',
     ]);
     expect((await collectionOf(mine)).status).toBe('reconciled');
     expect((await collectionOf(theirs)).status).toBe('draft');

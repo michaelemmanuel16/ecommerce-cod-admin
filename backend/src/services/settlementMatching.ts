@@ -6,6 +6,8 @@ import { CollectionStatus, SettlementStatus } from '@prisma/client';
 import * as Money from '../utils/money';
 import { OPEN_COLLECTION_STATUSES } from '../utils/collectionCash';
 import { looksLikePhone, phoneLookupVariants } from '../utils/phone';
+import { parseOrderNumber } from '../utils/orderNumber';
+import { moreThanOneOrder, OTHER_PARTNER_NOTE } from '../utils/orderLookup';
 
 /** A charge more than this share away from the fee booked at delivery opens a charge_variance Finding (decided at task time: 5 percent). */
 export const CHARGE_VARIANCE_LIMIT = 0.05;
@@ -48,15 +50,9 @@ export interface LineVerdict {
 
 const unmatched = (note: string): LineVerdict => ({ order: null, matchedBy: null, note });
 
-/** The order id in "1042" or "#1042" (the order number on screen, F-300). Null for anything else. */
-export function parseOrderNumber(ref: string): number | null {
-  const m = /^#?\s*(\d{1,9})$/.exec(ref.trim());
-  return m ? Number(m[1]) : null;
-}
-
 /** Why this order cannot take the line, or null when it can. */
 function refusalFor(order: OrderCandidate, line: LineToMatch, partnerId: number, taken: ReadonlySet<number>): string | null {
-  if (order.deliveryAgentId !== partnerId) return 'The order belongs to another delivery partner';
+  if (order.deliveryAgentId !== partnerId) return OTHER_PARTNER_NOTE;
   if (order.status !== 'delivered') return `The order is ${order.status.replace(/_/g, ' ')}, not delivered`;
   if (!order.collection) return 'No cash collection is recorded for this order yet';
   if (!OPEN_COLLECTION_STATUSES.includes(order.collection.status)) return 'The cash for this order is already settled';
@@ -100,7 +96,7 @@ export function matchLine(line: LineToMatch, partnerId: number, index: MatchInde
     }
     const open = candidates.filter((o) => refusalFor(o, line, partnerId, taken) === null);
     if (open.length === 1) return { order: open[0], matchedBy: 'phone_amount', note: null };
-    if (open.length > 1) return unmatched('More than one order has this phone and amount');
+    if (open.length > 1) return unmatched(moreThanOneOrder('this phone and amount'));
   }
   return unmatched(number !== null ? `Order ${number} was not found` : 'No order matches this line');
 }

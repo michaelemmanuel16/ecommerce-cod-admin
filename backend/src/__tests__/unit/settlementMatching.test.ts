@@ -4,8 +4,9 @@
 import { describe, it, expect } from '@jest/globals';
 import { Prisma } from '@prisma/client';
 import {
-  isChargeVariance, matchLine, MatchIndex, OrderCandidate, parseOrderNumber, settlementOutcome,
+  isChargeVariance, matchLine, MatchIndex, OrderCandidate, settlementOutcome,
 } from '../../services/settlementMatching';
+import { parseOrderNumber } from '../../utils/orderNumber';
 
 const D = (n: number | string) => new Prisma.Decimal(n);
 const PARTNER = 7;
@@ -47,7 +48,7 @@ describe('matchLine', () => {
     const index = indexOf([order(5, { deliveryAgentId: 99 }), order(6)]);
     const v = matchLine(line({ orderId: 5, externalOrderRef: '#6' }), PARTNER, index, none);
     expect(v.order).toBeNull();
-    expect(v.note).toBe('The order belongs to another delivery partner');
+    expect(v.note).toBe('This order is assigned to another delivery partner');
     expect(matchLine(line({ orderId: 404 }), PARTNER, index, none).note).toBe('Order 404 was not found');
   });
 

@@ -17,14 +17,17 @@ import appEvents, { AppEvent } from '../utils/appEvents';
 import { TRANSACTION_CONFIG } from '../config/transactionConfig';
 import { resolveTenantId } from '../utils/tenantContext';
 import { getCurrency } from '../utils/currency';
-import { looksLikePhone, phoneLookupVariants } from '../utils/phone';
+import { phoneLookupVariants } from '../utils/phone';
+import { parseOrderNumber } from '../utils/orderNumber';
+import { loadOrdersByRefs } from '../utils/orderLookup';
+import { isUniqueViolation } from '../utils/prismaErrors';
 import { OPEN_COLLECTION_STATUSES, outstandingOf } from '../utils/collectionCash';
 import * as Money from '../utils/money';
 import { loadPartner } from './deliveryPartnerAdminService';
 import agentReconciliationService, { OpenCollection, planCover } from './agentReconciliationService';
 import { GLAutomationService } from './glAutomationService';
 import { closeClearedShortPays, openFindingOnce } from './findingService';
-import { isChargeVariance, matchLine, MatchIndex, OrderCandidate, parseOrderNumber, settlementOutcome } from './settlementMatching';
+import { isChargeVariance, matchLine, MatchIndex, OrderCandidate, settlementOutcome } from './settlementMatching';
 import { PartnerPayoutInput, partnerPayoutSchema } from '../validators/partnerPayoutSchema';
 import { formatIssues } from '../tools/shared';
 
@@ -101,8 +104,6 @@ async function replayView(s: SettlementWithLines, currency: string) {
   return settlementView(s, { replayed: true, findings: found, warnings });
 }
 
-const isUniqueViolation = (error: unknown) => error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
-
 const unappliedWarning = (currency: string, amount: Money.Money, verb: string) =>
   `${currency} ${Money.toApi(amount)} ${verb} held as unapplied (account 2040)`;
 
@@ -111,28 +112,16 @@ const unappliedWarning = (currency: string, amount: Money.Money, verb: string) =
 /** The partner's orders the lines may point at, in the shape the pure matcher wants. */
 async function loadMatchIndex(tx: TransactionClient, partnerId: number, lines: PartnerPayoutInput['lines']): Promise<MatchIndex> {
   const ids = new Set<number>();
-  const refs = new Set<string>();
-  const variants = new Set<string>();
   for (const line of lines) {
     if (line.orderId !== undefined) ids.add(line.orderId);
     const number = parseOrderNumber(line.externalOrderRef);
     if (number !== null) ids.add(number);
-    refs.add(line.externalOrderRef.trim());
-    if (looksLikePhone(line.externalOrderRef)) phoneLookupVariants(line.externalOrderRef).forEach((v) => variants.add(v));
   }
-
-  const include = { customer: { select: { phoneNumber: true } }, agentCollection: true } satisfies Prisma.OrderInclude;
-  const orders = await tx.order.findMany({
-    where: {
-      deletedAt: null,
-      OR: [
-        ...(ids.size ? [{ id: { in: [...ids] } }] : []),
-        { deliveryAgentId: partnerId, externalOrderId: { in: [...refs] } },
-        ...(variants.size ? [{ deliveryAgentId: partnerId, status: 'delivered' as const, customer: { phoneNumber: { in: [...variants] } } }] : []),
-      ],
-    },
-    include,
-  });
+  const orders = await loadOrdersByRefs(
+    tx,
+    { ids, externalIds: lines.map((l) => l.externalOrderRef.trim()), phones: lines.map((l) => l.externalOrderRef) },
+    { externalPartnerId: partnerId, phoneStatuses: ['delivered'], phonePartnerId: partnerId },
+  );
 
   const index: MatchIndex = { byId: new Map(), byExternalId: new Map(), byPhone: new Map() };
   for (const o of orders) {

@@ -143,7 +143,7 @@ describe('preview and apply', () => {
     expect((await prismaBase.order.findUniqueOrThrow({ where: { id: foreign } })).status).toBe('out_for_delivery');
 
     // failures: flagged and rejected rows with their line numbers
-    const lines = res.body.failuresCsv.split('\n');
+    const lines = res.body.failuresCsv.replace(/^\uFEFF/, '').split('\r\n').filter(Boolean);
     expect(lines[0]).toBe('line,order,phone,status,error');
     expect(lines.slice(1).map((l: string) => l.split(',')[0])).toEqual(['5', '7', '8', '9', '10']);
   });
