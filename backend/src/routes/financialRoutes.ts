@@ -30,6 +30,7 @@ router.get('/profitability/export', requireResourcePermission('financial', 'view
 router.get('/pipeline-revenue', requireResourcePermission('financial', 'view'), financialController.getPipelineRevenue);
 router.get('/cash-flow', requireResourcePermission('financial', 'view'), financialController.getCashFlowReport);
 router.get('/cash-flow/export/csv', requireResourcePermission('financial', 'view'), financialController.exportCashFlowCSV);
+router.get('/unpaid-by-age', requireResourcePermission('financial', 'view'), financialController.getUnpaidByAge);
 router.get('/agent-aging', requireResourcePermission('financial', 'view'), financialController.getAgentAgingReport);
 router.get('/agent-aging/export/csv', requireResourcePermission('financial', 'view'), financialController.exportAgentAgingCSV);
 

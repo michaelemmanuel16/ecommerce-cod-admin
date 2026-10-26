@@ -114,7 +114,6 @@ interface FinancialState {
   setDateRange: (startDate?: string, endDate?: string) => void;
   fetchAgentCollections: (agentId: number, status?: string) => Promise<void>;
   verifyCollection: (id: number) => Promise<void>;
-  approveCollection: (id: number) => Promise<void>;
   bulkVerifyCollections: (ids: number[]) => Promise<void>;
   fetchAgentDeposits: (params?: { agentId?: number; status?: string }) => Promise<void>;
   verifyDeposit: (id: number) => Promise<void>;
@@ -594,20 +593,6 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
         await get().fetchSummary();
       } catch (error: any) {
         toast.error('Failed to reconcile collection');
-      }
-    },
-
-    approveCollection: async (id: number) => {
-      try {
-        await financialService.approveCollection(id);
-        toast.success('Collection approved');
-        const agentId = get().currentAgentCollections[0]?.agentId;
-        if (agentId) await get().fetchAgentCollections(agentId);
-        await get().fetchAgentCashHoldings();
-        await get().fetchSummary();
-        await get().fetchAgentAging();
-      } catch (error: any) {
-        toast.error('Failed to approve collection');
       }
     },
 

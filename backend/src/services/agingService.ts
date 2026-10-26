@@ -3,6 +3,57 @@ import logger from '../utils/logger';
 import appEvents, { AppEvent } from '../utils/appEvents';
 import { resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
+import { fullName } from '../utils/nameUtils';
+import { OPEN_COLLECTION_STATUSES, outstandingOf } from '../utils/collectionCash';
+import { DAY_MS, getStoreTimeZone, localDate, utcDateOfYmd } from './kpi/dates';
+import { openFindingOnce } from './findingService';
+
+/** The four age buckets (F-910): days since delivery. A delivery of today is 0 days, so it falls in the first. */
+export const AGE_BUCKETS = [
+  { key: '0-3', label: '0-3 days', from: 0, to: 3 },
+  { key: '4-7', label: '4-7 days', from: 4, to: 7 },
+  { key: '8-14', label: '8-14 days', from: 8, to: 14 },
+  { key: '15+', label: '15+ days', from: 15, to: Infinity },
+] as const;
+export type AgeBucketKey = typeof AGE_BUCKETS[number]['key'];
+
+export const bucketIndexOf = (days: number): number => AGE_BUCKETS.findIndex((b) => days <= b.to);
+
+/** Used when the partner has no days to pay and Settings has no default (F-309, owner to confirm). */
+export const FALLBACK_DAYS_TO_PAY = 8;
+
+/** One delivered order whose cash the partner still holds. `amount` is net of the delivery fee the partner keeps. */
+export interface UnpaidOrder {
+  orderId: number;
+  agentId: number;
+  amount: Money.Money;
+  /** Whole days from delivery to today, store time zone. */
+  ageDays: number;
+  deliveredOn: string;
+  daysToPay: number;
+  overdue: boolean;
+  bucket: number;
+}
+
+export interface PartnerAging {
+  agentId: number;
+  name: string;
+  email: string | null;
+  /** AgentBalance.currentBalance: can be negative (a deposit above what was collected). */
+  cashHeld: Money.Money;
+  daysToPay: number;
+  unpaidOrders: number;
+  unpaidAmount: Money.Money;
+  /** Net amount and order count per bucket, in AGE_BUCKETS order. */
+  buckets: Array<{ orders: number; amount: Money.Money }>;
+  overdueOrders: number;
+  overdueAmount: Money.Money;
+  oldestUnpaidDays: number | null;
+  oldestDeliveredOn: string | null;
+  isBlocked: boolean;
+}
+
+const emptyBuckets = () => AGE_BUCKETS.map(() => ({ orders: 0, amount: Money.ZERO }));
 
 export class AgingService {
   constructor() {
@@ -48,121 +99,123 @@ export class AgingService {
     logger.info('AgingService destroyed and listeners removed');
   }
 
+  /** The tenant's default days to pay (Settings), else 8. The Settings screen stores it in `features.defaultDaysToPay`. */
+  private async defaultDaysToPay(tenantId: string): Promise<number> {
+    const config = await prisma.systemConfig.findUnique({ where: { tenantId }, select: { features: true } });
+    const stored = Number((config?.features as Record<string, unknown> | null)?.defaultDaysToPay);
+    return Number.isInteger(stored) && stored > 0 ? stored : FALLBACK_DAYS_TO_PAY;
+  }
+
   /**
-   * Refreshes aging buckets for all agents (of the current tenant) with approved but non-deposited collections.
-   * Runs inside a tenant context; the aging queue calls it once per tenant. It only touches that tenant's buckets.
+   * The one query behind the aging card, the partner table and the Orders "Unpaid by agent" tab (F-309, F-910).
+   * A delivered order counts while its collection is still open (no verified deposit or settlement covers it); a
+   * part-covered collection counts for what is left. Amounts are the collection amount, already net of the fee
+   * stamped on the order. Runs in the current tenant context.
+   */
+  async loadUnpaidOrders(): Promise<UnpaidOrder[]> {
+    const tenantId = resolveTenantId();
+    const zone = getStoreTimeZone(tenantId);
+    const today = utcDateOfYmd(localDate(new Date(), zone)).getTime();
+
+    const [collections, fallback] = await Promise.all([
+      prisma.agentCollection.findMany({
+        where: { status: { in: [...OPEN_COLLECTION_STATUSES] }, order: { status: 'delivered', deletedAt: null } },
+        select: { agentId: true, amount: true, allocatedAmount: true, collectionDate: true, orderId: true, order: { select: { deliveryDate: true } } },
+      }),
+      this.defaultDaysToPay(tenantId),
+    ]);
+    const profiles = await prisma.deliveryPartnerProfile.findMany({
+      where: { userId: { in: [...new Set(collections.map((c) => c.agentId))] } },
+      select: { userId: true, daysToPay: true },
+    });
+    const dueIn = new Map(profiles.map((p) => [p.userId, p.daysToPay > 0 ? p.daysToPay : fallback]));
+
+    const unpaid: UnpaidOrder[] = [];
+    for (const c of collections) {
+      const amount = outstandingOf(c);
+      if (amount.lte(0)) continue;
+      const deliveredOn = localDate(c.order.deliveryDate ?? c.collectionDate, zone);
+      const ageDays = Math.max(Math.round((utcDateOfYmd(deliveredOn).getTime() - today) / -DAY_MS), 0);
+      const daysToPay = dueIn.get(c.agentId) ?? fallback;
+      unpaid.push({ orderId: c.orderId, agentId: c.agentId, amount, ageDays, deliveredOn, daysToPay, overdue: ageDays > daysToPay, bucket: bucketIndexOf(ageDays) });
+    }
+    return unpaid;
+  }
+
+  /** The orders past their partner's days to pay: the Orders "Unpaid by agent" tab. Oldest first. */
+  async overdueOrders(): Promise<UnpaidOrder[]> {
+    return (await this.loadUnpaidOrders()).filter((o) => o.overdue).sort((a, b) => b.ageDays - a.ageDays || a.orderId - b.orderId);
+  }
+
+  /** Cash, buckets, oldest unpaid and days to pay per partner (F-704, F-911), from the shared unpaid-orders query. */
+  private async partnerAging(): Promise<PartnerAging[]> {
+    const unpaid = await this.loadUnpaidOrders();
+    const balances = await prisma.agentBalance.findMany({ select: { agentId: true, currentBalance: true, isBlocked: true } });
+    const ids = [...new Set([...unpaid.map((o) => o.agentId), ...balances.filter((b) => !Money.orZero(b.currentBalance).isZero()).map((b) => b.agentId)])];
+    if (ids.length === 0) return [];
+
+    const [users, profiles, fallback] = await Promise.all([
+      prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, firstName: true, lastName: true, email: true } }),
+      prisma.deliveryPartnerProfile.findMany({ where: { userId: { in: ids } }, select: { userId: true, daysToPay: true } }),
+      this.defaultDaysToPay(resolveTenantId()),
+    ]);
+    const userOf = new Map(users.map((u) => [u.id, u]));
+    const balanceOf = new Map(balances.map((b) => [b.agentId, b]));
+    const dueIn = new Map(profiles.map((p) => [p.userId, p.daysToPay > 0 ? p.daysToPay : fallback]));
+
+    return ids.map((agentId): PartnerAging => {
+      const mine = unpaid.filter((o) => o.agentId === agentId);
+      const buckets = emptyBuckets();
+      for (const o of mine) {
+        buckets[o.bucket].orders += 1;
+        buckets[o.bucket].amount = buckets[o.bucket].amount.plus(o.amount);
+      }
+      const overdue = mine.filter((o) => o.overdue);
+      const oldest = mine.reduce<UnpaidOrder | null>((a, o) => (!a || o.ageDays > a.ageDays ? o : a), null);
+      const user = userOf.get(agentId);
+      return {
+        agentId,
+        name: fullName(user) || `Partner #${agentId}`,
+        email: user?.email ?? null,
+        cashHeld: Money.orZero(balanceOf.get(agentId)?.currentBalance),
+        daysToPay: dueIn.get(agentId) ?? fallback,
+        unpaidOrders: mine.length,
+        unpaidAmount: Money.sum(mine.map((o) => o.amount)),
+        buckets,
+        overdueOrders: overdue.length,
+        overdueAmount: Money.sum(overdue.map((o) => o.amount)),
+        oldestUnpaidDays: oldest?.ageDays ?? null,
+        oldestDeliveredOn: oldest?.deliveredOn ?? null,
+        isBlocked: balanceOf.get(agentId)?.isBlocked ?? false,
+      };
+    });
+  }
+
+  /**
+   * Rebuilds the stored buckets of the current tenant and keeps the "negative cash held" Findings (F-704, F-911).
+   * Runs inside a tenant context (the aging queue calls it once per tenant) and touches only that tenant: every
+   * read and write below is tenant-scoped, and with no context it throws instead of reaching every tenant.
    */
   async refreshAll(): Promise<void> {
     const tenantId = resolveTenantId();
     logger.info('Starting agent aging refresh...');
-    const now = new Date();
-
     try {
-      // 1. Get all outstanding collections (draft, verified, approved, deposited)
-      // 'deposited' is included because deposited-but-unreconciled cash is still outstanding
-      // Only 'reconciled' collections are excluded from aging
-      // Ensure the associated order is not soft-deleted
-      const collections = await (prisma as any).agentCollection.findMany({
-        where: {
-          status: { in: ['draft', 'verified', 'approved', 'deposited'] },
-          order: {
-            deletedAt: null
-          }
-        },
-        include: {
-          agent: {
-            select: { id: true }
-          }
-        }
-      });
+      const partners = await this.partnerAging();
+      const withOrders = partners.filter((p) => p.unpaidOrders > 0);
 
-      logger.info(`Found ${collections.length} approved collections to analyze.`);
-
-      if (collections.length === 0) {
-        // Clear existing buckets if no approved collections exist
-        await (prisma as any).agentAgingBucket.deleteMany({ where: { tenantId } });
-        return;
-      }
-
-      // 2. Group by agent and calculate buckets
-      const agentAgingMap = new Map<number, any>();
-
-      for (const col of collections) {
-        const agentId = col.agentId;
-        if (!agentAgingMap.has(agentId)) {
-          agentAgingMap.set(agentId, {
-            agentId,
-            bucket_0_1: Money.ZERO,
-            bucket_2_3: Money.ZERO,
-            bucket_4_7: Money.ZERO,
-            bucket_8_plus: Money.ZERO,
-            totalBalance: Money.ZERO,
-            oldestCollectionDate: col.collectionDate,
-            tenantId: col.tenantId,
-          });
-        }
-
-        const data = agentAgingMap.get(agentId);
-        const amount = Money.parse(col.amount);
-        data.totalBalance = data.totalBalance.add(amount);
-
-        if (col.collectionDate < data.oldestCollectionDate) {
-          data.oldestCollectionDate = col.collectionDate;
-        }
-
-        const daysSince = Math.floor((now.getTime() - new Date(col.collectionDate).getTime()) / 86400000);
-
-        if (daysSince <= 1) {
-          data.bucket_0_1 = data.bucket_0_1.add(amount);
-        } else if (daysSince <= 3) {
-          data.bucket_2_3 = data.bucket_2_3.add(amount);
-        } else if (daysSince <= 7) {
-          data.bucket_4_7 = data.bucket_4_7.add(amount);
-        } else {
-          data.bucket_8_plus = data.bucket_8_plus.add(amount);
-        }
-      }
-
-      // 3. Upsert results into agent_aging_buckets
       await prisma.$transaction(async (tx) => {
-        const extTx = tx as any;
-
-        // Remove buckets for agents who no longer have approved collections
-        const currentAgentIds = Array.from(agentAgingMap.keys());
-        await extTx.agentAgingBucket.deleteMany({
-          where: {
-            tenantId,
-            agentId: {
-              notIn: currentAgentIds
-            }
-          }
-        });
-
-        for (const [agentId, data] of agentAgingMap) {
-          await extTx.agentAgingBucket.upsert({
-            where: { agentId },
-            update: {
-              bucket_0_1: data.bucket_0_1,
-              bucket_2_3: data.bucket_2_3,
-              bucket_4_7: data.bucket_4_7,
-              bucket_8_plus: data.bucket_8_plus,
-              totalBalance: data.totalBalance,
-              oldestCollectionDate: data.oldestCollectionDate,
-            },
-            create: {
-              tenantId: data.tenantId,
-              agentId,
-              bucket_0_1: data.bucket_0_1,
-              bucket_2_3: data.bucket_2_3,
-              bucket_4_7: data.bucket_4_7,
-              bucket_8_plus: data.bucket_8_plus,
-              totalBalance: data.totalBalance,
-              oldestCollectionDate: data.oldestCollectionDate,
-            },
-          });
+        await tx.agentAgingBucket.deleteMany({ where: { tenantId, agentId: { notIn: withOrders.map((p) => p.agentId) } } });
+        for (const p of withOrders) {
+          const data = {
+            bucket_0_3: p.buckets[0].amount, bucket_4_7: p.buckets[1].amount, bucket_8_14: p.buckets[2].amount, bucket_15_plus: p.buckets[3].amount,
+            totalBalance: p.unpaidAmount,
+            oldestCollectionDate: p.oldestDeliveredOn ? utcDateOfYmd(p.oldestDeliveredOn) : null,
+          };
+          await tx.agentAgingBucket.upsert({ where: { agentId: p.agentId }, update: data, create: { tenantId, agentId: p.agentId, ...data } });
         }
       });
 
+      await this.syncNegativeCashFindings(tenantId, partners);
       logger.info('Agent aging refresh completed successfully.');
     } catch (error) {
       logger.error('Error refreshing agent aging:', error);
@@ -170,154 +223,113 @@ export class AgingService {
     }
   }
 
-  /**
-   * Get the aging report from cached buckets with summary statistics
-   */
+  /** A Finding per partner whose cash held is below zero; it closes when the balance is back at zero or above. */
+  private async syncNegativeCashFindings(tenantId: string, partners: PartnerAging[]): Promise<void> {
+    for (const p of partners.filter((x) => x.cashHeld.lt(0))) {
+      await openFindingOnce({
+        tenantId,
+        type: 'negative_cash_held',
+        subjectType: 'delivery_partner',
+        subjectId: String(p.agentId),
+        amount: p.cashHeld.abs(),
+        note: `${p.name} has deposited ${Money.toApi(p.cashHeld.abs())} more than it collected.`,
+      }, { updateAmount: true });
+    }
+    const negative = new Set(partners.filter((x) => x.cashHeld.lt(0)).map((x) => String(x.agentId)));
+    const open = await prisma.finding.findMany({ where: { type: 'negative_cash_held', subjectType: 'delivery_partner', status: 'open' }, select: { id: true, subjectId: true } });
+    const cleared = open.filter((f) => !negative.has(f.subjectId)).map((f) => f.id);
+    if (cleared.length > 0) {
+      await prisma.finding.updateMany({
+        where: { id: { in: cleared }, status: 'open' },
+        data: { status: 'closed', explanation: 'Cash held is no longer below zero', resolvedAt: new Date() },
+      });
+    }
+  }
+
+  /** The card "Unpaid delivered orders" (F-910): four buckets and a total, net of the delivery fee. */
+  async getUnpaidByAge() {
+    const unpaid = await this.loadUnpaidOrders();
+    const buckets = AGE_BUCKETS.map((b, i) => {
+      const rows = unpaid.filter((o) => o.bucket === i);
+      return { key: b.key, label: b.label, orders: rows.length, amount: Money.toApi(Money.sum(rows.map((o) => o.amount))) };
+    });
+    const overdue = unpaid.filter((o) => o.overdue);
+    return {
+      basis: 'net_of_delivery_fee' as const,
+      total: { orders: unpaid.length, amount: Money.toApi(Money.sum(unpaid.map((o) => o.amount))) },
+      overdue: { orders: overdue.length, amount: Money.toApi(Money.sum(overdue.map((o) => o.amount))) },
+      buckets,
+    };
+  }
+
+  /** The partner table with its summary tiles (F-911). Live from the shared query, so it always matches the card and the tab. */
   async getAgingReport() {
-    const buckets = await (prisma as any).agentAgingBucket.findMany({
-      include: {
-        agent: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-          }
-        }
-      },
-      orderBy: {
-        bucket_8_plus: 'desc',
-      }
-    });
-
-    // Enrich with blocked status from agent_balances
-    const agentIds = buckets.map((b: any) => b.agentId);
-    const balances = agentIds.length > 0
-      ? await (prisma as any).agentBalance.findMany({
-          where: { agentId: { in: agentIds } },
-          select: { agentId: true, isBlocked: true }
-        })
+    const partners = await this.partnerAging();
+    const findings = partners.some((p) => p.cashHeld.lt(0))
+      ? await prisma.finding.findMany({ where: { type: 'negative_cash_held', subjectType: 'delivery_partner', status: 'open' }, select: { id: true, subjectId: true } })
       : [];
-    const blockedMap = new Map(balances.map((b: any) => [b.agentId, b.isBlocked]));
+    const findingOf = new Map(findings.map((f) => [f.subjectId, f.id]));
 
-    const enrichedBuckets = buckets.map((b: any) => ({
-      ...b,
-      isBlocked: blockedMap.get(b.agentId) || false,
-    }));
-
-    const summary = await this.getAgingSummary(buckets);
-
-    return {
-      summary,
-      buckets: enrichedBuckets
-    };
-  }
-
-  /**
-   * Generates a CSV string for the agent aging report
-   */
-  async generateAgingCSV(): Promise<string> {
-    const { buckets } = await this.getAgingReport();
-
-    // CSV Header
-    let csv = 'Agent,Total Balance,0-1 Day,2-3 Days,4-7 Days,8+ Days,Oldest Collection\n';
-
-    for (const entry of buckets) {
-      const agentName = `${entry.agent.firstName} ${entry.agent.lastName}`;
-      const oldestDate = entry.oldestCollectionDate ? new Date(entry.oldestCollectionDate).toLocaleDateString() : 'N/A';
-
-      csv += `"${agentName}",${Money.toApi(entry.totalBalance)},${Money.toApi(entry.bucket_0_1)},${Money.toApi(entry.bucket_2_3)},${Money.toApi(entry.bucket_4_7)},${Money.toApi(entry.bucket_8_plus)},"${oldestDate}"\n`;
-    }
-
-    return csv;
-  }
-
-  /**
-   * Calculate summary KPIs from bucket data
-   */
-  private async getAgingSummary(buckets: any[]) {
-    const totalAgentsWithBalance = buckets.length;
-    let totalOutstandingAmount = Money.ZERO;
-    let overdueAgentsCount = 0;
-    let criticalOverdueAmount = Money.ZERO;
-    let warningOverdueAmount = Money.ZERO;
-    let bucket_0_1_total = Money.ZERO;
-    let bucket_2_3_total = Money.ZERO;
-
-    for (const bucket of buckets) {
-      const balance = Money.parse(bucket.totalBalance);
-      totalOutstandingAmount = totalOutstandingAmount.add(balance);
-
-      const b01 = Money.parse(bucket.bucket_0_1);
-      const b23 = Money.parse(bucket.bucket_2_3);
-      const critical = Money.parse(bucket.bucket_8_plus);
-      const warning = Money.parse(bucket.bucket_4_7);
-
-      bucket_0_1_total = bucket_0_1_total.add(b01);
-      bucket_2_3_total = bucket_2_3_total.add(b23);
-
-      if (critical.gt(0) || warning.gt(0)) {
-        overdueAgentsCount++;
-      }
-
-      criticalOverdueAmount = criticalOverdueAmount.add(critical);
-      warningOverdueAmount = warningOverdueAmount.add(warning);
-    }
-
-    // Get blocked agents count
-    const blockedCount = await (prisma as any).agentBalance.count({
-      where: {
-        isBlocked: true,
-        currentBalance: { gt: 0 }
-      }
-    });
-
-    // Outstanding receivables = same source as totalOutstandingAmount (AgentCollection records)
-    // Both use the same data so they always agree — no GL reconciliation gap
-    const outstandingReceivables = totalOutstandingAmount;
+    const rows = partners
+      .sort((a, b) => b.overdueAmount.comparedTo(a.overdueAmount) || b.unpaidAmount.comparedTo(a.unpaidAmount) || a.agentId - b.agentId)
+      .map((p) => ({
+        agentId: p.agentId,
+        name: p.name,
+        email: p.email,
+        cashHeld: Money.toApi(p.cashHeld),
+        negativeCashHeld: p.cashHeld.lt(0),
+        findingId: findingOf.get(String(p.agentId)) ?? null,
+        daysToPay: p.daysToPay,
+        unpaidOrders: p.unpaidOrders,
+        unpaidAmount: Money.toApi(p.unpaidAmount),
+        buckets: AGE_BUCKETS.map((b, i) => ({ key: b.key, label: b.label, orders: p.buckets[i].orders, amount: Money.toApi(p.buckets[i].amount) })),
+        overdueOrders: p.overdueOrders,
+        overdueAmount: Money.toApi(p.overdueAmount),
+        oldestUnpaidDays: p.oldestUnpaidDays,
+        oldestDeliveredOn: p.oldestDeliveredOn,
+        isBlocked: p.isBlocked,
+      }));
 
     return {
-      totalAgentsWithBalance,
-      totalOutstandingAmount,
-      outstandingReceivables,
-      overdueAgentsCount,
-      criticalOverdueAmount,
-      warningOverdueAmount,
-      blockedAgentsWithBalance: blockedCount,
-      bucketTotals: {
-        bucket_0_1: bucket_0_1_total,
-        bucket_2_3: bucket_2_3_total,
-        bucket_4_7: warningOverdueAmount,
-        bucket_8_plus: criticalOverdueAmount,
-      }
-    };
-  }
-  /**
-   * Get agents with overdue collections (4-7 day or 8+ day buckets)
-   * Used by the notification job to alert admins
-   */
-  async getOverdueAgents(): Promise<{ agentId: number; agentName: string; totalBalance: Money.Money; warningAmount: Money.Money; criticalAmount: Money.Money }[]> {
-    const overdueBuckets = await (prisma as any).agentAgingBucket.findMany({
-      where: {
-        OR: [
-          { bucket_4_7: { gt: 0 } },
-          { bucket_8_plus: { gt: 0 } }
-        ]
+      summary: {
+        basis: 'net_of_delivery_fee' as const,
+        totalOutstandingAmount: Money.toApi(Money.sum(partners.map((p) => p.unpaidAmount))),
+        totalOrders: partners.reduce((n, p) => n + p.unpaidOrders, 0),
+        overdueAmount: Money.toApi(Money.sum(partners.map((p) => p.overdueAmount))),
+        overdueOrders: partners.reduce((n, p) => n + p.overdueOrders, 0),
+        overduePartners: partners.filter((p) => p.overdueOrders > 0).length,
+        partnersWithCash: partners.filter((p) => p.cashHeld.gt(0)).length,
+        negativeCashPartners: partners.filter((p) => p.cashHeld.lt(0)).length,
+        blockedPartners: partners.filter((p) => p.isBlocked).length,
       },
-      include: {
-        agent: {
-          select: { id: true, firstName: true, lastName: true }
-        }
-      }
-    });
+      partners: rows,
+    };
+  }
 
-    return overdueBuckets.map((bucket: any) => ({
-      agentId: bucket.agentId,
-      agentName: `${bucket.agent.firstName} ${bucket.agent.lastName}`,
-      totalBalance: Money.parse(bucket.totalBalance),
-      warningAmount: Money.parse(bucket.bucket_4_7),
-      criticalAmount: Money.parse(bucket.bucket_8_plus),
-    }));
+  /** CSV of the partner table. The columns follow the page (F-911). */
+  async generateAgingCSV(): Promise<string> {
+    const { partners } = await this.getAgingReport();
+    const header = ['Partner', 'Cash held', '0-3 days', '4-7 days', '8-14 days', '15+ days', 'Oldest unpaid (days)', 'Days to pay'];
+    const lines = partners.map((p) => [
+      `"${p.name.replace(/"/g, '""')}"`, p.cashHeld, ...p.buckets.map((b) => b.amount), p.oldestUnpaidDays ?? '', p.daysToPay,
+    ].join(','));
+    return [header.join(','), ...lines].join('\n') + '\n';
+  }
+
+  /** Partners with orders past their days to pay (the daily notification job). */
+  async getOverdueAgents(): Promise<{ agentId: number; agentName: string; totalBalance: Money.Money; warningAmount: Money.Money; criticalAmount: Money.Money }[]> {
+    const overdue = await this.overdueOrders();
+    const byPartner = new Map<number, UnpaidOrder[]>();
+    for (const o of overdue) byPartner.set(o.agentId, [...(byPartner.get(o.agentId) ?? []), o]);
+    if (byPartner.size === 0) return [];
+
+    const users = await prisma.user.findMany({ where: { id: { in: [...byPartner.keys()] } }, select: { id: true, firstName: true, lastName: true } });
+    const nameOf = new Map(users.map((u) => [u.id, fullName(u)]));
+    return [...byPartner].map(([agentId, rows]) => {
+      const total = Money.sum(rows.map((o) => o.amount));
+      const critical = Money.sum(rows.filter((o) => o.ageDays >= 8).map((o) => o.amount));
+      return { agentId, agentName: nameOf.get(agentId) || `Partner #${agentId}`, totalBalance: total, warningAmount: total.minus(critical), criticalAmount: critical };
+    });
   }
 }
 

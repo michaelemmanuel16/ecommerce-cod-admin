@@ -70,7 +70,7 @@ export const AgentAgingTab: React.FC = () => {
         let result = [...agentAging.buckets];
 
         if (filterOverdue) {
-            result = result.filter(b => b.bucket_4_7 > 0 || b.bucket_8_plus > 0);
+            result = result.filter(b => b.overdueOrders > 0);
         }
 
         result.sort((a: any, b: any) => {
@@ -95,10 +95,10 @@ export const AgentAgingTab: React.FC = () => {
         if (!agentAging?.summary?.bucketTotals) return [];
         const { bucketTotals } = agentAging.summary;
         return [
-            { name: '0-1 Day', value: bucketTotals.bucket_0_1, color: '#22c55e' },
-            { name: '2-3 Days', value: bucketTotals.bucket_2_3, color: '#3b82f6' },
+            { name: '0-3 Days', value: bucketTotals.bucket_0_3, color: '#22c55e' },
             { name: '4-7 Days', value: bucketTotals.bucket_4_7, color: '#f97316' },
-            { name: '8+ Days', value: bucketTotals.bucket_8_plus, color: '#ef4444' },
+            { name: '8-14 Days', value: bucketTotals.bucket_8_14, color: '#ef4444' },
+            { name: '15+ Days', value: bucketTotals.bucket_15_plus, color: '#991b1b' },
         ].filter(d => d.value > 0);
     }, [agentAging]);
 
@@ -302,13 +302,13 @@ export const AgentAgingTab: React.FC = () => {
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <div className="space-y-1">
                                                     <div className="flex items-center text-[10px] font-bold text-gray-400 uppercase tracking-tight">
-                                                        <span>{formatCurrency(entry.bucket_0_1 + entry.bucket_2_3)}</span>
+                                                        <span>{formatCurrency(entry.bucket_0_3)}</span>
                                                     </div>
                                                     <div className="w-16 h-1 bg-gray-100 rounded-full overflow-hidden">
                                                         {entry.totalBalance > 0 && (
                                                             <div
                                                                 className="h-full bg-green-500 rounded-full"
-                                                                style={{ width: `${Math.min(100, ((entry.bucket_0_1 + entry.bucket_2_3) / entry.totalBalance) * 100)}%` }}
+                                                                style={{ width: `${Math.min(100, ((entry.bucket_0_3) / entry.totalBalance) * 100)}%` }}
                                                             />
                                                         )}
                                                     </div>
@@ -325,9 +325,9 @@ export const AgentAgingTab: React.FC = () => {
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <span className={cn(
                                                     "px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider",
-                                                    entry.bucket_8_plus > 0 ? getBucketColor('8_plus') : "text-gray-300"
+                                                    entry.bucket_8_14 + entry.bucket_15_plus > 0 ? getBucketColor('8_plus') : "text-gray-300"
                                                 )}>
-                                                    {formatCurrency(entry.bucket_8_plus)}
+                                                    {formatCurrency(entry.bucket_8_14 + entry.bucket_15_plus)}
                                                 </span>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-right">

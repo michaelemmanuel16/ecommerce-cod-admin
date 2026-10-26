@@ -172,28 +172,57 @@ export interface AgingSummary {
   warningOverdueAmount: number;
   blockedAgentsWithBalance: number;
   bucketTotals: {
-    bucket_0_1: number;
-    bucket_2_3: number;
+    bucket_0_3: number;
     bucket_4_7: number;
-    bucket_8_plus: number;
+    bucket_8_14: number;
+    bucket_15_plus: number;
   };
 }
 
 export interface AgentAgingBucket {
+  agentId: number;
   agent: {
     id: number;
     firstName: string;
     lastName: string;
     email: string;
   };
+  /** Net unpaid amount of the partner's delivered orders (net of the delivery fee). */
   totalBalance: number;
-  oldestCollectionDate: string;
-  bucket_0_1: number;
-  bucket_2_3: number;
+  oldestCollectionDate: string | null;
+  cashHeld: number;
+  daysToPay: number;
+  overdueOrders: number;
+  oldestUnpaidDays: number | null;
+  bucket_0_3: number;
   bucket_4_7: number;
-  bucket_8_plus: number;
+  bucket_8_14: number;
+  bucket_15_plus: number;
   isBlocked: boolean;
-  updatedAt: string;
+}
+
+/** `GET /api/financial/agent-aging` (M5-T14): the page shape above is built from it in `getAgentAging`. */
+interface AgentAgingResponse {
+  summary: {
+    totalOutstandingAmount: string | number;
+    overdueAmount: string | number;
+    overduePartners: number;
+    blockedPartners: number;
+  };
+  partners: Array<{
+    agentId: number;
+    name: string;
+    email: string | null;
+    cashHeld: string | number;
+    daysToPay: number;
+    unpaidOrders: number;
+    unpaidAmount: string | number;
+    buckets: Array<{ amount: string | number }>;
+    overdueOrders: number;
+    oldestUnpaidDays: number | null;
+    oldestDeliveredOn: string | null;
+    isBlocked: boolean;
+  }>;
 }
 
 export interface AgentAgingReport {
@@ -474,8 +503,43 @@ export const financialService = {
   },
 
   async getAgentAging(): Promise<AgentAgingReport> {
-    const response = await apiClient.get('/api/financial/agent-aging');
-    return response.data;
+    const { data } = await apiClient.get<AgentAgingResponse>('/api/financial/agent-aging');
+    const buckets: AgentAgingBucket[] = data.partners.map((p) => ({
+      agentId: p.agentId,
+      agent: { id: p.agentId, firstName: p.name, lastName: '', email: p.email ?? '' },
+      totalBalance: Number(p.unpaidAmount),
+      oldestCollectionDate: p.oldestDeliveredOn,
+      cashHeld: Number(p.cashHeld),
+      daysToPay: p.daysToPay,
+      overdueOrders: p.overdueOrders,
+      oldestUnpaidDays: p.oldestUnpaidDays,
+      bucket_0_3: Number(p.buckets[0].amount),
+      bucket_4_7: Number(p.buckets[1].amount),
+      bucket_8_14: Number(p.buckets[2].amount),
+      bucket_15_plus: Number(p.buckets[3].amount),
+      isBlocked: p.isBlocked,
+    }));
+    const total = Number(data.summary.totalOutstandingAmount);
+    const overdue = Number(data.summary.overdueAmount);
+    const sum = (pick: (b: AgentAgingBucket) => number) => buckets.reduce((n, b) => n + pick(b), 0);
+    return {
+      summary: {
+        totalAgentsWithBalance: buckets.filter((b) => b.totalBalance > 0).length,
+        totalOutstandingAmount: total,
+        outstandingReceivables: total,
+        overdueAgentsCount: data.summary.overduePartners,
+        criticalOverdueAmount: overdue,
+        warningOverdueAmount: total - overdue,
+        blockedAgentsWithBalance: data.summary.blockedPartners,
+        bucketTotals: {
+          bucket_0_3: sum((b) => b.bucket_0_3),
+          bucket_4_7: sum((b) => b.bucket_4_7),
+          bucket_8_14: sum((b) => b.bucket_8_14),
+          bucket_15_plus: sum((b) => b.bucket_15_plus),
+        },
+      },
+      buckets,
+    };
   },
 
   async downloadAgentAgingCSV(): Promise<void> {
@@ -619,10 +683,6 @@ export const financialService = {
     await apiClient.post(`/api/agent-reconciliation/${collectionId}/verify`);
   },
 
-  async approveCollection(collectionId: number): Promise<void> {
-    await apiClient.post(`/api/agent-reconciliation/${collectionId}/approve`);
-  },
-
   async bulkVerifyCollections(ids: number[]): Promise<void> {
     await apiClient.post('/api/agent-reconciliation/bulk-verify', { ids });
   },
@@ -649,7 +709,7 @@ export const financialService = {
   },
 
   async rejectDeposit(depositId: number, notes: string): Promise<void> {
-    await apiClient.post(`/api/agent-reconciliation/deposits/${depositId}/reject`, { notes });
+    await apiClient.post(`/api/agent-reconciliation/deposits/${depositId}/reject`, { reason: notes });
   },
 
   async blockAgent(agentId: number, reason: string): Promise<void> {

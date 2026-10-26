@@ -62,8 +62,8 @@ beforeAll(async () => {
 
   await prismaBase.agentAgingBucket.createMany({
     data: [
-      { tenantId: tenantAId, agentId: agentAId, totalBalance: 500, bucket_8_plus: 500 },
-      { tenantId: tenantBId, agentId: agentBId, totalBalance: 700, bucket_8_plus: 700 },
+      { tenantId: tenantAId, agentId: agentAId, totalBalance: 500, bucket_8_14: 500 },
+      { tenantId: tenantBId, agentId: agentBId, totalBalance: 700, bucket_8_14: 700 },
     ],
   });
 });

@@ -61,7 +61,7 @@ export const AgentCollections: React.FC = () => {
     let result = [...agentAging.buckets];
 
     if (filterOverdue) {
-      result = result.filter(b => b.bucket_4_7 > 0 || b.bucket_8_plus > 0);
+      result = result.filter(b => b.overdueOrders > 0);
     }
 
     result.sort((a: any, b: any) => {
@@ -85,9 +85,9 @@ export const AgentCollections: React.FC = () => {
     if (!agentAging?.summary?.bucketTotals) return [];
     const { bucketTotals } = agentAging.summary;
     return [
-      { name: '0-3 Days', value: Number(bucketTotals.bucket_0_1) + Number(bucketTotals.bucket_2_3), color: '#22c55e' },
+      { name: '0-3 Days', value: Number(bucketTotals.bucket_0_3), color: '#22c55e' },
       { name: '4-7 Days', value: Number(bucketTotals.bucket_4_7), color: '#f97316' },
-      { name: '8+ Days', value: Number(bucketTotals.bucket_8_plus), color: '#ef4444' },
+      { name: '8+ Days', value: Number(bucketTotals.bucket_8_14) + Number(bucketTotals.bucket_15_plus), color: '#ef4444' },
     ].filter(d => d.value > 0);
   }, [agentAging]);
 
@@ -312,7 +312,7 @@ export const AgentCollections: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                          {formatCurrency(Number(bucket.bucket_0_1) + Number(bucket.bucket_2_3))}
+                          {formatCurrency(Number(bucket.bucket_0_3))}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -322,7 +322,7 @@ export const AgentCollections: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                          {formatCurrency(bucket.bucket_8_plus)}
+                          {formatCurrency(Number(bucket.bucket_8_14) + Number(bucket.bucket_15_plus))}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">

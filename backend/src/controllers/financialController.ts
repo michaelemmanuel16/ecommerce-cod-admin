@@ -300,6 +300,15 @@ export const getAgentAgingReport = async (_req: AuthRequest, res: Response): Pro
   }
 };
 
+export const getUnpaidByAge = async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    res.json(await agingService.getUnpaidByAge());
+  } catch (error) {
+    logger.error('Failed to fetch unpaid orders by age', { error });
+    res.status(500).json({ error: 'Failed to fetch unpaid orders by age' });
+  }
+};
+
 export const exportAgentAgingCSV = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const csv = await agingService.generateAgingCSV();

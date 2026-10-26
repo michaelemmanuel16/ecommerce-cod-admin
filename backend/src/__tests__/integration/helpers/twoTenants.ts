@@ -182,7 +182,7 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
       },
     })),
     seed('agentAgingBucket', prismaBase.agentAgingBucket.create({
-      data: { agentId: deliveryAgent.id, totalBalance: amount, bucket_8_plus: amount, tenantId },
+      data: { agentId: deliveryAgent.id, totalBalance: amount, bucket_8_14: amount, tenantId },
     })),
     seed('agentBalance', prismaBase.agentBalance.create({
       data: { agentId: deliveryAgent.id, totalCollected: amount, currentBalance: amount, tenantId },
