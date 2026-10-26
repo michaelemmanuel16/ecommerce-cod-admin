@@ -887,14 +887,14 @@ export class GLAutomationService {
    * @param deposit - Agent deposit record
    * @param userId - ID of user verifying the deposit
    * @param cover - What the FIFO match covered (`matched`) and what is left over (`remaining`)
-   * @returns Created journal entry
+   * @returns The entry, and the id of the excess_deposit Finding it opened (null when there is no excess)
    */
   static async createAgentDepositEntry(
     tx: Prisma.TransactionClient,
     deposit: AgentDeposit,
     userId: number,
     cover: { matched: Money.MoneyInput; remaining: Money.MoneyInput }
-  ): Promise<JournalEntryWithTransactions> {
+  ): Promise<{ entry: JournalEntryWithTransactions; excessFindingId: number | null }> {
     // Idempotency guard — prevent duplicate GL entries for the same agent deposit
     const existingEntry = await tx.journalEntry.findFirst({
       where: {
@@ -906,7 +906,7 @@ export class GLAutomationService {
     });
     if (existingEntry) {
       logger.warn(`Skipping duplicate GL entry for agent deposit ${deposit.id}: ${existingEntry.entryNumber} already exists`);
-      return existingEntry as JournalEntryWithTransactions;
+      return { entry: existingEntry as JournalEntryWithTransactions, excessFindingId: null };
     }
 
     const depositAmount = Money.parse(deposit.amount);
@@ -950,8 +950,9 @@ export class GLAutomationService {
       },
     });
 
+    let excessFindingId: number | null = null;
     if (excess.greaterThan(0)) {
-      await openFindingOnce({
+      excessFindingId = await openFindingOnce({
         tenantId: resolveTenantId(deposit.tenantId),
         type: 'excess_deposit',
         subjectType: 'agent_deposit',
@@ -960,7 +961,7 @@ export class GLAutomationService {
         note: `Deposit ${deposit.referenceNumber} is ${Money.toApi(excess)} more than the partner's open collections. The excess is held in 2040.`,
       }, { includeClosed: true }, tx as any);
     }
-    return entry;
+    return { entry, excessFindingId };
   }
 
   /**

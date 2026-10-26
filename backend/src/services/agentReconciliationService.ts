@@ -13,7 +13,7 @@ import { GLAutomationService } from './glAutomationService';
 interface DepositAllocation { collectionId: number; amount: string }
 
 /** An open collection as read for matching. `allocatedAmount` is what the database holds now. */
-export interface OpenCollection { id: number; agentId: number; amount: Prisma.Decimal; allocatedAmount: Prisma.Decimal }
+export interface OpenCollection { id: number; agentId: number; amount: Prisma.Decimal; allocatedAmount: Prisma.Decimal; orderId?: number }
 
 /** One collection a deposit covers: `take` of its outstanding amount. `allocated` is the value it must still hold to be claimed. */
 export interface Cover { id: number; agentId: number; amount: Money.Money; allocated: Money.Money; take: Money.Money }
@@ -143,13 +143,64 @@ export class AgentReconciliationService {
         });
     }
 
-    /** The partner's open collections, oldest first. The deposit paths and the partner payout (M5-T12) share it. */
-    async loadOpenCollections(extTx: any, agentId: number): Promise<OpenCollection[]> {
+    /** The partner's open collections, oldest first; `orderIds` limits them to those orders. The deposit paths and the partner payout (M5-T11, T12) share it. */
+    async loadOpenCollections(extTx: any, agentId: number, orderIds?: number[]): Promise<OpenCollection[]> {
         return extTx.agentCollection.findMany({
-            where: { agentId, status: { in: [...OPEN_COLLECTION_STATUSES] } },
-            orderBy: { collectionDate: 'asc' },
-            select: { id: true, agentId: true, amount: true, allocatedAmount: true },
+            where: { agentId, status: { in: [...OPEN_COLLECTION_STATUSES] }, ...(orderIds ? { orderId: { in: orderIds } } : {}) },
+            orderBy: [{ collectionDate: 'asc' }, { id: 'asc' }],
+            select: { id: true, agentId: true, amount: true, allocatedAmount: true, orderId: true },
         });
+    }
+
+    /**
+     * Mark collections reconciled and their orders paid (F-912): status and approval, the verifier where none is set yet,
+     * an optional link to the settlement line that paid each, and `Order.paymentStatus`. One statement per table, whatever
+     * the number of rows. The one writer of "reconciled": a single verify and a settlement both come here.
+     */
+    async reconcileCollectionRows(
+        extTx: any,
+        items: Array<{ collectionId: number; orderId: number | null; settlementLineId?: number }>,
+        actorId: number,
+    ): Promise<void> {
+        if (items.length === 0) return;
+        const now = new Date();
+        const ids = items.map((i) => i.collectionId);
+        await extTx.agentCollection.updateMany({ where: { id: { in: ids } }, data: { status: 'reconciled', approvedAt: now, approvedById: actorId } });
+        await extTx.agentCollection.updateMany({ where: { id: { in: ids }, verifiedAt: null }, data: { verifiedAt: now, verifiedById: actorId } });
+        const linked = items.filter((i) => i.settlementLineId !== undefined);
+        if (linked.length > 0) {
+            const rows = Prisma.join(linked.map((i) => Prisma.sql`(${i.collectionId}::int, ${i.settlementLineId}::int)`));
+            await extTx.$executeRaw`
+                UPDATE agent_collections AS c SET settlement_line_id = v.line
+                FROM (VALUES ${rows}) AS v(id, line)
+                WHERE c.id = v.id AND c.tenant_id = ${resolveTenantId()}`;
+        }
+        const orderIds = items.map((i) => i.orderId).filter((id): id is number => id !== null);
+        if (orderIds.length > 0) await extTx.order.updateMany({ where: { id: { in: orderIds } }, data: { paymentStatus: 'reconciled' } });
+    }
+
+    /**
+     * The tail of every verified deposit (single, bulk and partner payout): claim the covers of the plan, post the entry,
+     * keep the allocations and note any unallocated remainder on the deposit. `deposit` is the verified row.
+     * Returns the updated deposit and the id of the excess_deposit Finding the entry opened, if any.
+     */
+    async settleDeposit(extTx: any, deposit: any, userId: number, plan: ReturnType<typeof planCover>): Promise<{ deposit: any; excessFindingId: number | null }> {
+        const { byCollection } = await this.claimCovers(extTx, plan.covers);
+        if (byCollection.size !== plan.covers.length) throw new AppError('Collections were changed by someone else. Reload and try again.', 409);
+
+        const { excessFindingId } = await GLAutomationService.createAgentDepositEntry(extTx, deposit, userId, plan);
+        const updated = await extTx.agentDeposit.update({
+            where: { id: deposit.id },
+            data: {
+                allocations: plan.allocations,
+                ...(plan.remaining.isZero() ? {} : {
+                    notes: deposit.notes
+                        ? `${deposit.notes} (Unallocated remainder: ${plan.remaining.toString()})`
+                        : `Unallocated remainder: ${plan.remaining.toString()} `,
+                }),
+            },
+        });
+        return { deposit: updated, excessFindingId };
     }
 
     /**
@@ -203,23 +254,8 @@ export class AgentReconciliationService {
         if (claim.count === 0) throw new AppError(`Already verified: ${deposit.referenceNumber}`, 409);
 
         const plan = planCover(open, Money.parse(deposit.amount));
-        const { byCollection } = await this.claimCovers(extTx, plan.covers);
-        if (byCollection.size !== plan.covers.length) throw new AppError('Collections were changed by someone else. Reload and try again.', 409);
-
-        await GLAutomationService.createAgentDepositEntry(extTx, { ...deposit, ...claimData }, verifierId, plan);
-
         // The allocations are kept for a later reject; an unallocated remainder goes in the note
-        return extTx.agentDeposit.update({
-            where: { id: deposit.id },
-            data: {
-                allocations: plan.allocations,
-                ...(plan.remaining.isZero() ? {} : {
-                    notes: deposit.notes
-                        ? `${deposit.notes} (Unallocated remainder: ${plan.remaining.toString()})`
-                        : `Unallocated remainder: ${plan.remaining.toString()} `,
-                }),
-            },
-        });
+        return (await this.settleDeposit(extTx, { ...deposit, ...claimData }, verifierId, plan)).deposit;
     }
 
     /**
@@ -574,25 +610,9 @@ export class AgentReconciliationService {
             throw new AppError(`Collection cannot be reconciled from status: ${collection.status} `, 400);
         }
 
-        // 1. Update collection status to reconciled
-        const updated = await (tx as any).agentCollection.update({
-            where: { id: collectionId },
-            data: {
-                status: 'reconciled',
-                verifiedAt: collection.verifiedAt || new Date(),
-                verifiedById: collection.verifiedById || verifierId,
-                approvedAt: new Date(),
-                approvedById: verifierId,
-            },
-        });
-
-        // 2. Update associated order paymentStatus to reconciled
-        if (collection.orderId) {
-            await (tx as any).order.update({
-                where: { id: collection.orderId },
-                data: { paymentStatus: 'reconciled' }
-            });
-        }
+        // 1 and 2. Collection status to reconciled and the order's paymentStatus, through the one writer
+        await this.reconcileCollectionRows(tx, [{ collectionId, orderId: collection.orderId ?? null }], verifierId);
+        const updated = { ...collection, status: 'reconciled', approvedById: verifierId };
 
         // 3. Update agent balance - this is a settlement/reconciliation
         const balance = await this.getOrCreateBalance(collection.agentId, tx as any);

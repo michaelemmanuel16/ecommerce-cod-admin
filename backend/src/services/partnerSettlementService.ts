@@ -6,11 +6,13 @@
  * code here: a partner is a user with the delivery_agent role, nothing more.
  *
  * One payout is one transaction: the settlement row is inserted first (its unique key makes a repeated reference wait
- * and then return the first result), then the partner's balance row is locked (so two payouts or deposits of one partner
- * run one after the other), then lines are matched, fees trued up, collections claimed and reconciled, one deposit posted
- * through the same cover path as a verified deposit, and Findings opened for every gap.
+ * and then return the first result), the partner's balance row is updated next (that lock makes two payouts or deposits
+ * of one partner run one after the other), then the path-specific part runs: matching lines and fee true-up for a paid
+ * list, nothing for a manual payout. Both end in `settle`: FIFO plan over the open collections, one deposit through the
+ * same cover path as a verified deposit, reconcile what is paid in full, close the short_pay Findings this clears.
  */
-import { AgentDeposit, FeeOutcome, Prisma, PartnerSettlement, PartnerSettlementLine } from '@prisma/client';
+import { AuditChannel, FeeOutcome, Prisma, PartnerSettlement, PartnerSettlementLine } from '@prisma/client';
+import { z } from 'zod';
 import prisma, { TransactionClient } from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import appEvents, { AppEvent } from '../utils/appEvents';
@@ -26,23 +28,36 @@ import * as Money from '../utils/money';
 import { loadPartner } from './deliveryPartnerAdminService';
 import agentReconciliationService, { OpenCollection, planCover } from './agentReconciliationService';
 import { GLAutomationService } from './glAutomationService';
-import { closeClearedShortPays, openFindingOnce } from './findingService';
+import { closeClearedShortPays, openFindingsOnce } from './findingService';
+import { auditService } from './auditService';
 import { isChargeVariance, matchLine, MatchIndex, OrderCandidate, settlementOutcome } from './settlementMatching';
-import { PartnerPayoutInput, partnerPayoutSchema } from '../validators/partnerPayoutSchema';
+import {
+  ManualPayoutInput, ManualPreviewInput, manualPayoutSchema, manualPreviewSchema, PartnerPayoutInput, partnerPayoutSchema,
+} from '../validators/partnerPayoutSchema';
 import { formatIssues } from '../tools/shared';
 
-/** Who records the payout: the signed-in user, or the AI agent user behind an MCP key. */
-export interface SettlementActor { id: number }
+/**
+ * Who records the payout. `auditChannel` is set by the API route, which writes the one audit row of the call here;
+ * a registry tool leaves it out because `runTool` writes that row.
+ */
+export interface SettlementActor { id: number; auditChannel?: AuditChannel }
 
-/** Parse the one input format. A bad payload is a 400 that names each problem. */
-export function parsePartnerPayout(raw: unknown): PartnerPayoutInput {
-  const parsed = partnerPayoutSchema.safeParse(raw ?? {});
-  if (!parsed.success) throw new AppError(formatIssues(parsed.error), 400, 'INVALID_PAYOUT');
+function parseWith<S extends z.ZodType>(schema: S, raw: unknown, code: string): z.output<S> {
+  const parsed = schema.safeParse(raw ?? {});
+  if (!parsed.success) throw new AppError(formatIssues(parsed.error), 400, code);
   return parsed.data;
 }
 
+/** Parse the one input format. A bad payload is a 400 that names each problem. */
+export const parsePartnerPayout = (raw: unknown): PartnerPayoutInput => parseWith(partnerPayoutSchema, raw, 'INVALID_PAYOUT');
+export const parseManualPayout = (raw: unknown): ManualPayoutInput => parseWith(manualPayoutSchema, raw, 'INVALID_PAYOUT');
+export const parseManualPreview = (raw: unknown): ManualPreviewInput => parseWith(manualPreviewSchema, raw, 'INVALID_PAYOUT');
+
 type SettlementWithLines = PartnerSettlement & { lines: PartnerSettlementLine[] };
 type FindingRef = { id: number; type: string };
+
+/** What the settlement keeps in `payload`: the input as received (a paid list) and the Findings the call opened, so a repeat can return them. */
+interface SettlementPayload { input?: unknown; findings: FindingRef[] }
 
 const lineView = (l: PartnerSettlementLine) => ({
   id: l.id,
@@ -56,8 +71,11 @@ const lineView = (l: PartnerSettlementLine) => ({
   note: l.note,
 });
 
-/** One settlement as the API and the tool return it. */
-export function settlementView(s: SettlementWithLines, extra: { replayed?: boolean; findings?: FindingRef[]; warnings?: string[] } = {}) {
+const unappliedWarning = (currency: string, amount: Money.Money, verb: string) =>
+  `${currency} ${Money.toApi(amount)} ${verb} held as unapplied (account 2040)`;
+
+/** One settlement as the API and the tool return it. The Findings come from the stored payload. */
+export function settlementView(s: SettlementWithLines, extra: { replayed?: boolean; warnings?: string[] } = {}) {
   return {
     id: s.id,
     partnerId: s.partnerId,
@@ -74,7 +92,7 @@ export function settlementView(s: SettlementWithLines, extra: { replayed?: boole
     matchedLines: s.lines.filter((l) => l.matched).length,
     unmatchedLines: s.lines.filter((l) => !l.matched).length,
     lines: s.lines.map(lineView),
-    findings: extra.findings ?? [],
+    findings: ((s.payload as unknown as SettlementPayload | null)?.findings ?? []),
     warnings: extra.warnings ?? [],
     replayed: extra.replayed ?? false,
   };
@@ -85,27 +103,11 @@ export type SettlementView = ReturnType<typeof settlementView>;
 const findExisting = (partnerId: number, reference: string) =>
   prisma.partnerSettlement.findFirst({ where: { partnerId, reference }, include: { lines: { orderBy: { id: 'asc' } } } });
 
-/** The first result again, for a repeated reference: the same findings and warning the first call returned. */
-async function replayView(s: SettlementWithLines, currency: string) {
-  const lineIds = s.lines.map((l) => String(l.id));
-  const found = await prisma.finding.findMany({
-    where: {
-      OR: [
-        { subjectType: 'partner_settlement', subjectId: String(s.id) },
-        { subjectType: 'settlement_line', subjectId: { in: lineIds } },
-        ...(s.depositId ? [{ type: 'excess_deposit' as const, subjectType: 'agent_deposit', subjectId: String(s.depositId) }] : []),
-      ],
-    },
-    select: { id: true, type: true },
-    orderBy: { id: 'asc' },
-  });
+/** The first result again, for a repeated reference. */
+function replayView(s: SettlementWithLines, currency: string) {
   const unapplied = Money.parse(s.unappliedAmount);
-  const warnings = unapplied.gt(0) ? [unappliedWarning(currency, unapplied, 'of the payout matched no open order and is')] : [];
-  return settlementView(s, { replayed: true, findings: found, warnings });
+  return settlementView(s, { replayed: true, warnings: unapplied.gt(0) ? [unappliedWarning(currency, unapplied, 'of the payout matched no open order and is')] : [] });
 }
-
-const unappliedWarning = (currency: string, amount: Money.Money, verb: string) =>
-  `${currency} ${Money.toApi(amount)} ${verb} held as unapplied (account 2040)`;
 
 // ---- Reading the candidate orders ----
 
@@ -145,87 +147,156 @@ async function loadMatchIndex(tx: TransactionClient, partnerId: number, lines: P
   return index;
 }
 
-// ---- The shared money path: claim covers, reconcile, post the deposit ----
+// ---- The shared money path ----
 
-interface DepositPost {
+/**
+ * The FIFO plan of a payout: the partner's open collections oldest first (limited to `orderIds` when given), what `amount`
+ * covers, what is left. The one planner behind the manual preview, the manual payout and a paid list. Reads only.
+ */
+async function planPayout(db: Pick<TransactionClient, 'agentCollection'>, partnerId: number, amount: Money.Money, orderIds?: number[]) {
+  const open = await agentReconciliationService.loadOpenCollections(db, partnerId, orderIds);
+  const orderOf = new Map(open.map((c) => [c.id, c.orderId!]));
+  const unpaid = Money.sum(open.map((c) => outstandingOf(c)));
+  const plan = planCover(open.map((c): OpenCollection => ({ ...c })), amount);
+  return { unpaid, plan, orderOf };
+}
+type PayoutPlan = Awaited<ReturnType<typeof planPayout>>;
+
+/**
+ * Take the partner's balance row for this transaction by applying the real deposit to it (as verifying a deposit does):
+ * the row lock makes two payouts or deposits of one partner run one after the other. `settle` corrects the part that
+ * matched no collection.
+ */
+async function lockBalance(tx: TransactionClient, partnerId: number, amount: Money.Money) {
+  const balance = await agentReconciliationService.getOrCreateBalance(partnerId, tx);
+  await tx.agentBalance.update({
+    where: { id: balance.id },
+    data: { totalDeposited: { increment: amount }, currentBalance: { decrement: amount }, lastSettlementDate: new Date() },
+  });
+  return balance as { id: number };
+}
+
+interface SettleParams {
   settlement: PartnerSettlement;
+  balanceId: number;
   partnerId: number;
   amount: Money.Money;
   depositDate: Date;
   method: 'partner_payout' | 'manual';
   actorId: number;
+  planned: PayoutPlan;
+  /** The settlement line that paid each order, to link its collection. */
+  lineOfOrder: Map<number, number>;
+  /** Sum of fee true-ups already applied to collections (a paid list); 0 for a manual payout. */
+  trueUp?: Money.Money;
 }
 
 /**
- * Match `amount` FIFO over `open`, claim the covers (conditional, so cash is never covered twice), and return the plan
- * with the covers that cleared their collection completely. Throws 409 when a row was changed by someone else.
+ * The tail of every payout: one verified deposit for the amount, its entry (DR 1010, CR 1015, excess CR 2040) and cover
+ * claims through the verified-deposit path, collections paid in full reconciled, the partner balance corrected for the
+ * excess and the fee true-up, the short_pay Findings this clears closed.
  */
-async function claimPlan(tx: TransactionClient, open: OpenCollection[], amount: Money.Money) {
-  return claimPlanned(tx, planCover(open, amount));
-}
-
-/** Claim the covers of a plan already made (see `claimPlan`). */
-async function claimPlanned(tx: TransactionClient, plan: ReturnType<typeof planCover>) {
-  const { byCollection } = await agentReconciliationService.claimCovers(tx, plan.covers);
-  if (byCollection.size !== plan.covers.length) throw new AppError('Collections were changed by someone else. Reload and try again.', 409, 'COLLECTIONS_CHANGED');
-  const full = plan.covers.filter((c) => c.allocated.plus(c.take).gte(c.amount));
-  return { plan, full };
-}
-
-/** Fully covered collections become `reconciled` (never stay `deposited`), their orders `reconciled`, and each points at its line. */
-async function reconcileCollections(tx: TransactionClient, items: Array<{ collectionId: number; orderId: number; lineId: number }>, actorId: number) {
-  const now = new Date();
-  for (const item of items) {
-    await tx.agentCollection.update({
-      where: { id: item.collectionId },
-      data: { status: 'reconciled', settlementLineId: item.lineId, verifiedAt: now, verifiedById: actorId, approvedAt: now, approvedById: actorId },
-    });
-  }
-  if (items.length > 0) await tx.order.updateMany({ where: { id: { in: items.map((i) => i.orderId) } }, data: { paymentStatus: 'reconciled' } });
-}
-
-/** One verified deposit for the payout, posted by the same entry as a verified agent deposit (DR 1010, CR 1015, excess CR 2040). */
-async function postDeposit(tx: TransactionClient, p: DepositPost, plan: ReturnType<typeof planCover>): Promise<AgentDeposit> {
+async function settle(tx: TransactionClient, p: SettleParams) {
+  const { plan, orderOf } = p.planned;
   const deposit = await tx.agentDeposit.create({
     data: {
-      tenantId: p.settlement.tenantId,
-      agentId: p.partnerId,
-      amount: p.amount,
-      status: 'verified',
-      depositDate: p.depositDate,
-      depositMethod: p.method,
-      referenceNumber: `PS${p.settlement.id}-${p.settlement.reference}`,
-      verifiedAt: new Date(),
-      verifiedById: p.actorId,
-      settlementId: p.settlement.id,
-      allocations: plan.allocations,
-      notes: plan.remaining.isZero() ? null : `Unallocated remainder: ${plan.remaining.toString()}`,
+      tenantId: p.settlement.tenantId, agentId: p.partnerId, amount: p.amount, status: 'verified', depositDate: p.depositDate,
+      depositMethod: p.method, referenceNumber: `PS${p.settlement.id}-${p.settlement.reference}`,
+      verifiedAt: new Date(), verifiedById: p.actorId, settlementId: p.settlement.id,
     },
   });
-  await GLAutomationService.createAgentDepositEntry(tx as unknown as Prisma.TransactionClient, deposit, p.actorId, plan);
-  return deposit;
+  const { deposit: saved, excessFindingId } = await agentReconciliationService.settleDeposit(tx, deposit, p.actorId, plan);
+
+  const full = plan.covers.filter((c) => c.allocated.plus(c.take).gte(c.amount));
+  await agentReconciliationService.reconcileCollectionRows(
+    tx,
+    full.map((c) => ({ collectionId: c.id, orderId: orderOf.get(c.id)!, settlementLineId: p.lineOfOrder.get(orderOf.get(c.id)!) })),
+    p.actorId,
+  );
+
+  const trueUp = p.trueUp ?? Money.ZERO;
+  if (!plan.remaining.isZero() || !trueUp.isZero()) {
+    await tx.agentBalance.update({
+      where: { id: p.balanceId },
+      data: {
+        totalCollected: { decrement: trueUp },
+        totalDeposited: { decrement: plan.remaining },
+        currentBalance: { decrement: trueUp.minus(plan.remaining) },
+      },
+    });
+  }
+  await closeClearedShortPays(tx, p.partnerId, p.settlement.reference);
+  return { deposit: saved, excessFindingId };
 }
 
-/** The partner's balance row, locked for the rest of the transaction. Two payouts or deposits of one partner run one after the other. */
-async function lockBalance(tx: TransactionClient, partnerId: number) {
-  const balance = await agentReconciliationService.getOrCreateBalance(partnerId, tx);
-  await tx.agentBalance.update({ where: { id: balance.id }, data: { lastSettlementDate: new Date() } });
-  return balance as { id: number };
+/** Run one payout in a transaction; announce it after commit; a repeated reference at once goes to `onDuplicate` with the first settlement. */
+async function runSettlement<T>(
+  partnerId: number,
+  reference: string,
+  work: (tx: TransactionClient) => Promise<T>,
+  onDuplicate: (first: SettlementWithLines) => T,
+): Promise<T> {
+  try {
+    const result = await prisma.$transaction(work, TRANSACTION_CONFIG);
+    appEvents.emit(AppEvent.AGENT_COLLECTION_RECONCILED);
+    return result;
+  } catch (error) {
+    // Two calls with one reference: the loser's insert waits for the winner, then hits the unique key
+    if (isUniqueViolation(error)) {
+      const winner = await findExisting(partnerId, reference);
+      if (winner) return onDuplicate(winner);
+    }
+    throw error;
+  }
 }
+
+/** One audit row per call, in the shape `runTool` writes for the same tool, so API and MCP calls read alike. */
+const auditPayoutCall = (actor: SettlementActor, input: { partnerId: number; reference: string; lines: number }, view: SettlementView) =>
+  auditService.record({
+    actorId: actor.id, actorKind: 'person', channel: actor.auditChannel,
+    action: 'tool_call', resource: 'tool', resourceId: 'partner_payout_record', tool: 'partner_payout_record', status: 'ok',
+    input, after: { status: view.status, replayed: view.replayed },
+  });
 
 // ---- Record partner payout (the paid-order list) ----
 
 interface PayoutContext { tenantId: string; currency: string; actor: SettlementActor; input: PartnerPayoutInput }
+
+/** Batched true-up: the collections' cash and the orders' fee change to the real charge, each in one statement, row counts compared. */
+async function applyTrueUps(
+  tx: TransactionClient,
+  items: Array<{ collection: NonNullable<OrderCandidate['collection']>; orderId: number; charge: Money.Money; diff: Money.Money }>,
+): Promise<void> {
+  if (items.length === 0) return;
+  const tenantId = resolveTenantId();
+  const collectionRows = Prisma.join(items.map((i) =>
+    Prisma.sql`(${i.collection.id}::int, ${i.collection.amount.toFixed(4)}::numeric, ${i.collection.allocatedAmount.toFixed(4)}::numeric, ${i.collection.amount.minus(i.diff).toFixed(4)}::numeric)`));
+  const claimed: Array<{ id: number }> = await tx.$queryRaw`
+    UPDATE agent_collections AS c
+    SET amount = v.new_amount, updated_at = now()
+    FROM (VALUES ${collectionRows}) AS v(id, old_amount, alloc, new_amount)
+    WHERE c.id = v.id AND c.tenant_id = ${tenantId} AND c.amount = v.old_amount AND c.allocated_amount = v.alloc
+      AND c.status::text IN (${Prisma.join([...OPEN_COLLECTION_STATUSES])})
+    RETURNING c.id`;
+  if (claimed.length !== items.length) throw new AppError('Collections were changed by someone else. Reload and try again.', 409, 'COLLECTIONS_CHANGED');
+
+  const orderRows = Prisma.join(items.map((i) => Prisma.sql`(${i.orderId}::int, ${i.charge.toFixed(4)}::numeric)`));
+  await tx.$executeRaw`
+    UPDATE orders AS o
+    SET delivery_fee = v.fee, delivery_fee_source = 'settlement'::"DeliveryFeeSource", updated_at = now()
+    FROM (VALUES ${orderRows}) AS v(id, fee)
+    WHERE o.id = v.id AND o.tenant_id = ${tenantId}`;
+}
 
 async function applyPayout(tx: TransactionClient, { tenantId, currency, actor, input }: PayoutContext): Promise<SettlementView> {
   const { partnerId } = input;
   const settlement = await tx.partnerSettlement.create({
     data: {
       tenantId, partnerId, payoutDate: input.payoutDate, payoutAmount: input.payoutAmount, currency, reference: input.reference,
-      status: 'unmatched', recordedById: actor.id, notes: input.notes, payload: input as unknown as Prisma.InputJsonValue,
+      status: 'unmatched', recordedById: actor.id, notes: input.notes,
     },
   });
-  const balance = await lockBalance(tx, partnerId);
+  const balance = await lockBalance(tx, partnerId, input.payoutAmount);
 
   // 1. Match every line to an order and its open collection
   const index = await loadMatchIndex(tx, partnerId, input.lines);
@@ -251,6 +322,7 @@ async function applyPayout(tx: TransactionClient, { tenantId, currency, actor, i
   let feeBooked: Money.Money = Money.ZERO;
   let feeCharged: Money.Money = Money.ZERO;
   const variances: Array<{ lineId: number; orderId: number; booked: Money.Money; charge: Money.Money }> = [];
+  const changes: Parameters<typeof applyTrueUps>[1] = [];
   for (const { line, order } of matched) {
     const booked = order.deliveryFee ?? Money.ZERO;
     const charge = Money.parse(line.charge);
@@ -259,35 +331,19 @@ async function applyPayout(tx: TransactionClient, { tenantId, currency, actor, i
     if (isChargeVariance(booked, charge)) variances.push({ lineId: line.id, orderId: order.id, booked, charge });
     const diff = charge.minus(booked);
     if (diff.isZero()) continue;
-
-    const c = order.collection!;
-    const claim = await tx.agentCollection.updateMany({
-      where: { id: c.id, status: { in: [...OPEN_COLLECTION_STATUSES] }, amount: c.amount, allocatedAmount: c.allocatedAmount },
-      data: { amount: c.amount.minus(diff) },
-    });
-    if (claim.count !== 1) throw new AppError('Collections were changed by someone else. Reload and try again.', 409, 'COLLECTIONS_CHANGED');
-    c.amount = c.amount.minus(diff);
-    await tx.order.update({ where: { id: order.id }, data: { deliveryFee: charge, deliveryFeeSource: 'settlement' } });
+    changes.push({ collection: order.collection!, orderId: order.id, charge, diff });
     trueUp = trueUp.plus(diff);
   }
+  await applyTrueUps(tx, changes);
   await GLAutomationService.createFeeTrueUpEntry(tx as unknown as Prisma.TransactionClient, settlement, trueUp, actor.id, input.payoutDate);
 
-  // 3. Cover the matched collections FIFO with the payout, reconcile what is paid in full, post one deposit
-  const byCollection = new Map(matched.map((m) => [m.order.collection!.id, m]));
-  const open: OpenCollection[] = matched
-    .map((m) => m.order.collection!)
-    .sort((a, b) => a.collectionDate.getTime() - b.collectionDate.getTime() || a.id - b.id)
-    .map((c) => ({ id: c.id, agentId: partnerId, amount: c.amount, allocatedAmount: c.allocatedAmount }));
-  const { plan, full } = await claimPlan(tx, open, input.payoutAmount);
-  await reconcileCollections(tx, full.map((c) => ({ collectionId: c.id, orderId: byCollection.get(c.id)!.order.id, lineId: byCollection.get(c.id)!.line.id })), actor.id);
-  const deposit = await postDeposit(tx, { settlement, partnerId, amount: input.payoutAmount, depositDate: input.payoutDate, method: 'partner_payout', actorId: actor.id }, plan);
-  await tx.agentBalance.update({
-    where: { id: balance.id },
-    data: {
-      totalCollected: { decrement: trueUp },
-      totalDeposited: { increment: plan.matched },
-      currentBalance: { decrement: trueUp.plus(plan.matched) },
-    },
+  // 3. Cover the matched collections FIFO with the payout (read again after the true-up), reconcile, post one deposit
+  const planned = await planPayout(tx, partnerId, input.payoutAmount, matched.map((m) => m.order.id));
+  const { plan } = planned;
+  const lineOfOrder = new Map(matched.map((m) => [m.order.id, m.line.id]));
+  const { deposit, excessFindingId } = await settle(tx, {
+    settlement, balanceId: balance.id, partnerId, amount: input.payoutAmount, depositDate: input.payoutDate,
+    method: 'partner_payout', actorId: actor.id, planned, lineOfOrder, trueUp,
   });
 
   // 4. Status, and a Finding for every gap
@@ -296,46 +352,48 @@ async function applyPayout(tx: TransactionClient, { tenantId, currency, actor, i
   const unmatchedLines = lines.filter((l) => !l.matched);
   const outcome = settlementOutcome({ unmatchedLines: unmatchedLines.length, payout: input.payoutAmount, expectedNet });
   const needsReview = isChargeVariance(feeBooked, feeCharged);
-  const updated = await tx.partnerSettlement.update({
-    where: { id: settlement.id },
-    data: { expectedNet, shortAmount: outcome.shortAmount, unappliedAmount: plan.remaining, status: outcome.status, needsReview, depositId: deposit.id },
-    include: { lines: { orderBy: { id: 'asc' } } },
-  });
 
-  // Earlier short payments this payout clears are closed first, so this settlement's own Finding is not closed by itself
-  await closeClearedShortPays(tx, partnerId, input.reference);
-
-  const findings: FindingRef[] = [];
-  const open1 = async (type: Prisma.FindingUncheckedCreateInput['type'], subjectType: string, subjectId: number, amount: Money.Money, note: string) =>
-    findings.push({ type, id: await openFindingOnce({ tenantId, type, subjectType, subjectId: String(subjectId), amount, note }, { includeClosed: true }, tx) });
+  const wanted: Array<Prisma.FindingUncheckedCreateInput> = [];
+  const want = (type: Prisma.FindingUncheckedCreateInput['type'], subjectType: string, subjectId: number, amount: Money.Money, note: string) =>
+    wanted.push({ tenantId, type, subjectType, subjectId: String(subjectId), amount, note });
   if (outcome.shortAmount.gt(0)) {
-    await open1('short_pay', 'partner_settlement', settlement.id, outcome.shortAmount,
+    want('short_pay', 'partner_settlement', settlement.id, outcome.shortAmount,
       `Settlement ${input.reference}: the payout of ${Money.toApi(input.payoutAmount)} is ${Money.toApi(outcome.shortAmount)} less than the ${Money.toApi(expectedNet)} the list expects.`);
   }
   // Cash above the open collections is already reported by the deposit entry as excess_deposit
   if (outcome.overAmount.gt(0) && plan.remaining.isZero()) {
-    await open1('over_pay', 'partner_settlement', settlement.id, outcome.overAmount,
+    want('over_pay', 'partner_settlement', settlement.id, outcome.overAmount,
       `Settlement ${input.reference}: the payout of ${Money.toApi(input.payoutAmount)} is ${Money.toApi(outcome.overAmount)} more than the ${Money.toApi(expectedNet)} the list expects.`);
   }
   for (const line of unmatchedLines) {
-    await open1('unmatched_line', 'settlement_line', line.id, Money.sub(line.expAmount, line.charge),
+    want('unmatched_line', 'settlement_line', line.id, Money.sub(line.expAmount, line.charge),
       `Settlement ${input.reference}, line "${line.externalOrderRef}": ${line.note ?? 'no order matches'}.`);
   }
   for (const v of variances) {
-    await open1('charge_variance', 'settlement_line', v.lineId, v.charge.minus(v.booked).abs(),
+    want('charge_variance', 'settlement_line', v.lineId, v.charge.minus(v.booked).abs(),
       `Settlement ${input.reference}, order #${v.orderId}: the partner charged ${Money.toApi(v.charge)}, the fee booked was ${Money.toApi(v.booked)}.`);
   }
-  const excess = await tx.finding.findFirst({ where: { type: 'excess_deposit', subjectType: 'agent_deposit', subjectId: String(deposit.id) }, select: { id: true } });
-  if (excess) findings.push({ type: 'excess_deposit', id: excess.id });
+  const ids = await openFindingsOnce(wanted, tx);
+  const findings: FindingRef[] = wanted.map((w, i) => ({ type: w.type, id: ids[i] }));
+  if (excessFindingId !== null) findings.push({ type: 'excess_deposit', id: excessFindingId });
+  findings.sort((a, b) => a.id - b.id);
 
-  const warnings = plan.remaining.gt(0) ? [unappliedWarning(currency, plan.remaining, 'of the payout matched no open order and is')] : [];
-  return settlementView(updated, { findings: findings.sort((x, y) => x.id - y.id), warnings });
+  const payload: SettlementPayload = { input, findings };
+  const updated = await tx.partnerSettlement.update({
+    where: { id: settlement.id },
+    data: {
+      expectedNet, shortAmount: outcome.shortAmount, unappliedAmount: plan.remaining, status: outcome.status, needsReview,
+      depositId: deposit.id, payload: payload as unknown as Prisma.InputJsonValue,
+    },
+    include: { lines: { orderBy: { id: 'asc' } } },
+  });
+  return settlementView(updated, { warnings: plan.remaining.gt(0) ? [unappliedWarning(currency, plan.remaining, 'of the payout matched no open order and is')] : [] });
 }
 
 /**
  * Record a partner payout from a paid-order list (already parsed with `partnerPayoutSchema`). Checks the currency and the
  * partner, then runs `applyPayout` in one transaction. A repeat of (partner, reference) returns the first result with
- * `replayed: true` and changes nothing.
+ * `replayed: true` and changes nothing. One audit row per call when the actor carries an audit channel (the API route).
  */
 export async function recordPartnerPayout(actor: SettlementActor, input: PartnerPayoutInput): Promise<SettlementView> {
   const tenantId = resolveTenantId();
@@ -346,66 +404,23 @@ export async function recordPartnerPayout(actor: SettlementActor, input: Partner
   await loadPartner(input.partnerId);
 
   const first = await findExisting(input.partnerId, input.reference);
-  if (first) return replayView(first, currency);
-
-  try {
-    const result = await prisma.$transaction((tx) => applyPayout(tx, { tenantId, currency, actor, input }), TRANSACTION_CONFIG);
-    appEvents.emit(AppEvent.AGENT_COLLECTION_RECONCILED);
-    return result;
-  } catch (error) {
-    // Two calls with one reference: the loser's insert waits for the winner, then hits the unique key. It gets the winner's result.
-    if (isUniqueViolation(error)) {
-      const winner = await findExisting(input.partnerId, input.reference);
-      if (winner) return replayView(winner, currency);
-    }
-    throw error;
-  }
+  const view = first
+    ? replayView(first, currency)
+    : await runSettlement(input.partnerId, input.reference, (tx) => applyPayout(tx, { tenantId, currency, actor, input }), (winner) => replayView(winner, currency));
+  if (actor.auditChannel) await auditPayoutCall(actor, { partnerId: input.partnerId, reference: input.reference, lines: input.lines.length }, view);
+  return view;
 }
 
 // ---- Manual partner payout (F-908): FIFO to the oldest unpaid orders ----
 
-export interface ManualPayoutInput {
-  partnerId: number;
-  amount: unknown;
-  /** YYYY-MM-DD. Defaults to now. */
-  payoutDate?: unknown;
-  reference: unknown;
-  notes?: unknown;
-}
-
-/**
- * Money from a partner with no paid-order list. The amount clears the partner's oldest unpaid orders first (FIFO); what is
- * left is held in 2040 and the response says how much. Same postings as a payout list: one verified deposit, collections
- * paid in full become reconciled. The reference must be new for the partner (409 with the date it was used).
- */
-/**
- * The FIFO plan of a manual payout: the partner's open collections oldest first, what `amount` covers, what is left.
- * The one planner behind the preview and the real call, so they cannot differ. Reads only.
- */
-async function planManualPayout(db: Pick<TransactionClient, 'agentCollection'>, partnerId: number, amount: Money.Money) {
-  const open = await agentReconciliationService.loadOpenCollections(db, partnerId);
-  const unpaid = Money.sum(open.map((c) => outstandingOf(c)));
-  const plan = planCover(open.map((c) => ({ ...c })), amount);
-  const orderOf = new Map((await db.agentCollection.findMany({ where: { id: { in: plan.covers.map((c) => c.id) } }, select: { id: true, orderId: true } })).map((c) => [c.id, c.orderId]));
-  return { unpaid, plan, orderOf };
-}
-
-/** The amount of a manual payout, or a 400. */
-function manualAmount(value: unknown): Money.Money {
-  const amount = Money.tryParse(value);
-  if (!amount || amount.lte(0)) throw new AppError('Amount must be above 0', 400, 'INVALID_AMOUNT');
-  return amount;
-}
-
 /** What a manual payout of `amount` would do, with no write: the orders covered FIFO, the amount applied, the amount held as unapplied (F-908, T37). */
-export async function previewManualPayout(input: { partnerId: number; amount: unknown }) {
-  const amount = manualAmount(input.amount);
+export async function previewManualPayout(input: ManualPreviewInput) {
   const currency = await getCurrency();
   await loadPartner(input.partnerId);
-  const { unpaid, plan, orderOf } = await planManualPayout(prisma, input.partnerId, amount);
+  const { unpaid, plan, orderOf } = await planPayout(prisma, input.partnerId, input.amount);
   return {
     partnerId: input.partnerId,
-    amount: Money.toApi(amount),
+    amount: Money.toApi(input.amount),
     unpaidTotal: Money.toApi(unpaid),
     appliedAmount: Money.toApi(plan.matched),
     unappliedAmount: Money.toApi(plan.remaining),
@@ -419,71 +434,55 @@ export async function previewManualPayout(input: { partnerId: number; amount: un
   };
 }
 
+/**
+ * Money from a partner with no paid-order list. The amount clears the partner's oldest unpaid orders first (FIFO); what is
+ * left is held in 2040 and the response says how much. Same postings as a payout list: one verified deposit, collections
+ * paid in full become reconciled. A reference already used for the partner is 409 with the date it was used.
+ */
 export async function recordManualPayout(actor: SettlementActor, input: ManualPayoutInput): Promise<SettlementView> {
   const tenantId = resolveTenantId();
-  const amount = manualAmount(input.amount);
-  const reference = typeof input.reference === 'string' ? input.reference.trim() : '';
-  if (!reference || reference.length > 120) throw new AppError('Reference is required (up to 120 characters)', 400, 'REFERENCE_REQUIRED');
-  const notes = typeof input.notes === 'string' && input.notes.trim() ? input.notes.trim().slice(0, 500) : undefined;
-  let payoutDate = new Date();
-  if (input.payoutDate !== undefined && input.payoutDate !== null && input.payoutDate !== '') {
-    const text = String(input.payoutDate);
-    const parsed = new Date(`${text}T00:00:00.000Z`);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(text) || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== text) {
-      throw new AppError('Date must be written YYYY-MM-DD', 400, 'INVALID_DATE');
-    }
-    payoutDate = parsed;
-  }
-
+  const { partnerId, amount, reference } = input;
+  const payoutDate = input.payoutDate ?? new Date();
   const currency = await getCurrency();
-  await loadPartner(input.partnerId);
-  const used = await prisma.partnerSettlement.findFirst({ where: { partnerId: input.partnerId, reference }, select: { payoutDate: true } });
-  if (used) throw new AppError(`This reference was used on ${used.payoutDate.toISOString().slice(0, 10)}`, 409, 'REFERENCE_USED');
+  await loadPartner(partnerId);
 
-  try {
-    const result = await prisma.$transaction(async (tx) => {
-      const settlement = await tx.partnerSettlement.create({
-        data: { tenantId, partnerId: input.partnerId, payoutDate, payoutAmount: amount, currency, reference, status: 'matched', isManual: true, recordedById: actor.id, notes },
-      });
-      const balance = await lockBalance(tx, input.partnerId);
+  const view = await runSettlement(partnerId, reference, async (tx) => {
+    const settlement = await tx.partnerSettlement.create({
+      data: { tenantId, partnerId, payoutDate, payoutAmount: amount, currency, reference, status: 'matched', isManual: true, recordedById: actor.id, notes: input.notes },
+    });
+    const balance = await lockBalance(tx, partnerId, amount);
 
-      // FIFO over the partner's open collections, read after the lock: the plan the preview shows
-      const { unpaid, plan, orderOf } = await planManualPayout(tx, input.partnerId, amount);
-      const { full } = await claimPlanned(tx, plan);
-      await tx.partnerSettlementLine.createMany({
-        data: plan.covers.map((c) => ({
-          tenantId, settlementId: settlement.id, orderId: orderOf.get(c.id)!, externalOrderRef: `#${orderOf.get(c.id)}`,
-          expAmount: c.take, charge: Money.ZERO, matched: true, matchedBy: 'fifo', outcome: 'delivered' as const,
-        })),
-      });
-      const lines = await tx.partnerSettlementLine.findMany({ where: { settlementId: settlement.id }, orderBy: { id: 'asc' } });
-      const lineOf = new Map(lines.map((l) => [l.orderId!, l.id]));
-      await reconcileCollections(tx, full.map((c) => ({ collectionId: c.id, orderId: orderOf.get(c.id)!, lineId: lineOf.get(orderOf.get(c.id)!)! })), actor.id);
+    // FIFO over the partner's open collections, read after the lock: the plan the preview shows
+    const planned = await planPayout(tx, partnerId, amount);
+    const { unpaid, plan, orderOf } = planned;
+    await tx.partnerSettlementLine.createMany({
+      data: plan.covers.map((c) => ({
+        tenantId, settlementId: settlement.id, orderId: orderOf.get(c.id)!, externalOrderRef: `#${orderOf.get(c.id)}`,
+        expAmount: c.take, charge: Money.ZERO, matched: true, matchedBy: 'fifo', outcome: 'delivered' as const,
+      })),
+    });
+    const lines = await tx.partnerSettlementLine.findMany({ where: { settlementId: settlement.id }, orderBy: { id: 'asc' } });
+    const { deposit, excessFindingId } = await settle(tx, {
+      settlement, balanceId: balance.id, partnerId, amount, depositDate: payoutDate, method: 'manual', actorId: actor.id,
+      planned, lineOfOrder: new Map(lines.map((l) => [l.orderId!, l.id])),
+    });
 
-      const deposit = await postDeposit(tx, { settlement, partnerId: input.partnerId, amount, depositDate: payoutDate, method: 'manual', actorId: actor.id }, plan);
-      await tx.agentBalance.update({
-        where: { id: balance.id },
-        data: { totalDeposited: { increment: plan.matched }, currentBalance: { decrement: plan.matched } },
-      });
+    const payload: SettlementPayload = { findings: excessFindingId === null ? [] : [{ type: 'excess_deposit', id: excessFindingId }] };
+    const updated = await tx.partnerSettlement.update({
+      where: { id: settlement.id },
+      data: { expectedNet: unpaid, unappliedAmount: plan.remaining, status: plan.remaining.gt(0) ? 'over' : 'matched', depositId: deposit.id, payload: payload as unknown as Prisma.InputJsonValue },
+      include: { lines: { orderBy: { id: 'asc' } } },
+    });
+    return settlementView(updated, { warnings: plan.remaining.gt(0) ? [unappliedWarning(currency, plan.remaining, 'will be')] : [] });
+  }, (winner) => {
+    throw new AppError(`This reference was used on ${winner.payoutDate.toISOString().slice(0, 10)}`, 409, 'REFERENCE_USED');
+  });
 
-      const updated = await tx.partnerSettlement.update({
-        where: { id: settlement.id },
-        data: { expectedNet: unpaid, unappliedAmount: plan.remaining, status: plan.remaining.gt(0) ? 'over' : 'matched', depositId: deposit.id },
-        include: { lines: { orderBy: { id: 'asc' } } },
-      });
-      await closeClearedShortPays(tx, input.partnerId, reference);
-
-      const excess = await tx.finding.findFirst({ where: { type: 'excess_deposit', subjectType: 'agent_deposit', subjectId: String(deposit.id) }, select: { id: true } });
-      const warnings = plan.remaining.gt(0) ? [unappliedWarning(currency, plan.remaining, 'will be')] : [];
-      return settlementView(updated, { findings: excess ? [{ type: 'excess_deposit', id: excess.id }] : [], warnings });
-    }, TRANSACTION_CONFIG);
-    appEvents.emit(AppEvent.AGENT_COLLECTION_RECONCILED);
-    return result;
-  } catch (error) {
-    if (isUniqueViolation(error)) {
-      const winner = await findExisting(input.partnerId, reference);
-      if (winner) throw new AppError(`This reference was used on ${winner.payoutDate.toISOString().slice(0, 10)}`, 409, 'REFERENCE_USED');
-    }
-    throw error;
-  }
+  await auditService.record({
+    actorId: actor.id, actorKind: 'person', channel: 'app',
+    action: 'create', resource: 'partner_settlement', resourceId: String(view.id),
+    input: { partnerId, reference, amount: view.payoutAmount },
+    after: { status: view.status, unappliedAmount: view.unappliedAmount },
+  });
+  return view;
 }

@@ -20,13 +20,13 @@ jest.mock('../../utils/prisma', () => ({
   __esModule: true,
   default: {
     $transaction: jest.fn(),
-    agentCollection: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn(), findMany: jest.fn() },
+    agentCollection: { findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn(), create: jest.fn(), findMany: jest.fn() },
     user: { update: jest.fn(), findUnique: jest.fn() },
     agentBalance: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn(), findMany: jest.fn(), upsert: jest.fn() },
     agentDeposit: { findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn(), create: jest.fn(), findMany: jest.fn() },
     journalEntry: { findFirst: jest.fn().mockResolvedValue(null), create: jest.fn() },
     account: { findUnique: jest.fn() },
-    order: { update: jest.fn(), count: jest.fn() },
+    order: { update: jest.fn(), updateMany: jest.fn(), count: jest.fn() },
     finding: { updateMany: jest.fn() },
     $queryRaw: (jest.fn() as any).mockResolvedValue([]),
   },
@@ -43,7 +43,7 @@ jest.mock('../../services/notificationService', () => ({
 
 jest.mock('../../services/glAutomationService', () => ({
   GLAutomationService: {
-    createAgentDepositEntry: jest.fn().mockResolvedValue({} as any),
+    createAgentDepositEntry: jest.fn().mockResolvedValue({ entry: {}, excessFindingId: null } as any),
     voidJournalEntry: jest.fn().mockResolvedValue({} as any),
   },
 }));
@@ -66,6 +66,7 @@ describe('AgentReconciliationService (extended branch coverage)', () => {
     jest.clearAllMocks();
     mockPrisma.$transaction.mockImplementation((cb: any) => cb(mockTx));
     mockTx.agentDeposit.updateMany.mockResolvedValue({ count: 1 }); // the claim of the row
+    require('../../services/glAutomationService').GLAutomationService.createAgentDepositEntry.mockResolvedValue({ entry: {}, excessFindingId: null });
   });
 
   // ───────────────────────────── createDeposit - amount <= 0 ─────────────────────────────
@@ -228,8 +229,8 @@ describe('AgentReconciliationService (extended branch coverage)', () => {
 
       await agentReconciliationService.verifyCollection(1, 99);
 
-      // order.update should NOT have been called
-      expect(mockTx.order.update).not.toHaveBeenCalled();
+      // no order is marked paid
+      expect(mockTx.order.updateMany).not.toHaveBeenCalled();
     });
 
     it('posts no GL entry when a verified collection is reconciled (F-904)', async () => {

@@ -177,10 +177,15 @@ describe('POST /api/partner-settlements', () => {
   });
 
   it('writes one audit row per call', async () => {
-    const before = await prismaBase.auditLog.count({ where: { tenantId, resource: 'partner_settlement' } });
+    const rows = () => prismaBase.auditLog.findMany({ where: { tenantId, resource: 'tool', resourceId: 'partner_payout_record', channel: 'connector' }, orderBy: { id: 'asc' } });
+    const before = (await rows()).length;
     await post(owner.token, payload('REF-F1'));
     await post(owner.token, payload('REF-F1'));
-    expect(await prismaBase.auditLog.count({ where: { tenantId, resource: 'partner_settlement' } })).toBe(before + 2);
+    const added = (await rows()).slice(before);
+    expect(added).toHaveLength(2);
+    // the same shape runTool writes for the tool, so API and MCP calls read alike
+    expect(added[0]).toMatchObject({ action: 'tool_call', userId: owner.id });
+    expect(added[0].metadata).toMatchObject({ tool: 'partner_payout_record', status: 'ok', input: { partnerId: kofiId, reference: 'REF-F1', lines: 2 } });
   });
 });
 

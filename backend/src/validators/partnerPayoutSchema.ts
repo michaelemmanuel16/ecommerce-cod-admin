@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import * as Money from '../utils/money';
+import { parseYmd, utcDateOfYmd } from '../services/kpi/dates';
 
 /**
  * Input of "record partner payout" (F-906), one format for the API route and the MCP tool `partner_payout_record`.
@@ -30,12 +31,35 @@ const money = (label: string, opts: { min: 'positive' | 'zero' }) =>
     return m;
   });
 
+const DATE_MESSAGE = 'payoutDate must be a real date written YYYY-MM-DD';
+
+/** A real calendar day, YYYY-MM-DD, as the date at 00:00 UTC; null when it is not one. */
+const dayOf = (v: string): Date | null => {
+  try {
+    parseYmd(v);
+    return utcDateOfYmd(v);
+  } catch {
+    return null;
+  }
+};
+
+const ymdDay = z.string().trim().transform((v, ctx) => {
+  const day = dayOf(v);
+  if (!day) ctx.addIssue({ code: 'custom', message: DATE_MESSAGE });
+  return day ?? z.NEVER;
+});
+
 /** A calendar day (YYYY-MM-DD) or a full ISO timestamp. */
-const payoutDate = z.string().trim().refine(
-  (v) => /^\d{4}-\d{2}-\d{2}(T[\d:.]+(Z|[+-]\d{2}:?\d{2})?)?$/.test(v) && !Number.isNaN(new Date(v).getTime())
-    && (v.length > 10 || new Date(`${v}T00:00:00.000Z`).toISOString().slice(0, 10) === v),
-  'payoutDate must be a real date written YYYY-MM-DD',
-).transform((v) => new Date(v.length === 10 ? `${v}T00:00:00.000Z` : v));
+const payoutDate = z.string().trim().transform((v, ctx) => {
+  const when = v.length === 10 ? dayOf(v) : /^\d{4}-\d{2}-\d{2}T[\d:.]+(Z|[+-]\d{2}:?\d{2})?$/.test(v) ? new Date(v) : null;
+  if (!when || Number.isNaN(when.getTime())) {
+    ctx.addIssue({ code: 'custom', message: DATE_MESSAGE });
+    return z.NEVER;
+  }
+  return when;
+});
+
+const reference = z.string().trim().min(1, 'reference is required').max(120);
 
 export const payoutLineSchema = z.object({
   externalOrderRef: z.string().trim().min(1, 'externalOrderRef is required').max(120),
@@ -48,7 +72,7 @@ export const partnerPayoutSchema = z.object({
   partnerId: z.number().int().positive(),
   payoutDate,
   payoutAmount: money('payoutAmount', { min: 'positive' }),
-  reference: z.string().trim().min(1, 'reference is required').max(120),
+  reference,
   currency: z.string().trim().length(3).transform((v) => v.toUpperCase()).optional(),
   notes: z.string().trim().max(500).optional(),
   lines: z.array(payoutLineSchema)
@@ -69,3 +93,17 @@ export const partnerPayoutSchema = z.object({
 });
 
 export type PartnerPayoutInput = z.infer<typeof partnerPayoutSchema>;
+
+/** Input of the manual payout (F-908): money from a partner with no paid-order list. `payoutDate` is a day, default now. */
+export const manualPayoutSchema = z.object({
+  partnerId: z.number().int().positive(),
+  amount: money('amount', { min: 'positive' }),
+  payoutDate: ymdDay.optional(),
+  reference,
+  notes: z.string().trim().max(500).optional(),
+});
+export type ManualPayoutInput = z.infer<typeof manualPayoutSchema>;
+
+/** Input of the manual payout preview: the same partner and amount, nothing else. */
+export const manualPreviewSchema = manualPayoutSchema.pick({ partnerId: true, amount: true });
+export type ManualPreviewInput = z.infer<typeof manualPreviewSchema>;

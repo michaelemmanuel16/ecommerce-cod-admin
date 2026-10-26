@@ -97,10 +97,10 @@ describe('POST /api/partner-settlements/manual', () => {
     const partner = await mkPartner('mbad');
     const before = await prismaBase.partnerSettlement.count({ where: { tenantId } });
     const cases: Array<[Record<string, unknown>, RegExp]> = [
-      [{ amount: 0 }, /Amount must be above 0/],
-      [{ amount: -5 }, /Amount must be above 0/],
-      [{ amount: 'abc' }, /Amount must be above 0/],
-      [{ amount: 100, reference: '  ' }, /Reference is required/],
+      [{ amount: 0 }, /amount must be above 0/],
+      [{ amount: -5 }, /amount must be above 0/],
+      [{ amount: 'abc' }, /amount must be a number/],
+      [{ amount: 100, reference: '  ' }, /reference is required/],
       [{ amount: 100, payoutDate: '2026-02-30' }, /YYYY-MM-DD/],
       [{ amount: 100, partnerId: 'x' }, /partnerId/],
     ];
