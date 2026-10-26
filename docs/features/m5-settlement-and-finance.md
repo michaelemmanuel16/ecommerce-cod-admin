@@ -77,3 +77,27 @@ Rep commissions are booked when earned and taken back on a return. One payout re
 ### Open points
 - On a return, `createReturnReversalEntry` still uses the rep's current rate, not the amount booked at delivery. If the rate changed in between, that reversal can be off. This existed before M5. Follow-up ticket.
 - Production order: run `npm run backfill:payout-gl` before the commission backfill.
+
+---
+
+## COD-52 (part 1) — Expenses, journal, ledger and their screens
+**Date:** 2026-10-26 | **Type:** feat/fix | **Branch:** feature/m5-settlement-and-finance (lane `m5/cod-52-expenses-journal`, merge 5600630) | **Commits:** 9bc01d9, a6f02c0, f227b89, 28654c1, b0ef530, 3d03545, 291733c, afe14d9, 153c021, a8f91bb, 6cca46f
+
+### Summary
+Expenses post to the ledger. Manual journal entries, ledger browse and exports have their own permissions. The Expenses, Chart of accounts, Ledger and Journal screens are rebuilt on these APIs. Plan tasks: M5-T28, T29 (backend), T39, T42 (screens). T24 to T27 and T30 are part 2.
+
+### Changes
+- **Database (`20261026130000_m5_expense_categories`):** expense categories follow the PRD F-918 map (Packaging, Software, Office and internet, Transport, Photography, Bank charges, Salaries, Marketing, Other). Old names are mapped, not kept.
+- **Expenses (T28):** an expense posts DR 5100 (or 5080 for Meta ad spend) / CR 1010 on its expense date. Edit and delete reverse or replace the entry. Paid from MoMo, Bank or Cash. Receipts: images and PDF, checked by file signature; only our upload paths and storage host are saved. A closed month refuses changes. Rows made by the system are locked.
+- **Journal and ledger (T29):** `journal` permission [post, void] and `expenses` [view_all, edit, delete]. One void rule map (`withVoidRule`): only hand-made entries can be voided; `commission_accrual` and `delivery_fee` cannot. Ledger lines sort by entry date then id, and each line's balance is the sum of the earlier lines in that order (also on later pages, under a date filter, and in both CSV exports). Four exports, the large ones as a background job with keyset paging. Finance health rules run once as a job.
+- **Screens (T39, T42):** Expenses list and breakdown with server search, the form gets its rules from the server (categories, closed month, receipt limits), in-page receipt viewer. Chart of accounts with search and Inactive tag, trial balance, ledger with Void on manual lines only, journal entry with a live balance check that blocks Post when out of balance. `GuardedButton` and `FINANCE_PERMS` show why a button is disabled (hover, keyboard focus and screen reader). `ui/Modal` has an opt-in `closeOnEscape`; `ui/Tooltip` opens on focus.
+
+### Verification
+- Merged tree (5600630): backend prisma generate, typecheck, lint and build clean; full backend suite 262 suites / 3391 tests pass. Frontend lint and build clean; vitest 1215 of 1216 pass; the one failure (`Inventory` "?action=allocate", not M5 code) passes alone, 11 of 11, and fails only under machine load.
+- Tests: `m5Expenses`, `m5JournalExports` (back-dated entries out of order: order, balances, page 2, date filter, CSV, job file), `fileSignature`, `financeScreens`, `expenseRules`, `journalBalance`, `ledgerExportJob`, `modalEscape`.
+- Browser check (admin, clerk, viewer; light; 1440 and 760): chart search and Inactive tag, trial balance in balance, 1010 named "Cash at bank and MoMo", Void only on manual lines, expense list and breakdown, locked Meta row, receipt viewer, category list as F-918, closed-month notice, journal Empty and Out of balance states with Post disabled, viewer tooltips, ledger fits at 1440 and scrolls inside its card at 760, Escape closes Add Expense.
+
+### Open points
+- In dark mode the Finance panel stays light; the page restyle is T34.
+- Console warnings on the Finance page come from the older DateRangePicker and FinancialDashboard.
+- COD-52 stays In Progress until part 2 (T24 to T27, T30).
