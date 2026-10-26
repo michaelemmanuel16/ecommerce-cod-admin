@@ -54,19 +54,19 @@ afterAll(async () => {
 
 describe('seedTenantDefaults', () => {
   it('the chart has 16 accounts, one per GL_ACCOUNTS code', () => {
-    expect(DEFAULT_GL_ACCOUNTS).toHaveLength(16);
+    expect(DEFAULT_GL_ACCOUNTS).toHaveLength(21);
     expect(new Set(DEFAULT_GL_ACCOUNTS.map((a) => a.code))).toEqual(new Set(Object.values(GL_ACCOUNTS)));
   });
 
   it('running twice gives the same row counts', async () => {
     const id = await mkTenant('idem');
     const first = await seedTenantDefaults(id);
-    expect(first.accounts).toBe(16);
+    expect(first.accounts).toBe(21);
     const after1 = await counts(id);
     const second = await seedTenantDefaults(id);
     expect(second).toEqual({ accounts: 0, emailTemplates: 0, roles: 0, systemUser: 0 });
     expect(await counts(id)).toEqual(after1);
-    expect(after1).toEqual({ accounts: 16, emailTemplates: DEFAULT_EMAIL_TEMPLATES.length, roles: 7, systemUsers: 1 });
+    expect(after1).toEqual({ accounts: 21, emailTemplates: DEFAULT_EMAIL_TEMPLATES.length, roles: 7, systemUsers: 1 });
   });
 
   it('fills only what is missing', async () => {
@@ -75,7 +75,7 @@ describe('seedTenantDefaults', () => {
     await prismaBase.account.deleteMany({ where: { tenantId: id, code: GL_ACCOUNTS.COGS } });
     const res = await seedTenantDefaults(id);
     expect(res.accounts).toBe(1);
-    expect((await counts(id)).accounts).toBe(16);
+    expect((await counts(id)).accounts).toBe(21);
   });
 
   it('register-tenant gives the new tenant the full chart and email templates', async () => {
@@ -87,13 +87,13 @@ describe('seedTenantDefaults', () => {
     });
     expect(res.status).toBe(201);
     tenantIds.push(res.body.tenant.id);
-    expect(await counts(res.body.tenant.id)).toEqual({ accounts: 16, emailTemplates: DEFAULT_EMAIL_TEMPLATES.length, roles: 7, systemUsers: 1 });
+    expect(await counts(res.body.tenant.id)).toEqual({ accounts: 21, emailTemplates: DEFAULT_EMAIL_TEMPLATES.length, roles: 7, systemUsers: 1 });
   });
 
   it('platform createTenant seeds the new tenant', async () => {
     const t = await createTenant({ name: `Plat Defaults ${SUFFIX}`, slug: `defaults-plat-${SUFFIX}` });
     tenantIds.push(t.id);
-    expect(await counts(t.id)).toEqual({ accounts: 16, emailTemplates: DEFAULT_EMAIL_TEMPLATES.length, roles: 7, systemUsers: 1 });
+    expect(await counts(t.id)).toEqual({ accounts: 21, emailTemplates: DEFAULT_EMAIL_TEMPLATES.length, roles: 7, systemUsers: 1 });
   });
 });
 

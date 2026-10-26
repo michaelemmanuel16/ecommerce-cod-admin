@@ -62,7 +62,7 @@ export async function seedTenantDefaults(tenantId: string): Promise<{ accounts: 
         data: DEFAULT_GL_ACCOUNTS.map((a) => ({
           ...a,
           description: `Default account: ${a.name}`,
-          isActive: true,
+          isActive: a.isActive ?? true,
         })),
         skipDuplicates: true,
       });
