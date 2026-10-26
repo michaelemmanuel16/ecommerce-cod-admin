@@ -104,7 +104,7 @@ function personTables(userId: number): Array<Table<any>> {
         { header: 'notes', value: (r) => r.notes },
         { header: 'payout_date', value: (r) => date(r.payoutDate) },
       ],
-      fetch: (afterId, take) => prisma.payout.findMany({ ...page(afterId, take), where: { repId: userId, id: { gt: afterId } } }),
+      fetch: (afterId, take) => prisma.payout.findMany({ ...page(afterId, take), where: { payeeId: userId, id: { gt: afterId } } }),
     },
     {
       file: 'calls.csv',

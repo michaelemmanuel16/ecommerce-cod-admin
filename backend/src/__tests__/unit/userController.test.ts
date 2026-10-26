@@ -60,7 +60,7 @@ describe('User Controller - getMyPayoutHistory', () => {
             await userController.getMyPayoutHistory(mockReq as AuthRequest, mockRes as Response, mockNext);
 
             expect(prisma.payout.findMany).toHaveBeenCalledWith({
-                where: { repId: 1001 },
+                where: { payeeId: 1001 },
                 include: {
                     _count: {
                         select: { orders: true }

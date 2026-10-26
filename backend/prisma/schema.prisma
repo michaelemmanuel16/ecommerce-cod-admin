@@ -192,6 +192,7 @@ model User {
   findingsResolved      Finding[]               @relation("FindingResolver")
   partnerSettlements    PartnerSettlement[]     @relation("SettlementPartner")
   commissionEntries     CommissionEntry[]       @relation("CommissionEntryUser")
+  payoutsRecorded       Payout[]                @relation("PayoutRecorder")
   kind                  UserKind                @default(person)
   roleAssignments       RoleAssignment[]        @relation("RoleAssignmentHolder")
   sessions              UserSession[]
@@ -527,21 +528,27 @@ model Transaction {
 }
 
 model Expense {
-  id          Int      @id @default(autoincrement())
-  category    String
-  amount      Decimal  @db.Decimal(19, 4)
-  description String
-  receiptUrl  String?  @map("receipt_url")
-  recordedBy  Int?     @map("recorded_by")
-  expenseDate DateTime @map("expense_date")
-  createdAt   DateTime @default(now()) @map("created_at")
-  tenantId    String?  @map("tenant_id")
-  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  user        User?    @relation(fields: [recordedBy], references: [id])
+  id             Int              @id @default(autoincrement())
+  category       String
+  amount         Decimal          @db.Decimal(19, 4)
+  description    String
+  receiptUrl     String?          @map("receipt_url")
+  recordedBy     Int?             @map("recorded_by")
+  expenseDate    DateTime         @map("expense_date")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  // M5: where the expense came from, what paid it, and the ledger entry that booked it (F-917).
+  source         ExpenseSource    @default(manual)
+  paidFrom       ExpensePaidFrom? @map("paid_from")
+  journalEntryId Int?             @map("journal_entry_id")
+  journalEntry   JournalEntry?    @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+  tenantId       String?          @map("tenant_id")
+  tenant         Tenant?          @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user           User?            @relation(fields: [recordedBy], references: [id])
 
   @@index([category])
   @@index([expenseDate])
   @@index([tenantId])
+  @@index([journalEntryId])
   @@map("expenses")
 }
 
@@ -599,6 +606,7 @@ model JournalEntry {
   orders         Order[]
   shipments      InventoryShipment[]
   claimShipments InventoryShipment[]  @relation("ShipmentClaimEntry")
+  expenses       Expense[]
   tenantId       String?              @map("tenant_id")
   tenant         Tenant?              @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -786,6 +794,8 @@ model SystemConfig {
   rolePermissions       Json?    @map("role_permissions")
   // Tenant switches. features.prepaidPhysical (default off) lets physical forms take online payment (F-402).
   features              Json     @default("{}")
+  // M5: notes shown on a finance period, keyed by month ("2026-08") (F-923).
+  periodNotes           Json?    @map("period_notes")
   createdAt             DateTime @default(now()) @map("created_at")
   updatedAt             DateTime @updatedAt @map("updated_at")
   tenantId              String?  @unique @map("tenant_id")
@@ -981,23 +991,30 @@ model Call {
   @@map("calls")
 }
 
+/// One payout record for money out to people (F-913). Pays a call rep (commission, upsell, reward) or a delivery agent (target reward only).
 model Payout {
-  id         Int      @id @default(autoincrement())
-  repId      Int      @map("rep_id")
-  amount     Decimal  @db.Decimal(19, 4)
-  method     String
-  status     String   @default("completed")
-  payoutDate DateTime @default(now()) @map("payout_date")
-  notes      String?
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
-  orders     Order[]
-  rep        User     @relation(fields: [repId], references: [id])
-  tenantId   String   @map("tenant_id")
-  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                Int               @id @default(autoincrement())
+  payeeId           Int               @map("payee_id")
+  kind              PayoutKind        @default(rep)
+  amount            Decimal           @db.Decimal(19, 4)
+  method            String
+  reference         String?
+  status            String            @default("completed")
+  payoutDate        DateTime          @default(now()) @map("payout_date")
+  notes             String?
+  recordedById      Int?              @map("recorded_by_id")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+  orders            Order[]
+  commissionEntries CommissionEntry[]
+  payee             User              @relation(fields: [payeeId], references: [id])
+  recordedBy        User?             @relation("PayoutRecorder", fields: [recordedById], references: [id], onDelete: SetNull)
+  tenantId          String            @map("tenant_id")
+  tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
+  @@unique([tenantId, payeeId, method, reference])
   @@index([tenantId])
-  @@index([repId])
+  @@index([payeeId])
   @@index([payoutDate])
   @@map("payouts")
 }
@@ -1407,6 +1424,24 @@ enum DeliveryFeeSource {
   rule
   settlement
   manual
+}
+
+enum ExpenseSource {
+  manual
+  meta
+  delivery_fee
+  ai
+}
+
+enum ExpensePaidFrom {
+  momo
+  bank
+  cash
+}
+
+enum PayoutKind {
+  rep
+  agent
 }
 
 enum CommissionKind {
@@ -2164,17 +2199,20 @@ model CommissionEntry {
   status         CommissionStatus @default(pending)
   amount         Decimal          @db.Decimal(19, 4)
   earnedAt       DateTime?        @map("earned_at")
+  payoutId       Int?             @map("payout_id")
   journalEntryId Int?             @map("journal_entry_id")
   note           String?
   createdAt      DateTime         @default(now()) @map("created_at")
   updatedAt      DateTime         @updatedAt @map("updated_at")
   order          Order?           @relation(fields: [orderId], references: [id], onDelete: SetNull)
   user           User             @relation("CommissionEntryUser", fields: [userId], references: [id])
+  payout         Payout?          @relation(fields: [payoutId], references: [id], onDelete: SetNull)
   tenantId       String           @map("tenant_id")
   tenant         Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([tenantId])
   @@index([tenantId, userId, status])
   @@index([orderId])
+  @@index([payoutId])
   @@map("commission_entries")
 }

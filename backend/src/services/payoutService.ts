@@ -65,7 +65,7 @@ class PayoutService {
      */
     async getPayoutHistory(repId: number) {
         return prisma.payout.findMany({
-            where: { repId },
+            where: { payeeId: repId },
             include: {
                 _count: {
                     select: { orders: true }
@@ -98,7 +98,7 @@ class PayoutService {
             const payout = await tx.payout.create({
                 data: {
                     tenantId: resolveTenantId(rep?.tenantId),
-                    repId,
+                    payeeId: repId,
                     amount: payoutAmount,
                     method,
                     notes,

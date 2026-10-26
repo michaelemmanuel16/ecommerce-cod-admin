@@ -512,7 +512,10 @@ export const deleteTenantAccount = async (req: AuthRequest, res: Response, next:
       // 1. Delete records that reference users via RESTRICT FKs
       await tx.$executeRaw`DELETE FROM notifications WHERE user_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
       await tx.$executeRaw`DELETE FROM audit_logs WHERE user_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
-      await tx.$executeRaw`DELETE FROM payouts WHERE rep_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
+      await tx.$executeRaw`DELETE FROM commission_entries WHERE tenant_id = ${tenantId}`;
+      await tx.$executeRaw`DELETE FROM partner_settlement_lines WHERE tenant_id = ${tenantId}`;
+      await tx.$executeRaw`DELETE FROM partner_settlements WHERE tenant_id = ${tenantId}`;
+      await tx.$executeRaw`DELETE FROM payouts WHERE payee_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
       await tx.$executeRaw`DELETE FROM calls WHERE sales_rep_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
       await tx.$executeRaw`DELETE FROM agent_deposits WHERE agent_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
       await tx.$executeRaw`DELETE FROM agent_collections WHERE agent_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;

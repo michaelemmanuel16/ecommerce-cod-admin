@@ -188,7 +188,7 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
       data: { agentId: deliveryAgent.id, totalCollected: amount, currentBalance: amount, tenantId },
     })),
     seed('payout', prismaBase.payout.create({
-      data: { repId: salesRep.id, amount: '20', method: 'cash', notes: `payout ${marker}`, tenantId },
+      data: { payeeId: salesRep.id, amount: '20', method: 'cash', notes: `payout ${marker}`, tenantId },
     })),
     seed('webhookLog', prismaBase.webhookLog.create({
       data: { webhookConfigId: webhookConfig.id, endpoint: `/hook/${marker}`, method: 'POST', headers: {}, body: { marker }, tenantId },
