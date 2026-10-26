@@ -91,6 +91,8 @@ describe('Orders: Unpaid by agent tab (M5-T35, F-309)', () => {
     await userEvent.click(await screen.findByRole('tab', { name: /Unpaid by agent/ }));
     await waitFor(() => expect(listOrders).toHaveBeenLastCalledWith(expect.objectContaining({ tab: 'unpaid_by_agent' }), expect.anything()));
     expect(listOrders.mock.calls.at(-1)![0].status).toBeUndefined();
+    expect(listOrders.mock.calls.at(-1)![0].startDate).toBeUndefined();
+    expect(screen.queryByRole('button', { name: /This month/ })).toBeNull(); // the date range does nothing on this tab
     expect(screen.getByTestId('where')).toHaveTextContent('status=unpaid_by_agent');
     expect(screen.queryByRole('button', { name: 'Export' })).toBeNull();
   });

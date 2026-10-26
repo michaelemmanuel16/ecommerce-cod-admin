@@ -53,7 +53,7 @@ const row = (f: Finding): Finding => ({ ...f, amount: f.amount === null || f.amo
 
 export const findingsService = {
   async list(filters: FindingFilters): Promise<FindingList> {
-    const { data } = await apiClient.get<FindingList>('/api/findings', { params: filters, quiet: true, skipCache: true });
+    const { data } = await apiClient.get<FindingList>('/api/findings', { params: filters, quiet: true });
     return { findings: data.findings.map(row), pagination: data.pagination };
   },
 
@@ -63,14 +63,24 @@ export const findingsService = {
   },
 };
 
-/** The people a Finding can be given to (GET /api/users, owner, admin and manager only). A refused call gives an empty list. */
-export async function findingAssignees(): Promise<Array<{ id: number; name: string }>> {
-  try {
-    const { data } = await apiClient.get<{ users: Array<{ id: number; firstName: string; lastName: string; isActive?: boolean }> }>('/api/users', {
-      params: { isActive: true, limit: 100 }, quiet: true,
+export interface Assignee {
+  id: number;
+  name: string;
+}
+
+let assignees: Promise<Assignee[]> | null = null;
+
+/**
+ * The people a Finding can be given to (GET /api/users, owner, admin and manager only). Read once per session: a refused or
+ * failed call gives an empty list and is tried again on the next visit.
+ */
+export function findingAssignees(): Promise<Assignee[]> {
+  assignees ??= apiClient
+    .get<{ users: Array<{ id: number; firstName: string; lastName: string; isActive?: boolean }> }>('/api/users', { params: { isActive: true, limit: 100 }, quiet: true })
+    .then(({ data }) => data.users.filter((u) => u.isActive !== false).map((u) => ({ id: u.id, name: `${u.firstName} ${u.lastName}`.trim() })))
+    .catch(() => {
+      assignees = null;
+      return [];
     });
-    return data.users.filter((u) => u.isActive !== false).map((u) => ({ id: u.id, name: `${u.firstName} ${u.lastName}`.trim() }));
-  } catch {
-    return [];
-  }
+  return assignees;
 }

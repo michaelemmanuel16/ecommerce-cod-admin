@@ -218,7 +218,6 @@ export const AgentReconciliationTab: React.FC = () => {
 
       {selectedAgent && (
         <CollectionActionModal
-          isOpen={!!selectedAgent}
           onClose={() => setSelectedAgent(null)}
           agentId={selectedAgent.id}
           agentName={selectedAgent.name}

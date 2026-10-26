@@ -87,8 +87,16 @@ export interface ReminderResult {
   overdueOrders: number;
 }
 
+/** The unpaid-by-age card from the aging report, which holds the same totals: one request feeds the tiles, the card and the table. */
+export const unpaidByAgeOf = ({ summary }: AgingReport): UnpaidByAge => ({
+  basis: 'net_of_delivery_fee',
+  total: { orders: summary.totalOrders, amount: summary.totalOutstandingAmount },
+  overdue: { orders: summary.overdueOrders, amount: summary.overdueAmount },
+  buckets: summary.bucketTotals,
+});
+
 const bucket = (b: AgingBucket): AgingBucket => ({ ...b, amount: parseMoney(b.amount) });
-const QUIET = { quiet: true, skipCache: true } as const;
+const QUIET = { quiet: true } as const;
 
 export const collectionsService = {
   async unpaidByAge(): Promise<UnpaidByAge> {

@@ -1,30 +1,24 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ordersService } from '../../services/orders.service';
+import { listParams, DEFAULT_VIEW } from '../../pages/orders/urlState';
+import { isViewTab, tabCount, visibleTabs } from '../../pages/orders/model';
+import type { OrderCounts } from '../../services/orders.service';
 
-const get = vi.hoisted(() => vi.fn());
-vi.mock('../../services/api', () => ({ default: { get } }));
+const COUNTS = { all: 5, byStatus: {}, waitingToDispatch: 0 } as unknown as OrderCounts;
+beforeEach(() => vi.useRealTimers());
 
-beforeEach(() => get.mockReset());
-
-describe('ordersService, Unpaid by agent tab (M5-T35)', () => {
-  it('the list sends tab=unpaid_by_agent without dates or status, so it counts every overdue order', async () => {
-    get.mockResolvedValue({ data: { orders: [], pagination: { page: 1, limit: 25, total: 0, pages: 0 } } });
-    await ordersService.listOrders({ tab: 'unpaid_by_agent', startDate: '2026-10-01', endDate: '2026-10-31', dateBasis: 'created', status: ['confirmed'], page: 2 });
-    expect(get).toHaveBeenCalledWith('/api/orders', expect.objectContaining({ params: expect.objectContaining({ tab: 'unpaid_by_agent', page: 2 }) }));
-    const params = get.mock.calls[0][1].params;
-    expect(params).not.toHaveProperty('startDate');
-    expect(params).not.toHaveProperty('status');
+describe('Unpaid by agent view tab (M5-T35)', () => {
+  it('sends tab=unpaid_by_agent with no dates and no status', () => {
+    const p = listParams({ ...DEFAULT_VIEW, tab: 'unpaid_by_agent' }, 25);
+    expect(p.tab).toBe('unpaid_by_agent');
+    for (const k of ['startDate', 'endDate', 'dateBasis', 'status'] as const) expect(p).not.toHaveProperty(k);
+    expect(listParams(DEFAULT_VIEW, 25)).toHaveProperty('startDate');
   });
 
-  it('counts take the unpaid number from the unpaid-by-age card, and null when the role is refused', async () => {
-    get.mockImplementation((url: string) =>
-      url === '/api/orders/counts' ? Promise.resolve({ data: { all: 5, byStatus: {}, waitingToDispatch: 0 } }) : Promise.resolve({ data: { overdue: { orders: 38 } } }));
-    expect((await ordersService.getCounts({ tab: 'unpaid_by_agent' })).unpaidByAgent).toBe(38);
-    expect(get).toHaveBeenCalledWith('/api/orders/counts', expect.objectContaining({ params: expect.not.objectContaining({ tab: expect.anything() }) }));
-
-    get.mockReset();
-    get.mockResolvedValueOnce({ data: { all: 5, byStatus: {}, waitingToDispatch: 0 } });
-    get.mockRejectedValueOnce(new Error('403'));
-    expect((await ordersService.getCounts({})).unpaidByAgent).toBeNull();
+  it('is a view tab; its count is unpaidByAgent from the counts call, and it is not drawn when that is null', () => {
+    expect(isViewTab('unpaid_by_agent')).toBe(true);
+    expect(isViewTab('confirmed')).toBe(false);
+    expect(tabCount('unpaid_by_agent', { ...COUNTS, unpaidByAgent: 38 })).toBe(38);
+    expect(visibleTabs({ ...COUNTS, unpaidByAgent: 0 }, 'all').some((t) => t.id === 'unpaid_by_agent')).toBe(true);
+    expect(visibleTabs({ ...COUNTS, unpaidByAgent: null }, 'all').some((t) => t.id === 'unpaid_by_agent')).toBe(false);
   });
 });

@@ -6,7 +6,7 @@ import { Button, ConfirmDialog, EmptyState, Modal, Pagination, Select, Table, Ta
 import { GuardedButtonV2 } from '../../components/financial/GuardedButtonV2';
 import { ListSkeleton } from '../deliveries/ListSkeleton';
 import {
-  FINDING_TYPES, findingAssignees, findingsService, type Finding, type FindingList, type FindingStatus, type FindingType,
+  FINDING_TYPES, findingAssignees, findingsService, type Assignee, type Finding, type FindingFilters, type FindingList, type FindingStatus, type FindingType,
 } from '../../services/findings.service';
 import { apiErrorMessage } from '../../utils/apiError';
 import { formatCurrency, formatDate } from '../../utils/format';
@@ -16,7 +16,7 @@ const PAGE_SIZE = 25;
 const STATUSES: FindingStatus[] = ['open', 'explained', 'closed', 'written_off'];
 
 /** Resolve one Finding: give it to someone, explain it, or (owner only) write it off. A note is required to explain or write off. */
-function ResolveModal({ finding, people, onClose, onDone }: { finding: Finding; people: Array<{ id: number; name: string }>; onClose: () => void; onDone: () => void }) {
+function ResolveModal({ finding, people, onClose, onDone }: { finding: Finding; people: Assignee[]; onClose: () => void; onDone: () => void }) {
   const say = useToast();
   const [assignee, setAssignee] = useState(finding.assigneeId ? String(finding.assigneeId) : '');
   const [note, setNote] = useState('');
@@ -87,22 +87,28 @@ function ResolveModal({ finding, people, onClose, onDone }: { finding: Finding; 
   );
 }
 
-/** /finance/findings: list, filter, assign, explain and write off Findings (F-909, M5-T35). The filters and page are in the URL. */
-export function Findings() {
-  useV2Page();
-  const [search, setSearch] = useSearchParams();
+/** The filters in the URL: status is open unless the link says otherwise or "all"; an unknown type or assignee is ignored. */
+function parseFilters(search: URLSearchParams) {
   const type = (FINDING_TYPES as readonly string[]).includes(search.get('type') ?? '') ? (search.get('type') as FindingType) : undefined;
   const statusParam = search.get('status');
   const status: FindingStatus | undefined = statusParam === 'all' ? undefined : STATUSES.includes(statusParam as FindingStatus) ? (statusParam as FindingStatus) : 'open';
   const assigneeParam = search.get('assignee');
-  const assigneeId = assigneeParam === 'none' ? 'none' : Number(assigneeParam) > 0 ? Number(assigneeParam) : undefined;
+  const assigneeId = assigneeParam === 'none' ? ('none' as const) : Number(assigneeParam) > 0 ? Number(assigneeParam) : undefined;
   const page = Math.max(1, Number(search.get('page')) || 1);
+  const filters: FindingFilters = { type, status, assigneeId, page, limit: PAGE_SIZE };
+  return { filters, statusValue: statusParam === 'all' ? 'all' : status ?? 'open', assigneeValue: assigneeParam ?? '', filtered: Boolean(type || assigneeId !== undefined || status !== 'open') };
+}
 
+/** /finance/findings: list, filter, assign, explain and write off Findings (F-909, M5-T35). The filters and page are in the URL. */
+export function Findings() {
+  useV2Page();
+  const [search, setSearch] = useSearchParams();
+  const { filters, statusValue, assigneeValue, filtered } = parseFilters(search);
+  const { type, status, assigneeId, page } = filters;
   const [data, setData] = useState<FindingList | null>(null);
   const [failed, setFailed] = useState(false);
-  const [people, setPeople] = useState<Array<{ id: number; name: string }>>([]);
+  const [people, setPeople] = useState<Assignee[]>([]);
   const [resolving, setResolving] = useState<Finding | null>(null);
-
   const load = useCallback(async () => {
     try {
       setData(await findingsService.list({ type, status, assigneeId, page, limit: PAGE_SIZE }));
@@ -115,7 +121,7 @@ export function Findings() {
     void load();
   }, [load]);
   useEffect(() => {
-    void findingAssignees().then(setPeople);
+    void findingAssignees().then(setPeople); // read once per session (cached in the service)
   }, []);
 
   const set = (key: string, value: string) =>
@@ -150,7 +156,12 @@ export function Findings() {
     },
   ], []);
 
-  const filtered = Boolean(type || assigneeId !== undefined || status !== 'open');
+  let body;
+  if (!data && failed) body = <EmptyState title="The Findings could not load." action={<Button onClick={() => void load()}>Try again</Button>} />;
+  else if (!data) body = <ListSkeleton label="Loading Findings" rows={3} height={44} style={{ padding: 20 }} />;
+  else if (data.findings.length > 0) body = <Table label="Findings" columns={columns} rows={data.findings} rowKey={(f) => f.id} />;
+  else if (filtered) body = <EmptyState title="No Findings match" text="Change the filters to see more." action={<Button onClick={() => setSearch(new URLSearchParams())}>Clear filters</Button>} />;
+  else body = <EmptyState icon={<ShieldCheck />} title="No open Findings" text="A gap shows here when a payout, count or deposit does not match the books." />;
 
   return (
     <section className="findings">
@@ -164,7 +175,7 @@ export function Findings() {
 
       <div className="card findwrap">
         <div className="filters">
-          <Select compact label="Status" value={statusParam === 'all' ? 'all' : status ?? 'open'} onChange={(e) => set('status', e.target.value === 'open' ? '' : e.target.value)}>
+          <Select compact label="Status" value={statusValue} onChange={(e) => set('status', e.target.value === 'open' ? '' : e.target.value)}>
             <option value="open">Open</option>
             <option value="explained">Explained</option>
             <option value="closed">Closed</option>
@@ -175,29 +186,17 @@ export function Findings() {
             <option value="">All types</option>
             {FINDING_TYPES.map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
           </Select>
-          <Select compact label="Assigned to" value={assigneeParam ?? ''} onChange={(e) => set('assignee', e.target.value)}>
+          <Select compact label="Assigned to" value={assigneeValue} onChange={(e) => set('assignee', e.target.value)}>
             <option value="">Anyone</option>
             <option value="none">Nobody</option>
             {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </Select>
         </div>
 
-        {!data && !failed ? (
-          <ListSkeleton label="Loading Findings" rows={3} height={44} style={{ padding: 20 }} />
-        ) : failed && !data ? (
-          <EmptyState title="The Findings could not load." action={<Button onClick={() => void load()}>Try again</Button>} />
-        ) : data && data.findings.length === 0 ? (
-          filtered ? (
-            <EmptyState title="No Findings match" text="Change the filters to see more." action={<Button onClick={() => setSearch(new URLSearchParams())}>Clear filters</Button>} />
-          ) : (
-            <EmptyState icon={<ShieldCheck />} title="No open Findings" text="A gap shows here when a payout, count or deposit does not match the books." />
-          )
-        ) : data ? (
-          <Table label="Findings" columns={columns} rows={data.findings} rowKey={(f) => f.id} />
-        ) : null}
+        {body}
 
         {data && data.pagination.total > 0 && (
-          <Pagination page={page} pageSize={PAGE_SIZE} total={data.pagination.total} noun="Findings" onPageChange={(p) => setSearch((prev) => { const n = new URLSearchParams(prev); n.set('page', String(p)); return n; })} />
+          <Pagination page={page ?? 1} pageSize={PAGE_SIZE} total={data.pagination.total} noun="Findings" onPageChange={(p) => setSearch((prev) => { const n = new URLSearchParams(prev); n.set('page', String(p)); return n; })} />
         )}
       </div>
 

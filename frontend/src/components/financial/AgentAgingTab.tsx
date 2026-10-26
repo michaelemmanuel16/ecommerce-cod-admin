@@ -1,17 +1,17 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Download, HandCoins } from 'lucide-react';
-import { Button, Card, EmptyState, Tag, type Column } from '../ui-v2';
-import { Table } from '../ui-v2';
+import { Button, Card, EmptyState, Table, Tag, type Column } from '../ui-v2';
 import { GuardedButtonV2 } from './GuardedButtonV2';
 import type { AgingPartner, AgingReport } from '../../services/collections.service';
 import { formatCurrency } from '../../utils/format';
 import { initials } from '../../utils/people';
-import { daysText, isLateOldest, toneOf } from '../../pages/financial/collections/model';
+import { daysText, isLateBucket, isLateOldest, toneOf } from '../../pages/financial/collections/model';
 
 interface Props {
   report: AgingReport;
-  remindingId: number | null;
+  /** The partner whose reminder or unblock is in flight: its buttons wait. */
+  busyId: number | null;
   onReview: (p: AgingPartner) => void;
   onRemind: (p: AgingPartner) => void;
   onBlock: (p: AgingPartner) => void;
@@ -25,7 +25,7 @@ const money = (n: number) => (n === 0 ? <span className="mut num">{formatCurrenc
  * Agent aging by partner (F-910, F-911, F-704): cash held, the four age buckets, oldest unpaid and days to pay. Overdue means
  * past the partner's own days to pay. The switch shows only partners with something overdue.
  */
-export function AgentAgingTab({ report, remindingId, onReview, onRemind, onBlock, onUnblock, onExport }: Props) {
+export function AgentAgingTab({ report, busyId, onReview, onRemind, onBlock, onUnblock, onExport }: Props) {
   const [overdueOnly, setOverdueOnly] = useState(false);
   const rows = useMemo(() => (overdueOnly ? report.partners.filter((p) => p.overdueOrders > 0) : report.partners), [report.partners, overdueOnly]);
   const { summary } = report;
@@ -63,7 +63,7 @@ export function AgentAgingTab({ report, remindingId, onReview, onRemind, onBlock
       total: <span className="num">{bucketTotal(i)}</span>,
       render: (p) => {
         const amount = p.buckets.find((b) => b.key === key)?.amount ?? 0;
-        return amount > 0 && i >= 2 ? <span className="num" style={{ color: 'var(--coral)' }}>{formatCurrency(amount)}</span> : money(amount);
+        return amount > 0 && isLateBucket(key) ? <span className="num" style={{ color: 'var(--coral)' }}>{formatCurrency(amount)}</span> : money(amount);
       },
     })),
     {
@@ -84,8 +84,8 @@ export function AgentAgingTab({ report, remindingId, onReview, onRemind, onBlock
       render: (p) => (
         <div className="rowacts">
           <GuardedButtonV2 perm="verifyCollection" size="mini" variant="primary" aria-label={`Review ${p.name}`} onClick={() => onReview(p)}>Review</GuardedButtonV2>
-          <GuardedButtonV2 perm="remindPartner" size="mini" aria-label={`Send reminder to ${p.name}`} disabled={remindingId === p.agentId || p.unpaidOrders === 0} onClick={() => onRemind(p)}>Send reminder</GuardedButtonV2>
-          <GuardedButtonV2 perm="blockPartner" size="mini" aria-label={`${p.isBlocked ? 'Unblock' : 'Block'} ${p.name}`} onClick={() => (p.isBlocked ? onUnblock(p) : onBlock(p))}>{p.isBlocked ? 'Unblock' : 'Block'}</GuardedButtonV2>
+          <GuardedButtonV2 perm="remindPartner" size="mini" aria-label={`Send reminder to ${p.name}`} disabled={busyId === p.agentId || p.unpaidOrders === 0} onClick={() => onRemind(p)}>Send reminder</GuardedButtonV2>
+          <GuardedButtonV2 perm="blockPartner" size="mini" aria-label={`${p.isBlocked ? 'Unblock' : 'Block'} ${p.name}`} disabled={busyId === p.agentId} onClick={() => (p.isBlocked ? onUnblock(p) : onBlock(p))}>{p.isBlocked ? 'Unblock' : 'Block'}</GuardedButtonV2>
         </div>
       ),
     },

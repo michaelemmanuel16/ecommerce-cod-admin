@@ -1,8 +1,7 @@
 import type { ComponentProps } from 'react';
 import { Button, Tooltip } from '../ui-v2';
 import { usePermissions } from '../../hooks/usePermissions';
-import type { Action, Resource } from '../../types';
-import { FINANCE_PERMS, type FinancePerm } from './financePerms';
+import { FINANCE_PERMS, type FinancePerm, type PermDef } from './financePerms';
 
 type GuardedButtonV2Props = ComponentProps<typeof Button> & { perm: FinancePerm };
 
@@ -12,8 +11,7 @@ type GuardedButtonV2Props = ComponentProps<typeof Button> & { perm: FinancePerm 
  */
 export function GuardedButtonV2({ perm, onClick, ...rest }: GuardedButtonV2Props) {
   const { can, user } = usePermissions();
-  const { resource, action, reason }: { resource: Resource; action: Action; reason: string } = FINANCE_PERMS[perm];
-  const roles: readonly string[] | undefined = (FINANCE_PERMS[perm] as { roles?: readonly string[] }).roles;
+  const { resource, action, reason, roles }: PermDef = FINANCE_PERMS[perm];
   if (can(resource, action) && (!roles || (!!user && roles.includes(user.role)))) return <Button {...rest} onClick={onClick} />;
   return (
     <Tooltip label={reason}>

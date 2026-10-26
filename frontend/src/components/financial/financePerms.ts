@@ -5,6 +5,14 @@
  */
 import type { Action, Resource } from '../../types';
 
+/** One button's permission pair, its disabled tooltip, and (for a route the backend guards by role) the roles it also needs. */
+export interface PermDef {
+  resource: Resource;
+  action: Action;
+  reason: string;
+  roles?: readonly string[];
+}
+
 export const FINANCE_PERMS = {
   addExpense: { resource: 'financial', action: 'create', reason: 'You do not have permission to add expenses.' },
   editExpense: { resource: 'expenses', action: 'edit', reason: 'You do not have permission to edit expenses.' },
@@ -18,6 +26,6 @@ export const FINANCE_PERMS = {
   resolveFinding: { resource: 'financial', action: 'update', reason: 'You do not have permission to resolve Findings.' },
   writeOffFinding: { resource: 'financial', action: 'update', roles: ['super_admin'], reason: 'Only the owner can write off a Finding.' },
   voidJournal: { resource: 'journal', action: 'void', reason: 'You do not have permission to void journal entries.' },
-} as const satisfies Record<string, { resource: Resource; action: Action; reason: string; roles?: readonly string[] }>;
+} as const satisfies Record<string, PermDef>;
 
 export type FinancePerm = keyof typeof FINANCE_PERMS;

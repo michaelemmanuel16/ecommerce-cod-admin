@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Bell, MessageSquare, Sparkles } from 'lucide-react';
 import { Tag } from '../../components/ui-v2';
-import type { OrderListRow } from '../../services/orders.service';
+import type { OrderListRow, UnpaidOrderRow } from '../../services/orders.service';
 import { ORDER_STATUS_LABELS } from '../../utils/orderStatus';
 import { STATUS_TONE, shortDate } from './model';
 
@@ -23,11 +23,6 @@ export function StatusCell({ row, tag }: { row: OrderListRow; tag?: ReactNode })
           {moreFlags.length > 0 && ` +${moreFlags.length}`}
         </div>
       )}
-      {row.unpaid && row.unpaid.days !== null && (
-        <div className="unpaidline">
-          Unpaid {row.unpaid.days} {row.unpaid.days === 1 ? 'day' : 'days'}{row.unpaid.daysToPay !== null && `, pays in ${row.unpaid.daysToPay}`}
-        </div>
-      )}
       {(reminder || replies > 0) && (
         <div className="chips">
           {reminder && (
@@ -45,5 +40,21 @@ export function StatusCell({ row, tag }: { row: OrderListRow; tag?: ReactNode })
         </div>
       )}
     </div>
+  );
+}
+
+/** The tag slot of the status cell on the Unpaid by agent view: the plain tag and how long the cash has waited. */
+export function UnpaidTag({ row }: { row: UnpaidOrderRow }) {
+  // the rows of the previous tab can show for one render after the switch: they have no `unpaid` yet
+  const { days, daysToPay } = row.unpaid ?? { days: null, daysToPay: null };
+  return (
+    <>
+      <Tag tone={STATUS_TONE[row.status]}>{ORDER_STATUS_LABELS[row.status]}</Tag>
+      {days !== null && (
+        <div className="unpaidline">
+          Unpaid {days} {days === 1 ? 'day' : 'days'}{daysToPay !== null && `, pays in ${daysToPay}`}
+        </div>
+      )}
+    </>
   );
 }

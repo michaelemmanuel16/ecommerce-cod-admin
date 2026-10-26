@@ -35,9 +35,10 @@ export interface OrderListRow {
   reminder?: { dueAt?: string } | null;
   /** null until M9 builds team threads. */
   threadCount?: number | null;
-  /** Only on the Unpaid by agent tab: days since delivery and the partner's days to pay (F-309). */
-  unpaid?: { days: number | null; daysToPay: number | null };
 }
+
+/** A row of the Unpaid by agent tab (F-309): days since delivery and the partner's days to pay. */
+export type UnpaidOrderRow = OrderListRow & { unpaid: { days: number | null; daysToPay: number | null } };
 
 /** Query of GET /api/orders and GET /api/orders/counts (counts ignore the sort and page fields). */
 export interface OrderListParams {
@@ -59,7 +60,7 @@ export interface OrderListParams {
   flag?: 'any';
   /** Comma list of order ids (the orders an import made). */
   ids?: string;
-  /** "Unpaid by agent" (F-309): delivered orders whose cash the partner holds past its days to pay. The server ignores dates and status for it. */
+  /** "Unpaid by agent" (F-309): delivered orders whose cash the partner holds past its days to pay. Send it without dates or status: the server filters by cash held. */
   tab?: 'unpaid_by_agent';
 }
 
@@ -283,10 +284,7 @@ const transformOrder = (order: any): Order => {
 export const ordersService = {
   /** The Orders list page: raw rows with customer, call rep, delivery agent, items and flags. */
   async listOrders(params: OrderListParams, skipCache = false): Promise<{ rows: OrderListRow[]; pagination: PaginationMeta }> {
-    // The Unpaid by agent tab counts every overdue order, whatever its date or status, so the card and the tab agree
-    const { startDate: _a, endDate: _b, dateBasis: _c, status: _d, ...undated } = params;
-    const wanted = params.tab ? undated : params;
-    const response = await apiClient.get('/api/orders', { params: { ...wanted, include: 'flags,reminder,threadCount' }, skipCache });
+    const response = await apiClient.get('/api/orders', { params: { ...params, include: 'flags,reminder,threadCount' }, skipCache });
     return {
       rows: response.data.orders || [],
       pagination: response.data.pagination || { page: 1, limit: 25, total: 0, pages: 0 },
@@ -294,14 +292,9 @@ export const ordersService = {
   },
 
   async getCounts(params: OrderListParams, skipCache = false): Promise<OrderCounts> {
-    const { sortBy: _s, sortOrder: _o, page: _p, limit: _l, tab: _t, ...filters } = params;
-    const [response, unpaid] = await Promise.all([
-      apiClient.get('/api/orders/counts', { params: filters, skipCache }),
-      // The Unpaid by agent tab count is the unpaid-by-age card's overdue number (F-309). A role without finance view is
-      // refused: no count, and the tab is not drawn.
-      apiClient.get('/api/financial/unpaid-by-age', { skipCache, quiet: true }).then((r) => Number(r.data.overdue.orders), () => null),
-    ]);
-    return { ...response.data, unpaidByAgent: unpaid };
+    const { sortBy: _s, sortOrder: _o, page: _p, limit: _l, ...filters } = params;
+    const response = await apiClient.get('/api/orders/counts', { params: filters, skipCache });
+    return response.data;
   },
 
   /** GET /api/orders/statuses: the fixed list of order statuses from the state machine (F-1233). */
@@ -455,7 +448,7 @@ export const ordersService = {
    * the server chose (orders-<date>.csv). The sort and page are not sent; the file holds every matching order.
    */
   async exportList(params: OrderListParams, format: 'csv' | 'xlsx'): Promise<string> {
-    const { sortBy: _s, sortOrder: _o, page: _p, limit: _l, tab: _t, ...filters } = params;
+    const { sortBy: _s, sortOrder: _o, page: _p, limit: _l, ...filters } = params;
     const response = await apiClient.get('/api/orders/export', { params: { ...filters, format }, responseType: 'blob', skipCache: true });
     const named = /filename="?([^";]+)"?/.exec(String(response.headers?.['content-disposition'] ?? ''));
     const name = named?.[1] ?? `orders-${new Date().toISOString().slice(0, 10)}.${format}`;
