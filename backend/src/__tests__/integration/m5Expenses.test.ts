@@ -224,6 +224,21 @@ describe('receiptUrl check (stored XSS guard)', () => {
     });
 });
 
+describe('list total and breakdown agree', () => {
+  it('the list totalAmount equals the sum of the breakdown for the same range, and for one category', async () => {
+    await add({ category: 'Software', amount: 19.99, description: 'Tool A' });
+    await add({ category: 'Software', amount: 0.01, description: 'Tool B' });
+    const list = await request(app).get('/api/financial/expenses?limit=5').set(auth(owner));
+    const breakdown = await request(app).get('/api/financial/expenses/breakdown').set(auth(owner));
+    const sum = breakdown.body.breakdown.reduce((n: number, b: any) => n + Number(b.totalAmount), 0);
+    expect(Number(list.body.totalAmount)).toBeCloseTo(sum, 2);
+    expect(list.body.pagination.total).toBeGreaterThan(5); // the total covers every page, not the 5 rows shown
+
+    const soft = await request(app).get('/api/financial/expenses?category=Software').set(auth(owner));
+    expect(soft.body.totalAmount).toBe(breakdown.body.breakdown.find((b: any) => b.category === 'Software').totalAmount);
+  });
+});
+
 describe('system rows and permissions', () => {
   it('a Meta or delivery-fee row is locked: listed as locked, edit and delete refused', async () => {
     const row = await prismaBase.expense.create({

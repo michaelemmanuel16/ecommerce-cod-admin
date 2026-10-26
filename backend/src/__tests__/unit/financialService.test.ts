@@ -172,6 +172,7 @@ describe('FinancialService', () => {
     beforeEach(() => {
       prismaMock.expense.findMany.mockResolvedValue([] as any);
       prismaMock.expense.count.mockResolvedValue(0 as any);
+      prismaMock.expense.aggregate.mockResolvedValue({ _sum: { amount: null } } as any);
     });
 
     it('a delivery agent sees only the rows they recorded', async () => {

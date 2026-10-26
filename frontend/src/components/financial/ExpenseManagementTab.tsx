@@ -1,57 +1,73 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Plus, Download, Edit2, Trash2, Filter } from 'lucide-react';
+import { Plus, Download, Edit2, Trash2, Filter, Lock, Paperclip } from 'lucide-react';
 import { useFinancialStore } from '../../stores/financialStore';
 import { ExpenseCategoryCard } from './cards/ExpenseCategoryCard';
 import { Card } from '../ui/Card';
 import { AddExpenseModal } from './modals/AddExpenseModal';
+import { ReceiptViewerModal } from './modals/ReceiptViewerModal';
+import { GuardedButton } from './GuardedButton';
+import { NO_PERMISSION, useFinancePermissions } from '../../hooks/useFinancePermissions';
+import { isSafeReceiptUrl, PAID_FROM_LABELS } from '../../utils/expenseRules';
 import { formatCurrency } from '../../utils/format';
 import type { Expense } from '../../services/financial.service';
+
+const PAGE_SIZE = 20;
 
 export const ExpenseManagementTab: React.FC = () => {
   const {
     expenses,
+    expensesTotal,
     expenseBreakdown,
+    pagination,
     dateRange,
     loadingStates,
     fetchExpenses,
     fetchExpenseBreakdown,
     deleteExpense
   } = useFinancialStore();
+  const perms = useFinancePermissions();
 
   const [categoryFilter, setCategoryFilter] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [receiptToView, setReceiptToView] = useState<string | null>(null);
+
+  // Search runs on the server (description and category); wait a moment after typing
+  useEffect(() => {
+    const t = setTimeout(() => { setSearch(searchTerm.trim()); setPage(1); }, 300);
+    return () => clearTimeout(t);
+  }, [searchTerm]);
+
+  const reload = () => {
+    fetchExpenses({ category: categoryFilter || undefined, search: search || undefined, page, limit: PAGE_SIZE, startDate: dateRange.startDate, endDate: dateRange.endDate });
+    fetchExpenseBreakdown(dateRange.startDate, dateRange.endDate);
+  };
 
   useEffect(() => {
-    fetchExpenses({ category: categoryFilter || undefined, startDate: dateRange.startDate, endDate: dateRange.endDate });
-    fetchExpenseBreakdown(dateRange.startDate, dateRange.endDate);
-  }, [dateRange.startDate, dateRange.endDate, categoryFilter]);
+    reload();
+  }, [dateRange.startDate, dateRange.endDate, categoryFilter, search, page]);
 
-  // Calculate category totals
+  // Category bars: share of the range total. Their sum is the figure shown above the list.
   const categoryTotals = useMemo(() => {
-    const totalExpenses = expenseBreakdown.reduce((sum, cat) => sum + cat.totalAmount, 0);
+    const total = expenseBreakdown.reduce((sum, cat) => sum + Number(cat.totalAmount), 0);
     return expenseBreakdown.map(cat => ({
       ...cat,
-      percentage: totalExpenses > 0 ? (cat.totalAmount / totalExpenses) * 100 : 0
+      totalAmount: Number(cat.totalAmount),
+      percentage: total > 0 ? (Number(cat.totalAmount) / total) * 100 : 0
     }));
   }, [expenseBreakdown]);
-
-  // Filter expenses
-  const filteredExpenses = useMemo(() => {
-    return expenses.filter(expense => {
-      const matchesCategory = !categoryFilter || expense.category === categoryFilter;
-      const matchesSearch = !searchTerm ||
-        expense.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        expense.category.toLowerCase().includes(searchTerm.toLowerCase());
-      return matchesCategory && matchesSearch;
-    });
-  }, [expenses, categoryFilter, searchTerm]);
+  const breakdownTotal = categoryTotals.reduce((sum, c) => sum + c.totalAmount, 0);
+  const totalPages = pagination.expenses?.totalPages ?? (pagination.expenses as any)?.pages ?? 1;
+  const filteredExpenses = expenses;
 
   const handleDeleteExpense = async (expenseId: string) => {
     if (window.confirm('Are you sure you want to delete this expense?')) {
       try {
         await deleteExpense(expenseId);
+        reload();
       } catch (error) {
         console.error('Failed to delete expense:', error);
       }
@@ -59,12 +75,13 @@ export const ExpenseManagementTab: React.FC = () => {
   };
 
   const handleExportCSV = () => {
-    const headers = ['Date', 'Category', 'Amount', 'Description', 'Recorded By'];
+    const headers = ['Date', 'Category', 'Amount', 'Description', 'Paid from', 'Recorded By'];
     const rows = filteredExpenses.map(expense => [
       new Date(expense.expenseDate).toLocaleDateString(),
       expense.category,
       expense.amount.toString(),
       expense.description,
+      expense.paidFrom ? PAID_FROM_LABELS[expense.paidFrom] : '',
       expense.recordedBy ? `${expense.recordedBy.firstName} ${expense.recordedBy.lastName}` : 'N/A'
     ]);
 
@@ -90,7 +107,8 @@ export const ExpenseManagementTab: React.FC = () => {
     });
   };
 
-  if (loadingStates.expenses) {
+  // Skeleton only for the first load: a reload while typing in the search box must keep the box mounted
+  if (loadingStates.expenses && expenses.length === 0 && !search && !categoryFilter) {
     return (
       <div className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -138,13 +156,15 @@ export const ExpenseManagementTab: React.FC = () => {
                 <Download className="w-4 h-4" />
                 Export CSV
               </button>
-              <button
+              <GuardedButton
+                allowed={perms.canAddExpense}
+                reason={NO_PERMISSION.addExpense}
                 onClick={() => setIsAddModalOpen(true)}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2"
               >
                 <Plus className="w-4 h-4" />
                 Add Expense
-              </button>
+              </GuardedButton>
             </div>
           </div>
 
@@ -169,6 +189,15 @@ export const ExpenseManagementTab: React.FC = () => {
             )}
           </div>
 
+          <p className="mb-3 text-sm text-gray-600" data-testid="expense-total">
+            {categoryFilter ? `${categoryFilter}: ` : 'All categories: '}
+            <span className="font-semibold text-gray-900">{formatCurrency(expensesTotal)}</span>
+            {' '}over {pagination.expenses?.total ?? filteredExpenses.length} expense{(pagination.expenses?.total ?? filteredExpenses.length) === 1 ? '' : 's'}
+            {!categoryFilter && !search && breakdownTotal > 0 && Math.abs(breakdownTotal - expensesTotal) > 0.005 && (
+              <span className="ml-2 text-amber-700">(the category bars add up to {formatCurrency(breakdownTotal)}; reload to refresh)</span>
+            )}
+          </p>
+
           <div className="overflow-x-auto">
             {filteredExpenses.length === 0 ? (
               <p className="text-center text-gray-500 py-8">
@@ -188,10 +217,10 @@ export const ExpenseManagementTab: React.FC = () => {
                       Description
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Amount
+                      Paid from
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Recorded By
+                      Amount
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Receipt
@@ -215,46 +244,57 @@ export const ExpenseManagementTab: React.FC = () => {
                       <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">
                         {expense.description}
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {expense.paidFrom ? PAID_FROM_LABELS[expense.paidFrom] : '-'}
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
                         {formatCurrency(expense.amount)}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {expense.recordedBy
-                          ? `${expense.recordedBy.firstName} ${expense.recordedBy.lastName}`
-                          : 'N/A'}
-                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        {expense.receiptUrl && /^(https?:\/\/|\/(?!\/))/i.test(expense.receiptUrl) ? (
-                          <a
-                            href={expense.receiptUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:text-blue-800"
+                        {isSafeReceiptUrl(expense.receiptUrl) ? (
+                          <button
+                            type="button"
+                            onClick={() => setReceiptToView(expense.receiptUrl as string)}
+                            className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800"
                           >
+                            <Paperclip className="w-3 h-3" />
                             View
-                          </a>
+                          </button>
                         ) : (
                           <span className="text-gray-400">None</span>
                         )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <button
-                          className="text-blue-600 hover:text-blue-900 mr-3"
-                          title="Edit expense"
-                          onClick={() => {
-                            setEditingExpense(expense);
-                            setIsAddModalOpen(true);
-                          }}
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteExpense(expense.id)}
-                          className="text-red-600 hover:text-red-900"
-                          title="Delete expense"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {expense.locked ? (
+                          <span className="inline-flex items-center gap-1 text-gray-400" title="Posted by the system. It cannot be edited or deleted by hand.">
+                            <Lock className="w-4 h-4" aria-hidden="true" />
+                            <span className="sr-only">Locked: posted by the system</span>
+                          </span>
+                        ) : (
+                          <>
+                            <GuardedButton
+                              allowed={perms.canEditExpense}
+                              reason={NO_PERMISSION.editExpense}
+                              className="text-blue-600 hover:text-blue-900 mr-3"
+                              aria-label="Edit expense"
+                              onClick={() => {
+                                setEditingExpense(expense);
+                                setIsAddModalOpen(true);
+                              }}
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </GuardedButton>
+                            <GuardedButton
+                              allowed={perms.canDeleteExpense}
+                              reason={NO_PERMISSION.deleteExpense}
+                              onClick={() => handleDeleteExpense(expense.id)}
+                              className="text-red-600 hover:text-red-900"
+                              aria-label="Delete expense"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </GuardedButton>
+                          </>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -265,14 +305,26 @@ export const ExpenseManagementTab: React.FC = () => {
         </div>
       </Card>
 
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between text-sm text-gray-700">
+          <span>Page {page} of {totalPages}</span>
+          <div className="flex gap-2">
+            <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1 border border-gray-300 rounded disabled:opacity-50">Previous</button>
+            <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="px-3 py-1 border border-gray-300 rounded disabled:opacity-50">Next</button>
+          </div>
+        </div>
+      )}
+
       <AddExpenseModal
         isOpen={isAddModalOpen}
         onClose={() => {
           setIsAddModalOpen(false);
           setEditingExpense(null);
         }}
+        onSaved={reload}
         expense={editingExpense}
       />
+      <ReceiptViewerModal url={receiptToView} onClose={() => setReceiptToView(null)} />
     </div>
   );
 };

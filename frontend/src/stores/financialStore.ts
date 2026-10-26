@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import {
   financialService,
+  ExpenseInput,
   FinancialSummary,
   Transaction,
   CODCollection,
@@ -29,6 +30,7 @@ interface FinancialFilters {
   status?: string;
   agentId?: string;
   category?: string;
+  search?: string;
   page?: number;
   limit?: number;
 }
@@ -42,6 +44,8 @@ interface FinancialState {
 
   // New state
   expenses: Expense[];
+  /** Sum of every expense the filters match (all pages). */
+  expensesTotal: number;
   expenseBreakdown: ExpenseCategory[];
   agentCashHoldings: AgentCashHolding[];
   pipelineRevenue: PipelineRevenue | null;
@@ -81,12 +85,7 @@ interface FinancialState {
   fetchTransactions: (filters?: FinancialFilters) => Promise<void>;
   fetchCODCollections: (filters?: FinancialFilters) => Promise<void>;
   fetchReports: (period?: 'daily' | 'monthly', startDate?: string, endDate?: string) => Promise<void>;
-  recordExpense: (expense: {
-    category: string;
-    amount: number;
-    description: string;
-    expenseDate: string;
-  }) => Promise<void>;
+  recordExpense: (expense: ExpenseInput) => Promise<void>;
   setFilters: (filters: FinancialFilters) => void;
   addTransaction: (transaction: Transaction) => void;
   updateTransaction: (transaction: Transaction) => void;
@@ -99,12 +98,7 @@ interface FinancialState {
   fetchProfitabilityAnalysis: (params: { startDate?: string; endDate?: string; productId?: number }) => Promise<void>;
   exportProfitability: (params: { startDate?: string; endDate?: string; productId?: number; format: 'csv' | 'xlsx' }) => Promise<void>;
   fetchAgentAging: () => Promise<void>;
-  updateExpense: (id: string, data: {
-    category?: string;
-    amount?: number;
-    description?: string;
-    expenseDate?: string;
-  }) => Promise<void>;
+  updateExpense: (id: string, data: Partial<ExpenseInput>) => Promise<void>;
   deleteExpense: (id: string) => Promise<void>;
   markAsDeposited: (transactionIds: string[], reference?: string) => Promise<void>;
   reconcileTransaction: (id: string, data: {
@@ -197,6 +191,7 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
 
     // New state
     expenses: [],
+    expensesTotal: 0,
     expenseBreakdown: [],
     agentCashHoldings: [],
     pipelineRevenue: null,
@@ -309,15 +304,16 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
 
     recordExpense: async (expense) => {
       try {
-        await financialService.recordExpense(expense);
+        const { notice } = await financialService.recordExpense(expense);
         toast.success('Expense recorded successfully');
+        if (notice) toast(notice, { icon: '!' });
         // Refresh data
         await Promise.all([
           get().fetchSummary(),
           get().fetchTransactions(get().filters)
         ]);
       } catch (error: any) {
-        const errorMessage = error.response?.data?.message || 'Failed to record expense';
+        const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to record expense';
         toast.error(errorMessage);
         throw error;
       }
@@ -347,6 +343,7 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
         const response = await financialService.getExpenses(filters);
         set((state) => ({
           expenses: response.expenses,
+          expensesTotal: Number(response.totalAmount ?? 0),
           pagination: {
             ...state.pagination,
             expenses: response.pagination
@@ -450,22 +447,18 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
       }
     },
 
-    updateExpense: async (id: string, data: {
-      category?: string;
-      amount?: number;
-      description?: string;
-      expenseDate?: string;
-    }) => {
+    updateExpense: async (id: string, data: Partial<ExpenseInput>) => {
       try {
-        const updated = await financialService.updateExpense(id, data);
+        const { expense: updated, notice } = await financialService.updateExpense(id, data);
         set((state) => ({
           expenses: state.expenses.map(e => e.id === id ? updated : e)
         }));
         toast.success('Expense updated successfully');
+        if (notice) toast(notice, { icon: '!' });
         await get().fetchExpenseBreakdown();
         await get().fetchSummary();
       } catch (error: any) {
-        const errorMessage = error.response?.data?.message || 'Failed to update expense';
+        const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to update expense';
         toast.error(errorMessage);
         throw error;
       }
@@ -473,15 +466,16 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
 
     deleteExpense: async (id: string) => {
       try {
-        await financialService.deleteExpense(id);
+        const { notice } = await financialService.deleteExpense(id);
         set((state) => ({
           expenses: state.expenses.filter(e => e.id !== id)
         }));
         toast.success('Expense deleted successfully');
+        if (notice) toast(notice, { icon: '!' });
         await get().fetchExpenseBreakdown();
         await get().fetchSummary();
       } catch (error: any) {
-        const errorMessage = error.response?.data?.message || 'Failed to delete expense';
+        const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to delete expense';
         toast.error(errorMessage);
         throw error;
       }

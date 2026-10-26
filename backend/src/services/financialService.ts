@@ -514,7 +514,7 @@ export class FinancialService {
 
     const skip = (page - 1) * limit;
 
-    const [rawExpenses, total] = await Promise.all([
+    const [rawExpenses, total, sum] = await Promise.all([
       prisma.expense.findMany({
         where,
         skip,
@@ -529,7 +529,8 @@ export class FinancialService {
         },
         orderBy: [{ expenseDate: 'desc' }, { id: 'desc' }]
       }),
-      prisma.expense.count({ where })
+      prisma.expense.count({ where }),
+      prisma.expense.aggregate({ where, _sum: { amount: true } })
     ]);
 
     // Remap Prisma relation `user` → `recordedBy` for frontend compatibility. `locked` rows are read-only (F-917).
@@ -541,6 +542,8 @@ export class FinancialService {
 
     return {
       expenses,
+      /** Sum of every row the filters match, not only this page: the breakdown total for the same filters equals it. */
+      totalAmount: Money.orZero(sum._sum.amount),
       pagination: {
         page,
         limit,
