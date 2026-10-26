@@ -189,22 +189,43 @@ async function* ledgerBatches(input: ExportInput): AsyncGenerator<LedgerLine[]> 
   }
 }
 
-const ledgerReport = (input: ExportInput): ReportExport<LedgerLine> => {
+type LedgerExportLine = LedgerLine & { balance?: Money.Money };
+
+/**
+ * For one account the file also has a Balance column. The lines stream oldest first, so the balance is carried from the
+ * balance before the first line (every earlier line summed) and adds up line by line.
+ */
+async function* withBalance(input: ExportInput, batches: AsyncGenerator<LedgerLine[]>): AsyncGenerator<LedgerExportLine[]> {
+  const account = await prisma.account.findUnique({ where: { id: input.accountId! }, select: { normalBalance: true } });
+  const sign = (d: Money.MoneyInput, c: Money.MoneyInput) => (account?.normalBalance === 'credit' ? Money.sub(c, d) : Money.sub(d, c));
+  const start = input.startDate ? parseInclusiveBound(input.startDate, 'from', getStoreTimeZone(getTenantId())) : undefined;
+  const before = start
+    ? await prisma.accountTransaction.aggregate({ where: { accountId: input.accountId, journalEntry: { entryDate: { lt: start } } }, _sum: { debitAmount: true, creditAmount: true } })
+    : null;
+  let balance = sign(Money.orZero(before?._sum?.debitAmount), Money.orZero(before?._sum?.creditAmount));
+  for await (const batch of batches) {
+    yield batch.map((line) => {
+      balance = Money.add(balance, sign(line.debitAmount, line.creditAmount));
+      return { ...line, balance };
+    });
+  }
+}
+
+const ledgerReport = (input: ExportInput): ReportExport<LedgerExportLine> => {
   const zone = getStoreTimeZone(getTenantId());
-  return {
-    columns: [
-      { header: 'Date', value: (l) => localDate(l.journalEntry.entryDate, zone) },
-      { header: 'Entry', value: (l) => l.journalEntry.entryNumber },
-      { header: 'Account code', value: (l) => l.account.code },
-      { header: 'Account', value: (l) => l.account.name },
-      { header: 'Description', value: (l) => l.description || l.journalEntry.description },
-      { header: 'Source', value: (l) => l.journalEntry.sourceType },
-      { header: 'Debit', value: (l) => exportMoney(l.debitAmount), kind: 'money' },
-      { header: 'Credit', value: (l) => exportMoney(l.creditAmount), kind: 'money' },
-      { header: 'Voided', value: (l) => (l.journalEntry.isVoided ? 'yes' : 'no') },
-    ],
-    batches: ledgerBatches(input),
-  };
+  const columns: ExportColumn<LedgerExportLine>[] = [
+    { header: 'Date', value: (l) => localDate(l.journalEntry.entryDate, zone) },
+    { header: 'Entry', value: (l) => l.journalEntry.entryNumber },
+    { header: 'Account code', value: (l) => l.account.code },
+    { header: 'Account', value: (l) => l.account.name },
+    { header: 'Description', value: (l) => l.description || l.journalEntry.description },
+    { header: 'Source', value: (l) => l.journalEntry.sourceType },
+    { header: 'Debit', value: (l) => exportMoney(l.debitAmount), kind: 'money' },
+    { header: 'Credit', value: (l) => exportMoney(l.creditAmount), kind: 'money' },
+    { header: 'Voided', value: (l) => (l.journalEntry.isVoided ? 'yes' : 'no') },
+  ];
+  if (input.accountId) columns.push({ header: 'Balance', value: (l) => exportMoney(l.balance), kind: 'money' });
+  return { columns, batches: input.accountId ? withBalance(input, ledgerBatches(input)) : ledgerBatches(input) };
 };
 
 /** The columns and row stream of one report. Throws a 400 for a bad range before anything is written. */

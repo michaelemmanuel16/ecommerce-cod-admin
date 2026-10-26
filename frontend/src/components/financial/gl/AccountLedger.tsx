@@ -127,40 +127,40 @@ export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, onBack,
                 <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                         <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reference</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
-                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Debit</th>
-                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Credit</th>
-                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Balance</th>
-                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Entry</th>
+                            <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                            <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reference</th>
+                            <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                            <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Debit</th>
+                            <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Credit</th>
+                            <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Balance</th>
+                            <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Entry</th>
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                         {data.map((txn) => (
                             <tr key={txn.id} className="hover:bg-gray-50 transition-colors">
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-600">
                                     {formatDate(txn.journalEntry.entryDate)}
                                 </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                    <span className="text-xs font-mono bg-gray-100 px-2 py-1 rounded text-gray-700">
+                                <td className="px-3 py-4 max-w-[10rem]">
+                                    <span className="text-xs font-mono bg-gray-100 px-2 py-1 rounded text-gray-700 break-all">
                                         {txn.journalEntry.entryNumber}
                                     </span>
-                                    <span className="ml-2 text-xs text-indigo-600 block">{txn.journalEntry.sourceType}</span>
+                                    <span className="text-xs text-indigo-600 block mt-1">{txn.journalEntry.sourceType}</span>
                                 </td>
-                                <td className="px-6 py-4 text-sm text-gray-900 max-w-md truncate">
+                                <td className="px-3 py-4 text-sm text-gray-900 min-w-[10rem] whitespace-normal break-words">
                                     {txn.description || txn.journalEntry.description}
                                 </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 font-medium">
+                                <td className="px-3 py-4 whitespace-nowrap text-sm text-right text-gray-900 font-medium">
                                     {txn.debitAmount > 0 ? formatCurrency(txn.debitAmount) : '-'}
                                 </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 font-medium">
+                                <td className="px-3 py-4 whitespace-nowrap text-sm text-right text-gray-900 font-medium">
                                     {txn.creditAmount > 0 ? formatCurrency(txn.creditAmount) : '-'}
                                 </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 font-bold">
+                                <td className="px-3 py-4 whitespace-nowrap text-sm text-right text-gray-900 font-bold">
                                     {formatCurrency(txn.runningBalance)}
                                 </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
+                                <td className="px-3 py-4 whitespace-nowrap text-right text-sm">
                                     {txn.journalEntry.isVoided ? (
                                         <span className="text-xs text-gray-500">Voided</span>
                                     ) : txn.journalEntry.voidableByHand ? (
@@ -179,7 +179,7 @@ export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, onBack,
                         ))}
                         {data.length === 0 && (
                             <tr>
-                                <td colSpan={7} className="px-6 py-10 text-center text-gray-500">
+                                <td colSpan={7} className="px-3 py-10 text-center text-gray-500">
                                     No transactions found for this period.
                                 </td>
                             </tr>

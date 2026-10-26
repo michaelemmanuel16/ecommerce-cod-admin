@@ -192,6 +192,58 @@ describe('ledger browse', () => {
   });
 });
 
+describe('ledger order and running balance with back-dated entries', () => {
+  let t: string;
+  let who: { id: number; token: string };
+  const acc: Record<string, number> = {};
+
+  beforeAll(async () => {
+    t = (await createTenant('Ledger order')).id;
+    tenantIds.push(t);
+    await seedTenantDefaults(t);
+    for (const a of await prismaBase.account.findMany({ where: { tenantId: t } })) acc[a.code] = a.id;
+    who = await mkUser(t, 'ledgerowner', 'super_admin');
+    // Posted in this order, dated out of order: Oct 15 +100, Oct 1 +1000, Oct 25 -50 (cash out), Oct 3 +20
+    const dated = (entryDate: string, dr: string, cr: string, amount: number) => request(app).post('/api/gl/journal-entries').set(auth(who))
+      .send({ entryDate, description: `Entry ${entryDate}`, transactions: [{ accountId: acc[dr], debitAmount: amount, creditAmount: 0 }, { accountId: acc[cr], debitAmount: 0, creditAmount: amount }] });
+    for (const [d, dr, cr, n] of [['2026-10-15', '1010', '3010', 100], ['2026-10-01', '1010', '3010', 1000], ['2026-10-25', '5100', '1010', 50], ['2026-10-03', '1010', '3010', 20]] as const) {
+      expect((await dated(d, dr, cr, n)).status).toBe(201);
+    }
+  });
+
+  it('lists the lines by entry date, newest first, with the balance after each line in date order', async () => {
+    const res = await get(`/api/gl/accounts/${acc['1010']}/ledger?limit=20`, who);
+    const rows = res.body.transactions.map((r: any) => [r.journalEntry.entryDate.slice(0, 10), Number(r.runningBalance)]);
+    // chronological: Oct 1 1000, Oct 3 1020, Oct 15 1120, Oct 25 1070
+    expect(rows).toEqual([['2026-10-25', 1070], ['2026-10-15', 1120], ['2026-10-03', 1020], ['2026-10-01', 1000]]);
+    expect(Number(res.body.account.currentBalance)).toBe(1070);
+  });
+
+  it('page 2 starts from the right balance, and a date filter keeps the balance of the whole ledger', async () => {
+    const page2 = await get(`/api/gl/accounts/${acc['1010']}/ledger?limit=2&page=2`, who);
+    expect(page2.body.transactions.map((r: any) => Number(r.runningBalance))).toEqual([1020, 1000]);
+    const filtered = await get(`/api/gl/accounts/${acc['1010']}/ledger?startDate=2026-10-10&endDate=2026-10-20`, who);
+    expect(filtered.body.transactions.map((r: any) => Number(r.runningBalance))).toEqual([1120]);
+  });
+
+  it('the per-account CSV has the same balances, and the job file has a Balance column oldest first', async () => {
+    const csv = csvOf(await get(`/api/gl/accounts/${acc['1010']}/ledger/export`, who));
+    expect(csv[0]).toContain('RunningBalance');
+    expect(csv.slice(1).map((l) => l.split(',').pop()!.replace(/"/g, ''))).toEqual(['1070.00', '1120.00', '1020.00', '1000.00']);
+
+    process.env.LEDGER_EXPORT_JOB_LINES = '1';
+    const job = await get(`/api/financial/export/general-ledger?accountId=${acc['1010']}`, who);
+    expect(job.status).toBe(202);
+    const done = await poll(`/api/financial/jobs/${job.body.jobId}`, who);
+    const file = csvOf(await get(done.body.result.downloadUrl, who));
+    expect(file[0].endsWith(',Balance')).toBe(true);
+    expect(file.slice(1).map((l) => [l.slice(0, 10), l.split(',').pop()])).toEqual([
+      ['2026-10-01', '1000.00'], ['2026-10-03', '1020.00'], ['2026-10-15', '1120.00'], ['2026-10-25', '1070.00'],
+    ]);
+    delete process.env.LEDGER_EXPORT_JOB_LINES;
+  });
+});
+
 describe('exports', () => {
   beforeAll(async () => {
     await request(app).post('/api/financial/expenses').set(auth(owner))

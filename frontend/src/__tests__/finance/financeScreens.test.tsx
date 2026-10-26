@@ -38,6 +38,7 @@ import { JournalEntryModal } from '../../components/financial/gl/JournalEntryMod
 import { AccountLedger } from '../../components/financial/gl/AccountLedger';
 import { ExpenseManagementTab } from '../../components/financial/ExpenseManagementTab';
 import { AddExpenseModal } from '../../components/financial/modals/AddExpenseModal';
+import { GuardedButton } from '../../components/financial/GuardedButton';
 
 const ALL = ['financial:create', 'expenses:edit', 'expenses:delete', 'journal:post', 'journal:void'];
 const RULES = {
@@ -46,9 +47,11 @@ const RULES = {
   receipt: { maxBytes: 15 * 1024 * 1024, mimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'] },
 };
 /** The disabled button's reason shows in a tooltip on hover. */
-const hoverReason = (button: HTMLElement, reason: RegExp | string) => {
-  fireEvent.mouseEnter(button.parentElement as HTMLElement);
-  expect(screen.getByText(reason)).toBeInTheDocument();
+const hoverReason = (button: HTMLElement, reason: string) => {
+  // The reason is always there for screen readers (one hidden copy); hovering the wrapper adds the visible tooltip.
+  expect(screen.getAllByText(reason)).toHaveLength(1);
+  fireEvent.mouseEnter(button.closest('div.relative') as HTMLElement);
+  expect(screen.getAllByText(reason)).toHaveLength(2);
 };
 
 beforeEach(() => {
@@ -56,6 +59,34 @@ beforeEach(() => {
   perms.granted = new Set(ALL);
   svc.getAllGLAccounts.mockResolvedValue({ accounts: [{ id: 1, code: '1010', name: 'Cash at bank and MoMo' }, { id: 2, code: '3010', name: "Owner's Equity" }] });
   svc.getExpenseCategories.mockResolvedValue(RULES);
+});
+
+describe('GuardedButton without the permission', () => {
+  it('is disabled, shows the reason on hover of its wrapper and on keyboard focus, and describes itself to screen readers', () => {
+    perms.granted = new Set();
+    render(<GuardedButton perm="postJournal">Record Journal Entry</GuardedButton>);
+    const button = screen.getByRole('button', { name: 'Record Journal Entry' });
+    expect(button).toBeDisabled();
+    expect(button.className).toContain('pointer-events-none'); // so the hover reaches the wrapper in a real browser
+    const reason = 'You do not have permission to post journal entries.';
+    const wrapper = button.closest('div.relative') as HTMLElement;
+    expect(screen.getAllByText(reason)).toHaveLength(1);
+    fireEvent.mouseEnter(wrapper);
+    expect(screen.getAllByText(reason)).toHaveLength(2);
+    fireEvent.mouseLeave(wrapper);
+    expect(screen.getAllByText(reason)).toHaveLength(1);
+    fireEvent.focus(button.parentElement as HTMLElement);
+    expect(screen.getAllByText(reason)).toHaveLength(2);
+    const focusable = button.parentElement as HTMLElement;
+    expect(focusable).toHaveAttribute('tabindex', '0');
+    expect(focusable.getAttribute('aria-describedby')).toBe(screen.getAllByText(reason)[0].id);
+  });
+
+  it('is a plain enabled button with the permission', () => {
+    perms.granted = new Set(['journal:post']);
+    render(<GuardedButton perm="postJournal">Record Journal Entry</GuardedButton>);
+    expect(screen.getByRole('button', { name: 'Record Journal Entry' })).toBeEnabled();
+  });
 });
 
 describe('journal entry modal', () => {

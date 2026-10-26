@@ -32,7 +32,7 @@ export const VoidJournalModal: React.FC<VoidJournalModalProps> = ({ entry, onClo
     };
 
     return (
-        <Modal isOpen={!!entry} onClose={onClose} title={`Void ${entry?.entryNumber ?? ''}`} size="sm">
+        <Modal closeOnEscape isOpen={!!entry} onClose={onClose} title={`Void ${entry?.entryNumber ?? ''}`} size="sm">
             <form onSubmit={submit} className="space-y-4">
                 <p className="text-sm text-gray-600">A reversing entry is posted. The original stays in the ledger, marked as voided.</p>
                 <div>

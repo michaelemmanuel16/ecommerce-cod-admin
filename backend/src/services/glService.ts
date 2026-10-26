@@ -100,6 +100,9 @@ export const isVoidableByHand = (sourceType: JournalSourceType): boolean => VOID
 const withVoidRule = <T extends { sourceType: JournalSourceType }>(entry: T) =>
   Object.assign(entry, { voidableByHand: isVoidableByHand(entry.sourceType) });
 
+/** The ledger's order: newest entry date first, then newest line. Back-dated entries sit by their date, not their posting time. */
+const LEDGER_ORDER: Prisma.AccountTransactionOrderByWithRelationInput[] = [{ journalEntry: { entryDate: 'desc' } }, { id: 'desc' }];
+
 export class GLService {
   /**
    * Validate normal balance matches account type
@@ -1236,7 +1239,7 @@ export class GLService {
 
     const skip = (page - 1) * limit;
 
-    const [transactions, total] = await Promise.all([
+    const [rows, total] = await Promise.all([
       prisma.accountTransaction.findMany({
         where,
         skip,
@@ -1253,10 +1256,11 @@ export class GLService {
             }
           }
         },
-        orderBy: { createdAt: 'desc' }
+        orderBy: LEDGER_ORDER
       }),
       prisma.accountTransaction.count({ where })
     ]);
+    const transactions = await this.withRunningBalance(account, rows);
 
     return {
       account,
@@ -1268,6 +1272,37 @@ export class GLService {
         pages: Math.ceil(total / limit)
       }
     };
+  }
+
+  /**
+   * Running balance of each ledger line, in entry-date order (the ledger's own order). `rows` are newest first, as
+   * LEDGER_ORDER returns them. The balance before the oldest row is every earlier line (by entry date, then id)
+   * summed, ignoring the screen's date filter; the rows then add up from there. The stored `running_balance` is the
+   * balance at posting time, which is wrong for a back-dated entry, so it is not used.
+   */
+  private async withRunningBalance<T extends { id: number; debitAmount: Prisma.Decimal; creditAmount: Prisma.Decimal; journalEntry: { entryDate: Date } }>(
+    account: { id: number; normalBalance: NormalBalance },
+    rows: T[]
+  ): Promise<Array<T & { runningBalance: Prisma.Decimal }>> {
+    if (rows.length === 0) return [];
+    const oldest = rows[rows.length - 1];
+    const before = await prisma.accountTransaction.aggregate({
+      where: {
+        accountId: account.id,
+        OR: [
+          { journalEntry: { entryDate: { lt: oldest.journalEntry.entryDate } } },
+          { journalEntry: { entryDate: oldest.journalEntry.entryDate }, id: { lt: oldest.id } }
+        ]
+      },
+      _sum: { debitAmount: true, creditAmount: true }
+    });
+    const signed = (debit: Money.MoneyInput, credit: Money.MoneyInput) =>
+      account.normalBalance === NormalBalance.debit ? Money.sub(debit, credit) : Money.sub(credit, debit);
+    let balance = signed(Money.orZero(before?._sum?.debitAmount), Money.orZero(before?._sum?.creditAmount));
+    return [...rows].reverse().map((row) => {
+      balance = Money.add(balance, signed(row.debitAmount, row.creditAmount));
+      return { ...row, runningBalance: balance };
+    }).reverse();
   }
 
   /**
@@ -1357,7 +1392,7 @@ export class GLService {
     // Get account info first
     const account = await prisma.account.findUnique({
       where: { id },
-      select: { code: true }
+      select: { code: true, normalBalance: true }
     });
 
     if (!account) {
@@ -1396,13 +1431,14 @@ export class GLService {
             }
           }
         },
-        orderBy: { createdAt: 'desc' }
+        orderBy: LEDGER_ORDER
       }) as any[];
 
       if (chunk.length === 0) {
         hasMore = false;
       } else {
-        const mappedChunk = chunk.map((t) => ({
+        const withBalance = await this.withRunningBalance({ id, normalBalance: account.normalBalance }, chunk);
+        const mappedChunk = withBalance.map((t) => ({
           Date: t.journalEntry.entryDate.toISOString().split('T')[0],
           EntryNumber: t.journalEntry.entryNumber,
           Description: t.description || t.journalEntry.description,

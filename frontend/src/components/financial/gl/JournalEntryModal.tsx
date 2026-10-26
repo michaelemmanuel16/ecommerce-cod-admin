@@ -97,7 +97,7 @@ export const JournalEntryModal: React.FC<JournalEntryModalProps> = ({ isOpen, on
     };
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="New Journal Entry" size="xl">
+        <Modal closeOnEscape isOpen={isOpen} onClose={onClose} title="New Journal Entry" size="xl">
                 <form onSubmit={handleSubmit}>
                     <div className="grid grid-cols-2 gap-6 mb-8">
                         <div>

@@ -75,7 +75,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({ isOpen, onClos
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={isEditMode ? 'Edit Expense' : 'Add Expense'} size="md">
+    <Modal closeOnEscape isOpen={isOpen} onClose={onClose} title={isEditMode ? 'Edit Expense' : 'Add Expense'} size="md">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label htmlFor="expense-date" className="block text-sm font-medium text-gray-700 mb-1">Date</label>
