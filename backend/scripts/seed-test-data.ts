@@ -27,7 +27,6 @@ async function seedTestData() {
                 location: 'Accra',
                 vehicleType: 'Motorcycle',
                 vehicleId: 'GH-001-VDL',
-                deliveryRate: 5.00,
                 isAvailable: true,
             }
         });

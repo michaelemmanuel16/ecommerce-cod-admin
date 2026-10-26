@@ -150,7 +150,7 @@ describe('Agent Collection Workflow Integration', () => {
         // Since testAgent.commissionAmount is not set in beforeEach, netAmount = 5000
         expect(Number(draftCollection.amount)).toBe(5000);
 
-        // 2. Reconcile (Verify) Collection -> Should move directly to 'reconciled' and create GL Entry
+        // 2. Reconcile (Verify) Collection -> Should move directly to 'reconciled' and post nothing
         await agentReconciliationService.verifyCollection(draftCollection.id, testUser.id);
 
         const reconciledColl = await (prisma as any).agentCollection.findUnique({
@@ -159,22 +159,12 @@ describe('Agent Collection Workflow Integration', () => {
         expect(reconciledColl.status).toBe('reconciled');
         expect(reconciledColl.verifiedById).toBe(testUser.id);
 
-        // Check GL Entry
+        // Verifying a collection posts no journal entry (M5-T07, F-904): 1015 already holds the net cash and
+        // moves to 1010 when a deposit is verified
         const glEntry = await prisma.journalEntry.findFirst({
             where: { sourceId: draftCollection.id, sourceType: 'agent_collection' },
-            include: { transactions: true }
         });
-        expect(glEntry).not.toBeNull();
-        expect(glEntry!.transactions).toHaveLength(2);
-
-        const cihAccount = await prisma.account.findUnique({ where: { tenantId_code: { tenantId: testTenantId, code: '1010' } } });
-        const citAccount = await prisma.account.findUnique({ where: { tenantId_code: { tenantId: testTenantId, code: '1015' } } });
-
-        const cihTrans = glEntry!.transactions.find(t => t.accountId === cihAccount!.id);
-        const citTrans = glEntry!.transactions.find(t => t.accountId === citAccount!.id);
-
-        expect(Number(cihTrans!.debitAmount)).toBe(5000);
-        expect(Number(citTrans!.creditAmount)).toBe(5000);
+        expect(glEntry).toBeNull();
 
         // 3. Agent Balance would be updated in real flow via FinancialSyncService
         // For this test, we're only verifying the collection workflow itself

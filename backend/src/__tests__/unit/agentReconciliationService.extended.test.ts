@@ -8,6 +8,7 @@ import { Prisma } from '@prisma/client';
 import agentReconciliationService from '../../services/agentReconciliationService';
 import prisma from '../../utils/prisma';
 import { AppError } from '../../middleware/errorHandler';
+import { useTestTenant } from '../mocks/tenant.mock';
 
 jest.mock('../../utils/appEvents', () => ({
   __esModule: true,
@@ -22,10 +23,11 @@ jest.mock('../../utils/prisma', () => ({
     agentCollection: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn(), findMany: jest.fn() },
     user: { update: jest.fn(), findUnique: jest.fn() },
     agentBalance: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn(), findMany: jest.fn(), upsert: jest.fn() },
-    agentDeposit: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn(), findMany: jest.fn() },
+    agentDeposit: { findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn(), create: jest.fn(), findMany: jest.fn() },
     journalEntry: { findFirst: jest.fn().mockResolvedValue(null), create: jest.fn() },
     account: { findUnique: jest.fn() },
     order: { update: jest.fn(), count: jest.fn() },
+    finding: { updateMany: jest.fn() },
     $queryRaw: (jest.fn() as any).mockResolvedValue([]),
   },
 }));
@@ -42,7 +44,7 @@ jest.mock('../../services/notificationService', () => ({
 jest.mock('../../services/glAutomationService', () => ({
   GLAutomationService: {
     createAgentDepositEntry: jest.fn().mockResolvedValue({} as any),
-    createCollectionVerificationEntry: jest.fn().mockResolvedValue({} as any),
+    voidJournalEntry: jest.fn().mockResolvedValue({} as any),
   },
 }));
 
@@ -56,12 +58,14 @@ describe('AgentReconciliationService (extended branch coverage)', () => {
     journalEntry: mockPrisma.journalEntry,
     account: mockPrisma.account,
     order: mockPrisma.order,
+    finding: mockPrisma.finding,
     $queryRaw: mockPrisma.$queryRaw,
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
     mockPrisma.$transaction.mockImplementation((cb: any) => cb(mockTx));
+    mockTx.agentDeposit.updateMany.mockResolvedValue({ count: 1 }); // the claim of the row
   });
 
   // ───────────────────────────── createDeposit - amount <= 0 ─────────────────────────────
@@ -81,8 +85,7 @@ describe('AgentReconciliationService (extended branch coverage)', () => {
   describe('rejectDeposit - notes branches', () => {
     it('rejects deposit without notes (notes param undefined)', async () => {
       const deposit = { id: 1, agentId: 1, amount: 100, status: 'pending', notes: 'existing note' };
-      mockTx.agentDeposit.findUnique.mockResolvedValue(deposit as any);
-      mockTx.agentDeposit.update.mockResolvedValue({ ...deposit, status: 'rejected' } as any);
+      mockTx.agentDeposit.findUnique.mockResolvedValueOnce(deposit as any).mockResolvedValueOnce({ ...deposit, status: 'rejected' } as any);
 
       const result = await agentReconciliationService.rejectDeposit(1, 99);
       expect(result.status).toBe('rejected');
@@ -90,23 +93,79 @@ describe('AgentReconciliationService (extended branch coverage)', () => {
 
     it('rejects deposit when existing deposit.notes is null', async () => {
       const deposit = { id: 1, agentId: 1, amount: 100, status: 'pending', notes: null };
-      mockTx.agentDeposit.findUnique.mockResolvedValue(deposit as any);
-      mockTx.agentDeposit.update.mockResolvedValue({ ...deposit, status: 'rejected' } as any);
+      mockTx.agentDeposit.findUnique.mockResolvedValueOnce(deposit as any).mockResolvedValueOnce({ ...deposit, status: 'rejected' } as any);
 
       // Pass notes param so it takes the truthy branch with null existing notes
       await agentReconciliationService.rejectDeposit(1, 99, 'Fraudulent');
-      expect(mockTx.agentDeposit.update).toHaveBeenCalled();
+      expect(mockTx.agentDeposit.updateMany).toHaveBeenCalled();
     });
 
-    it('throws 400 when deposit is not in pending status', async () => {
-      mockTx.agentDeposit.findUnique.mockResolvedValue({ id: 1, status: 'verified' } as any);
+    it('throws 400 when deposit is already rejected', async () => {
+      mockTx.agentDeposit.findUnique.mockResolvedValue({ id: 1, status: 'rejected' } as any);
       await expect(agentReconciliationService.rejectDeposit(1, 99))
         .rejects.toThrow(AppError);
+    });
+
+    it('a verified deposit is voided by reversal, the balance is restored and only its own matched collections open again (F-904)', async () => {
+      const { GLAutomationService } = require('../../services/glAutomationService');
+      // 150 deposited: 100 on collection 1 and 50 on collection 2; a later deposit also sits on collection 2 (allocated 80 in all)
+      const deposit = { id: 1, agentId: 5, amount: 150, status: 'verified', notes: null, allocations: [{ collectionId: 1, amount: '100' }, { collectionId: 2, amount: '50' }] };
+      mockTx.agentDeposit.findUnique.mockResolvedValueOnce(deposit as any).mockResolvedValueOnce({ ...deposit, status: 'rejected' } as any);
+      mockTx.agentBalance.findUnique.mockResolvedValue({ id: 10, agentId: 5 } as any);
+      mockTx.agentBalance.update.mockResolvedValue({} as any);
+      mockTx.agentCollection.findMany.mockResolvedValue([
+        { id: 1, status: 'deposited', allocatedAmount: 100 },
+        { id: 2, status: 'draft', allocatedAmount: 80 },
+      ] as any);
+      mockTx.agentCollection.update.mockResolvedValue({} as any);
+
+      await agentReconciliationService.rejectDeposit(1, 99, 'Receipt is unclear');
+
+      expect(GLAutomationService.voidJournalEntry).toHaveBeenCalledWith(mockTx, 'agent_deposit', 1, 99);
+      expect(mockTx.agentBalance.update).toHaveBeenCalledWith({
+        where: { id: 10 },
+        data: { totalDeposited: { decrement: 150 }, currentBalance: { increment: 150 } },
+      });
+      const updates = mockTx.agentCollection.update.mock.calls.map((c: any) => c[0]);
+      expect(updates).toHaveLength(2);
+      expect(updates[0]).toMatchObject({ where: { id: 1 }, data: { status: 'draft' } });
+      expect(Number(updates[0].data.allocatedAmount)).toBe(0);
+      expect(updates[1]).toMatchObject({ where: { id: 2 } });
+      expect(Number(updates[1].data.allocatedAmount)).toBe(30); // the later deposit's 30 stays
+      expect(mockTx.agentDeposit.updateMany.mock.calls[0][0]).toMatchObject({
+        where: { id: 1, status: 'verified' }, data: { status: 'rejected', rejectReason: 'Receipt is unclear' },
+      });
+    });
+
+    it('a reject that loses the claim throws 409 and undoes nothing', async () => {
+      const { GLAutomationService } = require('../../services/glAutomationService');
+      mockTx.agentDeposit.findUnique.mockResolvedValue({ id: 1, agentId: 5, amount: 150, status: 'verified', allocations: [] } as any);
+      mockTx.agentDeposit.updateMany.mockResolvedValue({ count: 0 });
+      await expect(agentReconciliationService.rejectDeposit(1, 99)).rejects.toMatchObject({ statusCode: 409 });
+      expect(GLAutomationService.voidJournalEntry).not.toHaveBeenCalled();
+      expect(mockTx.agentBalance.update).not.toHaveBeenCalled();
+    });
+
+    it('a verified deposit with no recorded allocations is refused with 409 and nothing is undone', async () => {
+      const { GLAutomationService } = require('../../services/glAutomationService');
+      mockTx.agentDeposit.findUnique.mockResolvedValue({ id: 1, agentId: 5, amount: 150, status: 'verified', allocations: null } as any);
+      await expect(agentReconciliationService.rejectDeposit(1, 99)).rejects.toMatchObject({ statusCode: 409, message: expect.stringContaining('verified before allocation tracking') });
+      expect(mockTx.agentDeposit.updateMany).not.toHaveBeenCalled();
+      expect(GLAutomationService.voidJournalEntry).not.toHaveBeenCalled();
+    });
+
+    it('a pending deposit is rejected without touching the ledger', async () => {
+      const { GLAutomationService } = require('../../services/glAutomationService');
+      const deposit = { id: 1, agentId: 5, amount: 150, status: 'pending', notes: null };
+      mockTx.agentDeposit.findUnique.mockResolvedValue(deposit as any);
+      await agentReconciliationService.rejectDeposit(1, 99);
+      expect(GLAutomationService.voidJournalEntry).not.toHaveBeenCalled();
     });
   });
 
   // ───────────────────────────── verifyDeposit - unallocated remainder with null notes ─────────────────────────────
   describe('verifyDeposit - remainder note branches', () => {
+    useTestTenant(); // the claim of fully covered collections is tenant scoped
     it('updates deposit notes when unallocated remainder and deposit.notes is null', async () => {
       const depositId = 1;
       const deposit = { id: depositId, agentId: 456, amount: 1000, status: 'pending', notes: null };
@@ -120,7 +179,7 @@ describe('AgentReconciliationService (extended branch coverage)', () => {
       mockTx.agentDeposit.update.mockResolvedValue({ ...deposit, status: 'verified' } as any);
       mockTx.agentBalance.findUnique.mockResolvedValue(balance as any);
       mockTx.agentCollection.findMany.mockResolvedValue(collections as any);
-      mockTx.agentCollection.update.mockResolvedValue({} as any);
+      mockPrisma.$queryRaw.mockResolvedValue([{ id: 101 }]); // the UPDATE that claims the fully covered row
       mockTx.agentBalance.update.mockResolvedValue({} as any);
 
       await agentReconciliationService.verifyDeposit(depositId, 789);
@@ -144,7 +203,7 @@ describe('AgentReconciliationService (extended branch coverage)', () => {
       mockTx.agentDeposit.update.mockResolvedValue({ ...deposit, status: 'verified' } as any);
       mockTx.agentBalance.findUnique.mockResolvedValue(balance as any);
       mockTx.agentCollection.findMany.mockResolvedValue(collections as any);
-      mockTx.agentCollection.update.mockResolvedValue({} as any);
+      mockPrisma.$queryRaw.mockResolvedValue([{ id: 101 }]);
       mockTx.agentBalance.update.mockResolvedValue({} as any);
 
       await agentReconciliationService.verifyDeposit(1, 789);
@@ -173,7 +232,7 @@ describe('AgentReconciliationService (extended branch coverage)', () => {
       expect(mockTx.order.update).not.toHaveBeenCalled();
     });
 
-    it('skips GL entry when collection.status is already verified', async () => {
+    it('posts no GL entry when a verified collection is reconciled (F-904)', async () => {
       const collection = { id: 1, orderId: 100, agentId: 456, amount: 500, status: 'verified', verifiedAt: new Date(), verifiedById: 10 };
       mockTx.agentCollection.findUnique.mockResolvedValue(collection as any);
       mockTx.agentCollection.update.mockResolvedValue({ ...collection, status: 'reconciled' } as any);
@@ -185,8 +244,8 @@ describe('AgentReconciliationService (extended branch coverage)', () => {
       await agentReconciliationService.verifyCollection(1, 99);
 
       const { GLAutomationService } = require('../../services/glAutomationService');
-      // GL entry should NOT be created (status was 'verified', not 'draft')
-      expect(GLAutomationService.createCollectionVerificationEntry).not.toHaveBeenCalled();
+      // Verifying a collection posts nothing: cash moves 1015 -> 1010 when a deposit is verified
+      expect(GLAutomationService.createAgentDepositEntry).not.toHaveBeenCalled();
     });
   });
 

@@ -4,7 +4,7 @@
  *
  * What the report does: `kpis.cashInTransit` is a sum over ORDERS (delivered, paymentStatus not reconciled/deposited),
  * while `kpis.cashInHand` reads GL 1010 and GL 1015 ("Cash in Transit") is fetched and dropped. Delivery posts the
- * order's cash to 1015. Verifying an agent collection moves it from 1015 to 1010 but leaves the order's paymentStatus
+ * order's cash to 1015. Verifying an agent deposit moves it from 1015 to 1010 but leaves the order's paymentStatus
  * `collected`, so the same cash sits in the order bucket (cashInTransit) and in 1010 (cashInHand), and
  * totalCashPosition counts it twice.
  */
@@ -51,14 +51,15 @@ describe('getCashFlowReport double count (M1-T29, characterization)', () => {
     expect(Money.toApi(kpis.cashInHand)).toBe('0.00'); // 1010 is still empty
   });
 
-  it('counts the same cash twice once a collection moves it from 1015 to 1010', async () => {
+  it('counts the same cash twice once a deposit moves it from 1015 to 1010', async () => {
     const before = (await report()).kpis;
     const order = await prismaBase.order.findFirstOrThrow({ where: { tenantId, status: 'delivered' }, select: { id: true } });
 
-    // Verify a 100.00 collection: GL 1015 -> 1010. The order stays delivered / `collected`, so the order bucket is unchanged.
+    // A verified 100.00 deposit (M5-T07: verifying a collection posts nothing any more): GL 1015 -> 1010.
+    // The order stays delivered / `collected`, so the order bucket is unchanged.
     await runInTenant(tenantId, () => prismaBase.$transaction(async (tx) => {
       const admin = await tx.user.findFirstOrThrow({ where: { tenantId, role: 'admin' } });
-      await GLAutomationService.createCollectionVerificationEntry(tx as any, { id: 900_000_001, orderId: order.id, amount: 100 }, admin.id);
+      await GLAutomationService.createDepositGLEntry(tx as any, 100, 900_000_001, admin.id);
     }));
 
     const after = (await report()).kpis;

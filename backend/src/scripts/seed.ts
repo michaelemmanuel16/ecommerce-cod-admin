@@ -296,7 +296,6 @@ async function seed() {
         role: 'delivery_agent',
         vehicleType: randomElement(vehicleTypes),
         vehicleId: `GH-${Math.floor(random() * 10000).toString().padStart(4, '0')}`,
-        deliveryRate: 10 + random() * 15, // GHS 10-25 per delivery
         location: `${randomElement(location.cities)}, ${location.region}`,
         isActive: true,
         isAvailable: random() > 0.3, // 70% available

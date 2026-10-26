@@ -1,5 +1,5 @@
 {
-  "banned": ["airtime", "delivery rate", "6,400"],
+  "banned": ["airtime", "delivery rate", "6,400", "agent pay", "agent fee", "pay per delivery", "pay-per-delivery"],
   "allow": [
     { "file": "frontend/src/config/dashboards/deliveryAgentConfig.ts", "match": "your delivery rate per completed delivery", "reason": "the agent pay amount per delivery (User.deliveryRate column), not a KPI" },
     { "file": "frontend/src/components/admin/AgentEditModal.tsx", "match": "Delivery rate must be a number", "reason": "validation text for the agent pay-per-delivery amount, not a KPI" },
