@@ -58,19 +58,14 @@ export interface AgingReport {
   partners: AgingPartner[];
 }
 
-/** One collection of a partner (GET /api/agent-reconciliation?agentId&status). */
-export interface PartnerCollection {
-  id: number;
-  orderId: number;
-  amount: number;
-  allocatedAmount: number;
-  status: 'draft' | 'verified' | 'approved' | 'deposited' | 'reconciled';
-  collectionDate: string;
-}
-
-/** One pay-in of a partner (GET /api/agent-reconciliation/deposits?agentId). */
+/** One pay-in of a partner (GET /api/agent-reconciliation/deposits). Without `agentId` the list is every partner's, with `agent`. */
 export interface PartnerDeposit {
   id: number;
+  agentId: number;
+  agent?: { id: number; firstName: string; lastName: string; email: string | null };
+  /** What a verified pay-in matched, oldest orders first: one entry per collection. Null while it is pending. */
+  allocations?: Array<{ collectionId: number; amount: string }> | null;
+  notes?: string | null;
   amount: number;
   status: 'pending' | 'verified' | 'rejected';
   depositDate: string;
@@ -128,27 +123,13 @@ export const collectionsService = {
     };
   },
 
-  /** Collections still to verify: only `draft` can be reconciled. */
-  async toVerify(agentId: number): Promise<PartnerCollection[]> {
-    const { data } = await apiClient.get<PartnerCollection[]>('/api/agent-reconciliation', { params: { agentId, status: 'draft' }, ...QUIET });
-    return data.map((c) => ({ ...c, amount: parseMoney(c.amount), allocatedAmount: parseMoney(c.allocatedAmount) }));
-  },
-
-  async deposits(agentId: number): Promise<PartnerDeposit[]> {
-    const { data } = await apiClient.get<PartnerDeposit[]>('/api/agent-reconciliation/deposits', { params: { agentId }, ...QUIET });
+  /** Every partner's pay-ins, newest first: the "Collections to verify" card. */
+  async deposits(): Promise<PartnerDeposit[]> {
+    const { data } = await apiClient.get<PartnerDeposit[]>('/api/agent-reconciliation/deposits', QUIET);
     return data.map((d) => ({ ...d, amount: parseMoney(d.amount) }));
   },
 
-  /** Verify and reconcile in one step: there is no approve step (F-912). */
-  async verify(collectionId: number): Promise<void> {
-    await apiClient.post(`/api/agent-reconciliation/${collectionId}/verify`, {}, { quiet: true });
-  },
-
-  /** At most 50 ids; the server refuses more. */
-  async verifyMany(ids: number[]): Promise<void> {
-    await apiClient.post('/api/agent-reconciliation/bulk-verify', { ids }, { quiet: true, timeout: 90000 });
-  },
-
+  /** Verify and reconcile in one step: the pay-in is matched to the partner's oldest unpaid orders (F-912). There is no approve step. */
   async verifyDeposit(depositId: number): Promise<void> {
     await apiClient.post(`/api/agent-reconciliation/deposits/${depositId}/verify`, {}, { quiet: true, timeout: 90000 });
   },

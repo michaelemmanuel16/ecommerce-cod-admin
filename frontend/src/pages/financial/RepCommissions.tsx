@@ -1,112 +1,137 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Wallet } from 'lucide-react';
-import { Card } from '../../components/ui/Card';
-import { GuardedButton } from '../../components/financial/GuardedButton';
-import { Input } from '../../components/ui/Input';
-import { Table, TableBody, TableCell, TableHead, TableRow } from '../../components/ui/Table';
+import { useState } from 'react';
+import { BadgeCheck, BadgePercent, CheckCircle2, Gift } from 'lucide-react';
+import { Button, Card, EmptyState, Skeleton, Tag, Tile } from '../../components/ui-v2';
+import { GuardedButtonV2 } from '../../components/financial/GuardedButtonV2';
 import { PayoutForm } from '../../components/payouts/PayoutForm';
-import { payoutsService, type RepOwedRow, type RepsOwed } from '../../services/payouts.service';
-import { apiErrorMessage } from '../../utils/apiError';
-import { formatCurrency, formatDate, todayYmd } from '../../utils/format';
+import { payoutsService, type PayoutRow, type RepOwedRow } from '../../services/payouts.service';
+import { useBlock } from './profit/useBlock';
+import { formatCurrency, formatDate } from '../../utils/format';
+import { toCents } from '../../utils/money';
+import { initials } from '../../utils/people';
+import { ListSkeleton } from '../deliveries/ListSkeleton';
+import { toneOf } from './collections/model';
 
-/** Tighter cells than the default table padding: eight columns fit a 1440 px panel. The commission, upsell and target reward breakdown is in the payout form. */
-const CELL = 'px-3 py-3';
+const HISTORY_ROWS = 10;
+const cents = (n: number): number => n / 100;
+const repName = (r: { firstName: string; lastName: string }): string => `${r.firstName} ${r.lastName}`;
+const monthName = (ym: string): string => new Date(`${ym}-01T12:00:00`).toLocaleString('en-GB', { month: 'long' });
+const money = (v: string) => <span className="num">{formatCurrency(v)}</span>;
 
 /**
- * Rep commissions tab (F-914, M5-T38): every rep with what was earned, paid, paid in the chosen month (this month to start)
- * and is owed, and "Record payout", which opens the one payout form for that rep. The tiles are the server's totals. The ledger
- * account behind it is 2020 Commissions payable. Inactive reps show only while owed something, unless the box is ticked.
+ * Rep commissions tab (F-914, M5-T38), laid out as the v2 mockup: four tiles, a table of every rep with what was earned, paid
+ * in the month and is owed, "Record payout" per rep (the one payout form), and the payout history. The tile figures are the
+ * server's totals. The ledger account behind it is 2020 Commissions payable. Only people are listed: delivery agents and AI
+ * agents get no commission payout.
  */
-export const RepCommissions: React.FC = () => {
-  const [data, setData] = useState<RepsOwed | null>(null);
-  const [error, setError] = useState<string | null>(null);
+export function RepCommissions() {
+  const owed = useBlock('reps:owed', () => payoutsService.repsOwed());
+  const history = useBlock('reps:payouts', () => payoutsService.recentRepPayouts(HISTORY_ROWS));
   const [paying, setPaying] = useState<RepOwedRow | null>(null);
-  const [month, setMonth] = useState(todayYmd().slice(0, 7));
-  const [includeInactive, setIncludeInactive] = useState(false);
+  const data = owed.data;
 
-  const load = useCallback(async () => {
-    try {
-      setData(await payoutsService.repsOwed({ month, includeInactive }));
-      setError(null);
-    } catch (e) {
-      setError(apiErrorMessage(e, 'The rep commissions could not load.'));
-    }
-  }, [month, includeInactive]);
+  const reload = () => {
+    owed.retry();
+    history.retry();
+  };
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  if (owed.status === 'failed' && !data) {
+    return <div className="card"><EmptyState title="The rep commissions could not load." action={<Button onClick={owed.retry}>Try again</Button>} /></div>;
+  }
 
-  if (error) return <p role="alert" className="text-sm text-red-600">{error}</p>;
-  if (!data) return <p className="text-sm text-gray-500">Loading rep commissions…</p>;
-  const { reps, totals } = data;
+  const reps = data?.reps ?? [];
+  const totals = data?.totals;
+  const month = data ? monthName(data.month) : '';
+  // Average per delivered order, from the commission column and the delivered count of the same rows
+  const commissionCents = reps.reduce((n, r) => n + toCents(r.commission), 0);
+  const deliveredTotal = reps.reduce((n, r) => n + r.delivered, 0);
+  const perOrder = deliveredTotal > 0 ? cents(commissionCents) / deliveredTotal : null;
+  const rewardCents = reps.reduce((n, r) => n + toCents(r.targetReward), 0);
+  const repsPaid = reps.filter((r) => toCents(r.paidInMonth) > 0).length;
+  const skel = <Skeleton width={90} height={28} />;
 
   return (
-    <div className="space-y-4 min-w-0">
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card><p className="text-xs text-gray-500">Commission owed</p><p className="text-xl font-bold" data-testid="tile-owed">{formatCurrency(totals.owed)}</p><p className="text-xs text-gray-500">Posts to 2020 Commissions payable</p></Card>
-        <Card><p className="text-xs text-gray-500">Paid in month</p><p className="text-xl font-bold" data-testid="tile-paid-in-month">{formatCurrency(totals.paidInMonth)}</p></Card>
-        <Card><p className="text-xs text-gray-500">Reps owed</p><p className="text-xl font-bold">{totals.repsOwed}</p></Card>
+    <div className="repcom">
+      <div className="grid kpis" style={{ marginTop: 0 }} aria-busy={!data}>
+        <Tile icon={<BadgePercent />} tone="gold" value={totals ? <span data-testid="tile-owed">{formatCurrency(totals.owed)}</span> : skel} label="Commission owed"
+          footer={<><span>{totals ? `${totals.repsOwed} ${totals.repsOwed === 1 ? 'rep' : 'reps'} · account 2020` : 'Account 2020'}</span>{totals && totals.repsOwed > 0 && <Tag tone="warn">To pay</Tag>}</>} />
+        <Tile icon={<CheckCircle2 />} tone="mint" value={totals ? <span data-testid="tile-paid-in-month">{formatCurrency(totals.paidInMonth)}</span> : skel} label="Paid this month"
+          footer={<><span>{data ? `${repsPaid} ${repsPaid === 1 ? 'rep' : 'reps'} paid in ${month}` : 'Paid this month'}</span>{repsPaid > 0 && <Tag tone="ok">Paid</Tag>}</>} />
+        <Tile icon={<BadgeCheck />} tone="violet" value={data ? (perOrder === null ? '—' : formatCurrency(perOrder)) : skel} label="Per delivered confirmed order"
+          footer={<><span>Average commission, before upsell reward</span><Tag tone="n">Rule</Tag></>} />
+        <Tile icon={<Gift />} tone="pine" value={data ? formatCurrency(cents(rewardCents)) : skel} label="Target rewards earned"
+          footer={<><span>Earned at month close</span><Tag tone="n">{rewardCents > 0 ? 'Earned' : 'Pending'}</Tag></>} />
       </div>
 
-      <div className="flex flex-wrap items-end gap-4">
-        <div className="w-44"><Input id="rep-month" label="Month" type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} /></div>
-        <label className="flex items-center gap-2 text-sm text-gray-700 pb-2">
-          <input type="checkbox" checked={includeInactive} onChange={(e) => setIncludeInactive(e.target.checked)} />
-          Show inactive reps
-        </label>
-      </div>
-
-      <Card padding="none">
-        <section aria-label="Rep commissions">
-          {reps.length === 0 ? (
-            <p className="p-6 text-center text-sm text-gray-500">No reps yet.</p>
-          ) : (
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell isHeader className={CELL}>Rep</TableCell>
-                  <TableCell isHeader className={`${CELL} text-right`}>Delivered</TableCell>
-                  <TableCell isHeader className={`${CELL} text-right`}>Earned</TableCell>
-                  <TableCell isHeader className={`${CELL} text-right`}>Paid</TableCell>
-                  <TableCell isHeader className={`${CELL} text-right`}>Paid in month</TableCell>
-                  <TableCell isHeader className={`${CELL} text-right`}>Owed</TableCell>
-                  <TableCell isHeader className={CELL}>Last payout</TableCell>
-                  <TableCell isHeader className={CELL}><span className="sr-only">Action</span></TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
+      <Card title="Rep commissions" aside={data ? `${month} · commission per delivered confirmed order plus upsell reward` : undefined} className="comwrap">
+        {!data ? (
+          <ListSkeleton label="Loading rep commissions" rows={3} height={44} style={{ padding: 20 }} />
+        ) : reps.length === 0 ? (
+          <EmptyState icon={<BadgePercent />} title="No reps yet" text="Sales reps and what they earn show here." />
+        ) : (
+          <div className="tablewrap">
+            <table className="dt" aria-label="Rep commissions">
+              <thead>
+                <tr>
+                  <th>Rep</th><th className="r">Delivered</th><th className="r">Commission</th><th className="r">Upsell reward</th><th className="r">Earned</th>
+                  <th className="r">Paid in {month.slice(0, 3)}</th><th className="r">Owed</th><th>Target reward</th><th>Last payout</th><th className="r">Action</th>
+                </tr>
+              </thead>
+              <tbody>
                 {reps.map((r) => (
-                  <TableRow key={r.id}>
-                    <TableCell className={`${CELL} font-medium`}>{r.firstName} {r.lastName}</TableCell>
-                    <TableCell className={`${CELL} text-right`}>{r.delivered.toLocaleString('en-GB')}</TableCell>
-                    <TableCell className={`${CELL} text-right`}>{formatCurrency(r.earned)}</TableCell>
-                    <TableCell className={`${CELL} text-right`}>{formatCurrency(r.paid)}</TableCell>
-                    <TableCell className={`${CELL} text-right`}>{formatCurrency(r.paidInMonth)}</TableCell>
-                    <TableCell className={`${CELL} text-right font-semibold`}>{formatCurrency(r.owed)}</TableCell>
-                    <TableCell className={CELL}>{r.lastPayout ? formatDate(r.lastPayout) : '—'}</TableCell>
-                    <TableCell className={`${CELL} text-right`}>
-                      <GuardedButton perm="recordPayout" size="sm" variant="outline" onClick={() => setPaying(r)} aria-label={`Record payout for ${r.firstName} ${r.lastName}`}>
-                        <Wallet className="w-4 h-4 mr-1" />
-                        Record payout
-                      </GuardedButton>
-                    </TableCell>
-                  </TableRow>
+                  <tr key={r.id}>
+                    <td><div className="who"><div className={`a ${toneOf(r.id)}`} aria-hidden="true">{initials(repName(r))}</div><div><b>{repName(r)}</b> <Tag tone="n">Human</Tag></div></div></td>
+                    <td className="r num">{r.delivered.toLocaleString('en-GB')}</td>
+                    <td className="r">{money(r.commission)}</td>
+                    <td className="r">{money(r.upsellReward)}</td>
+                    <td className="r">{money(r.earned)}</td>
+                    <td className="r">{money(r.paidInMonth)}</td>
+                    <td className="r"><b className="num">{formatCurrency(r.owed)}</b></td>
+                    <td>{toCents(r.targetReward) > 0 ? money(r.targetReward) : <Tag tone="n">None yet</Tag>}</td>
+                    <td>{r.lastPayout ? formatDate(r.lastPayout, 'd MMM') : <span className="mut">No payout yet</span>}</td>
+                    <td className="r">
+                      <GuardedButtonV2 perm="recordPayout" size="mini" variant="primary" aria-label={`Record payout for ${repName(r)}`} onClick={() => setPaying(r)}>Record payout</GuardedButtonV2>
+                    </td>
+                  </tr>
                 ))}
-              </TableBody>
-            </Table>
-          )}
-        </section>
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="note">Commission and upsell reward are paid only when the order is delivered.</p>
       </Card>
 
-      {paying && (
-        <PayoutForm
-          personId={paying.id}
-          personName={`${paying.firstName} ${paying.lastName}`}
-          onClose={() => setPaying(null)}
-          onRecorded={load}
-        />
-      )}
+      <Card title="Payout history" aside="Commissions and rewards paid" className="comwrap">
+        <PayoutHistory rows={history.data} failed={history.status === 'failed'} onRetry={history.retry} />
+      </Card>
+
+      {paying && <PayoutForm personId={paying.id} personName={repName(paying)} onClose={() => setPaying(null)} onRecorded={reload} />}
     </div>
   );
-};
+}
+
+function PayoutHistory({ rows, failed, onRetry }: { rows: PayoutRow[] | undefined; failed: boolean; onRetry: () => void }) {
+  if (!rows) {
+    return failed
+      ? <EmptyState title="The payout history could not load." action={<Button onClick={onRetry}>Try again</Button>} />
+      : <ListSkeleton label="Loading payout history" rows={2} height={36} style={{ padding: 20 }} />;
+  }
+  if (rows.length === 0) return <EmptyState title="No payout yet" text="A payout you record shows here." />;
+  return (
+    <div className="tablewrap">
+      <table className="dt" aria-label="Payout history">
+        <thead><tr><th>Date</th><th>Rep</th><th>Method</th><th>Reference</th><th className="r">Amount</th></tr></thead>
+        <tbody>
+          {rows.map((p) => (
+            <tr key={p.id}>
+              <td>{formatDate(p.payoutDate, 'd MMM')}</td>
+              <td><b>{repName(p.payee)}</b></td>
+              <td>{p.method}</td>
+              <td>{p.reference ?? p.notes ?? '—'}</td>
+              <td className="r">{money(p.amount)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}

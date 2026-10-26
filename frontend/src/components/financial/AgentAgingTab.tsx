@@ -12,7 +12,6 @@ interface Props {
   report: AgingReport;
   /** The partner whose reminder or unblock is in flight: its buttons wait. */
   busyId: number | null;
-  onReview: (p: AgingPartner) => void;
   onRemind: (p: AgingPartner) => void;
   onBlock: (p: AgingPartner) => void;
   onUnblock: (p: AgingPartner) => void;
@@ -23,9 +22,10 @@ const money = (n: number) => (n === 0 ? <span className="mut num">{formatCurrenc
 
 /**
  * Agent aging by partner (F-910, F-911, F-704): cash held, the four age buckets, oldest unpaid and days to pay. Overdue means
- * past the partner's own days to pay. The switch shows only partners with something overdue.
+ * past the partner's own days to pay. The switch shows only partners with something overdue. Row actions are the mockup's:
+ * send a reminder (primary while something is overdue) and block or unblock.
  */
-export function AgentAgingTab({ report, busyId, onReview, onRemind, onBlock, onUnblock, onExport }: Props) {
+export function AgentAgingTab({ report, busyId, onRemind, onBlock, onUnblock, onExport }: Props) {
   const [overdueOnly, setOverdueOnly] = useState(false);
   const rows = useMemo(() => (overdueOnly ? report.partners.filter((p) => p.overdueOrders > 0) : report.partners), [report.partners, overdueOnly]);
   const { summary } = report;
@@ -42,8 +42,7 @@ export function AgentAgingTab({ report, busyId, onReview, onRemind, onBlock, onU
           <div className={`a ${toneOf(p.agentId)}`} aria-hidden="true">{initials(p.name)}</div>
           <div>
             <b>{p.name}</b>
-            {p.isBlocked && <> <Tag tone="bad">Blocked</Tag></>}
-            {p.negativeCashHeld && <> <Tag tone="warn">Cash below zero</Tag></>}
+            {p.negativeCashHeld && <> {p.findingId ? <Link to="/finance/findings" aria-label={`Cash below zero for ${p.name}, open the finding`}><Tag tone="warn">Cash below zero</Tag></Link> : <Tag tone="warn">Cash below zero</Tag>}</>}
             {p.email && <small>{p.email}</small>}
           </div>
         </div>
@@ -68,14 +67,14 @@ export function AgentAgingTab({ report, busyId, onReview, onRemind, onBlock, onU
     })),
     {
       key: 'oldest',
-      header: 'Oldest unpaid',
+      header: 'Oldest',
       render: (p) => (p.oldestUnpaidDays === null ? <span className="mut">None</span> : <Tag tone={isLateOldest(p.oldestUnpaidDays, p.daysToPay) ? 'bad' : 'n'}>{daysText(p.oldestUnpaidDays)}</Tag>),
     },
     { key: 'dtp', header: 'Days to pay', right: true, render: (p) => <span className="num">{daysText(p.daysToPay)}</span> },
     {
       key: 'status',
       header: 'Status',
-      render: (p) => (p.overdueOrders > 0 ? <Tag tone="warn">{p.overdueOrders} overdue</Tag> : <Tag tone="ok">On time</Tag>),
+      render: (p) => (p.isBlocked ? <Tag tone="bad">Blocked</Tag> : <Tag tone="ok">Active</Tag>),
     },
     {
       key: 'actions',
@@ -83,8 +82,7 @@ export function AgentAgingTab({ report, busyId, onReview, onRemind, onBlock, onU
       right: true,
       render: (p) => (
         <div className="rowacts">
-          <GuardedButtonV2 perm="verifyCollection" size="mini" variant="primary" aria-label={`Review ${p.name}`} onClick={() => onReview(p)}>Review</GuardedButtonV2>
-          <GuardedButtonV2 perm="remindPartner" size="mini" aria-label={`Send reminder to ${p.name}`} disabled={busyId === p.agentId || p.unpaidOrders === 0} onClick={() => onRemind(p)}>Send reminder</GuardedButtonV2>
+          <GuardedButtonV2 perm="remindPartner" size="mini" variant={p.overdueOrders > 0 ? 'primary' : 'default'} aria-label={`Send reminder to ${p.name}`} disabled={busyId === p.agentId || p.unpaidOrders === 0} onClick={() => onRemind(p)}>Send reminder</GuardedButtonV2>
           <GuardedButtonV2 perm="blockPartner" size="mini" aria-label={`${p.isBlocked ? 'Unblock' : 'Block'} ${p.name}`} disabled={busyId === p.agentId} onClick={() => (p.isBlocked ? onUnblock(p) : onBlock(p))}>{p.isBlocked ? 'Unblock' : 'Block'}</GuardedButtonV2>
         </div>
       ),
@@ -94,8 +92,9 @@ export function AgentAgingTab({ report, busyId, onReview, onRemind, onBlock, onU
   return (
     <Card title="Agent aging" aside="Unpaid delivered orders, net of delivery fee" className="agingwrap">
       <div className="agtools">
-        <label className="chk">
+        <label className="sw">
           <input type="checkbox" checked={overdueOnly} onChange={(e) => setOverdueOnly(e.target.checked)} />
+          <span className="tg" />
           Show overdue only <small className="mut">past the partner's days to pay</small>
         </label>
         <Button onClick={onExport}><Download />Export CSV</Button>
@@ -105,7 +104,7 @@ export function AgentAgingTab({ report, busyId, onReview, onRemind, onBlock, onU
       ) : rows.length === 0 ? (
         <EmptyState title="No partner is overdue" text="Everyone is within their days to pay." />
       ) : (
-        <Table label="Agent aging" columns={columns} rows={rows} rowKey={(p) => p.agentId} />
+        <Table label="Agent aging" className="dt" columns={columns} rows={rows} rowKey={(p) => p.agentId} />
       )}
     </Card>
   );
