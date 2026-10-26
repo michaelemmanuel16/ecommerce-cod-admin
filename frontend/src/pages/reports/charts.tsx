@@ -4,9 +4,11 @@ import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, Pie, Pie
 import { compactNumber } from '../dashboard/format';
 import { dayTick } from './format';
 
-const AXIS = { fill: 'var(--ink-3)', fontSize: 11, fontFamily: 'Plus Jakarta Sans' } as const;
+export const AXIS = { fill: 'var(--ink-3)', fontSize: 11, fontFamily: 'Plus Jakarta Sans' } as const;
 /** About nine labels along the x axis whatever the range (the mockup's `every`). */
-const every = (n: number) => Math.max(0, Math.ceil(n / 9) - 1);
+// shared with the cash flow charts
+// eslint-disable-next-line react-refresh/only-export-components
+export const every = (n: number) => Math.max(0, Math.ceil(n / 9) - 1);
 
 interface Series { key: string; color: string; area?: boolean }
 type Row = Record<string, string | number | null>;

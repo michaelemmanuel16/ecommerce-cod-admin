@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { Findings } from '../../pages/financial/Findings';
 import { ToastProvider } from '../../components/ui-v2';
+import { clearBlockCache } from '../../pages/financial/profit/useBlock';
 import { useConfigStore } from '../../stores/configStore';
 import type { Finding } from '../../services/findings.service';
 
@@ -24,6 +25,7 @@ const page = (findings: Finding[]) => ({ findings, pagination: { page: 1, limit:
 const open = (url = '/finance/findings') => render(<MemoryRouter initialEntries={[url]}><ToastProvider><Findings /></ToastProvider></MemoryRouter>);
 
 beforeEach(() => {
+  clearBlockCache();
   Object.values(svc).forEach((m) => m.mockReset());
   role = 'super_admin';
   useConfigStore.setState({ currency: 'GHS' });

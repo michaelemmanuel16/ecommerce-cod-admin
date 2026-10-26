@@ -6,6 +6,9 @@ import { FinancialDashboard } from './financial/FinancialDashboard';
 import { AgentCollections } from './financial/AgentCollections';
 import { AccountingAnalysis } from './financial/AccountingAnalysis';
 import { RepCommissions } from './financial/RepCommissions';
+import { OverviewProfitCards } from './financial/profit/OverviewProfitCards';
+import { CashFlowPanel } from './financial/cash/CashFlowPanel';
+import { ExportMenu } from './financial/cash/ExportMenu';
 import { usePermissions } from '../hooks/usePermissions';
 import { useV2Page } from '../components/shell/useV2Page';
 
@@ -23,7 +26,7 @@ export const Financial: React.FC = () => {
     {
       id: 'overview',
       label: 'Overview',
-      content: <FinancialDashboard />
+      content: <><FinancialDashboard /><div className="mt-12"><OverviewProfitCards /></div></>
     },
     {
       id: 'agent-collections',
@@ -36,6 +39,11 @@ export const Financial: React.FC = () => {
       id: 'accounting-analysis',
       label: 'Accounting & Analysis',
       content: <AccountingAnalysis />
+    },
+    {
+      id: 'cash-flow',
+      label: 'Cash-flow forecast',
+      content: <CashFlowPanel />
     }
   ];
 
@@ -46,12 +54,15 @@ export const Financial: React.FC = () => {
           <h1>Financial Management</h1>
           <p>Track revenue, expenses, COD collections, and agent accountability</p>
         </div>
-        <DateRangePicker
-          startDate={dateRange.startDate}
-          endDate={dateRange.endDate}
-          onChange={handleDateRangeChange}
-          placeholder="Select date range"
-        />
+        <div className="finhead">
+          <ExportMenu />
+          <DateRangePicker
+            startDate={dateRange.startDate}
+            endDate={dateRange.endDate}
+            onChange={handleDateRangeChange}
+            placeholder="Select date range"
+          />
+        </div>
       </div>
 
       <Tabs tabs={tabs} defaultTab="overview" persistKey="financial-tab" compact />

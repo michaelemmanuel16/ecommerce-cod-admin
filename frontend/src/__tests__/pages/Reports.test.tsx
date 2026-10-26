@@ -91,22 +91,23 @@ describe('Reports shell (F-1050)', () => {
     });
   });
 
-  it('the tab bar follows the permission: Team for owner roles only; Products and Marketing never', async () => {
+  it('the tab bar follows the permission: Team for owner roles only, Products and profit with financial:view, Marketing never', async () => {
     renderPage();
     const bar = within(await screen.findByRole('tablist', { name: 'Reports' }));
-    expect(bar.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Overview', 'Sales & revenue', 'Delivery & operations', 'Team performance']);
+    expect(bar.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Overview', 'Sales & revenue', 'Delivery & operations', 'Team performance', 'Products & profit']);
   });
 
-  it('a finance clerk has three tabs', async () => {
+  it('a finance clerk has four tabs, Products and profit among them', async () => {
     asRole('accountant', { analytics: ['view'], financial: ['view'] });
     renderPage();
     const bar = within(await screen.findByRole('tablist', { name: 'Reports' }));
-    expect(bar.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Overview', 'Sales & revenue', 'Delivery & operations']);
+    expect(bar.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Overview', 'Sales & revenue', 'Delivery & operations', 'Products & profit']);
   });
 
-  it('visibleTabs: marketing:view and financial:view do not show the unbuilt tabs', () => {
+  it('visibleTabs: financial:view shows Products and profit; marketing:view does not show the unbuilt Marketing tab', () => {
     const everything = () => true;
-    expect(visibleTabs('super_admin', everything).map((t) => t.key)).toEqual(['overview', 'sales', 'delivery', 'team']);
+    expect(visibleTabs('super_admin', everything).map((t) => t.key)).toEqual(['overview', 'sales', 'delivery', 'team', 'products']);
+    expect(visibleTabs('admin', (r) => r !== 'financial').map((t) => t.key)).toEqual(['overview', 'sales', 'delivery', 'team']);
     expect(visibleTabs('manager', () => false)).toEqual([]);
     expect(visibleTabs(undefined, everything)).toEqual([]);
   });

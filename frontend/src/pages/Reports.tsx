@@ -10,6 +10,7 @@ import { DeliveryTab } from './reports/DeliveryTab';
 import { ExportSlot } from './reports/ExportSlot';
 import { rangeLabel } from './reports/format';
 import { OverviewTab } from './reports/OverviewTab';
+import { ProductsTab } from './reports/ProductsTab';
 import { presetRange, type DayRange, type Preset } from './reports/range';
 import { SalesTab } from './reports/SalesTab';
 import { visibleTabs, type TabKey } from './reports/tabs';
@@ -22,8 +23,8 @@ import { useReport } from './reports/useReport';
  * card, the compare switch and the tab bar; each tab asks for its own numbers (GET /api/reports/:tab) only while it is
  * open. The page does no KPI arithmetic: every figure, change and tag comes from the API.
  *
- * Team performance and the Export menu are M3-T62 (F-1054, F-1057). Not on the page yet: "Explain this month" (M11),
- * Products and profit (M5) and Marketing (M8). The last two have a slot in tabs.ts and stay hidden.
+ * Team performance and the Export menu are M3-T62 (F-1054, F-1057). Products and profit (M5-T44) shows the Finance cards for the
+ * same range. Not on the page yet: "Explain this month" (M11) and Marketing (M8); Marketing has a slot in tabs.ts and stays hidden.
  */
 export function Reports() {
   useV2Page();
@@ -87,6 +88,7 @@ export function Reports() {
         {tab === 'overview' && <OverviewTab report={overview.data} ctl={ctl(overview)} />}
         {tab === 'sales' && <SalesTab report={sales.data} ctl={ctl(sales)} />}
         {tab === 'delivery' && <DeliveryTab report={delivery.data} ctl={ctl(delivery)} />}
+        {tab === 'products' && <ProductsTab range={range} />}
         {tab === 'team' && <TeamTab report={team.data} delivery={delivery.data} ctl={ctl(team)} deliveryCtl={ctl(delivery)} />}
       </div>
     </section>

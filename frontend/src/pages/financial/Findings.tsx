@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ShieldCheck } from 'lucide-react';
+import { useBlock } from './profit/useBlock';
 import { useV2Page } from '../../components/shell/useV2Page';
 import { Button, ConfirmDialog, EmptyState, Modal, Pagination, Select, Table, Tag, useToast, type Column } from '../../components/ui-v2';
 import { GuardedButtonV2 } from '../../components/financial/GuardedButtonV2';
 import { ListSkeleton } from '../deliveries/ListSkeleton';
 import {
-  FINDING_TYPES, findingAssignees, findingsService, type Assignee, type Finding, type FindingFilters, type FindingList, type FindingStatus, type FindingType,
+  FINDING_TYPES, findingAssignees, findingsService, type Assignee, type Finding, type FindingFilters, type FindingStatus, type FindingType,
 } from '../../services/findings.service';
 import { apiErrorMessage } from '../../utils/apiError';
 import { formatCurrency, formatDate } from '../../utils/format';
@@ -105,24 +106,10 @@ export function Findings() {
   const [search, setSearch] = useSearchParams();
   const { filters, statusValue, assigneeValue, filtered } = parseFilters(search);
   const { type, status, assigneeId, page } = filters;
-  const [data, setData] = useState<FindingList | null>(null);
-  const [failed, setFailed] = useState(false);
-  const [people, setPeople] = useState<Assignee[]>([]);
+  const list = useBlock(`findings:${JSON.stringify(filters)}`, () => findingsService.list(filters));
+  const people: Assignee[] = useBlock('findings:assignees', findingAssignees).data ?? [];
   const [resolving, setResolving] = useState<Finding | null>(null);
-  const load = useCallback(async () => {
-    try {
-      setData(await findingsService.list({ type, status, assigneeId, page, limit: PAGE_SIZE }));
-      setFailed(false);
-    } catch {
-      setFailed(true);
-    }
-  }, [type, status, assigneeId, page]);
-  useEffect(() => {
-    void load();
-  }, [load]);
-  useEffect(() => {
-    void findingAssignees().then(setPeople); // read once per session (cached in the service)
-  }, []);
+  const data = list.data;
 
   const set = (key: string, value: string) =>
     setSearch((prev) => {
@@ -157,7 +144,7 @@ export function Findings() {
   ], []);
 
   let body;
-  if (!data && failed) body = <EmptyState title="The Findings could not load." action={<Button onClick={() => void load()}>Try again</Button>} />;
+  if (!data && list.status === 'failed') body = <EmptyState title="The Findings could not load." action={<Button onClick={list.retry}>Try again</Button>} />;
   else if (!data) body = <ListSkeleton label="Loading Findings" rows={3} height={44} style={{ padding: 20 }} />;
   else if (data.findings.length > 0) body = <Table label="Findings" columns={columns} rows={data.findings} rowKey={(f) => f.id} />;
   else if (filtered) body = <EmptyState title="No Findings match" text="Change the filters to see more." action={<Button onClick={() => setSearch(new URLSearchParams())}>Clear filters</Button>} />;
@@ -200,7 +187,7 @@ export function Findings() {
         )}
       </div>
 
-      {resolving && <ResolveModal finding={resolving} people={people} onClose={() => setResolving(null)} onDone={() => void load()} />}
+      {resolving && <ResolveModal finding={resolving} people={people} onClose={() => setResolving(null)} onDone={list.retry} />}
     </section>
   );
 }

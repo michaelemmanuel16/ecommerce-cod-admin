@@ -1,8 +1,8 @@
 import React from 'react';
 import { Tabs } from '../../components/ui/Tabs';
 import { GeneralLedgerTab } from '../../components/financial/gl/GeneralLedgerTab';
-import { FinancialStatementsTab } from '../../components/financial/FinancialStatementsTab';
-import { ProfitabilityTab } from '../../components/financial/ProfitabilityTab';
+import { StatementsPanel } from './profit/StatementsPanel';
+import { ProductProfitPanel } from './profit/ProductProfitPanel';
 import { ExpenseManagementTab } from '../../components/financial/ExpenseManagementTab';
 
 export const AccountingAnalysis: React.FC = () => {
@@ -15,12 +15,12 @@ export const AccountingAnalysis: React.FC = () => {
     {
       id: 'statements',
       label: 'Financial Statements',
-      content: <FinancialStatementsTab />
+      content: <StatementsPanel />
     },
     {
       id: 'profitability',
-      label: 'Profitability Analysis',
-      content: <ProfitabilityTab />
+      label: 'Profit by product',
+      content: <ProductProfitPanel />
     },
     {
       id: 'expenses',

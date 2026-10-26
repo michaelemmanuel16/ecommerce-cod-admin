@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import axios from 'axios';
 import { CollectionActionModal } from '../../components/financial/modals/CollectionActionModal';
 import { ToastProvider } from '../../components/ui-v2';
+import { clearBlockCache } from '../../pages/financial/profit/useBlock';
 import { useConfigStore } from '../../stores/configStore';
 
 const svc = vi.hoisted(() => ({ toVerify: vi.fn(), deposits: vi.fn(), verify: vi.fn(), verifyMany: vi.fn(), verifyDeposit: vi.fn(), rejectDeposit: vi.fn() }));
@@ -17,6 +18,7 @@ const open = () => render(<ToastProvider><CollectionActionModal agentId={7} agen
 const refuse = (message: string) => Object.assign(new axios.AxiosError('refused'), { response: { status: 409, data: { error: message } } });
 
 beforeEach(() => {
+  clearBlockCache();
   Object.values(svc).forEach((m) => m.mockReset());
   onChanged.mockReset();
   useConfigStore.setState({ currency: 'GHS' });

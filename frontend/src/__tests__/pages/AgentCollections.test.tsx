@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { AgentCollections } from '../../pages/financial/AgentCollections';
 import { ToastProvider } from '../../components/ui-v2';
+import { clearBlockCache } from '../../pages/financial/profit/useBlock';
 import { useConfigStore } from '../../stores/configStore';
 import { CARD, REPORT } from '../fixtures/collections';
 
@@ -21,6 +22,7 @@ const open = () => render(<MemoryRouter><ToastProvider><AgentCollections /></Toa
 const row = (name: string) => screen.getByRole('row', { name: new RegExp(name) });
 
 beforeEach(() => {
+  clearBlockCache();
   Object.values(svc).forEach((m) => m.mockReset());
   role = 'super_admin';
   useConfigStore.setState({ currency: 'GHS' });

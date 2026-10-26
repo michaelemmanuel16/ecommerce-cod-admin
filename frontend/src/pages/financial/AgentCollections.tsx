@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, Ban, Clock, HandCoins, Hourglass, ShieldAlert } from 'lucide-react';
 import { Button, EmptyState, Skeleton, Tile, useToast } from '../../components/ui-v2';
@@ -6,9 +6,10 @@ import { AgentAgingTab } from '../../components/financial/AgentAgingTab';
 import { UnpaidByAgeCard } from '../../components/financial/UnpaidByAgeCard';
 import { CollectionActionModal } from '../../components/financial/modals/CollectionActionModal';
 import { BlockPartnerModal } from '../../components/financial/modals/BlockPartnerModal';
-import { collectionsService, unpaidByAgeOf, type AgingPartner, type AgingReport } from '../../services/collections.service';
+import { collectionsService, unpaidByAgeOf, type AgingPartner } from '../../services/collections.service';
 import { financialService } from '../../services/financial.service';
 import { usePermissions } from '../../hooks/usePermissions';
+import { useBlock } from './profit/useBlock';
 import { apiErrorMessage } from '../../utils/apiError';
 import { formatCurrency } from '../../utils/format';
 import { ListSkeleton } from '../deliveries/ListSkeleton';
@@ -22,19 +23,10 @@ import { ordersText } from './collections/model';
 export function AgentCollections() {
   const say = useToast();
   const { isAdmin } = usePermissions();
-  const [report, setReport] = useState<AgingReport | null>(null);
-  const [failed, setFailed] = useState(false);
-  const reload = useCallback(async () => {
-    try {
-      setReport(await collectionsService.aging());
-      setFailed(false);
-    } catch {
-      setFailed(true);
-    }
-  }, []);
-  useEffect(() => {
-    void reload();
-  }, [reload]);
+  const aging = useBlock('collections:aging', collectionsService.aging);
+  const report = aging.data;
+  const failed = aging.status === 'failed';
+  const reload = aging.retry;
   const [reviewing, setReviewing] = useState<AgingPartner | null>(null);
   const [blocking, setBlocking] = useState<AgingPartner | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -45,7 +37,7 @@ export function AgentCollections() {
     setBusyId(p.agentId);
     try {
       say(await run());
-      await reload();
+      reload();
     } catch (e) {
       say(apiErrorMessage(e, fallback));
     } finally {
@@ -62,7 +54,7 @@ export function AgentCollections() {
     try {
       await collectionsService.syncCashFindings();
       say('Cash held checked');
-      await reload();
+      reload();
     } catch (e) {
       say(apiErrorMessage(e, 'The check did not run.'));
     }
@@ -86,7 +78,7 @@ export function AgentCollections() {
       </div>
 
       {failed && !report ? (
-        <div className="card"><EmptyState title="The collections could not load." action={<Button onClick={() => void reload()}>Try again</Button>} /></div>
+        <div className="card"><EmptyState title="The collections could not load." action={<Button onClick={reload}>Try again</Button>} /></div>
       ) : (
         <>
           <div className="grid kpis k5" style={{ marginTop: 0 }} aria-busy={!report}>

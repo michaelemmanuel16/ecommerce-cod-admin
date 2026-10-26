@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Button, EmptyState, Input, Modal, Pagination, Table, Tabs, Tag, useToast, type Column } from '../../ui-v2';
 import { GuardedButtonV2 } from '../GuardedButtonV2';
 import { collectionsService, type PartnerCollection, type PartnerDeposit } from '../../../services/collections.service';
 import { apiErrorMessage } from '../../../utils/apiError';
 import { formatCurrency, formatDate } from '../../../utils/format';
 import { isPdfUrl, isSafeReceiptUrl } from '../../../utils/expenseRules';
+import { useBlock } from '../../../pages/financial/profit/useBlock';
 import { ListSkeleton } from '../../../pages/deliveries/ListSkeleton';
 import { DEPOSIT_TONE, depositLabel } from '../../../pages/financial/collections/model';
 
@@ -17,7 +18,7 @@ interface Props {
   agentId: number;
   agentName: string;
   /** Something changed (a verify or a reject): the page reloads its figures. */
-  onChanged?: () => Promise<unknown> | void;
+  onChanged?: () => void;
 }
 
 /** What each pane needs: run one call, say `done`, reload this modal and the page together. */
@@ -151,28 +152,17 @@ export function CollectionActionModal({ onClose, agentId, agentName, onChanged }
   const [tab, setTab] = useState<'collections' | 'deposits'>('collections');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [collections, setCollections] = useState<PartnerCollection[] | null>(null);
-  const [deposits, setDeposits] = useState<PartnerDeposit[] | null>(null);
-  const [failed, setFailed] = useState(false);
+  const toVerify = useBlock(`collections:to-verify:${agentId}`, () => collectionsService.toVerify(agentId));
+  const payIns = useBlock(`collections:deposits:${agentId}`, () => collectionsService.deposits(agentId));
+  const collections = toVerify.data ?? null;
+  const deposits = payIns.data ?? null;
   const pending = (deposits ?? []).filter((d) => d.status === 'pending').length;
 
-  const load = useCallback(async () => {
-    try {
-      const [c, d] = await Promise.all([collectionsService.toVerify(agentId), collectionsService.deposits(agentId)]);
-      setCollections(c);
-      setDeposits(d);
-      setFailed(false);
-    } catch {
-      setFailed(true);
-    }
-  }, [agentId]);
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  // The modal and the page reload together, so one change costs one round of requests
-  const reload = async () => {
-    await Promise.all([load(), onChanged?.()]);
+  // The modal's lists and the page reload together, so one change costs one round of requests
+  const reload = () => {
+    toVerify.retry();
+    payIns.retry();
+    void onChanged?.();
   };
   const run: Run = async (work, done) => {
     setBusy(true);
@@ -180,7 +170,7 @@ export function CollectionActionModal({ onClose, agentId, agentName, onChanged }
     try {
       await work();
       say(done);
-      await reload();
+      reload();
       return true;
     } catch (e) {
       setError(apiErrorMessage(e, 'That did not work. Try again.'));
@@ -192,7 +182,7 @@ export function CollectionActionModal({ onClose, agentId, agentName, onChanged }
   const pane = { agentName, busy, run };
 
   let body;
-  if (failed && !collections) body = <EmptyState title="This partner's cash could not load." action={<Button onClick={() => void load()}>Try again</Button>} />;
+  if (toVerify.status === 'failed' && !collections) body = <EmptyState title="This partner's cash could not load." action={<Button onClick={reload}>Try again</Button>} />;
   else if (tab === 'collections') body = <CollectionsPane {...pane} rows={collections} />;
   else body = <DepositsPane {...pane} rows={deposits} />;
 

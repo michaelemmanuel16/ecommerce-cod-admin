@@ -68,19 +68,12 @@ export interface Assignee {
   name: string;
 }
 
-let assignees: Promise<Assignee[]> | null = null;
-
-/**
- * The people a Finding can be given to (GET /api/users, owner, admin and manager only). Read once per session: a refused or
- * failed call gives an empty list and is tried again on the next visit.
- */
-export function findingAssignees(): Promise<Assignee[]> {
-  assignees ??= apiClient
-    .get<{ users: Array<{ id: number; firstName: string; lastName: string; isActive?: boolean }> }>('/api/users', { params: { isActive: true, limit: 100 }, quiet: true })
-    .then(({ data }) => data.users.filter((u) => u.isActive !== false).map((u) => ({ id: u.id, name: `${u.firstName} ${u.lastName}`.trim() })))
-    .catch(() => {
-      assignees = null;
-      return [];
-    });
-  return assignees;
+/** The people a Finding can be given to (GET /api/users, owner, admin and manager only). A refused call gives an empty list. */
+export async function findingAssignees(): Promise<Assignee[]> {
+  try {
+    const { data } = await apiClient.get<{ users: Array<{ id: number; firstName: string; lastName: string; isActive?: boolean }> }>('/api/users', { params: { isActive: true, limit: 100 }, quiet: true });
+    return data.users.filter((u) => u.isActive !== false).map((u) => ({ id: u.id, name: `${u.firstName} ${u.lastName}`.trim() }));
+  } catch {
+    return [];
+  }
 }
