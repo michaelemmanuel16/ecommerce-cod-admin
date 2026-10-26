@@ -3,7 +3,7 @@
   "allow": [
     { "file": "frontend/src/config/dashboards/deliveryAgentConfig.ts", "match": "your delivery rate per completed delivery", "reason": "the agent pay amount per delivery (User.deliveryRate column), not a KPI" },
     { "file": "frontend/src/components/admin/AgentEditModal.tsx", "match": "Delivery rate must be a number", "reason": "validation text for the agent pay-per-delivery amount, not a KPI" },
-    { "file": "frontend/src/components/admin/AgentEditModal.tsx", "match": "Delivery Rate (per delivery)", "reason": "label of the agent pay-per-delivery amount, not a KPI" },
+    { "file": "frontend/src/components/admin/AgentEditModal.tsx", "match": "Delivery rate (per delivery)", "reason": "label of the agent pay-per-delivery amount, not a KPI" },
     { "file": "frontend/src/pages/Communications.tsx", "match": "Delivery Rate</p>", "reason": "message delivery rate of emails and SMS (sent vs delivered messages), not an order KPI" },
     { "file": "backend/src/services/analyticsService.ts", "match": "Calculate on-time delivery rate", "reason": "code comment for the agent on-time rate (left on the old definition, D41)" },
     { "file": "backend/src/services/kpi/rates.ts", "match": "Never \"delivery rate\"", "reason": "code comment that quotes the retired name to forbid it" }

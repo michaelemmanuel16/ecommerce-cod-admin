@@ -149,3 +149,54 @@ A delivery partner's payout is recorded once, matched to its orders, and posted 
 ### Open points
 - PRD F-909 text needs the write-off correction above. Follow-up ticket.
 - Findings list page size is at most 100.
+
+---
+
+## COD-53 (part) — Record partner payout modal (T37) and Edit person fix
+**Date:** 2026-10-26 | **Type:** feat/fix | **Branch:** feature/m5-settlement-and-finance (lane `m5/b-t37-manual-payout`, merge 1af4b7c; `m5/b-edit-person-fix`, merge 0e5897a) | **Commits:** 25f1b49, 88fdf58, ec4a897
+
+### Summary
+The partner drawer has a Record payout button. It records a manual payout from a delivery partner and shows, before saving, which orders it clears. Plan task: M5-T37. Also fixes an owner-reported bug: Edit person opened behind the drawer.
+
+### Changes
+- **Record payout modal (T37):** amount, date and reference. A debounced preview uses the T12 planner and lists the oldest unpaid orders it clears. Money above what is owed shows "GH₵N will be held as unapplied" (2040). A used reference shows "This reference was used on <date>" in the modal. "Paid by" is the partner, so there is no method field.
+- **`GuardedButtonV2`** (`components/financial`): a ui-v2 button that is `aria-disabled` with a tooltip reason when the user lacks the permission. The drawer uses it for Record payout.
+- **Money:** the `applied` key is read as money by the shared money parser.
+- **Edit person fix:** `AgentEditModal` now uses the ui-v2 Modal. Before, it used the old modal (z-index 50), which opened under the drawer scrim (54) and outside the layer stack, so it could not be clicked or reached by Tab. Now it opens above the drawer, keeps Tab inside, and Escape closes only the form. A failed save shows its error in the form.
+
+### Verification
+- Merged tree (1af4b7c): backend generate, typecheck, lint, build clean; full backend suite 270 suites pass after the lane B test DB was brought up to date (findingsApi failed only because `ecommerce_cod_test_b` missed migrations 20261026140000 to 160000). Frontend lint, build clean; vitest 153 files / 1256 tests pass.
+- Edit person fix: tsc, lint, build clean; PartnerDrawer and PartnerPayoutModal tests 21 / 21.
+- Browser check T37 (owner and a user without `payouts:create`; light and dark; 1440 and 760): part pay, unapplied warning, save, duplicate reference, Escape closes the modal only, disabled button with tooltip.
+- Browser check Edit person (dark, owner): form opens above the drawer, save updates the user, Tab stays in the form, Escape closes only the form and focus returns to Edit person.
+
+### Open points
+- Not in T37: receipt upload and a command palette action.
+- Edit person still edits the old user fields (Location, Delivery rate) and does not show the saved Location, because the partner detail API does not return it. Follow-up: edit the person through the partner API (base town, days to pay, vehicle types of M4) and drop Location and Delivery rate.
+
+---
+
+## COD-52 (part 2) — Finance reports: cash flow, P&L, statements, profit (T25, T26, T27)
+**Date:** 2026-10-26 | **Type:** feat | **Branch:** feature/m5-settlement-and-finance (lane `m5/cod-52-p2-reports`, merge 7c2e4c0) | **Commits:** e472798, af26269, 2f6ec73, f266daa, c432f96
+
+### Summary
+The finance reports now read the ledger. Plan tasks: M5-T25 (monthly P&L, income statement, balance sheet), M5-T26 (profit by product, order cohort, cost of failed deliveries), M5-T27 (cash flow). No screens yet; the pages come in wave 4.
+
+### Changes
+- **One ledger reader:** `statementsService.ledgerAccounts()` gives account balances for a period. The P&L, income statement, balance sheet and cash flow all use it.
+- **Statements (T25):** monthly P&L with the August and September note; income statement; balance sheet with 3010 and the result to date.
+- **Cash flow (T27):** no double count of 1020; pay-day averages come from settlements; trend by delivery date; expected cash from orders out for delivery, shown as expected, not cash. No forecast cache.
+- **Profit (T26):** profit by product (totals from the ledger; orders that do not match a product row go in `notMatchedToProductRow`); order cohort card; cost of failed deliveries and of one refused delivery (`resolveFee` from the fee rules, `lostUnits()`).
+- **Delivery fees line:** 5070 plus the retired 5040, so old entries still count.
+- **Money:** `Money.percentOrNull`.
+- **API:** `GET /api/financial/profit-by-product`, `/cohort-profit`, `/failed-delivery-cost`.
+- **KPI guard:** two order-total sums are on the allow-list with a reason: expected cash out for delivery, and the cohort profit. One revenue definition per order is a follow-up (item 11).
+
+### Verification
+- Lane: 10 report suites, 120 / 120 tests on test_c.
+- Merged tree (7c2e4c0): backend generate, typecheck, lint, build clean; full backend suite 272 suites pass after the KPI guard allow-list fix; frontend lint, build clean; vitest 153 files pass after the wording allow-list fix (the Edit person label is now "Delivery rate").
+- No screen changes, so no browser check.
+
+### Open points
+- T24 and T30 are still to do; COD-52 stays In Progress.
+- Follow-ups: one revenue definition per order; align `DEFAULT_DAYS_TO_PAY` in `cashFlowService` with the lane A resolver after the lane A merge.
