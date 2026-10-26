@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Pencil, Wallet } from 'lucide-react';
-import { Button, Drawer, Tabs, Tag, Tooltip } from '../../components/ui-v2';
+import { Button, Drawer, Tabs, Tag } from '../../components/ui-v2';
 import { AgentEditModal } from '../../components/admin/AgentEditModal';
 import type { DeliveryAgent } from '../../services/delivery-agents.service';
 import { deliveryPartnersService, type FeeRule, type PartnerDetail, type PartnerRow } from '../../services/delivery-partners.service';
 import { apiErrorMessage } from '../../utils/apiError';
-import { usePermissions } from '../../hooks/usePermissions';
-import { FINANCE_PERMS } from '../../components/financial/financePerms';
+import { GuardedButtonV2 } from '../../components/financial/GuardedButtonV2';
 import { DrawerFees } from './DrawerFees';
 import { DrawerOrders } from './DrawerOrders';
 import { DrawerStock } from './DrawerStock';
@@ -64,9 +63,6 @@ export function PartnerDrawer({ id, row, target, canEdit, canSwitch, startTab = 
   const [failed, setFailed] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [paying, setPaying] = useState(false);
-  const { can } = usePermissions();
-  const payPerm = FINANCE_PERMS.recordPayout;
-  const canPay = can(payPerm.resource, payPerm.action);
 
   const load = useCallback(async () => {
     if (id === null) return;
@@ -103,19 +99,10 @@ export function PartnerDrawer({ id, row, target, canEdit, canSwitch, startTab = 
           partner && (
             <div className="dhead">
               {canSwitch && partner.isActive && <AvailabilitySwitch name={partner.name} checked={partner.isAvailable} onChange={(on) => void toggle(on)} />}
-              {canPay ? (
-                <Button size="mini" onClick={() => setPaying(true)}>
-                  <Wallet style={{ width: 13, height: 13 }} />
-                  Record payout
-                </Button>
-              ) : (
-                <Tooltip label={payPerm.reason}>
-                  <Button size="mini" aria-disabled="true" onClick={(e) => e.preventDefault()}>
-                    <Wallet style={{ width: 13, height: 13 }} />
-                    Record payout
-                  </Button>
-                </Tooltip>
-              )}
+              <GuardedButtonV2 perm="recordPayout" size="mini" onClick={() => setPaying(true)}>
+                <Wallet style={{ width: 13, height: 13 }} />
+                Record payout
+              </GuardedButtonV2>
               {canEdit && (
                 <Button size="mini" onClick={() => setEditing(true)}>
                   <Pencil style={{ width: 13, height: 13 }} />

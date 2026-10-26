@@ -28,9 +28,8 @@ vi.mock('../../hooks/usePermissions', () => ({ usePermissions: () => ({ can: (r:
 const planFor = (amount: number): ManualPayoutPreview => {
   const applied = Math.min(amount, 300);
   return {
-    partnerId: 2, amount, unpaidTotal: 300, appliedAmount: applied, unappliedAmount: Math.max(amount - 300, 0), leftUnpaid: 300 - applied,
+    unpaidTotal: 300, appliedAmount: applied, unappliedAmount: Math.max(amount - 300, 0), leftUnpaid: 300 - applied,
     orders: [{ orderId: 101, applied: Math.min(applied, 200), clearsOrder: applied >= 200 }, ...(applied > 200 ? [{ orderId: 102, applied: applied - 200, clearsOrder: applied >= 300 }] : [])],
-    warnings: [],
   };
 };
 
@@ -46,7 +45,7 @@ beforeEach(() => {
   canCreate = true;
   useConfigStore.setState({ currency: 'GHS' });
   previewManual.mockImplementation((_id: number, amount: string) => Promise.resolve(planFor(Number(amount))));
-  recordManual.mockResolvedValue({ id: 1, reference: 'MM-1', payoutAmount: 300, unappliedAmount: 0, warnings: [] });
+  recordManual.mockResolvedValue({ unappliedAmount: 0 });
 });
 
 describe('PartnerPayoutModal (M5-T37, F-908)', () => {
@@ -54,7 +53,7 @@ describe('PartnerPayoutModal (M5-T37, F-908)', () => {
     modal();
     await type('Amount', '350');
     expect(await screen.findByTestId('unapplied-warning')).toHaveTextContent('GH₵50 will be held as unapplied');
-    expect(previewManual).toHaveBeenLastCalledWith(2, '350');
+    expect(previewManual).toHaveBeenLastCalledWith(2, '350.00');
     expect(recordManual).not.toHaveBeenCalled();
   });
 
@@ -72,19 +71,18 @@ describe('PartnerPayoutModal (M5-T37, F-908)', () => {
     await type('Amount', '150');
     await screen.findByRole('region', { name: 'Orders this payout pays' });
     expect(previewManual).toHaveBeenCalledTimes(1);
-    expect(previewManual).toHaveBeenCalledWith(2, '150');
+    expect(previewManual).toHaveBeenCalledWith(2, '150.00');
   });
 
-  it('saves with partner, amount, date, reference and the method in the notes, then reloads the page data and closes', async () => {
+  it('saves with partner, amount, date and reference, then reloads the page data and closes', async () => {
     modal();
     await type('Amount', '300');
     await type('Reference or receipt', 'MM-1');
-    await userEvent.selectOptions(screen.getByLabelText('Method'), 'Bank Transfer');
     await waitFor(() => expect(saveButton()).toBeEnabled());
     await userEvent.click(saveButton());
     await waitFor(() => expect(recordManual).toHaveBeenCalledTimes(1));
     expect(recordManual).toHaveBeenCalledWith({
-      partnerId: 2, amount: '300', reference: 'MM-1', payoutDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), notes: 'Paid by Bank Transfer',
+      partnerId: 2, amount: '300', reference: 'MM-1', payoutDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
     });
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(onRecorded).toHaveBeenCalled();
