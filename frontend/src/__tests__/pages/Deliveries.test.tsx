@@ -80,7 +80,7 @@ describe('Deliveries page (M4-T30)', () => {
     const table = await screen.findByRole('table', { name: 'Delivery partners' });
     expect(within(table).getByText('Logiswift')).toBeInTheDocument();
     expect(within(table).getByText('GH₵35 · GH₵0 · GH₵0')).toBeInTheDocument();
-    expect(within(table).getAllByText('No fee rule')).toHaveLength(2);
+    expect(within(table).getAllByText('No delivery fee')).toHaveLength(2);
     expect(within(table).getByText('No closed orders yet')).toBeInTheDocument();
     expect(within(table).getByText('Unavailable')).toBeInTheDocument();
     const total = within(table).getByText('All partners').closest('tr')!;

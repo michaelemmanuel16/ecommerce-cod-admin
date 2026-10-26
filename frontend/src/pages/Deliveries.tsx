@@ -168,6 +168,7 @@ export function Deliveries() {
         startTab={view.partner !== null && view.partner === addedId ? 'fees' : 'summary'}
         onClose={() => go({ ...view, partner: null })}
         onChanged={() => void data.refetch()}
+        onFeeRulesSaved={(feeRule) => view.partner !== null && data.setFeeRule(view.partner, feeRule)}
       />
 
       <AddPartnerModal

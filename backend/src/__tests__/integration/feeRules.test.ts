@@ -89,6 +89,17 @@ describe('GET and POST /api/delivery-partners/:id/fee-rules', () => {
     expect(res.body.rules).toHaveLength(2);
   });
 
+  it('shows the weighted fee: the average fee stamped on the partner\'s delivered orders (R5)', async () => {
+    const wf = await mkUser('wfpartner', 'delivery_agent');
+    expect(await api.get('owner', wf.id).then((r) => [r.body.weightedFee, r.body.deliveredOrders])).toEqual([null, 0]);
+    await mk(wf.id, 'delivered', { deliveryFee: 20 });
+    await mk(wf.id, 'delivered', { deliveryFee: 30 });
+    await mk(wf.id, 'failed_delivery', { deliveryFee: 5 });
+    const res = await api.get('owner', wf.id);
+    expect(res.body.weightedFee).toBe('25.00');
+    expect(res.body.deliveredOrders).toBe(2);
+  });
+
   it('owner and admin may add a rule; manager and clerk may only read', async () => {
     const created = await api.post('admin', kofiId, { outcome: 'returned', amount: '3', validFrom: '2026-02-01' });
     expect(created.status).toBe(201);
@@ -120,6 +131,46 @@ describe('GET and POST /api/delivery-partners/:id/fee-rules', () => {
     const res = await api.post('owner', kofiId, { outcome: 'delivered', amount: 26, validFrom: '2026-01-01' });
     expect(res.status).toBe(409);
     expect(await prismaBase.feeRule.count({ where: { partnerUserId: kofiId, outcome: 'delivered' } })).toBe(1);
+  });
+
+  it('saves several outcomes in one request and answers with the list as GET gives it', async () => {
+    const partner = await mkUser('batch', 'delivery_agent');
+    const res = await api.post('owner', partner.id, { rules: [
+      { outcome: 'delivered', amount: 25, validFrom: '2026-01-01' },
+      { outcome: 'failed', amount: 5, validFrom: '2026-01-01' },
+    ] });
+    expect(res.status).toBe(201);
+    expect(res.body.current.delivered).toMatchObject({ amount: '25.00', basis: 'flat' });
+    expect(res.body.current.failed).toMatchObject({ amount: '5.00' });
+    expect(res.body.current.returned).toBeNull();
+    expect(res.body.rules).toHaveLength(2);
+    expect(res.body).toHaveProperty('weightedFee');
+    expect(await prismaBase.auditLog.count({ where: { tenantId, resource: 'fee_rule', action: 'create', resourceId: { in: res.body.rules.map((r: any) => String(r.id)) } } })).toBe(2);
+  });
+
+  it('a same-date conflict comes back per outcome and nothing at all is stored (one transaction)', async () => {
+    const partner = await mkUser('batchconflict', 'delivery_agent');
+    await rule(partner.id, 'delivered', 25, '2026-03-01');
+    const res = await api.post('owner', partner.id, { rules: [
+      { outcome: 'delivered', amount: 30, validFrom: '2026-03-01' },
+      { outcome: 'failed', amount: 5, validFrom: '2026-03-01' },
+    ] });
+    expect(res.status).toBe(409);
+    expect(res.body.errors).toEqual({ delivered: 'This partner already has a delivered fee rule from 2026-03-01' });
+    expect(res.body.error).toBe(res.body.errors.delivered);
+    expect(await prismaBase.feeRule.count({ where: { partnerUserId: partner.id } })).toBe(1);
+  });
+
+  it('a bad value in a batch is reported on its outcome, and the same outcome twice is refused', async () => {
+    const partner = await mkUser('batchbad', 'delivery_agent');
+    const bad = await api.post('owner', partner.id, { rules: [{ outcome: 'delivered', basis: 'percent', amount: 101 }, { outcome: 'failed', amount: 2 }] });
+    expect(bad.status).toBe(400);
+    expect(bad.body.errors).toEqual({ delivered: 'A percent fee cannot be above 100' });
+    const twice = await api.post('owner', partner.id, { rules: [{ outcome: 'failed', amount: 2 }, { outcome: 'failed', amount: 3 }] });
+    expect(twice.status).toBe(400);
+    expect(twice.body.errors.failed).toMatch(/only once/);
+    expect(await prismaBase.feeRule.count({ where: { partnerUserId: partner.id } })).toBe(0);
+    expect((await api.post('manager', partner.id, { rules: [{ outcome: 'failed', amount: 2 }] })).status).toBe(403);
   });
 
   it('valid-from defaults to today and writes one audit row', async () => {

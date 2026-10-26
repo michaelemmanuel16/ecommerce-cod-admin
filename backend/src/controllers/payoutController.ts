@@ -31,6 +31,22 @@ const idParam = (raw: string): number => {
   return id;
 };
 
+const owedQuerySchema = z.object({
+  month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Month must be written YYYY-MM').optional(),
+  includeInactive: z.enum(['true', 'false']).optional(),
+});
+
+/** GET /api/payouts/owed?month=YYYY-MM&includeInactive=true: every rep with earned, paid, paid in the month and owed (the Rep commissions tab). */
+export const listOwed = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = owedQuerySchema.safeParse(req.query);
+    if (!parsed.success) throw new AppError(parsed.error.issues[0]?.message || 'Invalid filter', 400, 'VALIDATION_ERROR');
+    res.json(await payoutService.listOwed({ month: parsed.data.month, includeInactive: parsed.data.includeInactive === 'true' }));
+  } catch (error) {
+    next(error);
+  }
+};
+
 /** GET /api/payouts/owed/:payeeId: the form's preview (earned, paid, owed, open entries). */
 export const getOwed = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {

@@ -37,6 +37,9 @@ export const parseMoney = (value: string | number | null | undefined): number =>
   return Number.isFinite(n) ? n : 0;
 };
 
+/** Whole cents of an amount ("2034.00" -> 203400), so amounts are compared and added without float drift. */
+export const toCents = (value: string | number | null | undefined): number => Math.round(parseMoney(value) * 100);
+
 // Keys that carry money in API payloads and socket events. Phone numbers, ids,
 // codes and references are numeric strings too, so those are excluded.
 const MONEY_KEY =

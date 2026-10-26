@@ -9,9 +9,6 @@ vi.mock('../../services/customer-reps.service', () => ({
         getRepWorkload: vi.fn(),
         getRepPerformance: vi.fn(),
         getRepById: vi.fn(),
-        getPayoutHistory: vi.fn(),
-        getPendingPayments: vi.fn(),
-        processPayout: vi.fn(),
         updateRep: vi.fn(),
         updateRepDetails: vi.fn(),
         toggleAvailability: vi.fn(),
@@ -25,8 +22,6 @@ describe('Customer Reps Store', () => {
             workload: [],
             performance: [],
             selectedRep: null,
-            payoutHistory: [],
-            pendingPayments: [],
             isLoading: false,
             error: null,
         });
