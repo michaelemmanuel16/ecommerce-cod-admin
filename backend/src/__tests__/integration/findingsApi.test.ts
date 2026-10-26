@@ -154,7 +154,7 @@ describe('closeClearedShortPays', () => {
   let partnerId: number;
   const mkSettlement = async (reference: string, orderIds: number[]) => {
     const s = await prismaBase.partnerSettlement.create({
-      data: { tenantId, partnerId, payoutDate: new Date(), payoutAmount: 10, reference, status: 'short' },
+      data: { tenantId, partnerId, payoutDate: new Date(), payoutAmount: 10, shortAmount: 10, reference, status: 'short' },
     });
     for (const orderId of orderIds) {
       await prismaBase.partnerSettlementLine.create({ data: { tenantId, settlementId: s.id, orderId, externalOrderRef: String(orderId), expAmount: 100, matched: true } });
@@ -188,7 +188,7 @@ describe('closeClearedShortPays', () => {
     const closed = await runInTenant(tenantId, () => closeClearedShortPays(prismaBase as any, partnerId, 'PAY-77'));
     expect(closed).toEqual([fCleared.id]);
     const after = await prismaBase.finding.findUniqueOrThrow({ where: { id: fCleared.id } });
-    expect(after).toMatchObject({ status: 'explained', explanation: 'Cleared by settlement PAY-77' });
+    expect(after).toMatchObject({ status: 'explained', explanation: 'Cleared by settlement PAY-77', resolvedById: null });
     expect(after.resolvedAt).toBeTruthy();
     expect((await prismaBase.finding.findUniqueOrThrow({ where: { id: fNot.id } })).status).toBe('open');
   });
