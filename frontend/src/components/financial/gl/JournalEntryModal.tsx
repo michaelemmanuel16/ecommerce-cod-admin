@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { financialService } from '../../../services/financial.service';
-import { journalBalance, JournalState } from '../../../utils/journalBalance';
-import { formatCurrency } from '../../../utils/format';
+import { journalBalance } from '../../../utils/journalBalance';
+import { formatCurrency, todayYmd } from '../../../utils/format';
+import { Modal } from '../../ui/Modal';
 import { GuardedButton } from '../GuardedButton';
-import { NO_PERMISSION, useFinancePermissions } from '../../../hooks/useFinancePermissions';
 
 interface Account {
     id: number;
@@ -24,20 +24,16 @@ interface TransactionLine {
     description: string;
 }
 
-const STATE_LABEL: Record<JournalState, string> = { empty: 'Empty', balanced: 'Balanced', out_of_balance: 'Out of balance' };
-const STATE_STYLE: Record<JournalState, string> = { empty: 'text-gray-500', balanced: 'text-green-600', out_of_balance: 'text-red-600' };
-
 export const JournalEntryModal: React.FC<JournalEntryModalProps> = ({ isOpen, onClose, onSuccess }) => {
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [description, setDescription] = useState('');
-    const [entryDate, setEntryDate] = useState(new Date().toISOString().split('T')[0]);
+    const [entryDate, setEntryDate] = useState(todayYmd());
     const [lines, setLines] = useState<TransactionLine[]>([
         { accountId: '', debitAmount: '0', creditAmount: '0', description: '' },
         { accountId: '', debitAmount: '0', creditAmount: '0', description: '' }
     ]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const { canPostJournal } = useFinancePermissions();
 
     useEffect(() => {
         if (isOpen) {
@@ -69,7 +65,8 @@ export const JournalEntryModal: React.FC<JournalEntryModalProps> = ({ isOpen, on
     };
 
     const balance = journalBalance(lines);
-    const { totalDebits, totalCredits } = balance;
+    const { debits: totalDebits, credits: totalCredits } = balance;
+    const isEmpty = totalDebits === 0 && totalCredits === 0;
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -99,21 +96,9 @@ export const JournalEntryModal: React.FC<JournalEntryModalProps> = ({ isOpen, on
         }
     };
 
-    if (!isOpen) return null;
-
     return (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black bg-opacity-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-                <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
-                    <h3 className="text-xl font-bold text-gray-900">New Journal Entry</h3>
-                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-                        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                    </button>
-                </div>
-
-                <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6">
+        <Modal isOpen={isOpen} onClose={onClose} title="New Journal Entry" size="xl">
+                <form onSubmit={handleSubmit}>
                     <div className="grid grid-cols-2 gap-6 mb-8">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Entry Date</label>
@@ -216,11 +201,15 @@ export const JournalEntryModal: React.FC<JournalEntryModalProps> = ({ isOpen, on
                             <span className="text-gray-500 font-medium">Total Credits:</span>
                             <span className="font-bold text-gray-900">{formatCurrency(totalCredits)}</span>
                             <div className="col-span-2 border-t border-gray-200 mt-2 pt-2">
-                                <span data-testid="journal-state" className={`text-sm font-bold ${STATE_STYLE[balance.state]}`}>
-                                    {balance.state === 'out_of_balance'
-                                        ? `${STATE_LABEL.out_of_balance}: ${formatCurrency(balance.difference)}`
-                                        : STATE_LABEL[balance.state]}
-                                </span>
+                                {isEmpty ? (
+                                    <span data-testid="journal-state" className="text-sm font-bold text-gray-500">Empty</span>
+                                ) : balance.difference === 0 ? (
+                                    <span data-testid="journal-state" className="text-sm font-bold text-green-600">Balanced</span>
+                                ) : (
+                                    <span data-testid="journal-state" className="text-sm font-bold text-red-600">
+                                        Out of balance: {formatCurrency(balance.difference)}
+                                    </span>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -237,8 +226,7 @@ export const JournalEntryModal: React.FC<JournalEntryModalProps> = ({ isOpen, on
                         </button>
                         <GuardedButton
                             type="submit"
-                            allowed={canPostJournal}
-                            reason={NO_PERMISSION.postJournal}
+                            perm="postJournal"
                             disabled={loading || !balance.canPost}
                             className="px-8 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 transition-all font-bold"
                         >
@@ -246,7 +234,6 @@ export const JournalEntryModal: React.FC<JournalEntryModalProps> = ({ isOpen, on
                         </GuardedButton>
                     </div>
                 </form>
-            </div>
-        </div>
+        </Modal>
     );
 };

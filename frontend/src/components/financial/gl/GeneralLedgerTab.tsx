@@ -3,14 +3,12 @@ import { AccountsList } from './AccountsList';
 import { AccountLedger } from './AccountLedger';
 import { JournalEntryModal } from './JournalEntryModal';
 import { GuardedButton } from '../GuardedButton';
-import { NO_PERMISSION, useFinancePermissions } from '../../../hooks/useFinancePermissions';
 
 export const GeneralLedgerTab: React.FC = () => {
     const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
     const [isJournalModalOpen, setIsJournalModalOpen] = useState(false);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-    const { canPostJournal } = useFinancePermissions();
     const triggerRefresh = () => setRefreshTrigger(prev => prev + 1);
 
     return (
@@ -23,8 +21,7 @@ export const GeneralLedgerTab: React.FC = () => {
                     </p>
                 </div>
                 <GuardedButton
-                    allowed={canPostJournal}
-                    reason={NO_PERMISSION.postJournal}
+                    perm="postJournal"
                     onClick={() => setIsJournalModalOpen(true)}
                     className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
                 >

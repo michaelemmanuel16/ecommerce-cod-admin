@@ -153,6 +153,17 @@ describe('the void route reverses hand-made entries only', () => {
   });
 });
 
+describe('journal entry reads carry voidableByHand', () => {
+  it('the list and the single entry say whether an entry may be voided by hand', async () => {
+    const made = await post(entry('1010', '3010', 3), clerk);
+    const one = await get(`/api/gl/journal-entries/${made.body.entry.id}`);
+    expect(one.body.entry.voidableByHand).toBe(true);
+    const list = await get('/api/gl/journal-entries?limit=100');
+    expect(list.body.entries.length).toBeGreaterThan(0);
+    for (const e of list.body.entries) expect(e.voidableByHand).toBe(e.sourceType === 'manual' || e.sourceType === 'paystack_payout');
+  });
+});
+
 describe('ledger browse', () => {
   it('searches the chart by code or name, marks 1020 inactive and shows the trial balance', async () => {
     const byCode = await get('/api/gl/accounts?search=1020');

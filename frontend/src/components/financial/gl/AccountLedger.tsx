@@ -1,39 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { financialService } from '../../../services/financial.service';
-import { formatCurrency, formatDate } from '../../../utils/format';
+import React, { useState, useEffect, useRef } from 'react';
+import { financialService, AccountLedgerResponse, LedgerLine } from '../../../services/financial.service';
+import { formatCurrency, formatDate, todayYmd } from '../../../utils/format';
+import { downloadBlob } from '../../../utils/downloadBlob';
 import { useFinancialStore } from '../../../stores/financialStore';
 import { GuardedButton } from '../GuardedButton';
 import { VoidJournalModal } from './VoidJournalModal';
-import { NO_PERMISSION, useFinancePermissions } from '../../../hooks/useFinancePermissions';
 
-interface LedgerTransaction {
-    id: number;
-    accountId: number;
-    debitAmount: number;
-    creditAmount: number;
-    runningBalance: number;
-    description: string;
-    createdAt: string;
-    journalEntry: {
-        id: number;
-        isVoided: boolean;
-        /** From the server's void rules: false for an entry an automatic posting made. No Void button then. */
-        voidableByHand: boolean;
-        entryNumber: string;
-        entryDate: string;
-        description: string;
-        sourceType: string;
-    };
-}
-
-interface AccountInfo {
-    id: number;
-    code: string;
-    name: string;
-    normalBalance: string;
-    currentBalance: number;
-    isActive?: boolean;
-}
 
 interface AccountLedgerProps {
     accountId: number;
@@ -42,8 +14,8 @@ interface AccountLedgerProps {
 }
 
 export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, onBack, refreshKey = 0 }) => {
-    const [data, setData] = useState<LedgerTransaction[]>([]);
-    const [account, setAccount] = useState<AccountInfo | null>(null);
+    const [data, setData] = useState<LedgerLine[]>([]);
+    const [account, setAccount] = useState<AccountLedgerResponse['account'] | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const { dateRange } = useFinancialStore();
@@ -51,7 +23,11 @@ export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, onBack,
     const [totalPages, setTotalPages] = useState(1);
     const [voiding, setVoiding] = useState<{ id: number; entryNumber: string } | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
-    const perms = useFinancePermissions();
+    const [exporting, setExporting] = useState(false);
+    const exportAbort = useRef<AbortController | null>(null);
+
+    // Leaving the screen cancels a running export
+    useEffect(() => () => exportAbort.current?.abort(), []);
 
     useEffect(() => {
         fetchLedger();
@@ -69,7 +45,7 @@ export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, onBack,
             });
             setData(res.transactions);
             setAccount(res.account);
-            setTotalPages(res.pagination.pages ?? res.pagination.totalPages ?? 1);
+            setTotalPages(res.pagination.pages);
             setError(null);
         } catch (err) {
             setError('Failed to load ledger data');
@@ -79,43 +55,24 @@ export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, onBack,
         }
     };
 
-    const save = (blob: Blob, name: string) => {
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.setAttribute('download', name);
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        window.URL.revokeObjectURL(url);
-    };
-
     const handleExport = async () => {
+        const abort = new AbortController();
+        exportAbort.current = abort;
+        setExporting(true);
         try {
             const { startDate, endDate } = dateRange;
-            const response: Blob = await financialService.getAccountLedgerExport(accountId, { startDate, endDate });
-
-            // A very large ledger answers with a job id instead of a file (HTTP 202)
-            if (response.type.includes('json')) {
-                const { jobId } = JSON.parse(await response.text());
-                setNotice('This ledger is large. The file is being prepared; it downloads when ready.');
-                for (let i = 0; i < 300; i++) {
-                    await new Promise((r) => setTimeout(r, 1000));
-                    const job = await financialService.getFinanceJob(jobId);
-                    if (job.status === 'failed') throw new Error(job.error);
-                    if (job.status === 'done' && job.result) {
-                        save(await financialService.downloadFinanceJob(job.result.downloadUrl), job.result.filename);
-                        setNotice(null);
-                        return;
-                    }
-                }
-                throw new Error('The export took too long');
-            }
-            save(new Blob([response]), `ledger-${account?.code}-${new Date().toISOString().split('T')[0]}.csv`);
+            const { blob, filename } = await financialService.exportAccountLedger(accountId, { startDate, endDate }, {
+                signal: abort.signal,
+                onQueued: () => setNotice('This ledger is large. The file is being prepared; it downloads when ready.'),
+            });
+            downloadBlob(blob, filename ?? `ledger-${account?.code}-${todayYmd()}.csv`);
         } catch (err) {
+            if (abort.signal.aborted) return; // the user left the screen
             console.error('Export failed', err);
-            setNotice(null);
             alert('Failed to export ledger');
+        } finally {
+            setNotice(null);
+            if (!abort.signal.aborted) setExporting(false);
         }
     };
 
@@ -153,7 +110,8 @@ export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, onBack,
                     </div>
                     <button
                         onClick={handleExport}
-                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 transition-colors"
+                        disabled={exporting}
+                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -207,9 +165,10 @@ export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, onBack,
                                         <span className="text-xs text-gray-500">Voided</span>
                                     ) : txn.journalEntry.voidableByHand ? (
                                         <GuardedButton
-                                            allowed={perms.canVoidJournal}
-                                            reason={NO_PERMISSION.voidJournal}
-                                            className="text-red-600 hover:text-red-800 text-sm font-medium"
+                                            perm="voidJournal"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="text-red-600 hover:text-red-800"
                                             onClick={() => setVoiding({ id: txn.journalEntry.id, entryNumber: txn.journalEntry.entryNumber })}
                                         >
                                             Void

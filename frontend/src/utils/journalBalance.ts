@@ -1,6 +1,7 @@
 /**
- * Balance state of a manual journal entry (F-920). Amounts are summed in minor units (cents), so 0.1 + 0.2 is
- * exactly 0.3. The Post button is enabled only when the state is `balanced` and the entry has two or more lines.
+ * Balance of a manual journal entry (F-920). Amounts are summed in minor units (cents), so 0.1 + 0.2 is exactly 0.3.
+ * `canPost` is true when debits equal credits (and are not zero), every line with an amount has an account,
+ * no line has both sides, and at least two lines carry an amount. With no amount at all the entry is empty.
  */
 export interface JournalLineInput {
   accountId: string;
@@ -8,16 +9,11 @@ export interface JournalLineInput {
   creditAmount: string;
 }
 
-export type JournalState = 'empty' | 'balanced' | 'out_of_balance';
-
 export interface JournalBalance {
-  state: JournalState;
-  totalDebits: number;
-  totalCredits: number;
+  debits: number;
+  credits: number;
   /** Absolute difference, in currency units. */
   difference: number;
-  /** Lines that carry an amount. */
-  amountLines: number;
   canPost: boolean;
 }
 
@@ -43,13 +39,10 @@ export function journalBalance(lines: JournalLineInput[]): JournalBalance {
     }
     if (dr > 0 && cr > 0) bothSides = true;
   }
-  const state: JournalState = debits === 0 && credits === 0 ? 'empty' : debits === credits ? 'balanced' : 'out_of_balance';
   return {
-    state,
-    totalDebits: debits / 100,
-    totalCredits: credits / 100,
+    debits: debits / 100,
+    credits: credits / 100,
     difference: Math.abs(debits - credits) / 100,
-    amountLines,
-    canPost: state === 'balanced' && readyLines >= 2 && readyLines === amountLines && !bothSides,
+    canPost: debits > 0 && debits === credits && readyLines >= 2 && readyLines === amountLines && !bothSides,
   };
 }

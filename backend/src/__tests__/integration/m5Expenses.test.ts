@@ -106,6 +106,9 @@ describe('categories', () => {
     expect(res.body.categories).toEqual([...EXPENSE_CATEGORIES]);
     expect(res.body.categories).not.toContain('Airtime and rewards');
     expect(res.body.paidFrom).toEqual(['momo', 'bank', 'cash']);
+    expect(res.body.closedBefore).toBe(today().slice(0, 7) + '-01');
+    expect(res.body.closedNotice).toBe('This month is closed; the P&L changes');
+    expect(res.body.receipt).toEqual({ maxBytes: 15 * 1024 * 1024, mimeTypes: expect.arrayContaining(['application/pdf', 'image/png']) });
   });
 
   it('rejects a category outside the list and names the list', async () => {

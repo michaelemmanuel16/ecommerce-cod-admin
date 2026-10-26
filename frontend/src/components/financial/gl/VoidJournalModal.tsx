@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { Modal } from '../../ui/Modal';
+import { Button } from '../../ui/Button';
 import { financialService } from '../../../services/financial.service';
 
 interface VoidJournalModalProps {
@@ -12,10 +14,10 @@ export const VoidJournalModal: React.FC<VoidJournalModalProps> = ({ entry, onClo
     const [reason, setReason] = useState('');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    if (!entry) return null;
 
     const submit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!entry) return;
         setBusy(true);
         setError(null);
         try {
@@ -30,10 +32,8 @@ export const VoidJournalModal: React.FC<VoidJournalModalProps> = ({ entry, onClo
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-label="Void journal entry">
-            <div className="absolute inset-0 bg-black bg-opacity-50" onClick={onClose}></div>
-            <form onSubmit={submit} className="relative bg-white rounded-lg shadow-xl w-full max-w-md p-6 space-y-4">
-                <h3 className="text-lg font-semibold text-gray-900">Void {entry.entryNumber}</h3>
+        <Modal isOpen={!!entry} onClose={onClose} title={`Void ${entry?.entryNumber ?? ''}`} size="sm">
+            <form onSubmit={submit} className="space-y-4">
                 <p className="text-sm text-gray-600">A reversing entry is posted. The original stays in the ledger, marked as voided.</p>
                 <div>
                     <label htmlFor="void-reason" className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
@@ -42,12 +42,10 @@ export const VoidJournalModal: React.FC<VoidJournalModalProps> = ({ entry, onClo
                 </div>
                 {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
                 <div className="flex justify-end gap-3">
-                    <button type="button" onClick={onClose} className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50">Cancel</button>
-                    <button type="submit" disabled={busy || reason.trim().length < 3} className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50">
-                        {busy ? 'Voiding...' : 'Void entry'}
-                    </button>
+                    <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+                    <Button type="submit" variant="danger" disabled={busy || reason.trim().length < 3}>{busy ? 'Voiding...' : 'Void entry'}</Button>
                 </div>
             </form>
-        </div>
+        </Modal>
     );
 };

@@ -13,11 +13,12 @@ if (!fs.existsSync(uploadDir)) {
 // (or write them to disk as a fallback). See uploadController.ts.
 const storage = multer.memoryStorage();
 
-// File filter - images, and PDF for expense receipts (F-919)
-const fileFilter = (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-  const allowedMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'];
+/** What POST /api/upload accepts: images, and PDF for expense receipts (F-919). The screens read these values. */
+export const UPLOAD_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'];
+export const UPLOAD_MAX_BYTES = 15 * 1024 * 1024;
 
-  if (allowedMimeTypes.includes(file.mimetype)) {
+const fileFilter = (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+  if (UPLOAD_MIME_TYPES.includes(file.mimetype)) {
     cb(null, true);
   } else {
     cb(new AppError('Only JPEG, PNG, GIF, WebP images and PDF files are allowed (max 15 MB)', 400));
@@ -29,7 +30,7 @@ export const upload = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: 15 * 1024 * 1024, // 15MB max file size
+    fileSize: UPLOAD_MAX_BYTES,  // 15MB max file size
     files: 1,                    // Only 1 file per request (prevent DoS)
     fields: 10,                  // Max 10 form fields (prevent field flooding)
     parts: 20,                   // Max 20 parts in multipart (prevent multipart DoS)

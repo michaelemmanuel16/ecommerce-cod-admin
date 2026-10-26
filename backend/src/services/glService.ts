@@ -96,6 +96,10 @@ const VOID_RULES: Record<JournalSourceType, { voidableByHand: boolean; hint: str
 /** True when the journal void route may reverse an entry of this source type. The screens read this, so they never keep their own list. */
 export const isVoidableByHand = (sourceType: JournalSourceType): boolean => VOID_RULES[sourceType].voidableByHand;
 
+/** Sets `voidableByHand` on a journal entry row for a screen, from the void rules. */
+const withVoidRule = <T extends { sourceType: JournalSourceType }>(entry: T) =>
+  Object.assign(entry, { voidableByHand: isVoidableByHand(entry.sourceType) });
+
 export class GLService {
   /**
    * Validate normal balance matches account type
@@ -954,7 +958,7 @@ export class GLService {
     ]);
 
     return {
-      entries,
+      entries: entries.map(withVoidRule),
       pagination: {
         page,
         limit,
@@ -1016,7 +1020,7 @@ export class GLService {
       throw new AppError('Journal entry not found', 404);
     }
 
-    return entry;
+    return withVoidRule(entry);
   }
 
   /**
@@ -1256,7 +1260,7 @@ export class GLService {
 
     return {
       account,
-      transactions: transactions.map((t) => ({ ...t, journalEntry: { ...t.journalEntry, voidableByHand: isVoidableByHand(t.journalEntry.sourceType) } })),
+      transactions: transactions.map((t) => Object.assign(t, { journalEntry: withVoidRule(t.journalEntry) })),
       pagination: {
         page,
         limit,

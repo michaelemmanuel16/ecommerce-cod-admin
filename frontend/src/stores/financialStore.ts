@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import {
   financialService,
+  Paging,
   ExpenseInput,
   FinancialSummary,
   Transaction,
@@ -77,7 +78,7 @@ interface FinancialState {
   pagination: {
     transactions: { page: number; totalPages: number; total: number } | null;
     collections: { page: number; totalPages: number; total: number } | null;
-    expenses: { page: number; totalPages: number; total: number } | null;
+    expenses: Paging | null;
   };
 
   // Existing actions
@@ -455,7 +456,6 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
         }));
         toast.success('Expense updated successfully');
         if (notice) toast(notice, { icon: '!' });
-        await get().fetchExpenseBreakdown();
         await get().fetchSummary();
       } catch (error: any) {
         const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to update expense';
@@ -472,7 +472,6 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
         }));
         toast.success('Expense deleted successfully');
         if (notice) toast(notice, { icon: '!' });
-        await get().fetchExpenseBreakdown();
         await get().fetchSummary();
       } catch (error: any) {
         const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to delete expense';

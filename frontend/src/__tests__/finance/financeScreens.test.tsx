@@ -1,12 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '../utils/test-utils';
 
-const perms = vi.hoisted(() => ({
-  value: { canAddExpense: true, canEditExpense: true, canDeleteExpense: true, canPostJournal: true, canVoidJournal: true },
-}));
-vi.mock('../../hooks/useFinancePermissions', async (orig) => ({
-  ...(await orig<typeof import('../../hooks/useFinancePermissions')>()),
-  useFinancePermissions: () => perms.value,
+const perms = vi.hoisted(() => ({ granted: new Set<string>() }));
+vi.mock('../../hooks/usePermissions', () => ({
+  usePermissions: () => ({ can: (resource: string, action: string) => perms.granted.has(`${resource}:${action}`) }),
 }));
 
 const svc = vi.hoisted(() => ({
@@ -42,14 +39,23 @@ import { AccountLedger } from '../../components/financial/gl/AccountLedger';
 import { ExpenseManagementTab } from '../../components/financial/ExpenseManagementTab';
 import { AddExpenseModal } from '../../components/financial/modals/AddExpenseModal';
 
-const allowAll = { canAddExpense: true, canEditExpense: true, canDeleteExpense: true, canPostJournal: true, canVoidJournal: true };
-const viewOnly = { canAddExpense: false, canEditExpense: false, canDeleteExpense: false, canPostJournal: false, canVoidJournal: false };
+const ALL = ['financial:create', 'expenses:edit', 'expenses:delete', 'journal:post', 'journal:void'];
+const RULES = {
+  categories: ['Packaging', 'Transport', 'Other'], paidFrom: ['momo', 'bank', 'cash'],
+  closedBefore: '2026-10-01', closedNotice: 'This month is closed; the P&L changes',
+  receipt: { maxBytes: 15 * 1024 * 1024, mimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'] },
+};
+/** The disabled button's reason shows in a tooltip on hover. */
+const hoverReason = (button: HTMLElement, reason: RegExp | string) => {
+  fireEvent.mouseEnter(button.parentElement as HTMLElement);
+  expect(screen.getByText(reason)).toBeInTheDocument();
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
-  perms.value = allowAll;
+  perms.granted = new Set(ALL);
   svc.getAllGLAccounts.mockResolvedValue({ accounts: [{ id: 1, code: '1010', name: 'Cash at bank and MoMo' }, { id: 2, code: '3010', name: "Owner's Equity" }] });
-  svc.getExpenseCategories.mockResolvedValue({ categories: ['Packaging', 'Transport', 'Other'], paidFrom: ['momo', 'bank', 'cash'] });
+  svc.getExpenseCategories.mockResolvedValue(RULES);
 });
 
 describe('journal entry modal', () => {
@@ -95,11 +101,11 @@ describe('journal entry modal', () => {
   });
 
   it('a user without the journal permission sees post disabled with a tooltip, even when balanced', async () => {
-    perms.value = viewOnly;
+    perms.granted = new Set();
     await open();
     fill([['1', '100', '0'], ['2', '0', '100']]);
     expect(post()).toBeDisabled();
-    expect(screen.getByTitle(/Only the owner and the finance clerk can post/)).toBeInTheDocument();
+    hoverReason(post(), 'You do not have permission to post journal entries.');
   });
 });
 
@@ -129,10 +135,10 @@ describe('account ledger void button', () => {
   });
 
   it('a view-only user sees Void disabled with a tooltip', async () => {
-    perms.value = viewOnly;
+    perms.granted = new Set();
     await load([entry({})]);
     expect(screen.getByRole('button', { name: /Void/ })).toBeDisabled();
-    expect(screen.getByTitle(/Only the owner and the finance clerk can void/)).toBeInTheDocument();
+    hoverReason(screen.getByRole('button', { name: /Void/ }), 'You do not have permission to void journal entries.');
   });
 });
 
@@ -161,13 +167,13 @@ describe('expenses tab', () => {
   });
 
   it('a view-only user sees add, edit and delete disabled with tooltips', () => {
-    perms.value = viewOnly;
+    perms.granted = new Set();
     render(<ExpenseManagementTab />);
     expect(screen.getByRole('button', { name: /Add Expense/ })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Edit expense/ })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Delete expense/ })).toBeDisabled();
-    expect(screen.getByTitle('You do not have permission to edit expenses.')).toBeInTheDocument();
-    expect(screen.getByTitle('You do not have permission to delete expenses.')).toBeInTheDocument();
+    hoverReason(screen.getByRole('button', { name: /Edit expense/ }), 'You do not have permission to edit expenses.');
+    hoverReason(screen.getByRole('button', { name: /Delete expense/ }), 'You do not have permission to delete expenses.');
   });
 
   it('opens a receipt in a viewer in the same tab, not a new window', () => {
@@ -189,7 +195,8 @@ describe('add expense modal', () => {
   it('shows the closed-month notice for a date in an earlier month', async () => {
     render(<AddExpenseModal isOpen onClose={() => {}} />);
     fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2020-01-15' } });
-    expect(screen.getByRole('status')).toHaveTextContent('This month is closed; the P&L changes');
+    await screen.findByRole('option', { name: 'Packaging' });
+    expect(await screen.findByRole('status')).toHaveTextContent('This month is closed; the P&L changes');
   });
 
   it('lists the server categories, the paid-from choices and the posting note', async () => {
@@ -202,8 +209,10 @@ describe('add expense modal', () => {
 
   it('shows the limit for a file that is too large, and does not upload it', async () => {
     render(<AddExpenseModal isOpen onClose={() => {}} />);
+    await screen.findByRole('option', { name: 'Packaging' }); // the limits arrive with the category list
     fireEvent.change(screen.getByLabelText('Attach receipt'), { target: { files: [file('application/pdf', 16 * 1024 * 1024)] } });
     expect(await screen.findByRole('alert')).toHaveTextContent(/15 MB/);
+    expect(screen.getByText('JPEG, PNG, WebP or PDF, up to 15 MB')).toBeInTheDocument();
     expect(svc.uploadReceipt).not.toHaveBeenCalled();
   });
 

@@ -6,9 +6,9 @@ import { Card } from '../ui/Card';
 import { AddExpenseModal } from './modals/AddExpenseModal';
 import { ReceiptViewerModal } from './modals/ReceiptViewerModal';
 import { GuardedButton } from './GuardedButton';
-import { NO_PERMISSION, useFinancePermissions } from '../../hooks/useFinancePermissions';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { isSafeReceiptUrl, PAID_FROM_LABELS } from '../../utils/expenseRules';
-import { formatCurrency } from '../../utils/format';
+import { formatCurrency, formatDate, todayYmd } from '../../utils/format';
 import type { Expense } from '../../services/financial.service';
 
 const PAGE_SIZE = 20;
@@ -25,49 +25,49 @@ export const ExpenseManagementTab: React.FC = () => {
     fetchExpenseBreakdown,
     deleteExpense
   } = useFinancialStore();
-  const perms = useFinancePermissions();
 
   const [categoryFilter, setCategoryFilter] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
-  const [search, setSearch] = useState('');
+  const search = useDebouncedValue(searchTerm.trim(), 300);
   const [page, setPage] = useState(1);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [receiptToView, setReceiptToView] = useState<string | null>(null);
 
-  // Search runs on the server (description and category); wait a moment after typing
-  useEffect(() => {
-    const t = setTimeout(() => { setSearch(searchTerm.trim()); setPage(1); }, 300);
-    return () => clearTimeout(t);
-  }, [searchTerm]);
-
-  const reload = () => {
-    fetchExpenses({ category: categoryFilter || undefined, search: search || undefined, page, limit: PAGE_SIZE, startDate: dateRange.startDate, endDate: dateRange.endDate });
-    fetchExpenseBreakdown(dateRange.startDate, dateRange.endDate);
-  };
+  const loadList = () => fetchExpenses({
+    category: categoryFilter || undefined, search: search || undefined, page, limit: PAGE_SIZE,
+    startDate: dateRange.startDate, endDate: dateRange.endDate
+  });
+  const loadBreakdown = () => fetchExpenseBreakdown(dateRange.startDate, dateRange.endDate);
+  // After a save or a delete this screen reloads the list and the breakdown, once each (the store does not)
+  const refresh = () => { loadList(); loadBreakdown(); };
 
   useEffect(() => {
-    reload();
+    loadList();
   }, [dateRange.startDate, dateRange.endDate, categoryFilter, search, page]);
 
-  // Category bars: share of the range total. Their sum is the figure shown above the list.
+  useEffect(() => {
+    loadBreakdown();
+  }, [dateRange.startDate, dateRange.endDate]);
+
+  // Category bars: each category's share of the range total
   const categoryTotals = useMemo(() => {
-    const total = expenseBreakdown.reduce((sum, cat) => sum + Number(cat.totalAmount), 0);
-    return expenseBreakdown.map(cat => ({
-      ...cat,
-      totalAmount: Number(cat.totalAmount),
-      percentage: total > 0 ? (Number(cat.totalAmount) / total) * 100 : 0
-    }));
+    let total = 0;
+    const bars = expenseBreakdown.map((cat) => {
+      const amount = Number(cat.totalAmount);
+      total += amount;
+      return { ...cat, totalAmount: amount, percentage: 0 };
+    });
+    for (const bar of bars) bar.percentage = total > 0 ? (bar.totalAmount / total) * 100 : 0;
+    return bars;
   }, [expenseBreakdown]);
-  const breakdownTotal = categoryTotals.reduce((sum, c) => sum + c.totalAmount, 0);
-  const totalPages = pagination.expenses?.totalPages ?? (pagination.expenses as any)?.pages ?? 1;
-  const filteredExpenses = expenses;
+  const totalPages = pagination.expenses?.pages ?? 1;
 
   const handleDeleteExpense = async (expenseId: string) => {
     if (window.confirm('Are you sure you want to delete this expense?')) {
       try {
         await deleteExpense(expenseId);
-        reload();
+        refresh();
       } catch (error) {
         console.error('Failed to delete expense:', error);
       }
@@ -76,7 +76,7 @@ export const ExpenseManagementTab: React.FC = () => {
 
   const handleExportCSV = () => {
     const headers = ['Date', 'Category', 'Amount', 'Description', 'Paid from', 'Recorded By'];
-    const rows = filteredExpenses.map(expense => [
+    const rows = expenses.map(expense => [
       new Date(expense.expenseDate).toLocaleDateString(),
       expense.category,
       expense.amount.toString(),
@@ -94,17 +94,9 @@ export const ExpenseManagementTab: React.FC = () => {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `expenses-${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `expenses-${todayYmd()}.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
-  };
-
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    });
   };
 
   // Skeleton only for the first load: a reload while typing in the search box must keep the box mounted
@@ -136,9 +128,10 @@ export const ExpenseManagementTab: React.FC = () => {
             amount={category.totalAmount}
             count={category.count}
             percentage={category.percentage}
-            onClick={() => setCategoryFilter(
-              categoryFilter === category.category ? '' : category.category
-            )}
+            onClick={() => {
+              setCategoryFilter(categoryFilter === category.category ? '' : category.category);
+              setPage(1);
+            }}
           />
         ))}
       </div>
@@ -156,12 +149,7 @@ export const ExpenseManagementTab: React.FC = () => {
                 <Download className="w-4 h-4" />
                 Export CSV
               </button>
-              <GuardedButton
-                allowed={perms.canAddExpense}
-                reason={NO_PERMISSION.addExpense}
-                onClick={() => setIsAddModalOpen(true)}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2"
-              >
+              <GuardedButton perm="addExpense" onClick={() => setIsAddModalOpen(true)} className="gap-2 text-sm">
                 <Plus className="w-4 h-4" />
                 Add Expense
               </GuardedButton>
@@ -174,13 +162,13 @@ export const ExpenseManagementTab: React.FC = () => {
                 type="text"
                 placeholder="Search expenses..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
             {categoryFilter && (
               <button
-                onClick={() => setCategoryFilter('')}
+                onClick={() => { setCategoryFilter(''); setPage(1); }}
                 className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2"
               >
                 <Filter className="w-4 h-4" />
@@ -192,14 +180,11 @@ export const ExpenseManagementTab: React.FC = () => {
           <p className="mb-3 text-sm text-gray-600" data-testid="expense-total">
             {categoryFilter ? `${categoryFilter}: ` : 'All categories: '}
             <span className="font-semibold text-gray-900">{formatCurrency(expensesTotal)}</span>
-            {' '}over {pagination.expenses?.total ?? filteredExpenses.length} expense{(pagination.expenses?.total ?? filteredExpenses.length) === 1 ? '' : 's'}
-            {!categoryFilter && !search && breakdownTotal > 0 && Math.abs(breakdownTotal - expensesTotal) > 0.005 && (
-              <span className="ml-2 text-amber-700">(the category bars add up to {formatCurrency(breakdownTotal)}; reload to refresh)</span>
-            )}
+            {' '}over {pagination.expenses?.total ?? expenses.length} expense{(pagination.expenses?.total ?? expenses.length) === 1 ? '' : 's'}
           </p>
 
           <div className="overflow-x-auto">
-            {filteredExpenses.length === 0 ? (
+            {expenses.length === 0 ? (
               <p className="text-center text-gray-500 py-8">
                 {searchTerm || categoryFilter ? 'No expenses match your filters' : 'No expenses recorded'}
               </p>
@@ -231,7 +216,7 @@ export const ExpenseManagementTab: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredExpenses.map((expense) => (
+                  {expenses.map((expense) => (
                     <tr key={expense.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {formatDate(expense.expenseDate)}
@@ -273,9 +258,10 @@ export const ExpenseManagementTab: React.FC = () => {
                         ) : (
                           <>
                             <GuardedButton
-                              allowed={perms.canEditExpense}
-                              reason={NO_PERMISSION.editExpense}
-                              className="text-blue-600 hover:text-blue-900 mr-3"
+                              perm="editExpense"
+                              variant="ghost"
+                              size="sm"
+                              className="text-blue-600 hover:text-blue-900 mr-2"
                               aria-label="Edit expense"
                               onClick={() => {
                                 setEditingExpense(expense);
@@ -285,8 +271,9 @@ export const ExpenseManagementTab: React.FC = () => {
                               <Edit2 className="w-4 h-4" />
                             </GuardedButton>
                             <GuardedButton
-                              allowed={perms.canDeleteExpense}
-                              reason={NO_PERMISSION.deleteExpense}
+                              perm="deleteExpense"
+                              variant="ghost"
+                              size="sm"
                               onClick={() => handleDeleteExpense(expense.id)}
                               className="text-red-600 hover:text-red-900"
                               aria-label="Delete expense"
@@ -321,7 +308,7 @@ export const ExpenseManagementTab: React.FC = () => {
           setIsAddModalOpen(false);
           setEditingExpense(null);
         }}
-        onSaved={reload}
+        onSaved={refresh}
         expense={editingExpense}
       />
       <ReceiptViewerModal url={receiptToView} onClose={() => setReceiptToView(null)} />

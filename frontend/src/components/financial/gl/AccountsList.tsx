@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { financialService } from '../../../services/financial.service';
 import { formatCurrency } from '../../../utils/format';
 import { useFinancialStore } from '../../../stores/financialStore';
+import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
 
 interface Account {
     id: number;
@@ -25,15 +26,11 @@ export const AccountsList: React.FC<AccountsListProps> = ({ onSelectAccount, ref
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
-    const [search, setSearch] = useState('');
     const [trial, setTrial] = useState<{ totalDebits: string; totalCredits: string; balanced: boolean } | null>(null);
     const { dateRange } = useFinancialStore();
 
     // The server searches the whole chart by code or name; wait a moment after typing
-    useEffect(() => {
-        const t = setTimeout(() => { setSearch(searchTerm.trim()); setPagination(prev => ({ ...prev, page: 1 })); }, 300);
-        return () => clearTimeout(t);
-    }, [searchTerm]);
+    const search = useDebouncedValue(searchTerm.trim(), 300);
 
     const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, pages: 1 });
 
@@ -71,8 +68,6 @@ export const AccountsList: React.FC<AccountsListProps> = ({ onSelectAccount, ref
     useEffect(() => {
         financialService.getTrialBalance({ endDate: dateRange.endDate }).then(setTrial).catch(() => setTrial(null));
     }, [dateRange.endDate, refreshKey]);
-
-    const filteredAccounts = accounts;
 
     const getAccountTypeBadge = (type: string) => {
         const colors: Record<string, string> = {
@@ -145,7 +140,7 @@ export const AccountsList: React.FC<AccountsListProps> = ({ onSelectAccount, ref
                         placeholder="Search accounts by name or code..."
                         className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
                         value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
+                        onChange={(e) => { setSearchTerm(e.target.value); setPagination(prev => ({ ...prev, page: 1 })); }}
                     />
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -170,7 +165,7 @@ export const AccountsList: React.FC<AccountsListProps> = ({ onSelectAccount, ref
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                        {filteredAccounts.map((account) => {
+                        {accounts.map((account) => {
                             const activity = account.periodActivity;
                             const netChange = activity ? activity.debits - activity.credits : 0;
                             return (
@@ -211,7 +206,7 @@ export const AccountsList: React.FC<AccountsListProps> = ({ onSelectAccount, ref
                                 </tr>
                             );
                         })}
-                        {filteredAccounts.length === 0 && !loading && (
+                        {accounts.length === 0 && !loading && (
                             <tr>
                                 <td colSpan={dateRange.startDate ? 6 : 5} className="px-6 py-10 text-center text-gray-500 font-medium">
                                     No accounts found matching your search.

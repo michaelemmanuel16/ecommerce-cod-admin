@@ -79,11 +79,15 @@ function paidFromOrThrow(input: unknown): (typeof EXPENSE_PAID_FROM)[number] | n
   return input as (typeof EXPENSE_PAID_FROM)[number];
 }
 
-/** A date in an earlier store-zone month than today is in a closed month. */
+/** First day of the current store-zone month as YYYY-MM-DD. A date before it is in a closed month. */
+export function closedBefore(now: Date = new Date()): string {
+  return `${localDate(now, getStoreTimeZone(getTenantId())).slice(0, 7)}-01`;
+}
+
 function closedMonthNotice(...dates: Date[]): string | null {
   const zone = getStoreTimeZone(getTenantId());
-  const thisMonth = localDate(new Date(), zone).slice(0, 7);
-  return dates.some((d) => localDate(d, zone).slice(0, 7) < thisMonth) ? CLOSED_MONTH_NOTICE : null;
+  const limit = closedBefore();
+  return dates.some((d) => localDate(d, zone) < limit) ? CLOSED_MONTH_NOTICE : null;
 }
 
 /**
@@ -518,7 +522,7 @@ export class FinancialService {
 
     const skip = (page - 1) * limit;
 
-    const [rawExpenses, total, sum] = await Promise.all([
+    const [rawExpenses, totals] = await Promise.all([
       prisma.expense.findMany({
         where,
         skip,
@@ -533,9 +537,9 @@ export class FinancialService {
         },
         orderBy: [{ expenseDate: 'desc' }, { id: 'desc' }]
       }),
-      prisma.expense.count({ where }),
-      prisma.expense.aggregate({ where, _sum: { amount: true } })
+      prisma.expense.aggregate({ where, _sum: { amount: true }, _count: true })
     ]);
+    const total = totals._count;
 
     // Remap Prisma relation `user` → `recordedBy` for frontend compatibility. `locked` rows are read-only (F-917).
     const expenses = rawExpenses.map(({ user, ...rest }: any) => ({
@@ -547,7 +551,7 @@ export class FinancialService {
     return {
       expenses,
       /** Sum of every row the filters match, not only this page: the breakdown total for the same filters equals it. */
-      totalAmount: Money.orZero(sum._sum.amount),
+      totalAmount: Money.orZero(totals._sum.amount),
       pagination: {
         page,
         limit,

@@ -4,28 +4,25 @@ import { journalBalance } from '../../utils/journalBalance';
 const line = (accountId: string, debitAmount: string, creditAmount: string) => ({ accountId, debitAmount, creditAmount });
 
 describe('journalBalance', () => {
-  it('is Empty when no line has an amount', () => {
+  it('has no amount on an empty entry, and cannot post', () => {
     const b = journalBalance([line('', '0', '0'), line('', '0', '0')]);
-    expect(b.state).toBe('empty');
-    expect(b.canPost).toBe(false);
+    expect([b.debits, b.credits, b.difference, b.canPost]).toEqual([0, 0, 0, false]);
   });
 
-  it('is Balanced when debits equal credits and two lines carry an account', () => {
+  it('is balanced when debits equal credits and two lines carry an account', () => {
     const b = journalBalance([line('1', '500', '0'), line('2', '0', '500')]);
-    expect(b.state).toBe('balanced');
-    expect(b.canPost).toBe(true);
+    expect([b.debits, b.credits, b.difference, b.canPost]).toEqual([500, 500, 0, true]);
   });
 
-  it('is Out of balance with the difference, and cannot post', () => {
+  it('is out of balance with the difference, and cannot post', () => {
     const b = journalBalance([line('1', '500', '0'), line('2', '0', '499.5')]);
-    expect(b.state).toBe('out_of_balance');
     expect(b.difference).toBe(0.5);
     expect(b.canPost).toBe(false);
   });
 
   it('adds in cents: 0.1 + 0.2 against 0.3 is balanced', () => {
     const b = journalBalance([line('1', '0.1', '0'), line('2', '0.2', '0'), line('3', '0', '0.3')]);
-    expect(b.state).toBe('balanced');
+    expect(b.difference).toBe(0);
     expect(b.canPost).toBe(true);
   });
 
@@ -39,6 +36,7 @@ describe('journalBalance', () => {
   });
 
   it('treats negative and junk text as no amount', () => {
-    expect(journalBalance([line('1', '-5', '0'), line('2', 'abc', '')]).state).toBe('empty');
+    const b = journalBalance([line('1', '-5', '0'), line('2', 'abc', '')]);
+    expect([b.debits, b.credits]).toEqual([0, 0]);
   });
 });

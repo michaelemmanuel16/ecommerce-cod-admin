@@ -2,7 +2,8 @@ import { Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { AuthRequest } from '../types';
 import { PaymentStatus } from '@prisma/client';
-import financialService from '../services/financialService';
+import financialService, { closedBefore, CLOSED_MONTH_NOTICE } from '../services/financialService';
+import { UPLOAD_MAX_BYTES, UPLOAD_MIME_TYPES } from '../config/multer';
 import agingService from '../services/agingService';
 import { Parser } from 'json2csv';
 import ExcelJS from 'exceljs';
@@ -64,9 +65,15 @@ export const recordExpense = async (req: AuthRequest, res: Response): Promise<vo
   }
 };
 
-/** GET /api/financial/expense-categories: the one category list, for the Add expense form. */
+/** GET /api/financial/expense-categories: what the Add expense form needs (list, paid-from choices, closed-month rule, receipt limits). */
 export const getExpenseCategories = async (_req: AuthRequest, res: Response): Promise<void> => {
-  res.json({ categories: EXPENSE_CATEGORIES, paidFrom: EXPENSE_PAID_FROM });
+  res.json({
+    categories: EXPENSE_CATEGORIES,
+    paidFrom: EXPENSE_PAID_FROM,
+    closedBefore: closedBefore(),
+    closedNotice: CLOSED_MONTH_NOTICE,
+    receipt: { maxBytes: UPLOAD_MAX_BYTES, mimeTypes: UPLOAD_MIME_TYPES },
+  });
 };
 
 export const getCODCollections = async (req: AuthRequest, res: Response): Promise<void> => {
