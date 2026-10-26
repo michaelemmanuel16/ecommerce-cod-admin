@@ -62,6 +62,7 @@ export interface UnpaidRow {
 export interface ReconRow {
   id: number;
   date: string;
+  partnerId: number;
   partnerName: string;
   partnerKind: 'person' | 'company' | 'ai_agent' | 'system';
   paidIn: Amount;

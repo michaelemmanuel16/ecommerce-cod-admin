@@ -1,8 +1,8 @@
-import { Card, Tag } from '../../../components/ui-v2';
-import { shortDay } from '../../dashboard/format';
+import { Button, Card, Tag } from '../../../components/ui-v2';
 import type { MonthlyPl, PlColumn } from '../../../services/financeReports.service';
 import { formatRateUsed } from '../../../utils/format';
 import { parseMoney } from '../../../utils/money';
+import { PROFIT_LOSS_CSV, useFinanceExport } from '../cash/useFinanceExport';
 import { plNotes } from './copy';
 import { lossClass, marginTone, money, pct } from './format';
 import { Part } from './Part';
@@ -18,14 +18,21 @@ function rateText(c: PlColumn): string | null {
 
 /** Monthly profit and loss (F-923, M5-T25): months and the same days of last month next to this month to date. */
 export function MonthlyPlCard({ block }: { block: FinanceBlock<MonthlyPl> }) {
+  const exporter = useFinanceExport();
   return (
     <Part name="Monthly profit and loss" block={block} height={360}>
       {(pl) => {
         const cols = pl.columns;
         const showPaystack = anyColumn(cols, (c) => c.paystackFees);
-        const last = cols[cols.length - 1];
+        const sameDays = cols.find((c) => c.kind === 'same_days_last_month');
+        const aside = (
+          <>
+            {sameDays && `${sameDays.label} is the same days last month`}
+            <Button size="mini" style={{ marginLeft: 8 }} disabled={exporter.busy} onClick={() => exporter.run(PROFIT_LOSS_CSV)}>Export CSV</Button>
+          </>
+        );
         return (
-          <Card title="Monthly profit and loss" aside={last ? `Up to ${shortDay(last.to)}` : undefined} className="fincard">
+          <Card title="Monthly profit and loss" aside={aside} className="fincard">
             {cols.length === 0 ? (
               <p className="note">Nothing is booked in the ledger yet.</p>
             ) : (

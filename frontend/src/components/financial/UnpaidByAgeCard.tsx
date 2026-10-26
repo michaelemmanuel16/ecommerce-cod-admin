@@ -19,7 +19,7 @@ interface Props {
  */
 export function UnpaidByAgeCard({ data, failed, onRetry }: Props) {
   const title = 'Unpaid delivered orders';
-  const aside = 'By age, net of delivery fee';
+  const aside = 'By age';
 
   if (!data && failed) {
     return (

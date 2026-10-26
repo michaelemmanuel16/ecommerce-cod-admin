@@ -184,7 +184,7 @@ describe('GET /api/financial/overview on the NUMBERS fixture', () => {
     const rec = (await overview(owner)).body.reconciliation;
     expect(rec.rows.map((r: any) => [r.status, r.paidIn])).toEqual([['short', '9880.00'], ['matched', '3136.00'], ['over', '2788.00']]); // newest first; 30 Sep is out
     const short = rec.rows[0];
-    expect(short).toMatchObject({ partnerName: 'Logiswift 3PL', partnerKind: 'company', paidIn: '9880.00', expectedAfterFees: '10720.00', status: 'short', shortAmount: '840.00', orders: 2 });
+    expect(short).toMatchObject({ partnerId: partnerIds.Logiswift, partnerName: 'Logiswift 3PL', partnerKind: 'company', paidIn: '9880.00', expectedAfterFees: '10720.00', status: 'short', shortAmount: '840.00', orders: 2 });
     expect(short.unpaid.orders).toBeGreaterThan(0);
     expect(short.unpaid.rows.length).toBeLessThanOrEqual(10);
     expect(short.unpaid.rows[0]).toEqual(expect.objectContaining({ orderNumber: expect.stringMatching(/^#\d+$/), amount: expect.stringMatching(/^\d+\.\d{2}$/), ageDays: expect.any(Number) }));

@@ -5,6 +5,7 @@ import { OverviewProfitCards } from '../../pages/financial/profit/OverviewProfit
 import { ProductProfitPanel } from '../../pages/financial/profit/ProductProfitPanel';
 import { StatementsPanel } from '../../pages/financial/profit/StatementsPanel';
 import { clearBlockCache } from '../../pages/financial/profit/useBlock';
+import { ToastProvider } from '../../components/ui-v2';
 import { useConfigStore } from '../../stores/configStore';
 import { useFinancialStore } from '../../stores/financialStore';
 import {
@@ -45,7 +46,7 @@ beforeEach(() => {
 
 describe('Finance Overview profit cards (M5-T40)', () => {
   it('asks for the Finance date range', async () => {
-    render(<OverviewProfitCards />);
+    render(<ToastProvider><OverviewProfitCards /></ToastProvider>);
     await screen.findByRole('table', { name: 'Monthly profit and loss' });
     expect(svc.cohortProfit).toHaveBeenCalledWith('2026-10-01', '2026-10-17');
     expect(svc.failedDeliveryCost).toHaveBeenCalledWith('2026-10-01', '2026-10-17');
@@ -53,7 +54,7 @@ describe('Finance Overview profit cards (M5-T40)', () => {
   });
 
   it('monthly P&L shows the fixture columns, the August and September note, and commission as "Not split out"', async () => {
-    render(<OverviewProfitCards />);
+    render(<ToastProvider><OverviewProfitCards /></ToastProvider>);
     const table = await screen.findByRole('table', { name: 'Monthly profit and loss' });
     expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Line', 'AugAs booked', 'SepAs booked', '1-17 Sep', '1-17 Oct']);
     expect(cells(rowOf(table, 'Delivered revenue'))).toEqual(['Delivered revenue', 'GH₵166,000', 'GH₵173,000', 'GH₵96,000', 'GH₵92,000']);
@@ -68,7 +69,7 @@ describe('Finance Overview profit cards (M5-T40)', () => {
   });
 
   it('the cohort card shows the projected October with its yield, and the one-line summary of both readings', async () => {
-    render(<OverviewProfitCards />);
+    render(<ToastProvider><OverviewProfitCards /></ToastProvider>);
     const table = await screen.findByRole('table', { name: 'October order cohort' });
     expect(cells(rowOf(table, 'Delivered orders'))[1]).toBe('491');
     expect(cells(rowOf(table, 'Revenue'))[1]).toBe('GH₵120,300');
@@ -83,23 +84,24 @@ describe('Finance Overview profit cards (M5-T40)', () => {
 
   it('with no closed cohort the card says "Not enough closed orders" and shows no figure', async () => {
     svc.cohortProfit.mockResolvedValue({ from: '2026-10-01', to: '2026-10-17', available: false, message: 'Not enough closed orders' });
-    render(<OverviewProfitCards />);
+    render(<ToastProvider><OverviewProfitCards /></ToastProvider>);
     expect(await screen.findByText(/Not enough closed orders\./)).toBeInTheDocument();
     expect(screen.queryByRole('table', { name: 'October order cohort' })).not.toBeInTheDocument();
   });
 
   it('the failed delivery card adds up to GH₵610 = 460 + 150 and says when a partner has no fee rule', async () => {
-    render(<OverviewProfitCards />);
+    render(<ToastProvider><OverviewProfitCards /></ToastProvider>);
     const table = await screen.findByRole('table', { name: 'Cost of failed deliveries' });
-    expect(cells(rowOf(table, 'Kofi Appiah'))).toEqual(['Kofi Appiah70 failed or returned', 'GH₵350', '0GH₵0', 'GH₵350']);
-    expect(cells(rowOf(table, 'Logiswift'))[2]).toBe('5GH₵150');
-    expect(cells(rowOf(table, 'Total'))).toEqual(['Total', 'GH₵460', '5GH₵150', 'GH₵610']);
-    expect(screen.getByText('No fee rule for this partner. The failed fee is 0.')).toBeInTheDocument();
+    expect(cells(rowOf(table, 'Fee kept on failed orders'))[1]).toBe('GH₵460');
+    expect(cells(rowOf(table, 'Fee kept on failed orders'))[0]).toContain('Kofi Appiah 70 failed or returned');
+    expect(cells(rowOf(table, 'Returned units lost'))).toEqual(['Returned units lost5 missing at Logiswift', 'GH₵150']);
+    expect(cells(rowOf(table, 'Total'))).toEqual(['Total', 'GH₵610']);
+    expect(screen.getByText(/No fee rule for this partner\. The failed fee is 0\./)).toBeInTheDocument();
   });
 
   it('a card that fails shows its own error with Retry while the others stay', async () => {
     svc.failedDeliveryCost.mockRejectedValueOnce(new Error('boom'));
-    render(<OverviewProfitCards />);
+    render(<ToastProvider><OverviewProfitCards /></ToastProvider>);
     expect(await screen.findByText('Cost of failed deliveries did not load')).toBeInTheDocument();
     expect(await screen.findByRole('table', { name: 'Monthly profit and loss' })).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
@@ -109,7 +111,7 @@ describe('Finance Overview profit cards (M5-T40)', () => {
 
 describe('Finance statements (M5-T40)', () => {
   it('shows the income statement, the balance sheet with 3010 and the result to date, and the monthly P&L', async () => {
-    render(<StatementsPanel />);
+    render(<ToastProvider><StatementsPanel /></ToastProvider>);
     const income = await screen.findByRole('table', { name: 'Income statement' });
     expect(cells(rowOf(income, 'Delivered revenue'))[1]).toBe('GH₵92,000');
     expect(cells(rowOf(income, 'Gross profit'))).toEqual(['Gross profit 87% margin', 'GH₵80,000']);
@@ -127,13 +129,13 @@ describe('Finance statements (M5-T40)', () => {
 
   it('an out of balance sheet says by how much', async () => {
     svc.balanceSheet.mockResolvedValue({ ...balanceSheet(), isBalanced: false, outOfBalanceBy: '120.00' });
-    render(<StatementsPanel />);
+    render(<ToastProvider><StatementsPanel /></ToastProvider>);
     expect(await screen.findByText(/by GH₵120\./)).toBeInTheDocument();
   });
 
   it('Export PDF opens the print dialog, as the old statements tab did', async () => {
     const print = vi.spyOn(window, 'print').mockImplementation(() => {});
-    render(<StatementsPanel />);
+    render(<ToastProvider><StatementsPanel /></ToastProvider>);
     await userEvent.click(screen.getByRole('button', { name: 'Export PDF' }));
     expect(print).toHaveBeenCalledTimes(1);
     print.mockRestore();

@@ -24,6 +24,8 @@
 .v2 .fov.busy .kpis,.v2 .fov.busy .tablewrap{opacity:.6;transition:opacity .15s}
 
 .v2 .fov .tablewrap{overflow-x:auto}
+.v2 .fov .two{align-items:start}
+.v2 .fov .two > *{min-width:0}
 .v2 .fov .dt th,.v2 .fov .dt td{white-space:nowrap}
 .v2 .fov .dt td small{display:block;color:var(--ink-3);font-size:12px}
 .v2 .fov .dt .who{min-width:190px}
@@ -34,6 +36,7 @@
 .v2 .fov .tag svg{width:12px;height:12px}
 .v2 .fov tr.detail td{background:var(--hover);padding:14px 20px;white-space:normal}
 .v2 .fov tr.detail p{margin-top:10px;font-size:13px}
+.v2 .fov tr.detail .acts{display:flex;gap:8px;margin-top:12px}
 .v2 .fov .unpaid{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:8px}
 .v2 .fov .unpaid li .num{margin-left:auto;flex:none}
 .v2 .fov .unpaid li > div:nth-child(2){min-width:0}

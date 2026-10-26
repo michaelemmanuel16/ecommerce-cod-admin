@@ -30,6 +30,9 @@
 .v2 .fin .trendhead{display:flex;align-items:center;gap:12px}
 .v2 .fin .trendhead .psel{margin-left:auto}
 
+/* the tab bar sits right under the header (finance.html .pgtabs margin: 0 0 16px) */
+.v2 .finance .tabs.pgtabs{margin:0 0 16px}
+
 /* export menu in the Finance header (finance.html .menuwrap .menu) */
 .v2 .finhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .v2 .finhead .menu{min-width:260px}

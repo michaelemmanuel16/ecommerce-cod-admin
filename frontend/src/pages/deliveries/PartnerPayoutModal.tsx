@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, Input, Modal, Table, useToast, type Column } from '../../components/ui-v2';
+import { Button, Input, Modal, Select, Table, useToast, type Column } from '../../components/ui-v2';
 import { partnerSettlementsService, type ManualPayoutPreview, type ManualPreviewOrder } from '../../services/partner-settlements.service';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { apiErrorMessage } from '../../utils/apiError';
@@ -7,8 +7,11 @@ import { formatCurrency, todayYmd } from '../../utils/format';
 import { toCents } from '../../utils/money';
 
 interface PartnerPayoutModalProps {
-  partnerId: number;
-  partnerName: string;
+  /** The partner of the drawer. Leave out, with `partners`, to open from the Finance header with a "Paid by" select. */
+  partnerId?: number;
+  partnerName?: string;
+  /** The "Paid by" choices of the Finance header. */
+  partners?: Array<{ id: number; name: string }>;
   onClose: () => void;
   /** A payout was saved: the page reloads the data it shows. */
   onRecorded: () => void;
@@ -20,9 +23,16 @@ const COLUMNS: Column<ManualPreviewOrder>[] = [
   { key: 'result', header: 'Result', render: (o) => (o.clearsOrder ? 'Cleared' : 'Part paid') },
 ];
 
-/** "Record partner payout" (F-908, M5-T37): the amount clears the partner's oldest unpaid orders first; the order list is the server's own plan. */
-export function PartnerPayoutModal({ partnerId, partnerName, onClose, onRecorded }: PartnerPayoutModalProps) {
+/**
+ * "Record partner payout" (F-908, M5-T37): the amount clears the partner's oldest unpaid orders first; the order list is the server's own plan.
+ * From the partner drawer the partner is fixed. From the Finance header (M5 Finance mockup) the person picks who paid.
+ */
+export function PartnerPayoutModal({ partnerId: fixedId, partnerName: fixedName, partners, onClose, onRecorded }: PartnerPayoutModalProps) {
   const say = useToast();
+  const picking = fixedId === undefined;
+  const [chosen, setChosen] = useState<number | null>(null);
+  const partnerId = fixedId ?? chosen ?? 0;
+  const partnerName = fixedName ?? partners?.find((p) => p.id === chosen)?.name ?? 'This partner';
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(todayYmd);
   const [reference, setReference] = useState('');
@@ -37,7 +47,7 @@ export function PartnerPayoutModal({ partnerId, partnerName, onClose, onRecorded
 
   useEffect(() => {
     const ticket = ++latest.current;
-    if (previewCents <= 0) {
+    if (previewCents <= 0 || partnerId <= 0) {
       setPreview(null);
       return;
     }
@@ -55,7 +65,7 @@ export function PartnerPayoutModal({ partnerId, partnerName, onClose, onRecorded
     );
   }, [partnerId, previewCents]);
 
-  const blocked = amountCents <= 0 ? 'Enter an amount above zero' : reference.trim() === '' ? 'Enter the reference or receipt number' : null;
+  const blocked = partnerId <= 0 ? 'Choose who paid' : amountCents <= 0 ? 'Enter an amount above zero' : reference.trim() === '' ? 'Enter the reference or receipt number' : null;
   const unapplied = preview && preview.unappliedAmount > 0 ? preview.unappliedAmount : null;
 
   const save = async () => {
@@ -83,8 +93,8 @@ export function PartnerPayoutModal({ partnerId, partnerName, onClose, onRecorded
     <Modal
       open
       onClose={onClose}
-      title={`Record partner payout: ${partnerName}`}
-      description="Matched to the oldest unpaid orders first."
+      title={picking ? 'Record a payout from a partner' : `Record partner payout: ${partnerName}`}
+      description={picking ? 'Money a delivery agent or 3PL paid you.' : 'Matched to the oldest unpaid orders first.'}
       footer={
         <>
           <Button onClick={onClose}>Cancel</Button>
@@ -93,11 +103,20 @@ export function PartnerPayoutModal({ partnerId, partnerName, onClose, onRecorded
       }
     >
       <form className="cform" noValidate onSubmit={(e) => { e.preventDefault(); void save(); }}>
+        {picking && (
+          <Select label="Paid by" value={chosen ?? ''} onChange={(e) => { setChosen(e.target.value ? Number(e.target.value) : null); setError(null); }}>
+            <option value="">Choose a partner</option>
+            {(partners ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </Select>
+        )}
         <Input label="Amount" type="number" min="0" step="0.01" inputMode="decimal" value={amount} autoComplete="off" onChange={(e) => { setAmount(e.target.value); setError(null); }} />
         <Input label="Date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         <Input label="Reference or receipt" value={reference} autoComplete="off" onChange={(e) => { setReference(e.target.value); setError(null); }} />
         <button type="submit" hidden />
       </form>
+      <p className="ink3" style={{ fontSize: 12.5, marginTop: 12 }}>
+        Expected cash is the cash collected minus the partner's fees. The amount you enter is matched to the oldest unpaid orders for this partner, net of their fees. Any gap opens a finding.
+      </p>
 
       {preview && (
         <section className="ppay-plan" aria-label="Orders this payout pays">

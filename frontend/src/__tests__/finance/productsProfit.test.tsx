@@ -121,7 +121,7 @@ describe('contract: Reports and Finance print the same numbers for the same rang
   });
 
   it('the net result, the cohort figure and the income statement agree across the two screens', async () => {
-    const finance = render(<><OverviewProfitCards /><StatementsPanel /></>);
+    const finance = render(<ToastProvider><OverviewProfitCards /><StatementsPanel /></ToastProvider>);
     expect(await screen.findByText('By delivery date: -GH₵14,268. By order cohort: GH₵9,900.')).toBeInTheDocument();
     const income = await screen.findByRole('table', { name: 'Income statement' });
     const netOnFinance = within(income).getByText(/^Net result/).closest('tr')!.querySelectorAll('td')[1].textContent;
