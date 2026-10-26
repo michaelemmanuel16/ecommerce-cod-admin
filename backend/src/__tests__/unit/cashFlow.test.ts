@@ -10,6 +10,10 @@ jest.mock('../../server', () => {
     return { io: m };
 });
 
+// The scenario reads delivery success from the KPI layer; this suite is about the buckets
+jest.mock('../../services/kpi/rates', () => ({ rates: async () => ({ deliverySuccessRate: { value: 48 } }) }));
+jest.mock('../../services/kpi/successTarget', () => ({ successTargetPct: async () => 60 }));
+
 import { prismaMock } from '../mocks/prisma.mock';
 import { FinancialService } from '../../services/financialService';
 import { GL_ACCOUNTS } from '../../config/glAccounts';
@@ -62,6 +66,8 @@ describe('FinancialService Cash Flow Report', () => {
             expect(Money.toApi(report.kpis.supplierPayables)).toBe('0.00');
             expect('outstandingReceivables' in report.kpis).toBe(false);
             expect(report.forecast).toHaveLength(30);
+            expect(report.scenario).toEqual({ key: 'pace', currentRate: null, targetRate: 60, multiplier: 1 });
+            expect(report.summary.cashToday).toBe('1000.00'); // 1010 only
             expect(report.agentBreakdown).toHaveLength(1);
             expect(prismaMock.account.findMany).toHaveBeenCalledTimes(1); // one read for all balances
         });

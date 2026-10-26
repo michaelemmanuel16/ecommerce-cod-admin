@@ -13,6 +13,7 @@ import * as Money from '../utils/money';
 import { ExportColumn, exportMoney } from './exportStream';
 import { getStoreTimeZone, localDate, parseInclusiveBound } from './kpi/dates';
 import financialService from './financialService';
+import { getCashForecast, type Scenario } from './finance/cashFlowService';
 import agingService from './agingService';
 
 export const FINANCE_REPORTS = ['profit-loss', 'agent-aging', 'general-ledger', 'cash-flow'] as const;
@@ -34,6 +35,8 @@ export interface ExportRange {
 export interface ExportInput extends ExportRange {
   /** General ledger only: one account. */
   accountId?: number;
+  /** Cash-flow forecast only: the scenario on screen (pace when left out). */
+  scenario?: Scenario;
 }
 
 export interface ReportExport<T> {
@@ -119,8 +122,8 @@ const agingReport = async (): Promise<ReportExport<AgingRow>> => {
 
 interface ForecastRow { date: string; collection: Money.MoneyInput; expense: Money.MoneyInput; balance: Money.MoneyInput }
 
-const cashFlowReport = async (range: ExportRange, requester?: Requester): Promise<ReportExport<ForecastRow>> => {
-  const { forecast } = await financialService.getCashFlowReport(requester);
+const cashFlowReport = async (range: ExportRange & { scenario?: Scenario }): Promise<ReportExport<ForecastRow>> => {
+  const { forecast } = await getCashForecast(range.scenario);
   const from = range.startDate?.slice(0, 10);
   const to = range.endDate?.slice(0, 10);
   const rows: ForecastRow[] = forecast
@@ -229,11 +232,11 @@ const ledgerReport = (input: ExportInput): ReportExport<LedgerExportLine> => {
 };
 
 /** The columns and row stream of one report. Throws a 400 for a bad range before anything is written. */
-export async function buildReport(report: FinanceReport, input: ExportInput, requester?: Requester): Promise<ReportExport<any>> {
+export async function buildReport(report: FinanceReport, input: ExportInput, _requester?: Requester): Promise<ReportExport<any>> {
   switch (report) {
     case 'profit-loss': return plReport(input);
     case 'agent-aging': return agingReport();
-    case 'cash-flow': return cashFlowReport(input, requester);
+    case 'cash-flow': return cashFlowReport(input);
     case 'general-ledger': return ledgerReport(input);
   }
 }

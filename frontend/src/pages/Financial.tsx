@@ -1,5 +1,4 @@
 import React from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { useFinancialStore } from '../stores/financialStore';
 import { Tabs } from '../components/ui/Tabs';
 import { DateRangePicker } from '../components/ui/DateRangePicker';
@@ -7,6 +6,9 @@ import { FinanceOverview } from './financial/overview/FinanceOverview';
 import { AgentCollections } from './financial/AgentCollections';
 import { AccountingAnalysis } from './financial/AccountingAnalysis';
 import { RepCommissions } from './financial/RepCommissions';
+import { OverviewProfitCards } from './financial/profit/OverviewProfitCards';
+import { CashFlowPanel } from './financial/cash/CashFlowPanel';
+import { ExportMenu } from './financial/cash/ExportMenu';
 import { usePermissions } from '../hooks/usePermissions';
 import { useV2Page } from '../components/shell/useV2Page';
 
@@ -23,7 +25,7 @@ export const Financial: React.FC = () => {
     {
       id: 'overview',
       label: 'Overview',
-      content: <FinanceOverview />
+      content: <><FinanceOverview /><div className="mt-4"><OverviewProfitCards /></div></>
     },
     {
       id: 'agent-collections',
@@ -35,13 +37,14 @@ export const Financial: React.FC = () => {
     {
       id: 'accounting-analysis',
       label: 'Accounting & Analysis',
-      content: <div className="legacy-light"><AccountingAnalysis /></div>
+      content: <AccountingAnalysis />
+    },
+    {
+      id: 'cash-flow',
+      label: 'Cash-flow forecast',
+      content: <CashFlowPanel />
     }
   ];
-
-  // The date picker drives the old tabs; the Overview has its own range control (in the URL)
-  const [search] = useSearchParams();
-  const onOverview = (search.get('financial-tab') ?? 'overview') === 'overview';
 
   return (
     <section className="finance">
@@ -50,8 +53,9 @@ export const Financial: React.FC = () => {
           <h1>Finance</h1>
           <p>Cash and profit, payouts from delivery partners, and the books.</p>
         </div>
-        {!onOverview && (
-          <div className="hd-actions legacy-light">
+        <div className="finhead">
+          <ExportMenu />
+          <div className="legacy-light">
             <DateRangePicker
               startDate={dateRange.startDate}
               endDate={dateRange.endDate}
@@ -59,7 +63,7 @@ export const Financial: React.FC = () => {
               placeholder="Select date range"
             />
           </div>
-        )}
+        </div>
       </div>
 
       <Tabs tabs={tabs} defaultTab="overview" persistKey="financial-tab" compact />

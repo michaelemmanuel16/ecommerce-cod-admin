@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, useLocation } from 'react-router-dom';
 import { FinanceOverview } from '../../pages/financial/overview/FinanceOverview';
 import { useConfigStore } from '../../stores/configStore';
+import { useFinancialStore } from '../../stores/financialStore';
+import { clearBlockCache } from '../../pages/financial/profit/useBlock';
 import { OVERVIEW } from '../fixtures/financeOverview';
 import type { FinanceOverview as Overview, Tile } from '../../services/finance-overview.service';
 
@@ -13,17 +14,14 @@ vi.mock('../../services/finance-overview.service', async (orig) => ({
   financeOverviewService: { get: (...a: unknown[]) => get(...a) },
 }));
 
-function Where() {
-  const loc = useLocation();
-  return <output data-testid="where">{loc.search}</output>;
-}
-const renderPage = (url = '/finance?from=2026-10-01&to=2026-10-17') =>
-  render(<MemoryRouter initialEntries={[url]}><Where /><FinanceOverview /></MemoryRouter>);
+const renderPage = () => render(<FinanceOverview />);
 const tile = async (label: string) => (await screen.findByText(label, { selector: '.kpi .l .lbl' })).closest('.kpi') as HTMLElement;
 const withTiles = (fn: (t: Tile[]) => Tile[]): Overview => ({ ...OVERVIEW, tiles: fn(OVERVIEW.tiles) });
 const setRevenueTarget = (target: null) => withTiles((tiles) => tiles.map((t) => (t.key === 'deliveredRevenue' && t.status === 'ok' ? { ...t, detail: { ...t.detail, target } } : t)));
 
 beforeEach(() => {
+  clearBlockCache();
+  useFinancialStore.setState({ dateRange: { startDate: '2026-10-01', endDate: '2026-10-17' } });
   get.mockReset();
   get.mockResolvedValue(OVERVIEW);
   useConfigStore.setState({ currency: 'GHS', loaded: true });
@@ -121,24 +119,20 @@ describe('Finance Overview (M5-T34)', () => {
     expect(screen.getAllByRole('button', { name: /unpaid orders/ })).toHaveLength(1); // only the Short row has one
   });
 
-  it('the date range control reloads the overview and writes the dates to the URL', async () => {
+  it('follows the Finance date control: the range goes to the API and a new range asks again', async () => {
     renderPage();
     await tile('Delivered revenue');
-    expect(get).toHaveBeenLastCalledWith({ from: '2026-10-01', to: '2026-10-17' }, false);
-    await userEvent.click(screen.getByRole('button', { name: /Date range/ }));
-    await userEvent.click(screen.getByRole('menuitemradio', { name: 'Last 7 days' }));
+    expect(get).toHaveBeenLastCalledWith({ from: '2026-10-01', to: '2026-10-17' });
+    act(() => useFinancialStore.getState().setDateRange('2026-10-05', '2026-10-12'));
     await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
-    const [range] = get.mock.calls[1];
-    expect(range.from < range.to).toBe(true);
-    expect(screen.getByTestId('where')).toHaveTextContent(`from=${range.from}&to=${range.to}`);
+    expect(get).toHaveBeenLastCalledWith({ from: '2026-10-05', to: '2026-10-12' });
   });
 
-  it('keeps the other URL params (the Finance tab) when the range changes', async () => {
-    renderPage('/finance?financial-tab=overview&from=2026-10-01&to=2026-10-17');
+  it('turns the default end of day instant into a store day', async () => {
+    useFinancialStore.setState({ dateRange: { startDate: '2026-10-01', endDate: new Date(2026, 9, 17, 23, 59, 59).toISOString() } });
+    renderPage();
     await tile('Delivered revenue');
-    await userEvent.click(screen.getByRole('button', { name: /Date range/ }));
-    await userEvent.click(screen.getByRole('menuitemradio', { name: 'Yesterday' }));
-    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('financial-tab=overview'));
+    expect(get).toHaveBeenLastCalledWith({ from: '2026-10-01', to: '2026-10-17' });
   });
 
   it('shows an empty state when no payout fell in the range', async () => {
@@ -157,8 +151,8 @@ describe('Finance Overview (M5-T34)', () => {
   it('a failed call shows an error with Try again', async () => {
     get.mockRejectedValueOnce(new Error('network'));
     renderPage();
-    expect(await screen.findByText('The overview could not load.')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('The Finance overview did not load')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await tile('Delivered revenue')).toHaveTextContent('GH₵92,000');
   });
 });

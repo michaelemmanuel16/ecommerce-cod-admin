@@ -5,6 +5,7 @@ import { AuthRequest } from '../types';
 import { AppError } from '../middleware/errorHandler';
 import { getTenantId } from '../utils/tenantContext';
 import { readId } from '../utils/kpiRequest';
+import { parseScenario } from '../services/finance/cashFlowService';
 import { readFormat, streamExport } from '../services/exportStream';
 import {
   buildReport, countLedgerLines, exportFileName, ExportInput, ledgerOverLimit, readReport,
@@ -41,6 +42,7 @@ export const exportFinanceReport = async (req: AuthRequest, res: Response): Prom
     startDate: dateParam(req.query.startDate, 'startDate'),
     endDate: dateParam(req.query.endDate, 'endDate'),
     accountId: report === 'general-ledger' ? readId(req.query.accountId, 'accountId') : undefined,
+    scenario: report === 'cash-flow' ? parseScenario(req.query.scenario) : undefined,
   };
   if (report === 'general-ledger' && await startLedgerJob(res, input, format)) return;
   const { columns, batches } = await buildReport(report, input, req.user);

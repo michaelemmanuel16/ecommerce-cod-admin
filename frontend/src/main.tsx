@@ -16,6 +16,7 @@ import './styles/inventory.css';
 import './styles/products.css';
 import './styles/onboarding.css';
 import './styles/reports.css';
+import './styles/financeReports.css';
 import './styles/checkoutForms.css';
 import './styles/orderDrawer.css';
 import './styles/settings.css';

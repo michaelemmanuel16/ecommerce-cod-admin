@@ -9,6 +9,7 @@ import { useDeliveryAgentsStore } from './deliveryAgentsStore';
 import { useCustomerRepsStore } from './customerRepsStore';
 import { useOrdersStore } from './ordersStore';
 import { useNotificationsStore } from './notificationsStore';
+import { clearBlockCache } from '../pages/financial/profit/useBlock';
 import toast from 'react-hot-toast';
 
 interface AuthState {
@@ -52,6 +53,7 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true });
         try {
           const { user, tokens, permissions } = await authService.login(credentials);
+          clearBlockCache(); // a new person signing in must not see the last person's cached Finance answers
           set({
             user,
             accessToken: tokens.accessToken,
@@ -73,6 +75,7 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true });
         try {
           const { user, tokens } = await authService.registerTenant(data);
+          clearBlockCache();
           set({
             user,
             accessToken: tokens.accessToken,
@@ -113,6 +116,7 @@ export const useAuthStore = create<AuthState>()(
         });
         disconnectSocket();
         useNotificationsStore.getState().clearNotifications(); // the next person to sign in must not see this count
+        clearBlockCache(); // nor the cached Finance answers
         if (showToast) {
           toast.success('Logged out successfully');
         }

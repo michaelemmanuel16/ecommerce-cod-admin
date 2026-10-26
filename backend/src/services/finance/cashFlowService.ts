@@ -16,6 +16,9 @@ import { getTenantId, resolveTenantId } from '../../utils/tenantContext';
 import { OPEN_COLLECTION_STATUSES, outstandingOf } from '../../utils/collectionCash';
 import { DAY_MS, getStoreTimeZone, localDate, weekRange } from '../kpi/dates';
 import { deliveredRevenueByDay, revenueScope } from '../kpi/revenue';
+import { rates } from '../kpi/rates';
+import { successTargetPct } from '../kpi/successTarget';
+import { invalidRange } from '../../utils/kpiRequest';
 
 import { DEFAULT_DAYS_TO_PAY } from '../orderPaymentTag';
 
@@ -111,6 +114,43 @@ export async function partnerPayDays(): Promise<PayDays> {
   };
 }
 
+/** The two forecast scenarios (F-928): today's pace, or delivery success at the target. The target changes only the inflow of new deliveries. */
+export const SCENARIOS = ['pace', 'target'] as const;
+export type Scenario = (typeof SCENARIOS)[number];
+
+export interface ScenarioInfo {
+  key: Scenario;
+  /** Delivery success of the last 30 days (closed orders). Null for today's pace (not read) and when no order closed. */
+  currentRate: number | null;
+  /** The store's delivery success target (successTargetPct). */
+  targetRate: number;
+  /** What the new-delivery inflow is multiplied by: target / current, and 1 for today's pace, no closed orders, or a rate already at the target. */
+  multiplier: number;
+}
+
+/** The scenario from a query value; a value that is not one of SCENARIOS is a 400. Left out means today's pace. */
+export function parseScenario(value: unknown): Scenario {
+  if (value === undefined) return 'pace';
+  if (!(SCENARIOS as readonly unknown[]).includes(value)) throw invalidRange('scenario must be pace or target');
+  return value as Scenario;
+}
+
+/** The scenario's multiplier on the new-delivery inflow. Pure. */
+export function scenarioMultiplier(key: Scenario, currentRate: number | null, targetRate: number): number {
+  if (key !== 'target' || currentRate === null || currentRate <= 0 || currentRate >= targetRate) return 1;
+  return Money.roundHalfUp(Money.div(targetRate, currentRate), 4).toNumber();
+}
+
+/** The scenario with the store's target and, for the target scenario only, the delivery success of the last 30 days (KPI layer). */
+export async function forecastScenario(key: Scenario, now: Date = new Date()): Promise<ScenarioInfo> {
+  const tenantId = resolveTenantId();
+  const targetRate = await successTargetPct(tenantId, now);
+  if (key !== 'target') return { key, currentRate: null, targetRate, multiplier: 1 };
+  const since = new Date(now.getTime() - 30 * DAY_MS);
+  const current = (await rates(tenantId, since, now, { basis: 'delivery' })).deliverySuccessRate.value;
+  return { key, currentRate: current, targetRate, multiplier: scenarioMultiplier(key, current, targetRate) };
+}
+
 export interface ForecastDay {
   date: string;
   expectedCollection: Money.Money;
@@ -125,7 +165,7 @@ export interface ForecastDay {
  * Outflows: the average daily expense of the last 30 days, and supplier payables (2050) on the first day. The balance is not
  * floored at 0: a negative balance is shown.
  */
-export async function buildForecast(input: { balances: CashBalances; payDays: PayDays; now?: Date }): Promise<ForecastDay[]> {
+export async function buildForecast(input: { balances: CashBalances; payDays: PayDays; now?: Date; paceMultiplier?: number }): Promise<ForecastDay[]> {
   const { balances, payDays } = input;
   const now = input.now ?? new Date();
   const since = new Date(now.getTime() - 30 * DAY_MS);
@@ -140,7 +180,8 @@ export async function buildForecast(input: { balances: CashBalances; payDays: Pa
       select: { agentId: true, amount: true, allocatedAmount: true, collectionDate: true },
     }),
   ]);
-  const avgDailyCollection = Money.div(Money.orZero(collected._sum.amount), 30);
+  // The scenario scales only what new deliveries bring in: partner cash already held and every outflow stay as they are
+  const avgDailyCollection = Money.mul(Money.div(Money.orZero(collected._sum.amount), 30), input.paceMultiplier ?? 1);
   const avgDailyExpense = Money.div(Money.orZero(spent._sum.amount), 30);
 
   // Partner cash by arrival day (1..30). Days past the horizon are left out.
@@ -173,6 +214,67 @@ export async function buildForecast(input: { balances: CashBalances; payDays: Pa
     forecast.push({ date: date.toISOString().split('T')[0], expectedCollection: inflow, expectedExpense: outflow, projectedBalance: balance });
   }
   return forecast;
+}
+
+/** Balances, pay days, the scenario and the 30 day forecast: what the report and the CSV export both stand on. */
+export async function getCashForecast(scenarioKey: Scenario = 'pace') {
+  const [balances, payDays, scenario] = await Promise.all([cashBalances(), partnerPayDays(), forecastScenario(scenarioKey)]);
+  const forecast = await buildForecast({ balances, payDays, paceMultiplier: scenario.multiplier });
+  return { balances, payDays, scenario, forecast };
+}
+
+export interface ForecastSummary {
+  /** Cash at bank and MoMo (1010) on the first day. */
+  cashToday: string;
+  expectedIn: string;
+  expectedOut: string;
+  endDate: string;
+  endBalance: string;
+  lowest: { date: string; balance: string };
+  /** First day the balance is below 0, or null. */
+  runsOutOn: string | null;
+  /** Days of expected spending under which the lowest point counts as tight (GUESS, owner sets). The page words it from this. */
+  tightDays: number;
+  /** safe; tight = the lowest point is under `tightDays` days of expected spending; runs_out = the balance goes below 0. */
+  status: 'safe' | 'tight' | 'runs_out';
+}
+
+/** Days of spending a low point must cover to count as safe. */
+export const TIGHT_DAYS = 7;
+
+export interface ForecastWeek { from: string; to: string; moneyIn: string; moneyOut: string; net: string; cashAtEnd: string }
+
+/** Tiles and the week-by-week table of a forecast. Pure: it only adds up the days. An empty forecast gives zeros. */
+export function summarizeForecast(cashToday: Money.MoneyInput, forecast: ForecastDay[]): { summary: ForecastSummary; weeks: ForecastWeek[] } {
+  const expectedIn = Money.sum(forecast.map((d) => d.expectedCollection));
+  const expectedOut = Money.sum(forecast.map((d) => d.expectedExpense));
+  const last = forecast[forecast.length - 1];
+  const low = forecast.reduce<ForecastDay | null>((m, d) => (m === null || Money.lt(d.projectedBalance, m.projectedBalance) ? d : m), null);
+  const runsOut = forecast.find((d) => Money.lt(d.projectedBalance, 0));
+  const tightBelow = Money.mul(Money.div(expectedOut, Math.max(forecast.length, 1)), TIGHT_DAYS);
+  const lowest = low ? Money.parse(low.projectedBalance) : Money.parse(cashToday);
+  const weeks: ForecastWeek[] = [];
+  for (let i = 0; i < forecast.length; i += 7) {
+    const days = forecast.slice(i, i + 7);
+    const moneyIn = Money.sum(days.map((d) => d.expectedCollection));
+    const moneyOut = Money.sum(days.map((d) => d.expectedExpense));
+    weeks.push({
+      from: days[0].date, to: days[days.length - 1].date,
+      moneyIn: Money.toApi(moneyIn), moneyOut: Money.toApi(moneyOut), net: Money.toApi(Money.sub(moneyIn, moneyOut)),
+      cashAtEnd: Money.toApi(days[days.length - 1].projectedBalance),
+    });
+  }
+  return {
+    summary: {
+      cashToday: Money.toApi(cashToday), expectedIn: Money.toApi(expectedIn), expectedOut: Money.toApi(expectedOut),
+      endDate: last?.date ?? '', endBalance: Money.toApi(last?.projectedBalance ?? cashToday),
+      lowest: { date: low?.date ?? '', balance: Money.toApi(lowest) },
+      runsOutOn: runsOut?.date ?? null,
+      tightDays: TIGHT_DAYS,
+      status: lowest.isNegative() ? 'runs_out' : lowest.lt(tightBelow) ? 'tight' : 'safe',
+    },
+    weeks,
+  };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

@@ -12,7 +12,7 @@ import { getStoreTimeZone, localDate } from '../kpi/dates';
 import { getTenantId, resolveTenantId } from '../../utils/tenantContext';
 import { rates } from '../kpi/rates';
 import { resolveFee } from '../feeRuleService';
-import { incomeStatementOver } from './statementsService';
+import { incomeStatementOver, TARGET_NET_MARGIN } from './statementsService';
 
 const COST_MISSING = 'Cost missing';
 
@@ -85,6 +85,8 @@ export interface ProfitByProduct {
   otherExpenses: string;
   netProfit: string;
   netMarginPct: number | null;
+  /** The net margin the owner aims for (F-923), for the page's tag. */
+  targetNetMargin: number;
   /** Ledger net profit / delivered orders of the range (the "-GH₵38" tile). Null when nothing was delivered. */
   profitPerDeliveredOrder: string | null;
   costMissingProducts: number;
@@ -175,6 +177,7 @@ export async function profitByProduct(from: Date, to: Date): Promise<ProfitByPro
     otherExpenses: statement.otherExpenses,
     netProfit: statement.netProfit,
     netMarginPct: statement.netMarginPct,
+    targetNetMargin: TARGET_NET_MARGIN,
     profitPerDeliveredOrder: delivered > 0 ? Money.toApi(Money.roundHalfUp(Money.div(statement.netProfit, delivered), 2)) : null,
     costMissingProducts: rows.filter((r) => r.costMissing).length,
   };
