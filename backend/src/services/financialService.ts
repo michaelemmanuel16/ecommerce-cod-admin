@@ -28,6 +28,7 @@ import { PENDING_STATUSES } from './kpi/pending';
 import { OPEN_COLLECTION_STATUSES, outstandingOf } from '../utils/collectionCash';
 import agentReconciliationService, { Cover } from './agentReconciliationService';
 import { partnerNetCash } from './feeRuleService';
+import { buildForecast, cashFlowKpis, DEFAULT_DAYS_TO_PAY, partnerPayDays, revenueExpenseTrend } from './finance/cashFlowService';
 
 interface DateFilters {
   startDate?: Date;
@@ -911,102 +912,12 @@ export class FinancialService {
   async getFinancialReports(filters: { period?: string; startDate?: Date; endDate?: Date }, requester?: Requester) {
     const { period = 'daily', startDate, endDate } = filters;
 
-    const start = startDate || new Date();
-    const end = endDate || new Date();
-
-    const orderWhere: Prisma.OrderWhereInput = {
-      status: 'delivered',
-      updatedAt: {
-        gte: start,
-        lte: end
-      },
-      deletedAt: null,
-    };
-
-    // Role-based filtering for financial reports
-    if (requester && requester.role === 'sales_rep') {
-      orderWhere.customerRepId = requester.id;
-    } else if (requester && requester.role === 'delivery_agent') {
-      orderWhere.deliveryAgentId = requester.id;
-    }
-
-    const transactionWhere: Prisma.TransactionWhereInput = {
-      createdAt: {
-        gte: start,
-        lte: end
-      },
-      order: {
-        deletedAt: null
-      }
-    };
-    if (requester && requester.role === 'delivery_agent') {
-      transactionWhere.order = { deliveryAgentId: requester.id };
-    }
-
-    const expenseWhere: Prisma.ExpenseWhereInput = {
-      expenseDate: {
-        gte: start,
-        lte: end
-      },
-    };
-    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
-      expenseWhere.recordedBy = requester.id;
-    }
-
-
-    const [expenses] = await Promise.all([
-      prisma.expense.findMany({
-        where: expenseWhere
-      })
-    ]);
-
-    // Group by period
-    const groupedData: Record<string, { revenue: Money.Money; expenses: Money.Money; orders: number }> = {};
-
-    // Fetch delivered orders for the same period to get Accrual Revenue trends
-    const deliveredOrders = await prisma.order.findMany({
-      where: orderWhere,
-      select: {
-        totalAmount: true,
-        updatedAt: true
-      }
+    // Revenue by delivery date (F-929); a range over 366 days groups by week. Expenses by expense date.
+    const expenseRecordedBy = requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager'
+      ? requester.id : undefined;
+    return revenueExpenseTrend({
+      start: startDate || new Date(), end: endDate || new Date(), period, role: requester, expenseRecordedBy,
     });
-    (deliveredOrders || []).forEach((order) => {
-      const key =
-        period === 'daily'
-          ? order.updatedAt.toISOString().split('T')[0]
-          : `${order.updatedAt.getFullYear()}-${String(order.updatedAt.getMonth() + 1).padStart(2, '0')}`;
-
-      if (!groupedData[key]) {
-        groupedData[key] = { revenue: Money.ZERO, expenses: Money.ZERO, orders: 0 };
-      }
-
-      groupedData[key].revenue = Money.add(groupedData[key].revenue, order.totalAmount);
-      groupedData[key].orders += 1;
-    });
-
-    expenses.forEach((e) => {
-      const key =
-        period === 'daily'
-          ? e.expenseDate.toISOString().split('T')[0]
-          : `${e.expenseDate.getFullYear()}-${String(e.expenseDate.getMonth() + 1).padStart(2, '0')}`;
-
-      if (!groupedData[key]) {
-        groupedData[key] = { revenue: Money.ZERO, expenses: Money.ZERO, orders: 0 };
-      }
-
-      groupedData[key].expenses = Money.add(groupedData[key].expenses, e.amount);
-    });
-
-    const reports = Object.entries(groupedData).map(([date, data]) => ({
-      date,
-      revenue: data.revenue,
-      expenses: data.expenses,
-      profit: Money.sub(data.revenue, data.expenses),
-      orders: data.orders
-    })).sort((a, b) => a.date.localeCompare(b.date));
-
-    return reports;
   }
 
   /**
@@ -1567,44 +1478,15 @@ export class FinancialService {
    * Get Cash Flow Report
    */
   async getCashFlowReport(requester?: Requester) {
-    // 1. Get current cash position KPIs from GL
-    const tenantId = resolveTenantId();
-    const [cashInHand, , arAgents] = await Promise.all([
-      prisma.account.findUnique({ where: { tenantId_code: { tenantId, code: GL_ACCOUNTS.CASH_IN_HAND } } }),
-      prisma.account.findUnique({ where: { tenantId_code: { tenantId, code: GL_ACCOUNTS.CASH_IN_TRANSIT } } }),
-      prisma.account.findUnique({ where: { tenantId_code: { tenantId, code: GL_ACCOUNTS.AR_AGENTS } } }),
-    ]);
-
-    // 2. Calculate operational figures from actual order status
-    const [cashInTransitData, cashExpectedData] = await Promise.all([
-      prisma.order.aggregate({
-        where: {
-          status: 'delivered',
-          paymentStatus: { notIn: ['reconciled', 'deposited'] },
-          deletedAt: null,
-            },
-        _sum: { totalAmount: true }
-      }),
-      prisma.order.aggregate({
-        where: {
-          status: 'out_for_delivery',
-          deletedAt: null,
-          codAmount: { not: null },
-            },
-        _sum: { totalAmount: true }
-      })
-    ]);
-
+    // 1. Cash buckets (F-928): 1010 and 1015 from the ledger, 1020 never added, expected from out-for-delivery orders apart
+    const { supplierPayables, ...buckets } = await cashFlowKpis();
     const kpis = {
-      cashInHand: Money.orZero(cashInHand?.currentBalance),
-      cashInTransit: Money.orZero(cashInTransitData._sum.totalAmount),
-      outstandingReceivables: Money.orZero(arAgents?.currentBalance),
-      cashExpected: Money.orZero(cashExpectedData._sum.totalAmount),
+      cashInHand: buckets.cashAtBank,
+      cashInTransit: buckets.cashWithPartners,
+      outstandingReceivables: buckets.receivablesAgents,
+      cashExpected: buckets.expectedFromOutForDelivery,
     };
-
-    const cashAvailableNow = Money.add(kpis.cashInHand, kpis.outstandingReceivables);
-    const totalCashPosition = Money.sum([kpis.cashInHand, kpis.cashInTransit, kpis.outstandingReceivables, kpis.cashExpected]);
-    const totalCashPipeline = Money.sum([cashAvailableNow, kpis.cashInTransit, kpis.cashExpected]);
+    const { cashAvailableNow, totalCashPosition, totalCashPipeline } = buckets;
 
     // 3. 30-day Forecast
     const forecast = await this.generateCashFlowForecast();
@@ -1612,8 +1494,11 @@ export class FinancialService {
     // 4. Agent Breakdown (Pending collections)
     const agentBreakdown = await this.getAgentCashHoldings(requester);
 
+    const payDays = await partnerPayDays();
+
     return {
-      kpis: { ...kpis, cashAvailableNow, totalCashPosition, totalCashPipeline },
+      kpis: { ...kpis, cashAvailableNow, totalCashPosition, totalCashPipeline, supplierPayables },
+      payDays: { default: DEFAULT_DAYS_TO_PAY, overall: payDays.overall, fromHistory: payDays.fromHistory, byPartner: Object.fromEntries(payDays.byPartner) },
       forecast,
       agentBreakdown
     };
@@ -1631,59 +1516,7 @@ export class FinancialService {
       return cached.data;
     }
 
-    // Calculate historical averages (last 30 days)
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    const [historicalCollections, historicalExpenses] = await Promise.all([
-      prisma.transaction.aggregate({
-        where: {
-          type: 'cod_collection',
-          status: { in: ['collected', 'deposited', 'reconciled'] },
-          createdAt: { gte: thirtyDaysAgo },
-          order: {
-            deletedAt: null
-          },
-            },
-        _sum: { amount: true }
-      }),
-      prisma.expense.aggregate({
-        where: {
-          expenseDate: { gte: thirtyDaysAgo },
-            },
-        _sum: { amount: true }
-      })
-    ]);
-
-    const avgDailyCollection = Money.div(Money.orZero(historicalCollections._sum.amount), 30);
-    const avgDailyExpense = Money.div(Money.orZero(historicalExpenses._sum.amount), 30);
-
-    // Start with current liquidity (Cash in Hand + Bank if existed)
-    // For this implementation, we'll use Total Cash Position as starting balance
-    const accountTenantId = resolveTenantId(tenantId);
-    const [cashInHand, cashInTransit] = await Promise.all([
-      prisma.account.findUnique({ where: { tenantId_code: { tenantId: accountTenantId, code: GL_ACCOUNTS.CASH_IN_HAND } } }),
-      prisma.account.findUnique({ where: { tenantId_code: { tenantId: accountTenantId, code: GL_ACCOUNTS.CASH_IN_TRANSIT } } }),
-    ]);
-
-    let runningBalance = Money.add(Money.orZero(cashInHand?.currentBalance), Money.orZero(cashInTransit?.currentBalance));
-
-    const forecast: CashFlowForecast[] = [];
-    const today = new Date();
-
-    for (let i = 1; i <= 30; i++) {
-      const forecastDate = new Date(today);
-      forecastDate.setDate(today.getDate() + i);
-
-      runningBalance = Money.add(runningBalance, Money.sub(avgDailyCollection, avgDailyExpense));
-
-      forecast.push({
-        date: forecastDate.toISOString().split('T')[0],
-        expectedCollection: avgDailyCollection,
-        expectedExpense: avgDailyExpense,
-        projectedBalance: runningBalance.lt(0) ? Money.ZERO : runningBalance
-      });
-    }
+    const forecast: CashFlowForecast[] = await buildForecast();
 
     this.forecastCache.set(cacheKey, { data: forecast, timestamp: Date.now() });
     return forecast;

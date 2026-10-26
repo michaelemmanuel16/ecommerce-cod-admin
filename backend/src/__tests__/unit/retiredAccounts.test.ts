@@ -13,7 +13,7 @@ const NAMES = /GL_ACCOUNTS\.(AR_AGENTS|DELIVERY_AGENT_COMMISSION)|['"](1020|5040
 const ALLOWED: Array<{ file: string; reason: string }> = [
   { file: 'config/glAccounts.ts', reason: 'defines the codes, RETIRED_GL_CODES and the chart seed (created inactive)' },
   { file: 'scripts/seed.ts', reason: 'dev seed that creates the accounts; posts nothing' },
-  { file: 'services/financialService.ts', reason: 'getCashFlowReport reads the 1020 balance; M5-T27 removes the read' },
+  { file: 'services/finance/cashFlowService.ts', reason: 'reads the 1020 balance for reference only; it is never added to cash (M5-T27)' },
 ];
 
 function sourceFiles(dir: string, out: string[] = []): string[] {

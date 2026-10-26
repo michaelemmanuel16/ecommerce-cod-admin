@@ -26,7 +26,7 @@ jest.mock('../../services/kpi/revenue', () => ({
 import { prismaMock } from '../mocks/prisma.mock';
 import { useTestTenant, TEST_TENANT_ID } from '../mocks/tenant.mock';
 import { revenueResult } from '../mocks/kpiResults';
-import { deliveredRevenue } from '../../services/kpi/revenue';
+import { deliveredRevenue, deliveredRevenueByDay } from '../../services/kpi/revenue';
 import { FinancialService } from '../../services/financialService';
 import { GLAutomationService } from '../../services/glAutomationService';
 import { AppError } from '../../middleware/errorHandler';
@@ -391,7 +391,9 @@ describe('FinancialService', () => {
         }
       ];
 
-      prismaMock.order.findMany.mockResolvedValue(mockOrders as any);
+      void mockOrders;
+      // M5-T27: revenue comes from the KPI by delivery date, not from updatedAt
+      (deliveredRevenueByDay as jest.Mock).mockResolvedValue([{ date: '2024-01-01', revenue: '300.00', deliveredOrders: 2 }] as never);
       prismaMock.expense.findMany.mockResolvedValue(mockExpenses as any);
 
       const reports = await financialService.getFinancialReports({
@@ -423,7 +425,8 @@ describe('FinancialService', () => {
         }
       ];
 
-      prismaMock.order.findMany.mockResolvedValue(mockOrders as any);
+      void mockOrders;
+      (deliveredRevenueByDay as jest.Mock).mockResolvedValue([{ date: '2024-01-15', revenue: '100.00', deliveredOrders: 1 }] as never);
       prismaMock.expense.findMany.mockResolvedValue(mockExpenses as any);
 
       const reports = await financialService.getFinancialReports({
@@ -471,7 +474,7 @@ describe('FinancialService', () => {
     it('sums 0.1 x 1000 in a daily financial report to "100.00"', async () => {
       const mockExpenses = Array.from({ length: 1000 }, () => ({ expenseDate: new Date('2024-01-01T10:00:00Z'), amount: 0.1 }));
       prismaMock.expense.findMany.mockResolvedValue(mockExpenses as any);
-      prismaMock.order.findMany.mockResolvedValue([] as any);
+      (deliveredRevenueByDay as jest.Mock).mockResolvedValue([] as never);
 
       const reports = await financialService.getFinancialReports({ startDate: new Date('2024-01-01'), endDate: new Date('2024-01-31') }, 'daily');
 
