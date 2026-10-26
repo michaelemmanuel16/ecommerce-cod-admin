@@ -125,6 +125,25 @@ describe('the void route reverses hand-made entries only', () => {
     expect((await request(app).delete(`/api/financial/expenses/${row.id}`).set(auth(clerk))).status).toBe(200);
   });
 
+  it.each(['commission_accrual', 'delivery_fee'] as const)('a %s entry is refused, and the ledger line says it is not voidable by hand', async (sourceType) => {
+    const je = await prismaBase.journalEntry.create({
+      data: { tenantId, entryNumber: `JE-AUTO-${sourceType}`, entryDate: new Date(), description: 'auto', sourceType, createdBy: owner.id },
+    });
+    await prismaBase.accountTransaction.createMany({ data: [
+      { tenantId, journalEntryId: je.id, accountId: ids['5100'], debitAmount: 1, creditAmount: 0, runningBalance: 0 },
+      { tenantId, journalEntryId: je.id, accountId: ids['3010'], debitAmount: 0, creditAmount: 1, runningBalance: 0 },
+    ] });
+    const res = await request(app).post(`/api/gl/journal-entries/${je.id}/void`).set(auth(owner)).send({ voidReason: 'Trying' });
+    expect(res.status).toBe(400);
+    expect(res.body.code ?? res.body.errorCode).toBe('GL_ENTRY_NOT_MANUAL');
+    expect((await prismaBase.journalEntry.findUniqueOrThrow({ where: { id: je.id } })).isVoided).toBe(false);
+    const ledger = await get(`/api/gl/accounts/${ids['5100']}/ledger?limit=100`);
+    expect(ledger.body.transactions.find((t: any) => t.journalEntry.id === je.id).journalEntry.voidableByHand).toBe(false);
+    // The lines were written without moving the account balances: remove them so later tests see a clean ledger
+    await prismaBase.accountTransaction.deleteMany({ where: { journalEntryId: je.id } });
+    await prismaBase.journalEntry.delete({ where: { id: je.id } });
+  });
+
   it('a reversal entry cannot be voided either', async () => {
     const made = await post(entry('1010', '3010', 9), clerk);
     const voided = await request(app).post(`/api/gl/journal-entries/${made.body.entry.id}/void`).set(auth(clerk)).send({ voidReason: 'Oops' });
