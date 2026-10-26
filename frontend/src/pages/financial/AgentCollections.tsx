@@ -126,7 +126,7 @@ export const AgentCollections: React.FC = () => {
             <div className="flex items-start justify-between mb-2">
               <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
                 Overdue Settlements
-                <UITooltip content="Agents with collections held more than 7 days — require urgent follow-up" position="bottom">
+                <UITooltip content="Agents holding cash past their days to pay (7 unless set on the partner) — require urgent follow-up" position="bottom">
                   <Info className="w-3 h-3 text-gray-400 hover:text-gray-600 cursor-help" />
                 </UITooltip>
               </span>
@@ -135,7 +135,7 @@ export const AgentCollections: React.FC = () => {
               </div>
             </div>
             <div className="text-2xl font-bold text-red-600">{summary.overdueAgentsCount}</div>
-            <div className="text-xs text-gray-500 mt-1">&gt;7 days</div>
+            <div className="text-xs text-gray-500 mt-1">Past days to pay</div>
           </div>
         </Card>
 
