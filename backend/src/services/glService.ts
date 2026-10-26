@@ -67,6 +67,26 @@ interface AccountLedgerFilters {
   limit?: number;
 }
 
+/** Source types the journal void route may reverse. paystack_payout stays because voiding it frees its reference (F-934). */
+const VOIDABLE_BY_HAND: JournalSourceType[] = [JournalSourceType.manual, JournalSourceType.paystack_payout];
+
+const SOURCE_OWNER: Partial<Record<JournalSourceType, string>> = {
+  expense: 'an expense', payout: 'a payout', agent_deposit: 'a deposit', agent_collection: 'a collection',
+  order_delivery: 'an order', failed_delivery: 'an order', order_return: 'an order', order_failed_delivery: 'an order',
+  inventory_purchase: 'a shipment', inventory_claim: 'a shipment', digital_sale: 'a digital order',
+  period_close: 'the period close', reversal: 'a reversal',
+};
+const SOURCE_UNDO: Partial<Record<JournalSourceType, string>> = {
+  expense: 'Edit or delete the expense instead.',
+  payout: 'Reverse the payout instead.',
+  agent_deposit: 'Reject the deposit instead.',
+  agent_collection: 'Change the collection instead.',
+  order_delivery: 'Change the order status instead.', failed_delivery: 'Change the order status instead.',
+  order_return: 'Change the order status instead.', order_failed_delivery: 'Change the order status instead.',
+  inventory_purchase: 'Change the shipment instead.', inventory_claim: 'Change the shipment instead.',
+  reversal: 'A reversal cannot be voided.',
+};
+
 export class GLService {
   /**
    * Validate normal balance matches account type
@@ -1010,6 +1030,17 @@ export class GLService {
         throw new AppError('Journal entry is already voided', 400);
       }
 
+      // Only a hand-made entry (and a Paystack payout, whose reference this frees for a corrected payout) is undone
+      // here. An automatic posting is reversed by the service that owns its source record, or the ledger and the
+      // record would disagree (an expense with no entry).
+      if (!VOIDABLE_BY_HAND.includes(entry.sourceType)) {
+        throw new AppError(
+          `This entry was posted by ${SOURCE_OWNER[entry.sourceType] ?? 'the system'}. ${SOURCE_UNDO[entry.sourceType] ?? 'Undo it where it was created.'}`,
+          400,
+          'GL_ENTRY_NOT_MANUAL'
+        );
+      }
+
       // The reversing entry inherits the tenant of the entry being reversed —
       // both parent and children must be stamped (the extension only covers
       // the top-level create). account_transactions.tenant_id is NOT NULL, so a
@@ -1047,12 +1078,14 @@ export class GLService {
 
       // Update balances for reversal
       for (const txn of reversingEntry.transactions) {
-        await this.updateAccountBalance(
+        const runningBalance = await this.updateAccountBalance(
           txn.accountId,
           txn.debitAmount,
           txn.creditAmount,
           tx as Prisma.TransactionClient
         );
+        // The ledger shows this balance next to the line (F-921)
+        await tx.accountTransaction.update({ where: { id: txn.id }, data: { runningBalance } });
       }
 
       // Mark original as voided

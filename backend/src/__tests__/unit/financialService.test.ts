@@ -145,7 +145,7 @@ describe('FinancialService', () => {
       description: 'Fuel costs',
       expenseDate: new Date('2024-01-15'),
       recordedBy: 'user-1',
-      receiptUrl: 'https://example.com/receipt.pdf'
+      receiptUrl: '/uploads/receipt-1761500000000-123456789.pdf'
     };
 
     it('should record expense successfully', async () => {

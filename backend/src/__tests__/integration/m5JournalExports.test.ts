@@ -99,6 +99,31 @@ describe('manual journal permission', () => {
   });
 });
 
+describe('the void route reverses hand-made entries only', () => {
+  it('the clerk and the owner both get 400 on an expense entry, and it stays posted', async () => {
+    const exp = await request(app).post('/api/financial/expenses').set(auth(owner))
+      .send({ category: 'Transport', amount: 33, description: 'Taxi', expenseDate: today(), paidFrom: 'cash' });
+    const row = await prismaBase.expense.findUniqueOrThrow({ where: { id: exp.body.expense.id } });
+    for (const who of [clerk, owner]) {
+      const res = await request(app).post(`/api/gl/journal-entries/${row.journalEntryId}/void`).set(auth(who)).send({ voidReason: 'Trying' });
+      expect(res.status).toBe(400);
+      expect(res.body.message ?? res.body.error).toBe('This entry was posted by an expense. Edit or delete the expense instead.');
+    }
+    const after = await prismaBase.journalEntry.findUniqueOrThrow({ where: { id: row.journalEntryId! } });
+    expect(after.isVoided).toBe(false);
+    // Deleting the expense is the way to undo it
+    expect((await request(app).delete(`/api/financial/expenses/${row.id}`).set(auth(clerk))).status).toBe(200);
+  });
+
+  it('a reversal entry cannot be voided either', async () => {
+    const made = await post(entry('1010', '3010', 9), clerk);
+    const voided = await request(app).post(`/api/gl/journal-entries/${made.body.entry.id}/void`).set(auth(clerk)).send({ voidReason: 'Oops' });
+    const reversal = await prismaBase.journalEntry.findUniqueOrThrow({ where: { id: voided.body.entry.reversingEntryId } });
+    const res = await request(app).post(`/api/gl/journal-entries/${reversal.id}/void`).set(auth(owner)).send({ voidReason: 'Again' });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe('ledger browse', () => {
   it('searches the chart by code or name, marks 1020 inactive and shows the trial balance', async () => {
     const byCode = await get('/api/gl/accounts?search=1020');

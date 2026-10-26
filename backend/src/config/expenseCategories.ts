@@ -1,6 +1,6 @@
 /**
  * The one expense category list (F-918, M5-T28). "Marketing" is not Meta ad spend (that is 5080, posted by the
- * Meta pull). There is no "Airtime and rewards": target rewards come from the payout form, not from an expense.
+ * Meta pull). Rewards paid to people are not an expense category: they come from the payout form.
  * The data migration 20261026130000_m5_expense_categories maps every older category to "Other".
  */
 export const EXPENSE_CATEGORIES = [
