@@ -741,30 +741,29 @@ export class FinancialService {
       });
 
       // The same entry a verified deposit posts (F-904): DR 1010, CR 1015, for the cash the partner kept net of its delivery fee.
-      // Cash already moved is skipped: a collection a deposit has covered ('deposited'), or one the old verify step posted
-      // (it has an agent_collection journal entry). Verifying a collection posts nothing any more.
+      // Only what no deposit has covered yet is posted: a collection's amount minus its allocatedAmount. Skipped: a collection
+      // already 'deposited' and one the old verify step posted (an agent_collection journal entry).
+      // Then the collections are marked covered ('deposited', allocatedAmount = amount) and the partner balance drops, exactly
+      // as verifying a deposit does, so a later deposit cannot match the same collections again.
       const collections = await tx.agentCollection.findMany({
         where: { orderId: { in: orderIds } },
-        select: { id: true, orderId: true, status: true, amount: true },
+        select: { id: true, orderId: true, agentId: true, status: true, amount: true, allocatedAmount: true },
       });
       const oldPosted = new Set((await tx.journalEntry.findMany({
         where: { sourceType: 'agent_collection', sourceId: { in: collections.map((c) => c.id) }, isVoided: false },
         select: { sourceId: true },
       })).map((e) => e.sourceId));
+      const open = ['draft', 'verified', 'approved'];
       const collectionOf = new Map(collections.map((c) => [c.orderId, c]));
-      const moved = (orderId: number | null) => {
-        const coll = orderId == null ? undefined : collectionOf.get(orderId);
-        return !!coll && (coll.status === 'deposited' || oldPosted.has(coll.id));
-      };
+      const owed = (c: (typeof collections)[number]) =>
+        c.status === 'deposited' || oldPosted.has(c.id) ? Money.ZERO : Money.sub(c.amount, Money.orZero(c.allocatedAmount));
 
       // The collection holds the net amount; with no collection the net is the transaction minus the fee stamped on the order
       const depositAmount = Money.sum(
-        transactions
-          .filter((t) => !moved(t.orderId))
-          .map((t) => {
-            const coll = t.orderId == null ? undefined : collectionOf.get(t.orderId);
-            return coll ? coll.amount : Money.sub(t.amount, Money.orZero(t.order?.deliveryFee));
-          })
+        transactions.map((t) => {
+          const coll = t.orderId == null ? undefined : collectionOf.get(t.orderId);
+          return coll ? owed(coll) : Money.sub(t.amount, Money.orZero(t.order?.deliveryFee));
+        })
       );
 
       if (depositAmount.gt(0)) {
@@ -773,6 +772,18 @@ export class FinancialService {
         // transactions[0].id is order-dependent; Math.min is consistent across re-calls.
         const sourceId = Math.min(...transactions.map(t => t.id));
         await GLAutomationService.createDepositGLEntry(tx as any, depositAmount, sourceId, userId);
+      }
+
+      const dropByAgent = new Map<number, Money.Money>();
+      for (const coll of collections.filter((c) => open.includes(c.status) && owed(c).gt(0))) {
+        await tx.agentCollection.update({ where: { id: coll.id }, data: { status: 'deposited', allocatedAmount: coll.amount } });
+        dropByAgent.set(coll.agentId, Money.add(dropByAgent.get(coll.agentId) ?? Money.ZERO, owed(coll)));
+      }
+      for (const [agentId, drop] of dropByAgent) {
+        await tx.agentBalance.updateMany({
+          where: { agentId },
+          data: { totalDeposited: { increment: drop }, currentBalance: { decrement: drop }, lastSettlementDate: new Date() },
+        });
       }
 
       return result;

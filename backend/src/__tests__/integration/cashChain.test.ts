@@ -185,6 +185,93 @@ describe('excess deposit and rejection', () => {
   });
 });
 
+describe('reject reverses only its own allocations (ledger integrity)', () => {
+  it('two deposits verified, the first rejected: the second keeps its collections', async () => {
+    const partner = await mkPartner('ama');
+    await prismaBase.feeRule.create({ data: { tenantId, partnerUserId: partner, outcome: 'delivered', amount: 25, validFrom: new Date('2026-01-01') } });
+    const orders = [await deliver(partner), await deliver(partner), await deliver(partner)];
+    await sync(orders);
+    const collections = async () => (await prismaBase.agentCollection.findMany({ where: { agentId: partner }, orderBy: { id: 'asc' } }))
+      .map((c) => [c.status, Number(c.allocatedAmount)]);
+
+    const first = await deposit(partner, 250, 'REF-AMA-1');
+    await inTenant(() => agentReconciliationService.verifyDeposit(first.id, ADMIN.userId!));
+    const second = await deposit(partner, 275, 'REF-AMA-2');
+    await inTenant(() => agentReconciliationService.verifyDeposit(second.id, ADMIN.userId!));
+    expect(await collections()).toEqual([['deposited', 175], ['deposited', 175], ['deposited', 175]]);
+    const b1015 = await balance('1015');
+
+    await inTenant(() => agentReconciliationService.rejectDeposit(first.id, ADMIN.userId!, 'Payment not found in MoMo or bank'));
+
+    // first matched 175 on collection 1 and 75 on collection 2; the second's 100 on collection 2 and 175 on collection 3 stay
+    expect(await collections()).toEqual([['draft', 0], ['draft', 100], ['deposited', 175]]);
+    expect(await balance('1015')).toBe(b1015 + 250);
+    expect(Number((await prismaBase.agentBalance.findUniqueOrThrow({ where: { agentId: partner } })).currentBalance)).toBe(250);
+    expect((await depositEntries(second.id))[0].isVoided).toBe(false);
+  });
+
+  it('two parallel rejects: one wins, the other gets 409, the ledger is voided and restored once', async () => {
+    const partner = await mkPartner('yaw');
+    await prismaBase.feeRule.create({ data: { tenantId, partnerUserId: partner, outcome: 'delivered', amount: 25, validFrom: new Date('2026-01-01') } });
+    const orders = [await deliver(partner)];
+    await sync(orders);
+    const created = await deposit(partner, 175, 'REF-YAW-1');
+    await inTenant(() => agentReconciliationService.verifyDeposit(created.id, ADMIN.userId!));
+    const [b1015, b1010] = [await balance('1015'), await balance('1010')];
+
+    const results = await Promise.allSettled([
+      inTenant(() => agentReconciliationService.rejectDeposit(created.id, ADMIN.userId!, 'first')),
+      inTenant(() => agentReconciliationService.rejectDeposit(created.id, ADMIN.userId!, 'second')),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const lost = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+    expect(lost.reason.statusCode).toBe(409);
+    expect(await prismaBase.journalEntry.count({ where: { tenantId, sourceType: 'reversal', sourceId: created.id } })).toBe(1);
+    expect(await balance('1015')).toBe(b1015 + 175);
+    expect(await balance('1010')).toBe(b1010 - 175);
+    expect(Number((await prismaBase.agentBalance.findUniqueOrThrow({ where: { agentId: partner } })).currentBalance)).toBe(175);
+  });
+
+  it('two parallel verifies of one deposit: one wins, the other gets 409, 1015 is credited once', async () => {
+    const partner = await mkPartner('kojo');
+    const orders = [await deliver(partner)];
+    await sync(orders);
+    const created = await deposit(partner, 200, 'REF-KOJO-1');
+    const b1015 = await balance('1015');
+    const results = await Promise.allSettled([
+      inTenant(() => agentReconciliationService.verifyDeposit(created.id, ADMIN.userId!)),
+      inTenant(() => agentReconciliationService.verifyDeposit(created.id, ADMIN.userId!)),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(await depositEntries(created.id)).toHaveLength(1);
+    expect(await balance('1015')).toBe(b1015 - 200);
+  });
+});
+
+describe('old route then a deposit for the same agent', () => {
+  it('1015 is credited once in total', async () => {
+    const partner = await mkPartner('efua');
+    await prismaBase.feeRule.create({ data: { tenantId, partnerUserId: partner, outcome: 'delivered', amount: 25, validFrom: new Date('2026-01-01') } });
+    const orders = [await deliver(partner), await deliver(partner), await deliver(partner)];
+    await sync(orders);
+    const start1015 = await balance('1015');
+    const [first, second] = await prismaBase.transaction.findMany({ where: { orderId: { in: orders }, type: 'cod_collection' }, orderBy: { id: 'asc' } });
+
+    const requester = { id: ADMIN.userId!, role: 'super_admin' } as any;
+    await inTenant(() => financialService.markCODAsDeposited([String(first.id), String(second.id)], 'DEP-OLD-2', requester));
+    expect(await balance('1015')).toBe(start1015 - 350);
+    expect((await prismaBase.agentCollection.findMany({ where: { orderId: { in: [first.orderId!, second.orderId!] } } })).every((c) => c.status === 'deposited' && Number(c.allocatedAmount) === 175)).toBe(true);
+    expect(Number((await prismaBase.agentBalance.findUniqueOrThrow({ where: { agentId: partner } })).currentBalance)).toBe(175);
+
+    // The partner can only deposit what is left, and that deposit matches only the third collection
+    await expect(deposit(partner, 525, 'REF-EFUA-BIG')).rejects.toThrow();
+    const rest = await deposit(partner, 175, 'REF-EFUA-1');
+    await inTenant(() => agentReconciliationService.verifyDeposit(rest.id, ADMIN.userId!));
+    expect(await balance('1015')).toBe(start1015 - 525);
+    expect(await prismaBase.finding.count({ where: { tenantId, type: 'excess_deposit', subjectId: String(rest.id) } })).toBe(0);
+  });
+});
+
 describe('the old "mark COD deposited" route', () => {
   it('posts the same entry (DR 1010, CR 1015) for the net amount, once', async () => {
     const orders = [await deliver(kofiId), await deliver(kofiId)];

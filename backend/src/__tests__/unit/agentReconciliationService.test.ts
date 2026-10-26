@@ -106,6 +106,7 @@ describe('AgentReconciliationService', () => {
         jest.clearAllMocks();
         mockPrisma.$transaction.mockImplementation((cb: any) => cb(mockTx));
         mockTx.$queryRaw.mockResolvedValue([]);
+        mockTx.agentDeposit.updateMany.mockResolvedValue({ count: 1 }); // the claim of a pending deposit
         mockTx.account.findUnique.mockResolvedValue({ id: 10 });
     });
 
@@ -414,13 +415,14 @@ describe('AgentReconciliationService', () => {
             const userId = 789;
             const deposit = { id: depositId, agentId: 456, amount: 1000, status: 'pending' };
 
-            mockTx.agentDeposit.findUnique.mockResolvedValue(deposit);
-            mockTx.agentDeposit.update.mockResolvedValue({ ...deposit, status: 'rejected' });
+            mockTx.agentDeposit.findUnique
+                .mockResolvedValueOnce(deposit)
+                .mockResolvedValueOnce({ ...deposit, status: 'rejected' });
 
             const result = await agentReconciliationService.rejectDeposit(depositId, userId, 'Test rejection');
 
-            expect(mockTx.agentDeposit.update).toHaveBeenCalledWith({
-                where: { id: depositId },
+            expect(mockTx.agentDeposit.updateMany).toHaveBeenCalledWith({
+                where: { id: depositId, status: 'pending' },
                 data: expect.objectContaining({
                     status: 'rejected',
                     verifiedById: userId,
