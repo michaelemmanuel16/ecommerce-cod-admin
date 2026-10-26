@@ -47,7 +47,7 @@ router.post('/:id/verify',
 router.post('/bulk-verify',
     requireRole('super_admin', 'admin', 'manager', 'accountant'),
     [
-        body('ids').isArray({ min: 1 }),
+        body('ids').isArray({ min: 1, max: 50 }).withMessage('Must provide 1-50 collection IDs'),
         body('ids.*').isInt().toInt(),
         validate
     ],
@@ -109,9 +109,9 @@ router.post('/deposits/:id/reject',
     requireRole('super_admin', 'accountant'),
     [
         param('id').isInt().toInt(),
-        // The reason is required (F-912). `notes` is the old name of the field.
-        body().custom((b) => typeof (b?.reason ?? b?.notes) === 'string' && (b.reason ?? b.notes).trim().length >= 5)
-            .withMessage('A reason of at least 5 characters is required to reject a deposit'),
+        // The reason is required (F-912). `notes` is the old name of the field; the trimmed value lands in `reason`.
+        body('reason').customSanitizer((value, { req }) => String(value ?? req.body.notes ?? '').trim())
+            .isLength({ min: 5 }).withMessage('A reason of at least 5 characters is required to reject a deposit'),
         validate
     ],
     agentReconciliationController.rejectDeposit
@@ -126,17 +126,6 @@ router.post('/deposits/bulk-verify',
         validate
     ],
     agentReconciliationController.bulkVerifyDeposits
-);
-
-// Aging Report
-router.get('/aging',
-    requireRole('super_admin', 'admin', 'manager', 'accountant'),
-    agentReconciliationController.getAgingReport
-);
-
-router.get('/aging/export',
-    requireRole('super_admin', 'admin', 'manager', 'accountant'),
-    agentReconciliationController.exportAgingReport
 );
 
 // Agent Blocking

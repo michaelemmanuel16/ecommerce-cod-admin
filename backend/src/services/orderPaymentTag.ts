@@ -16,11 +16,17 @@ export const PAYMENT_TAG_LABELS: Record<PaymentTagCode, string> = {
   no_payment: 'No payment',
 };
 
-/**
- * The partner's days to pay arrives with the partner profile (Deliveries, M5) and the Settings → Operations default.
- * Until then every partner pays within this many days.
- */
+/** Days a partner has to pay when neither the partner nor Settings says (F-309, F-704). */
 export const DEFAULT_DAYS_TO_PAY = 7;
+
+/**
+ * Days to pay for a partner: its own value when above 0, else the Settings default, else 7. The Settings task adds
+ * `SystemConfig.defaultDaysToPay` (F-1200); until then no caller passes `config` and every partner without a value gets 7.
+ */
+export const resolveDaysToPay = (
+  profile?: { daysToPay?: number | null } | null,
+  config?: { defaultDaysToPay?: number | null } | null,
+): number => (profile?.daysToPay && profile.daysToPay > 0 ? profile.daysToPay : config?.defaultDaysToPay && config.defaultDaysToPay > 0 ? config.defaultDaysToPay : DEFAULT_DAYS_TO_PAY);
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -36,7 +42,7 @@ export interface PaymentTagInput {
 /** First matching rule wins. A cancelled order, or a returned one nobody paid, has no payment. */
 export function paymentTagOf(
   order: PaymentTagInput,
-  { daysToPay = DEFAULT_DAYS_TO_PAY, now = new Date() }: { daysToPay?: number; now?: Date } = {},
+  { daysToPay = resolveDaysToPay(), now = new Date() }: { daysToPay?: number; now?: Date } = {},
 ): { code: PaymentTagCode; label: string } {
   const tag = (code: PaymentTagCode) => ({ code, label: PAYMENT_TAG_LABELS[code] });
   const { status, paymentStatus } = order;

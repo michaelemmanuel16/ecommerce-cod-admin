@@ -181,9 +181,6 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
         referenceNumber: `dep-${tag}`, notes: `deposit ${marker}`, tenantId,
       },
     })),
-    seed('agentAgingBucket', prismaBase.agentAgingBucket.create({
-      data: { agentId: deliveryAgent.id, totalBalance: amount, bucket_8_14: amount, tenantId },
-    })),
     seed('agentBalance', prismaBase.agentBalance.create({
       data: { agentId: deliveryAgent.id, totalCollected: amount, currentBalance: amount, tenantId },
     })),
@@ -357,7 +354,6 @@ export async function deleteTenantRows(tenantIds: string[]): Promise<void> {
     db.messageLog.deleteMany({ where: t }),
     db.payout.deleteMany({ where: t }),
     db.agentDeposit.deleteMany({ where: t }),
-    db.agentAgingBucket.deleteMany({ where: t }),
     db.agentBalance.deleteMany({ where: t }),
     db.accountTransaction.deleteMany({ where: t }),
     db.transaction.deleteMany({ where: t }),

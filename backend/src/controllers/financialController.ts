@@ -5,6 +5,8 @@ import { PaymentStatus } from '@prisma/client';
 import financialService, { closedBefore, CLOSED_MONTH_NOTICE } from '../services/financialService';
 import { UPLOAD_MAX_BYTES, UPLOAD_MIME_TYPES } from '../config/multer';
 import agingService from '../services/agingService';
+import { buildReport, exportFileName } from '../services/financeExportService';
+import { streamExport } from '../services/exportStream';
 import { Parser } from 'json2csv';
 import ExcelJS from 'exceljs';
 import logger from '../utils/logger';
@@ -309,16 +311,10 @@ export const getUnpaidByAge = async (_req: AuthRequest, res: Response): Promise<
   }
 };
 
-export const exportAgentAgingCSV = async (_req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const csv = await agingService.generateAgingCSV();
-
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', `attachment; filename=agent-aging-report-${new Date().toISOString().split('T')[0]}.csv`);
-    res.status(200).send(csv);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to export agent aging report' });
-  }
+/** The aging CSV: the same report as GET /export/agent-aging (F-930), kept on its old path. */
+export const exportAgentAgingCSV = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { columns, batches } = await buildReport('agent-aging', {}, req.user);
+  await streamExport(res, { format: 'csv', filename: exportFileName('agent-aging', {}), columns, batches });
 };
 
 export const getBalanceSheet = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -348,17 +344,16 @@ export const getProfitLoss = async (req: AuthRequest, res: Response): Promise<vo
 };
 
 /**
- * POST /api/financial/refresh-aging
- * Admin-only endpoint to manually trigger aging bucket refresh
- * Use when aging data is stale or after bulk reconciliation
+ * POST /api/financial/sync-cash-findings
+ * Admin-only: opens or closes the "negative cash held" Findings now, without waiting for the daily job.
  */
-export const refreshAgingBuckets = async (_req: AuthRequest, res: Response): Promise<void> => {
+export const syncCashFindings = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
-    await agingService.refreshAll();
-    res.json({ message: 'Aging buckets refreshed successfully' });
+    await agingService.syncNegativeCashFindings();
+    res.json({ message: 'Cash held Findings synced' });
   } catch (error) {
-    logger.error('Failed to refresh aging buckets', { error });
-    res.status(500).json({ message: 'Failed to refresh aging buckets' });
+    logger.error('Failed to sync cash held Findings', { error });
+    res.status(500).json({ message: 'Failed to sync cash held Findings' });
   }
 };
 
@@ -443,8 +438,8 @@ export const backfillMissingCollections = async (_req: AuthRequest, res: Respons
       }
     });
 
-    // Refresh aging buckets after backfill
-    await agingService.refreshAll();
+    // The backfilled collections change cash held: sync the below-zero Findings
+    await agingService.syncNegativeCashFindings();
 
     const summary = Array.from(byAgent.entries()).map(([agentId, { orders, total }]) => ({
       agentId,

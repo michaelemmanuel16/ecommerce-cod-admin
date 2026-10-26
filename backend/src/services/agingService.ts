@@ -1,12 +1,13 @@
+import { Prisma } from '@prisma/client';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
-import appEvents, { AppEvent } from '../utils/appEvents';
 import { resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 import { fullName } from '../utils/nameUtils';
-import { OPEN_COLLECTION_STATUSES, outstandingOf } from '../utils/collectionCash';
-import { DAY_MS, getStoreTimeZone, localDate, utcDateOfYmd } from './kpi/dates';
+import { OPEN_COLLECTION_STATUSES } from '../utils/collectionCash';
+import { DAY_MS, getStoreTimeZone, localDate, shiftYmd, startOfDay, utcDateOfYmd } from './kpi/dates';
 import { openFindingOnce } from './findingService';
+import { resolveDaysToPay } from './orderPaymentTag';
 
 /** The four age buckets (F-910): days since delivery. A delivery of today is 0 days, so it falls in the first. */
 export const AGE_BUCKETS = [
@@ -15,12 +16,8 @@ export const AGE_BUCKETS = [
   { key: '8-14', label: '8-14 days', from: 8, to: 14 },
   { key: '15+', label: '15+ days', from: 15, to: Infinity },
 ] as const;
-export type AgeBucketKey = typeof AGE_BUCKETS[number]['key'];
 
 export const bucketIndexOf = (days: number): number => AGE_BUCKETS.findIndex((b) => days <= b.to);
-
-/** Used when the partner has no days to pay and Settings has no default (F-309, owner to confirm). */
-export const FALLBACK_DAYS_TO_PAY = 8;
 
 /** One delivered order whose cash the partner still holds. `amount` is net of the delivery fee the partner keeps. */
 export interface UnpaidOrder {
@@ -35,301 +32,238 @@ export interface UnpaidOrder {
   bucket: number;
 }
 
-export interface PartnerAging {
-  agentId: number;
-  name: string;
-  email: string | null;
-  /** AgentBalance.currentBalance: can be negative (a deposit above what was collected). */
-  cashHeld: Money.Money;
-  daysToPay: number;
-  unpaidOrders: number;
-  unpaidAmount: Money.Money;
-  /** Net amount and order count per bucket, in AGE_BUCKETS order. */
-  buckets: Array<{ orders: number; amount: Money.Money }>;
-  overdueOrders: number;
-  overdueAmount: Money.Money;
-  oldestUnpaidDays: number | null;
-  oldestDeliveredOn: string | null;
-  isBlocked: boolean;
+interface Tally { orders: number; amount: Money.Money }
+
+/** Buckets, total and overdue of a set of unpaid orders, in one pass. The card, the partner table and the summary all use it. */
+export function summarize(rows: UnpaidOrder[]) {
+  const buckets: Tally[] = AGE_BUCKETS.map(() => ({ orders: 0, amount: Money.ZERO }));
+  const total: Tally = { orders: 0, amount: Money.ZERO };
+  const overdue: Tally = { orders: 0, amount: Money.ZERO };
+  let oldest: UnpaidOrder | null = null;
+  for (const o of rows) {
+    const b = buckets[o.bucket];
+    b.orders += 1; b.amount = b.amount.plus(o.amount);
+    total.orders += 1; total.amount = total.amount.plus(o.amount);
+    if (o.overdue) { overdue.orders += 1; overdue.amount = overdue.amount.plus(o.amount); }
+    if (!oldest || o.ageDays > oldest.ageDays) oldest = o;
+  }
+  return { buckets, total, overdue, oldest };
 }
 
-const emptyBuckets = () => AGE_BUCKETS.map(() => ({ orders: 0, amount: Money.ZERO }));
+const bucketView = (buckets: Tally[]) => AGE_BUCKETS.map((b, i) => ({ key: b.key, label: b.label, orders: buckets[i].orders, amount: Money.toApi(buckets[i].amount) }));
+
+/** Whole days between the store-local calendar day of `at` and today. */
+const ageInDays = (at: Date, zone: string, todayMs: number): number =>
+  Math.max(Math.round((todayMs - utcDateOfYmd(localDate(at, zone)).getTime()) / DAY_MS), 0);
 
 export class AgingService {
-  constructor() {
-    this.setupEventListeners();
-  }
-
-  private handlers: { [key: string]: (...args: any[]) => void } = {};
-
-  private setupEventListeners() {
-    this.handlers[AppEvent.AGENT_COLLECTION_RECONCILED] = () => {
-      this.refreshAll().catch(err =>
-        logger.error('Proactive aging refresh failed after reconciliation:', err)
-      );
-    };
-
-    this.handlers[AppEvent.BULK_ORDERS_IMPORTED] = () => {
-      this.refreshAll().catch(err =>
-        logger.error('Proactive aging refresh failed after bulk import:', err)
-      );
-    };
-
-    this.handlers[AppEvent.ORDERS_DELETED] = () => {
-      this.refreshAll().catch(err =>
-        logger.error('Proactive aging refresh failed after order deletion:', err)
-      );
-    };
-
-    // Register listeners
-    Object.entries(this.handlers).forEach(([event, handler]) => {
-      appEvents.on(event as any, handler);
-    });
+  /** Days to pay per partner profile of the tenant; a partner with no profile or no value gets the default. */
+  private async daysToPayOf(): Promise<(agentId: number) => number> {
+    const profiles = await prisma.deliveryPartnerProfile.findMany({ select: { userId: true, daysToPay: true } });
+    const own = new Map(profiles.map((p) => [p.userId, resolveDaysToPay(p)]));
+    return (agentId) => own.get(agentId) ?? resolveDaysToPay();
   }
 
   /**
-   * Cleanup event listeners to prevent memory leaks.
-   * Call this when the service is no longer needed (e.g., in tests or server shutdown).
+   * The one read behind the aging card, the partner table and the CSV (F-309, F-910): delivered orders whose collection is
+   * still open (no verified deposit or settlement covers it), each with its age and whether it is past the partner's days to
+   * pay. A part-covered collection counts for what is left. Amounts are the collection amount, already net of the fee.
+   * The partner balances come with it. Runs in the current tenant context.
    */
-  public destroy() {
-    Object.entries(this.handlers).forEach(([event, handler]) => {
-      appEvents.off(event as any, handler);
-    });
-    this.handlers = {};
-    logger.info('AgingService destroyed and listeners removed');
-  }
-
-  /** The tenant's default days to pay (Settings), else 8. The Settings screen stores it in `features.defaultDaysToPay`. */
-  private async defaultDaysToPay(tenantId: string): Promise<number> {
-    const config = await prisma.systemConfig.findUnique({ where: { tenantId }, select: { features: true } });
-    const stored = Number((config?.features as Record<string, unknown> | null)?.defaultDaysToPay);
-    return Number.isInteger(stored) && stored > 0 ? stored : FALLBACK_DAYS_TO_PAY;
-  }
-
-  /**
-   * The one query behind the aging card, the partner table and the Orders "Unpaid by agent" tab (F-309, F-910).
-   * A delivered order counts while its collection is still open (no verified deposit or settlement covers it); a
-   * part-covered collection counts for what is left. Amounts are the collection amount, already net of the fee
-   * stamped on the order. Runs in the current tenant context.
-   */
-  async loadUnpaidOrders(): Promise<UnpaidOrder[]> {
+  private async loadAging() {
     const tenantId = resolveTenantId();
     const zone = getStoreTimeZone(tenantId);
-    const today = utcDateOfYmd(localDate(new Date(), zone)).getTime();
+    const todayMs = utcDateOfYmd(localDate(new Date(), zone)).getTime();
 
-    const [collections, fallback] = await Promise.all([
+    const [collections, daysToPayOf, balances] = await Promise.all([
       prisma.agentCollection.findMany({
-        where: { status: { in: [...OPEN_COLLECTION_STATUSES] }, order: { status: 'delivered', deletedAt: null } },
-        select: { agentId: true, amount: true, allocatedAmount: true, collectionDate: true, orderId: true, order: { select: { deliveryDate: true } } },
+        where: { status: { in: [...OPEN_COLLECTION_STATUSES] }, order: { status: 'delivered', deletedAt: null, deliveryDate: { not: null } } },
+        select: { agentId: true, amount: true, allocatedAmount: true, orderId: true, order: { select: { deliveryDate: true } } },
       }),
-      this.defaultDaysToPay(tenantId),
+      this.daysToPayOf(),
+      prisma.agentBalance.findMany({ select: { agentId: true, currentBalance: true, isBlocked: true } }),
     ]);
-    const profiles = await prisma.deliveryPartnerProfile.findMany({
-      where: { userId: { in: [...new Set(collections.map((c) => c.agentId))] } },
-      select: { userId: true, daysToPay: true },
-    });
-    const dueIn = new Map(profiles.map((p) => [p.userId, p.daysToPay > 0 ? p.daysToPay : fallback]));
 
     const unpaid: UnpaidOrder[] = [];
     for (const c of collections) {
-      const amount = outstandingOf(c);
+      const amount = Money.sub(c.amount, Money.orZero(c.allocatedAmount));
       if (amount.lte(0)) continue;
-      const deliveredOn = localDate(c.order.deliveryDate ?? c.collectionDate, zone);
-      const ageDays = Math.max(Math.round((utcDateOfYmd(deliveredOn).getTime() - today) / -DAY_MS), 0);
-      const daysToPay = dueIn.get(c.agentId) ?? fallback;
-      unpaid.push({ orderId: c.orderId, agentId: c.agentId, amount, ageDays, deliveredOn, daysToPay, overdue: ageDays > daysToPay, bucket: bucketIndexOf(ageDays) });
+      const ageDays = ageInDays(c.order.deliveryDate!, zone, todayMs);
+      const daysToPay = daysToPayOf(c.agentId);
+      unpaid.push({
+        orderId: c.orderId, agentId: c.agentId, amount, ageDays, deliveredOn: localDate(c.order.deliveryDate!, zone),
+        daysToPay, overdue: ageDays > daysToPay, bucket: bucketIndexOf(ageDays),
+      });
     }
-    return unpaid;
-  }
-
-  /** The orders past their partner's days to pay: the Orders "Unpaid by agent" tab. Oldest first. */
-  async overdueOrders(): Promise<UnpaidOrder[]> {
-    return (await this.loadUnpaidOrders()).filter((o) => o.overdue).sort((a, b) => b.ageDays - a.ageDays || a.orderId - b.orderId);
-  }
-
-  /** Cash, buckets, oldest unpaid and days to pay per partner (F-704, F-911), from the shared unpaid-orders query. */
-  private async partnerAging(): Promise<PartnerAging[]> {
-    const unpaid = await this.loadUnpaidOrders();
-    const balances = await prisma.agentBalance.findMany({ select: { agentId: true, currentBalance: true, isBlocked: true } });
-    const ids = [...new Set([...unpaid.map((o) => o.agentId), ...balances.filter((b) => !Money.orZero(b.currentBalance).isZero()).map((b) => b.agentId)])];
-    if (ids.length === 0) return [];
-
-    const [users, profiles, fallback] = await Promise.all([
-      prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, firstName: true, lastName: true, email: true } }),
-      prisma.deliveryPartnerProfile.findMany({ where: { userId: { in: ids } }, select: { userId: true, daysToPay: true } }),
-      this.defaultDaysToPay(resolveTenantId()),
-    ]);
-    const userOf = new Map(users.map((u) => [u.id, u]));
-    const balanceOf = new Map(balances.map((b) => [b.agentId, b]));
-    const dueIn = new Map(profiles.map((p) => [p.userId, p.daysToPay > 0 ? p.daysToPay : fallback]));
-
-    return ids.map((agentId): PartnerAging => {
-      const mine = unpaid.filter((o) => o.agentId === agentId);
-      const buckets = emptyBuckets();
-      for (const o of mine) {
-        buckets[o.bucket].orders += 1;
-        buckets[o.bucket].amount = buckets[o.bucket].amount.plus(o.amount);
-      }
-      const overdue = mine.filter((o) => o.overdue);
-      const oldest = mine.reduce<UnpaidOrder | null>((a, o) => (!a || o.ageDays > a.ageDays ? o : a), null);
-      const user = userOf.get(agentId);
-      return {
-        agentId,
-        name: fullName(user) || `Partner #${agentId}`,
-        email: user?.email ?? null,
-        cashHeld: Money.orZero(balanceOf.get(agentId)?.currentBalance),
-        daysToPay: dueIn.get(agentId) ?? fallback,
-        unpaidOrders: mine.length,
-        unpaidAmount: Money.sum(mine.map((o) => o.amount)),
-        buckets,
-        overdueOrders: overdue.length,
-        overdueAmount: Money.sum(overdue.map((o) => o.amount)),
-        oldestUnpaidDays: oldest?.ageDays ?? null,
-        oldestDeliveredOn: oldest?.deliveredOn ?? null,
-        isBlocked: balanceOf.get(agentId)?.isBlocked ?? false,
-      };
-    });
+    return { unpaid, balances, daysToPayOf };
   }
 
   /**
-   * Rebuilds the stored buckets of the current tenant and keeps the "negative cash held" Findings (F-704, F-911).
-   * Runs inside a tenant context (the aging queue calls it once per tenant) and touches only that tenant: every
-   * read and write below is tenant-scoped, and with no context it throws instead of reaching every tenant.
+   * The rule "past the partner's days to pay" as a database filter on the open collections of delivered orders: one
+   * clause per partner profile with its cutoff day, and one for the partners with none. Same rule as `loadAging`, so the
+   * Orders tab, the Dashboard count and the aging card agree. `daysToPayOf` and `ageOf` serve the row flag.
    */
-  async refreshAll(): Promise<void> {
+  async overdueFilter() {
     const tenantId = resolveTenantId();
-    logger.info('Starting agent aging refresh...');
-    try {
-      const partners = await this.partnerAging();
-      const withOrders = partners.filter((p) => p.unpaidOrders > 0);
+    const zone = getStoreTimeZone(tenantId);
+    const todayYmd = localDate(new Date(), zone);
+    const todayMs = utcDateOfYmd(todayYmd).getTime();
+    // Delivered before the start of (today - days to pay) means more than that many days old
+    const cutoff = (days: number) => startOfDay(shiftYmd(todayYmd, -days), zone);
 
-      await prisma.$transaction(async (tx) => {
-        await tx.agentAgingBucket.deleteMany({ where: { tenantId, agentId: { notIn: withOrders.map((p) => p.agentId) } } });
-        for (const p of withOrders) {
-          const data = {
-            bucket_0_3: p.buckets[0].amount, bucket_4_7: p.buckets[1].amount, bucket_8_14: p.buckets[2].amount, bucket_15_plus: p.buckets[3].amount,
-            totalBalance: p.unpaidAmount,
-            oldestCollectionDate: p.oldestDeliveredOn ? utcDateOfYmd(p.oldestDeliveredOn) : null,
-          };
-          await tx.agentAgingBucket.upsert({ where: { agentId: p.agentId }, update: data, create: { tenantId, agentId: p.agentId, ...data } });
-        }
-      });
+    const profiles = await prisma.deliveryPartnerProfile.findMany({ select: { userId: true, daysToPay: true } });
+    const own = new Map(profiles.map((p) => [p.userId, resolveDaysToPay(p)]));
+    const late = (agentId: Prisma.AgentCollectionWhereInput['agentId'], days: number): Prisma.AgentCollectionWhereInput =>
+      ({ agentId, order: { deliveryDate: { lt: cutoff(days) } } });
 
-      await this.syncNegativeCashFindings(tenantId, partners);
-      logger.info('Agent aging refresh completed successfully.');
-    } catch (error) {
-      logger.error('Error refreshing agent aging:', error);
-      throw error;
-    }
+    const where: Prisma.AgentCollectionWhereInput = {
+      status: { in: [...OPEN_COLLECTION_STATUSES] },
+      // amount above what a deposit already covered
+      amount: { gt: prisma.agentCollection.fields.allocatedAmount },
+      order: { status: 'delivered', deletedAt: null },
+      OR: [
+        ...[...own].map(([agentId, days]) => late(agentId, days)),
+        late({ notIn: [...own.keys()] }, resolveDaysToPay()),
+      ],
+    };
+    return {
+      where,
+      daysToPayOf: (agentId: number) => own.get(agentId) ?? resolveDaysToPay(),
+      ageOf: (deliveredAt: Date) => ageInDays(deliveredAt, zone, todayMs),
+    };
   }
 
-  /** A Finding per partner whose cash held is below zero; it closes when the balance is back at zero or above. */
-  private async syncNegativeCashFindings(tenantId: string, partners: PartnerAging[]): Promise<void> {
-    for (const p of partners.filter((x) => x.cashHeld.lt(0))) {
+  /** How many open collections are past their partner's days to pay (the Dashboard "orders over" count). */
+  async countOverdue(): Promise<number> {
+    return prisma.agentCollection.count({ where: (await this.overdueFilter()).where });
+  }
+
+  /** A Finding per partner whose cash held is below zero (F-704); it closes when the balance is back at zero or above. */
+  async syncNegativeCashFindings(): Promise<void> {
+    const tenantId = resolveTenantId();
+    const negative = await prisma.agentBalance.findMany({
+      where: { currentBalance: { lt: 0 } },
+      select: { agentId: true, currentBalance: true, agent: { select: { firstName: true, lastName: true } } },
+    });
+    for (const b of negative) {
+      const owed = Money.parse(b.currentBalance).abs();
       await openFindingOnce({
         tenantId,
         type: 'negative_cash_held',
         subjectType: 'delivery_partner',
-        subjectId: String(p.agentId),
-        amount: p.cashHeld.abs(),
-        note: `${p.name} has deposited ${Money.toApi(p.cashHeld.abs())} more than it collected.`,
+        subjectId: String(b.agentId),
+        amount: owed,
+        note: `${fullName(b.agent) || `Partner #${b.agentId}`} has deposited ${Money.toApi(owed)} more than it collected.`,
       }, { updateAmount: true });
     }
-    const negative = new Set(partners.filter((x) => x.cashHeld.lt(0)).map((x) => String(x.agentId)));
+    const still = new Set(negative.map((b) => String(b.agentId)));
     const open = await prisma.finding.findMany({ where: { type: 'negative_cash_held', subjectType: 'delivery_partner', status: 'open' }, select: { id: true, subjectId: true } });
-    const cleared = open.filter((f) => !negative.has(f.subjectId)).map((f) => f.id);
+    const cleared = open.filter((f) => !still.has(f.subjectId)).map((f) => f.id);
     if (cleared.length > 0) {
       await prisma.finding.updateMany({
         where: { id: { in: cleared }, status: 'open' },
         data: { status: 'closed', explanation: 'Cash held is no longer below zero', resolvedAt: new Date() },
       });
     }
+    logger.info(`Cash held Findings synced: ${negative.length} partner(s) below zero.`);
   }
 
   /** The card "Unpaid delivered orders" (F-910): four buckets and a total, net of the delivery fee. */
   async getUnpaidByAge() {
-    const unpaid = await this.loadUnpaidOrders();
-    const buckets = AGE_BUCKETS.map((b, i) => {
-      const rows = unpaid.filter((o) => o.bucket === i);
-      return { key: b.key, label: b.label, orders: rows.length, amount: Money.toApi(Money.sum(rows.map((o) => o.amount))) };
-    });
-    const overdue = unpaid.filter((o) => o.overdue);
+    const { unpaid } = await this.loadAging();
+    const { buckets, total, overdue } = summarize(unpaid);
     return {
       basis: 'net_of_delivery_fee' as const,
-      total: { orders: unpaid.length, amount: Money.toApi(Money.sum(unpaid.map((o) => o.amount))) },
-      overdue: { orders: overdue.length, amount: Money.toApi(Money.sum(overdue.map((o) => o.amount))) },
-      buckets,
+      total: { orders: total.orders, amount: Money.toApi(total.amount) },
+      overdue: { orders: overdue.orders, amount: Money.toApi(overdue.amount) },
+      buckets: bucketView(buckets),
     };
   }
 
-  /** The partner table with its summary tiles (F-911). Live from the shared query, so it always matches the card and the tab. */
+  /** Cash, buckets, oldest unpaid and days to pay per partner (F-704, F-911), with the summary tiles. */
   async getAgingReport() {
-    const partners = await this.partnerAging();
-    const findings = partners.some((p) => p.cashHeld.lt(0))
-      ? await prisma.finding.findMany({ where: { type: 'negative_cash_held', subjectType: 'delivery_partner', status: 'open' }, select: { id: true, subjectId: true } })
-      : [];
+    const { unpaid, balances, daysToPayOf } = await this.loadAging();
+
+    const byPartner = new Map<number, UnpaidOrder[]>();
+    for (const o of unpaid) {
+      const list = byPartner.get(o.agentId);
+      if (list) list.push(o); else byPartner.set(o.agentId, [o]);
+    }
+    const balanceOf = new Map(balances.map((b) => [b.agentId, b]));
+    // Partners with unpaid orders, and those whose cash held is not zero
+    const ids = [...new Set([...byPartner.keys(), ...balances.filter((b) => !Money.orZero(b.currentBalance).isZero()).map((b) => b.agentId)])];
+
+    const [users, findings] = await Promise.all([
+      prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, firstName: true, lastName: true, email: true } }),
+      prisma.finding.findMany({ where: { type: 'negative_cash_held', subjectType: 'delivery_partner', status: 'open' }, select: { id: true, subjectId: true } }),
+    ]);
+    const userOf = new Map(users.map((u) => [u.id, u]));
     const findingOf = new Map(findings.map((f) => [f.subjectId, f.id]));
 
-    const rows = partners
-      .sort((a, b) => b.overdueAmount.comparedTo(a.overdueAmount) || b.unpaidAmount.comparedTo(a.unpaidAmount) || a.agentId - b.agentId)
-      .map((p) => ({
-        agentId: p.agentId,
-        name: p.name,
-        email: p.email,
-        cashHeld: Money.toApi(p.cashHeld),
-        negativeCashHeld: p.cashHeld.lt(0),
-        findingId: findingOf.get(String(p.agentId)) ?? null,
-        daysToPay: p.daysToPay,
-        unpaidOrders: p.unpaidOrders,
-        unpaidAmount: Money.toApi(p.unpaidAmount),
-        buckets: AGE_BUCKETS.map((b, i) => ({ key: b.key, label: b.label, orders: p.buckets[i].orders, amount: Money.toApi(p.buckets[i].amount) })),
-        overdueOrders: p.overdueOrders,
-        overdueAmount: Money.toApi(p.overdueAmount),
-        oldestUnpaidDays: p.oldestUnpaidDays,
-        oldestDeliveredOn: p.oldestDeliveredOn,
-        isBlocked: p.isBlocked,
-      }));
+    const partners = ids.map((agentId) => {
+      const s = summarize(byPartner.get(agentId) ?? []);
+      const cashHeld = Money.orZero(balanceOf.get(agentId)?.currentBalance);
+      const user = userOf.get(agentId);
+      return {
+        agentId,
+        name: fullName(user) || `Partner #${agentId}`,
+        email: user?.email ?? null,
+        cashHeld: Money.toApi(cashHeld),
+        negativeCashHeld: cashHeld.lt(0),
+        findingId: findingOf.get(String(agentId)) ?? null,
+        daysToPay: daysToPayOf(agentId),
+        unpaidOrders: s.total.orders,
+        unpaidAmount: Money.toApi(s.total.amount),
+        buckets: bucketView(s.buckets),
+        overdueOrders: s.overdue.orders,
+        overdueAmount: Money.toApi(s.overdue.amount),
+        oldestUnpaidDays: s.oldest?.ageDays ?? null,
+        oldestDeliveredOn: s.oldest?.deliveredOn ?? null,
+        isBlocked: balanceOf.get(agentId)?.isBlocked ?? false,
+        _overdue: s.overdue.amount,
+        _unpaid: s.total.amount,
+        _cash: cashHeld,
+      };
+    }).sort((a, b) => b._overdue.comparedTo(a._overdue) || b._unpaid.comparedTo(a._unpaid) || a.agentId - b.agentId);
 
+    const all = summarize(unpaid);
     return {
       summary: {
         basis: 'net_of_delivery_fee' as const,
-        totalOutstandingAmount: Money.toApi(Money.sum(partners.map((p) => p.unpaidAmount))),
-        totalOrders: partners.reduce((n, p) => n + p.unpaidOrders, 0),
-        overdueAmount: Money.toApi(Money.sum(partners.map((p) => p.overdueAmount))),
-        overdueOrders: partners.reduce((n, p) => n + p.overdueOrders, 0),
+        totalOutstandingAmount: Money.toApi(all.total.amount),
+        totalOrders: all.total.orders,
+        overdueAmount: Money.toApi(all.overdue.amount),
+        overdueOrders: all.overdue.orders,
         overduePartners: partners.filter((p) => p.overdueOrders > 0).length,
-        partnersWithCash: partners.filter((p) => p.cashHeld.gt(0)).length,
-        negativeCashPartners: partners.filter((p) => p.cashHeld.lt(0)).length,
+        partnersWithCash: partners.filter((p) => p._cash.gt(0)).length,
+        negativeCashPartners: partners.filter((p) => p.negativeCashHeld).length,
         blockedPartners: partners.filter((p) => p.isBlocked).length,
+        bucketTotals: bucketView(all.buckets),
       },
-      partners: rows,
+      partners: partners.map(({ _overdue, _unpaid, _cash, ...row }) => row),
     };
-  }
-
-  /** CSV of the partner table. The columns follow the page (F-911). */
-  async generateAgingCSV(): Promise<string> {
-    const { partners } = await this.getAgingReport();
-    const header = ['Partner', 'Cash held', '0-3 days', '4-7 days', '8-14 days', '15+ days', 'Oldest unpaid (days)', 'Days to pay'];
-    const lines = partners.map((p) => [
-      `"${p.name.replace(/"/g, '""')}"`, p.cashHeld, ...p.buckets.map((b) => b.amount), p.oldestUnpaidDays ?? '', p.daysToPay,
-    ].join(','));
-    return [header.join(','), ...lines].join('\n') + '\n';
   }
 
   /** Partners with orders past their days to pay (the daily notification job). */
   async getOverdueAgents(): Promise<{ agentId: number; agentName: string; totalBalance: Money.Money; warningAmount: Money.Money; criticalAmount: Money.Money }[]> {
-    const overdue = await this.overdueOrders();
-    const byPartner = new Map<number, UnpaidOrder[]>();
-    for (const o of overdue) byPartner.set(o.agentId, [...(byPartner.get(o.agentId) ?? []), o]);
+    const { unpaid } = await this.loadAging();
+    const byPartner = new Map<number, { total: Money.Money; critical: Money.Money }>();
+    for (const o of unpaid) {
+      if (!o.overdue) continue;
+      const t = byPartner.get(o.agentId) ?? { total: Money.ZERO, critical: Money.ZERO };
+      t.total = t.total.plus(o.amount);
+      if (o.ageDays >= 8) t.critical = t.critical.plus(o.amount);
+      byPartner.set(o.agentId, t);
+    }
     if (byPartner.size === 0) return [];
 
     const users = await prisma.user.findMany({ where: { id: { in: [...byPartner.keys()] } }, select: { id: true, firstName: true, lastName: true } });
     const nameOf = new Map(users.map((u) => [u.id, fullName(u)]));
-    return [...byPartner].map(([agentId, rows]) => {
-      const total = Money.sum(rows.map((o) => o.amount));
-      const critical = Money.sum(rows.filter((o) => o.ageDays >= 8).map((o) => o.amount));
-      return { agentId, agentName: nameOf.get(agentId) || `Partner #${agentId}`, totalBalance: total, warningAmount: total.minus(critical), criticalAmount: critical };
-    });
+    const out: { agentId: number; agentName: string; totalBalance: Money.Money; warningAmount: Money.Money; criticalAmount: Money.Money }[] = [];
+    for (const [agentId, t] of byPartner) {
+      out.push({ agentId, agentName: nameOf.get(agentId) || `Partner #${agentId}`, totalBalance: t.total, warningAmount: t.total.minus(t.critical), criticalAmount: t.critical });
+    }
+    return out;
   }
 }
 

@@ -69,8 +69,8 @@ export const AgentCollections: React.FC = () => {
       let valB = b[sortField];
 
       if (sortField === 'name') {
-        valA = `${a.agent.firstName} ${a.agent.lastName}`;
-        valB = `${b.agent.firstName} ${b.agent.lastName}`;
+        valA = a.agent.name;
+        valB = b.agent.name;
       }
 
       if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
@@ -83,12 +83,10 @@ export const AgentCollections: React.FC = () => {
 
   const chartData = useMemo(() => {
     if (!agentAging?.summary?.bucketTotals) return [];
-    const { bucketTotals } = agentAging.summary;
-    return [
-      { name: '0-3 Days', value: Number(bucketTotals.bucket_0_3), color: '#22c55e' },
-      { name: '4-7 Days', value: Number(bucketTotals.bucket_4_7), color: '#f97316' },
-      { name: '8+ Days', value: Number(bucketTotals.bucket_8_14) + Number(bucketTotals.bucket_15_plus), color: '#ef4444' },
-    ].filter(d => d.value > 0);
+    const colors: Record<string, string> = { '0-3': '#22c55e', '4-7': '#f97316', '8-14': '#ef4444', '15+': '#991b1b' };
+    return agentAging.summary.bucketTotals
+      .map(b => ({ name: b.label, value: b.amount, color: colors[b.key] }))
+      .filter(d => d.value > 0);
   }, [agentAging]);
 
   if (loadingStates.agents || !agentAging) {
@@ -162,7 +160,7 @@ export const AgentCollections: React.FC = () => {
           <div className="p-4">
             <div className="flex items-start justify-between mb-2">
               <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                Critical (8+ Days)
+                Overdue
                 <UITooltip content="Collections held beyond 8 days — consider blocking agents from new deliveries" position="bottom">
                   <Info className="w-3 h-3 text-gray-400 hover:text-gray-600 cursor-help" />
                 </UITooltip>
@@ -171,7 +169,7 @@ export const AgentCollections: React.FC = () => {
                 <Clock className="w-4 h-4 text-red-600" />
               </div>
             </div>
-            <div className="text-2xl font-bold text-red-600">{formatCurrency(summary.criticalOverdueAmount)}</div>
+            <div className="text-2xl font-bold text-red-600">{formatCurrency(summary.overdueAmount)}</div>
           </div>
         </Card>
 
@@ -179,8 +177,8 @@ export const AgentCollections: React.FC = () => {
           <div className="p-4">
             <div className="flex items-start justify-between mb-2">
               <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                Warning (4-7 Days)
-                <UITooltip content="Collections held 4-7 days — follow up recommended before they become critical" position="bottom">
+                Not yet due
+                <UITooltip content="Unpaid orders that are not yet past the partner's days to pay" position="bottom">
                   <Info className="w-3 h-3 text-gray-400 hover:text-gray-600 cursor-help" />
                 </UITooltip>
               </span>
@@ -188,7 +186,7 @@ export const AgentCollections: React.FC = () => {
                 <Clock className="w-4 h-4 text-orange-600" />
               </div>
             </div>
-            <div className="text-2xl font-bold text-orange-600">{formatCurrency(summary.warningOverdueAmount)}</div>
+            <div className="text-2xl font-bold text-orange-600">{formatCurrency(summary.notYetDueAmount)}</div>
           </div>
         </Card>
       </div>
@@ -299,10 +297,10 @@ export const AgentCollections: React.FC = () => {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
                           <div className="flex-shrink-0 h-8 w-8 bg-gradient-to-br from-primary-500 to-primary-700 rounded-full flex items-center justify-center text-white text-xs font-bold">
-                            {bucket.agent.firstName.charAt(0)}{bucket.agent.lastName.charAt(0)}
+                            {bucket.agent.name.split(' ').map((w: string) => w.charAt(0)).slice(0, 2).join('')}
                           </div>
                           <div className="ml-3">
-                            <div className="text-sm font-medium text-gray-900">{bucket.agent.firstName} {bucket.agent.lastName}</div>
+                            <div className="text-sm font-medium text-gray-900">{bucket.agent.name}</div>
                             <div className="text-xs text-gray-500">{bucket.agent.email}</div>
                           </div>
                         </div>
@@ -337,7 +335,7 @@ export const AgentCollections: React.FC = () => {
                             className="inline-flex items-center px-2.5 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
                             onClick={() => setSelectedAgent({
                               id: bucket.agentId,
-                              name: `${bucket.agent.firstName} ${bucket.agent.lastName}`
+                              name: bucket.agent.name
                             })}
                           >
                             <Eye className="w-4 h-4 mr-1 text-gray-400" />
@@ -353,7 +351,7 @@ export const AgentCollections: React.FC = () => {
                             disabled={blockingAgentId === bucket.agentId}
                             onClick={() => handleToggleBlock(
                               bucket.agentId,
-                              `${bucket.agent.firstName} ${bucket.agent.lastName}`,
+                              bucket.agent.name,
                               bucket.isBlocked
                             )}
                           >

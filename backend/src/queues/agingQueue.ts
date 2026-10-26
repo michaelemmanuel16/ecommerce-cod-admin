@@ -28,18 +28,18 @@ export const agingQueue = process.env.NODE_ENV === 'test'
         }
     });
 
-// Process the refresh job (once per tenant, each inside its own tenant context)
-export const processRefreshBuckets = async () => {
-    logger.info('Processing agent aging refresh job...');
+// Open and close the "negative cash held" Findings (once per tenant, each inside its own tenant context)
+export const processSyncCashFindings = async () => {
+    logger.info('Processing cash held Findings job...');
     try {
-        await forEachTenant('Agent aging refresh', () => agingService.refreshAll());
-        logger.info('Agent aging refresh job completed.');
+        await forEachTenant('Cash held Findings sync', () => agingService.syncNegativeCashFindings());
+        logger.info('Cash held Findings job completed.');
     } catch (error: any) {
-        logger.error('Agent aging refresh job failed:', error.message);
+        logger.error('Cash held Findings job failed:', error.message);
         throw error;
     }
 };
-agingQueue.process('refresh-buckets', processRefreshBuckets);
+agingQueue.process('sync-cash-findings', processSyncCashFindings);
 
 // Process the overdue collections notification job (once per tenant: admins of that tenant only)
 export const processNotifyOverdueCollections = async () => {
@@ -71,8 +71,8 @@ export const setupAgingCron = async () => {
         await agingQueue.removeRepeatableByKey(job.key);
     }
 
-    // Add daily refresh job at 6:00 AM
-    await agingQueue.add('refresh-buckets', {}, {
+    // Add daily cash held Findings job at 6:00 AM
+    await agingQueue.add('sync-cash-findings', {}, {
         repeat: {
             cron: '0 6 * * *'
         }
@@ -85,7 +85,7 @@ export const setupAgingCron = async () => {
         }
     });
 
-    logger.info('Agent aging cron jobs scheduled (6:00 AM refresh, 10:00 AM overdue notifications).');
+    logger.info('Agent aging cron jobs scheduled (6:00 AM cash held Findings, 10:00 AM overdue notifications).');
 };
 
 agingQueue.on('failed', (job: Bull.Job | undefined, err: Error) => {

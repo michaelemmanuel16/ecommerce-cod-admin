@@ -79,8 +79,8 @@ export const AgentAgingTab: React.FC = () => {
 
             // Handle nested paths if needed
             if (sortField === 'name') {
-                valA = `${a.agent.firstName} ${a.agent.lastName}`;
-                valB = `${b.agent.firstName} ${b.agent.lastName}`;
+                valA = a.agent.name;
+                valB = b.agent.name;
             }
 
             if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
@@ -93,13 +93,10 @@ export const AgentAgingTab: React.FC = () => {
 
     const chartData = useMemo(() => {
         if (!agentAging?.summary?.bucketTotals) return [];
-        const { bucketTotals } = agentAging.summary;
-        return [
-            { name: '0-3 Days', value: bucketTotals.bucket_0_3, color: '#22c55e' },
-            { name: '4-7 Days', value: bucketTotals.bucket_4_7, color: '#f97316' },
-            { name: '8-14 Days', value: bucketTotals.bucket_8_14, color: '#ef4444' },
-            { name: '15+ Days', value: bucketTotals.bucket_15_plus, color: '#991b1b' },
-        ].filter(d => d.value > 0);
+        const colors: Record<string, string> = { '0-3': '#22c55e', '4-7': '#f97316', '8-14': '#ef4444', '15+': '#991b1b' };
+        return agentAging.summary.bucketTotals
+            .map(b => ({ name: b.label, value: b.amount, color: colors[b.key] }))
+            .filter(d => d.value > 0);
     }, [agentAging]);
 
     if (loadingStates.agents || !agentAging) {
@@ -151,7 +148,7 @@ export const AgentAgingTab: React.FC = () => {
                 <Card className="border-l-4 border-red-500 hover:shadow-md transition-shadow">
                     <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                            Critical (8+ Days)
+                            Overdue
                             <UITooltip content="Collections held beyond 8 days — consider blocking agents from new deliveries" position="bottom">
                                 <Info className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600 cursor-help" />
                             </UITooltip>
@@ -160,15 +157,15 @@ export const AgentAgingTab: React.FC = () => {
                             <AlertCircle className="w-4 h-4 text-red-600" />
                         </div>
                     </div>
-                    <div className="text-2xl font-bold text-red-600">{formatCurrency(summary.criticalOverdueAmount)}</div>
+                    <div className="text-2xl font-bold text-red-600">{formatCurrency(summary.overdueAmount)}</div>
                     <div className="text-xs text-red-500 font-medium mt-1">{summary.overdueAgentsCount} agents overdue</div>
                 </Card>
 
                 <Card className="border-l-4 border-orange-500 hover:shadow-md transition-shadow">
                     <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                            Warning (4-7 Days)
-                            <UITooltip content="Collections held 4-7 days — follow up recommended before they become critical" position="bottom">
+                            Not yet due
+                            <UITooltip content="Unpaid orders that are not yet past the partner's days to pay" position="bottom">
                                 <Info className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600 cursor-help" />
                             </UITooltip>
                         </span>
@@ -176,7 +173,7 @@ export const AgentAgingTab: React.FC = () => {
                             <Clock className="w-4 h-4 text-orange-600" />
                         </div>
                     </div>
-                    <div className="text-2xl font-bold text-orange-600">{formatCurrency(summary.warningOverdueAmount)}</div>
+                    <div className="text-2xl font-bold text-orange-600">{formatCurrency(summary.notYetDueAmount)}</div>
                     <div className="text-xs text-gray-500 mt-1">Pending action required</div>
                 </Card>
 
@@ -292,7 +289,7 @@ export const AgentAgingTab: React.FC = () => {
                                         <tr key={entry.agent.id} className="hover:bg-gray-50 transition-colors">
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <Link to={`/users/${entry.agent.id}`} className="block">
-                                                    <div className="text-sm font-bold text-primary-600 hover:underline">{entry.agent.firstName} {entry.agent.lastName}</div>
+                                                    <div className="text-sm font-bold text-primary-600 hover:underline">{entry.agent.name}</div>
                                                     <div className="text-[11px] text-gray-500 font-mono mt-0.5">{entry.agent.email}</div>
                                                 </Link>
                                             </td>
@@ -334,7 +331,7 @@ export const AgentAgingTab: React.FC = () => {
                                                 <div className="flex items-center justify-end space-x-1">
                                                     <button
                                                         title="Send Reminder Email (Coming Soon)"
-                                                        aria-label={`Send reminder to ${entry.agent.firstName}`}
+                                                        aria-label={`Send reminder to ${entry.agent.name}`}
                                                         className="p-1.5 text-gray-300 cursor-not-allowed rounded"
                                                         disabled
                                                     >
@@ -343,14 +340,14 @@ export const AgentAgingTab: React.FC = () => {
                                                     <Link
                                                         to={`/financial/reconciliation?agentId=${entry.agent.id}`}
                                                         title="View Collections"
-                                                        aria-label={`View collections for ${entry.agent.firstName}`}
+                                                        aria-label={`View collections for ${entry.agent.name}`}
                                                         className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
                                                     >
                                                         <Eye className="w-3.5 h-3.5" />
                                                     </Link>
                                                     <button
                                                         title={entry.isBlocked ? 'Unblock Agent' : 'Block Agent'}
-                                                        aria-label={`${entry.isBlocked ? 'Unblock' : 'Block'} agent ${entry.agent.firstName}`}
+                                                        aria-label={`${entry.isBlocked ? 'Unblock' : 'Block'} agent ${entry.agent.name}`}
                                                         className={cn(
                                                             "p-1.5 rounded transition-colors",
                                                             entry.isBlocked
@@ -358,7 +355,7 @@ export const AgentAgingTab: React.FC = () => {
                                                                 : "text-gray-400 hover:text-red-600 hover:bg-red-50"
                                                         )}
                                                         disabled={blockingAgentId === entry.agent.id}
-                                                        onClick={() => handleToggleBlock(entry.agent.id, `${entry.agent.firstName} ${entry.agent.lastName}`, entry.isBlocked)}
+                                                        onClick={() => handleToggleBlock(entry.agent.id, entry.agent.name, entry.isBlocked)}
                                                     >
                                                         {entry.isBlocked
                                                             ? <ShieldCheck className="w-3.5 h-3.5" />

@@ -1,6 +1,6 @@
 /**
- * M0-T14 (COD-4): aging refresh and overdue notifications are per tenant.
- * Refreshing tenant B leaves tenant A buckets unchanged; admins of tenant A are
+ * M0-T14 (COD-4): the aging report, the cash held Findings sync and the overdue notifications are per tenant.
+ * Tenant B's partners never show in tenant A's report; syncing B leaves A's Findings alone; admins of tenant A are
  * never notified about tenant B agents.
  */
 import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
@@ -44,9 +44,6 @@ const makeUser = (tenantId: string | null, label: string, role: string, extra: a
     },
   });
 
-const bucketRows = (tenantId: string) =>
-  prismaBase.agentAgingBucket.findMany({ where: { tenantId } });
-
 beforeAll(async () => {
   const [a, b] = await Promise.all([
     createTenant('Aging A'),
@@ -60,10 +57,10 @@ beforeAll(async () => {
   adminBId = (await makeUser(tenantBId, 'admin-b', 'admin')).id;
   platformAdminId = (await makeUser(null, 'platform', 'super_admin', { isPlatformAdmin: true })).id;
 
-  await prismaBase.agentAgingBucket.createMany({
+  await prismaBase.agentBalance.createMany({
     data: [
-      { tenantId: tenantAId, agentId: agentAId, totalBalance: 500, bucket_8_14: 500 },
-      { tenantId: tenantBId, agentId: agentBId, totalBalance: 700, bucket_8_14: 700 },
+      { tenantId: tenantAId, agentId: agentAId, currentBalance: -500 },
+      { tenantId: tenantBId, agentId: agentBId, currentBalance: -700 },
     ],
   });
 });
@@ -75,21 +72,29 @@ afterAll(async () => {
   await prismaBase.$disconnect();
 });
 
-describe('aging refresh is per tenant', () => {
-  it('refreshAll with no context throws instead of touching every tenant', async () => {
-    await expect(agingService.refreshAll()).rejects.toThrow();
-    expect(await bucketRows(tenantAId)).toHaveLength(1);
-    expect(await bucketRows(tenantBId)).toHaveLength(1);
+const findingsOf = (tenantId: string) => prismaBase.finding.findMany({ where: { tenantId, type: 'negative_cash_held' } });
+
+describe('cash held sync and report are per tenant', () => {
+  it('the sync with no context throws instead of touching every tenant', async () => {
+    await expect(agingService.syncNegativeCashFindings()).rejects.toThrow();
+    expect(await findingsOf(tenantAId)).toHaveLength(0);
+    expect(await findingsOf(tenantBId)).toHaveLength(0);
   });
 
-  it('refreshing tenant B (no outstanding collections) deletes B buckets only', async () => {
-    await runInTenant(tenantBId, () => agingService.refreshAll());
+  it('syncing tenant B opens B Findings only; syncing A afterwards leaves B alone', async () => {
+    await runInTenant(tenantBId, () => agingService.syncNegativeCashFindings());
+    expect((await findingsOf(tenantBId)).map((f) => f.subjectId)).toEqual([String(agentBId)]);
+    expect(await findingsOf(tenantAId)).toHaveLength(0);
 
-    expect(await bucketRows(tenantBId)).toHaveLength(0);
-    const a = await bucketRows(tenantAId);
-    expect(a).toHaveLength(1);
-    expect(a[0].agentId).toBe(agentAId);
-    expect(Number(a[0].totalBalance)).toBe(500);
+    await runInTenant(tenantAId, () => agingService.syncNegativeCashFindings());
+    expect((await findingsOf(tenantAId)).map((f) => f.subjectId)).toEqual([String(agentAId)]);
+    const b = await findingsOf(tenantBId);
+    expect(b.map((f) => [f.subjectId, f.status, Number(f.amount)])).toEqual([[String(agentBId), 'open', 700]]);
+  });
+
+  it('the report of tenant A lists its own partner and never tenant B\'s', async () => {
+    const report = await runInTenant(tenantAId, () => agingService.getAgingReport());
+    expect(report.partners.map((p) => p.agentId)).toEqual([agentAId]);
   });
 });
 

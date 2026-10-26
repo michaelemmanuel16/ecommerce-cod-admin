@@ -1,5 +1,5 @@
--- M5-T13, M5-T14 (COD-50): the collection path is draft to reconciled; aging keeps the four M5 buckets only.
--- Safe to run twice: after the first run no verified or approved row is left, and DROP COLUMN IF EXISTS skips.
+-- M5-T13, M5-T14 (COD-50): the collection path is draft to reconciled; the aging cache table goes.
+-- Safe to run twice: after the first run no verified or approved row is left, and the DROP and ADD VALUE use IF [NOT] EXISTS.
 
 -- 1. Old verified and approved collections whose verify step already posted cash (an agent_collection journal entry)
 --    are settled: they become reconciled and their orders paid. Their order rows first, while the collection status still tells which.
@@ -24,7 +24,8 @@ WHERE c."status"::text IN ('verified', 'approved')
 UPDATE "agent_collections" SET "status" = 'draft', "updated_at" = now()
 WHERE "status"::text IN ('verified', 'approved');
 
--- 3. Aging buckets: 0-3, 4-7, 8-14, 15+. The old 0-1, 2-3 and 8+ columns go (a cache, rebuilt by the next refresh).
-ALTER TABLE "agent_aging_buckets" DROP COLUMN IF EXISTS "bucket_0_1";
-ALTER TABLE "agent_aging_buckets" DROP COLUMN IF EXISTS "bucket_2_3";
-ALTER TABLE "agent_aging_buckets" DROP COLUMN IF EXISTS "bucket_8_plus";
+-- 3. The aging cache table has no reader left: the card, the partner table and the Orders tab read live from the collections.
+DROP TABLE IF EXISTS "agent_aging_buckets";
+
+-- 4. A verify refused because it would take a partner below zero opens its own Finding type.
+ALTER TYPE "FindingType" ADD VALUE IF NOT EXISTS 'verify_exceeds_cash_held';

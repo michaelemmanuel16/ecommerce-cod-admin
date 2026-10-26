@@ -163,28 +163,31 @@ export interface PipelineRevenue {
   }[];
 }
 
+export interface AgingBucketTotal {
+  key: '0-3' | '4-7' | '8-14' | '15+';
+  label: string;
+  orders: number;
+  amount: number;
+}
+
 export interface AgingSummary {
   totalAgentsWithBalance: number;
   totalOutstandingAmount: number;
   outstandingReceivables: number;
   overdueAgentsCount: number;
-  criticalOverdueAmount: number;
-  warningOverdueAmount: number;
+  /** Past the partner's days to pay. */
+  overdueAmount: number;
+  /** Unpaid but not yet past the partner's days to pay. */
+  notYetDueAmount: number;
   blockedAgentsWithBalance: number;
-  bucketTotals: {
-    bucket_0_3: number;
-    bucket_4_7: number;
-    bucket_8_14: number;
-    bucket_15_plus: number;
-  };
+  bucketTotals: AgingBucketTotal[];
 }
 
 export interface AgentAgingBucket {
   agentId: number;
   agent: {
     id: number;
-    firstName: string;
-    lastName: string;
+    name: string;
     email: string;
   };
   /** Net unpaid amount of the partner's delivered orders (net of the delivery fee). */
@@ -201,6 +204,11 @@ export interface AgentAgingBucket {
   isBlocked: boolean;
 }
 
+export interface AgentAgingReport {
+  summary: AgingSummary;
+  buckets: AgentAgingBucket[];
+}
+
 /** `GET /api/financial/agent-aging` (M5-T14): the page shape above is built from it in `getAgentAging`. */
 interface AgentAgingResponse {
   summary: {
@@ -208,6 +216,7 @@ interface AgentAgingResponse {
     overdueAmount: string | number;
     overduePartners: number;
     blockedPartners: number;
+    bucketTotals: Array<{ key: AgingBucketTotal['key']; label: string; orders: number; amount: string | number }>;
   };
   partners: Array<{
     agentId: number;
@@ -217,17 +226,12 @@ interface AgentAgingResponse {
     daysToPay: number;
     unpaidOrders: number;
     unpaidAmount: string | number;
-    buckets: Array<{ amount: string | number }>;
+    buckets: Array<{ key: string; amount: string | number }>;
     overdueOrders: number;
     oldestUnpaidDays: number | null;
     oldestDeliveredOn: string | null;
     isBlocked: boolean;
   }>;
-}
-
-export interface AgentAgingReport {
-  summary: AgingSummary;
-  buckets: AgentAgingBucket[];
 }
 
 export interface CollectionRecord {
@@ -504,43 +508,39 @@ export const financialService = {
 
   async getAgentAging(): Promise<AgentAgingReport> {
     const { data } = await apiClient.get<AgentAgingResponse>('/api/financial/agent-aging');
+    const amountOf = (buckets: Array<{ key: string; amount: string | number }>, key: string) => Number(buckets.find((b) => b.key === key)?.amount ?? 0);
     const buckets: AgentAgingBucket[] = data.partners.map((p) => ({
       agentId: p.agentId,
-      agent: { id: p.agentId, firstName: p.name, lastName: '', email: p.email ?? '' },
+      agent: { id: p.agentId, name: p.name, email: p.email ?? '' },
       totalBalance: Number(p.unpaidAmount),
       oldestCollectionDate: p.oldestDeliveredOn,
       cashHeld: Number(p.cashHeld),
       daysToPay: p.daysToPay,
       overdueOrders: p.overdueOrders,
       oldestUnpaidDays: p.oldestUnpaidDays,
-      bucket_0_3: Number(p.buckets[0].amount),
-      bucket_4_7: Number(p.buckets[1].amount),
-      bucket_8_14: Number(p.buckets[2].amount),
-      bucket_15_plus: Number(p.buckets[3].amount),
+      bucket_0_3: amountOf(p.buckets, '0-3'),
+      bucket_4_7: amountOf(p.buckets, '4-7'),
+      bucket_8_14: amountOf(p.buckets, '8-14'),
+      bucket_15_plus: amountOf(p.buckets, '15+'),
       isBlocked: p.isBlocked,
     }));
     const total = Number(data.summary.totalOutstandingAmount);
     const overdue = Number(data.summary.overdueAmount);
-    const sum = (pick: (b: AgentAgingBucket) => number) => buckets.reduce((n, b) => n + pick(b), 0);
     return {
       summary: {
         totalAgentsWithBalance: buckets.filter((b) => b.totalBalance > 0).length,
         totalOutstandingAmount: total,
         outstandingReceivables: total,
         overdueAgentsCount: data.summary.overduePartners,
-        criticalOverdueAmount: overdue,
-        warningOverdueAmount: total - overdue,
+        overdueAmount: overdue,
+        notYetDueAmount: total - overdue,
         blockedAgentsWithBalance: data.summary.blockedPartners,
-        bucketTotals: {
-          bucket_0_3: sum((b) => b.bucket_0_3),
-          bucket_4_7: sum((b) => b.bucket_4_7),
-          bucket_8_14: sum((b) => b.bucket_8_14),
-          bucket_15_plus: sum((b) => b.bucket_15_plus),
-        },
+        bucketTotals: data.summary.bucketTotals.map((b) => ({ ...b, amount: Number(b.amount) })),
       },
       buckets,
     };
   },
+
 
   async downloadAgentAgingCSV(): Promise<void> {
     const response = await apiClient.get('/api/financial/agent-aging/export/csv', {

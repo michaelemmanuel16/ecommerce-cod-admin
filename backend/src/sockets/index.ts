@@ -344,21 +344,6 @@ export function emitCollectionVerified(io: SocketServer, collection: any) {
   emitToUser(io, collection.agentId, 'collection:verified', event, t);
 }
 
-export function emitCollectionApproved(io: SocketServer, collection: any) {
-  const t = emitTenant(collection);
-  if (!t) return;
-  const event = {
-    id: collection.id,
-    orderId: collection.orderId,
-    amount: collection.amount,
-    status: 'approved',
-    timestamp: new Date()
-  };
-
-  emitToRoles(io, t, FINANCE_ROLES, 'collection:approved', event);
-  emitToUser(io, collection.agentId, 'collection:approved', event, t);
-}
-
 export function emitAgentBalanceUpdated(io: SocketServer, userId: number, balance: any) {
   const t = emitTenant(balance);
   if (!t) return;

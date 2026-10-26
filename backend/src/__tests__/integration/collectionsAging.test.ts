@@ -11,7 +11,8 @@ import { runInTenant, getTenantId } from '../../utils/tenantContext';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import agentReconciliationService from '../../services/agentReconciliationService';
 import agingService, { bucketIndexOf } from '../../services/agingService';
-import { processRefreshBuckets } from '../../queues/agingQueue';
+import { processSyncCashFindings } from '../../queues/agingQueue';
+import * as cash from '../../services/kpi/cash';
 import { createTenant, deleteTenantRows, mkUser } from './helpers/twoTenants';
 import { migrationStatements } from './helpers/migrationSql';
 
@@ -110,6 +111,11 @@ describe('M5-T13: collection status path', () => {
     expect(res.status).toBe(404);
   });
 
+  it('bulk verify of collections is capped at 50 ids', async () => {
+    const res = await request(app).post('/api/agent-reconciliation/bulk-verify').set(auth(owner)).send({ ids: Array.from({ length: 51 }, (_, i) => i + 1) });
+    expect(res.status).toBe(400);
+  });
+
   it('reject needs a reason: refused without one, stored with one', async () => {
     const p = await mkPartner('rej');
     const dep = await prismaBase.agentDeposit.create({ data: { tenantId, agentId: p, amount: 50, depositMethod: 'cash', depositDate: new Date(), referenceNumber: `REJ-${SUFFIX}` } });
@@ -164,13 +170,16 @@ describe('M5-T13: collection status path', () => {
     await expect(inTenant(() => agentReconciliationService.verifyDeposit(dep.id, owner.id))).rejects.toMatchObject({ statusCode: 400, errorCode: 'BALANCE_BELOW_ZERO' });
     expect((await prismaBase.agentDeposit.findUniqueOrThrow({ where: { id: dep.id } })).status).toBe('pending');
     expect(Number((await prismaBase.agentBalance.findUniqueOrThrow({ where: { agentId: p } })).currentBalance)).toBe(100);
-    const findings = await prismaBase.finding.findMany({ where: { tenantId, type: 'negative_cash_held', subjectType: 'agent_deposit', subjectId: String(dep.id) } });
+    const own = { tenantId, type: 'verify_exceeds_cash_held' as const, subjectType: 'delivery_partner', subjectId: String(p) };
+    const findings = await prismaBase.finding.findMany({ where: own });
     expect(findings).toHaveLength(1);
     expect([findings[0].status, Number(findings[0].amount)]).toEqual(['open', 200]);
+    expect(findings[0].note).toContain(`#${dep.id}`);
 
-    // A repeat does not open a second Finding
+    // A repeat does not open a second Finding, and the cash held sync (which closes negative_cash_held ones) leaves it open
     await expect(inTenant(() => agentReconciliationService.verifyDeposit(dep.id, owner.id))).rejects.toMatchObject({ errorCode: 'BALANCE_BELOW_ZERO' });
-    expect(await prismaBase.finding.count({ where: { tenantId, type: 'negative_cash_held', subjectId: String(dep.id) } })).toBe(1);
+    await inTenant(() => agingService.syncNegativeCashFindings());
+    expect((await prismaBase.finding.findMany({ where: own })).map((f) => f.status)).toEqual(['open']);
   });
 });
 
@@ -215,13 +224,13 @@ describe('M5-T14: aging buckets, cash held, fee-net amounts', () => {
   it('the aging CSV keeps its path and shows the new columns', async () => {
     const res = await request(app).get('/api/financial/agent-aging/export/csv').set(auth(owner));
     expect(res.status).toBe(200);
-    expect(res.text.split('\n')[0]).toBe('Partner,Cash held,0-3 days,4-7 days,8-14 days,15+ days,Oldest unpaid (days),Days to pay');
+    expect(res.text.replace(/^\uFEFF/, '').split(/\r?\n/)[0]).toBe('Partner,Cash held,0-3 days,4-7 days,8-14 days,15+ days,Oldest unpaid (days),Days to pay');
   });
 
   it('negative cash held shows with a Finding, and the Finding closes when the balance recovers', async () => {
     const p = await mkPartner('negcash');
     await setBalance(p, -75);
-    await inTenant(() => agingService.refreshAll());
+    await inTenant(() => agingService.syncNegativeCashFindings());
 
     const row = partnerRow((await agentAging()).body, p);
     expect(row.negativeCashHeld).toBe(true);
@@ -229,90 +238,81 @@ describe('M5-T14: aging buckets, cash held, fee-net amounts', () => {
     const finding = await prismaBase.finding.findFirstOrThrow({ where: { tenantId, type: 'negative_cash_held', subjectType: 'delivery_partner', subjectId: String(p) } });
     expect([finding.status, Number(finding.amount), row.findingId]).toEqual(['open', 75, finding.id]);
 
-    await inTenant(() => agingService.refreshAll());
+    await inTenant(() => agingService.syncNegativeCashFindings());
     expect(await prismaBase.finding.count({ where: { tenantId, type: 'negative_cash_held', subjectId: String(p) } })).toBe(1);
 
     await setBalance(p, 0);
-    await inTenant(() => agingService.refreshAll());
+    await inTenant(() => agingService.syncNegativeCashFindings());
     expect((await prismaBase.finding.findUniqueOrThrow({ where: { id: finding.id } })).status).toBe('closed');
   });
 });
 
-describe('M5-T14: refresh is per tenant', () => {
-  it('refreshing one tenant leaves the buckets of the other as they were', async () => {
+describe('M5-T14: cash held sync is per tenant', () => {
+  it('syncing one tenant leaves the Findings of the other as they were, and its report never lists them', async () => {
     const pb = await mkPartner('tb', 8, otherId);
     await delivered(pb, { daysAgo: 10, cod: 70 }, otherId);
-    await runInTenant(otherId, () => agingService.refreshAll());
-    const before = await prismaBase.agentAgingBucket.findMany({ where: { tenantId: otherId } });
+    await setBalance(pb, -20, otherId);
+    await runInTenant(otherId, () => agingService.syncNegativeCashFindings());
+    const before = await prismaBase.finding.findMany({ where: { tenantId: otherId, type: 'negative_cash_held' } });
     expect(before).toHaveLength(1);
-    expect(Number(before[0].bucket_8_14)).toBe(70);
 
-    // Tenant A has partners and its own buckets; its refresh never touches B
-    await inTenant(() => agingService.refreshAll());
-    const after = await prismaBase.agentAgingBucket.findMany({ where: { tenantId: otherId } });
-    expect(after.map((b) => [b.id, Number(b.totalBalance)])).toEqual(before.map((b) => [b.id, Number(b.totalBalance)]));
-    expect((await prismaBase.agentAgingBucket.findMany({ where: { tenantId } })).every((b) => b.tenantId === tenantId)).toBe(true);
-    // And tenant B's report never lists tenant A partners
+    await inTenant(() => agingService.syncNegativeCashFindings());
+    const after = await prismaBase.finding.findMany({ where: { tenantId: otherId, type: 'negative_cash_held' } });
+    expect(after.map((f) => [f.id, f.status])).toEqual(before.map((f) => [f.id, f.status]));
     const report = await runInTenant(otherId, () => agingService.getAgingReport());
     expect(report.partners.map((p) => p.agentId)).toEqual([pb]);
+    expect(report.summary.totalOrders).toBe(1);
   });
 
   it('a tenant that fails does not stop the others; the job still fails', async () => {
-    const real = agingService.refreshAll.bind(agingService);
+    const real = agingService.syncNegativeCashFindings.bind(agingService);
     const pb = await mkPartner('tb2', 8, otherId);
-    await delivered(pb, { daysAgo: 1, cod: 33 }, otherId);
-    const spy = jest.spyOn(agingService, 'refreshAll').mockImplementation(async () => {
+    await setBalance(pb, -33, otherId);
+    const spy = jest.spyOn(agingService, 'syncNegativeCashFindings').mockImplementation(async () => {
       const id = getTenantId();
       if (id === tenantId) throw new Error('boom');
       if (id === otherId) return real();
     });
     try {
-      await expect(processRefreshBuckets()).rejects.toThrow(/failed for 1\//);
+      await expect(processSyncCashFindings()).rejects.toThrow(/failed for 1\//);
     } finally {
       spy.mockRestore();
     }
-    const rows = await prismaBase.agentAgingBucket.findMany({ where: { tenantId: otherId, agentId: pb } });
-    expect(rows).toHaveLength(1);
-    expect(Number(rows[0].bucket_0_3)).toBe(33);
+    const rows = await prismaBase.finding.findMany({ where: { tenantId: otherId, type: 'negative_cash_held', subjectId: String(pb) } });
+    expect(rows.map((f) => Number(f.amount))).toEqual([33]);
   });
 });
 
 describe('M5-T15: Orders "Unpaid by agent" tab', () => {
-  it('uses the partner days to pay, then the Settings default, then 8; the count matches the aging card', async () => {
+  it('uses the partner days to pay, else 7; the count matches the aging card, the table and the Dashboard', async () => {
     const fast = await mkPartner('fast', 3);   // overdue above 3 days
     const slow = await mkPartner('slow', 20);  // overdue above 20 days
-    const none = await mkPartner('none', 0);   // no days to pay: Settings default, else 8
+    const none = await mkPartner('none', 0);   // no days to pay: 7
     await setBalance(fast, 1000); await setBalance(slow, 1000); await setBalance(none, 1000);
     const f4 = await delivered(fast, { daysAgo: 4 });
     const f3 = await delivered(fast, { daysAgo: 3 });
     const s10 = await delivered(slow, { daysAgo: 10 });
     const s21 = await delivered(slow, { daysAgo: 21 });
-    const n9 = await delivered(none, { daysAgo: 9 });
     const n8 = await delivered(none, { daysAgo: 8 });
-    const mine = [f4, f3, s10, s21, n9, n8].map((x) => x.orderId);
+    const n7 = await delivered(none, { daysAgo: 7 });
+    const mine = [f4, f3, s10, s21, n8, n7].map((x) => x.orderId);
 
-    const tab = async () => {
-      const res = await request(app).get('/api/orders?tab=unpaid_by_agent&limit=100').set(auth(owner));
-      expect(res.status).toBe(200);
-      return res.body;
-    };
-    let body = await tab();
-    const ids = (b: any) => b.orders.map((o: any) => o.id).filter((id: number) => mine.includes(id)).sort();
-    expect(ids(body)).toEqual([f4.orderId, s21.orderId, n9.orderId].sort());
-    const row = body.orders.find((o: any) => o.id === n9.orderId);
-    expect(row.unpaid).toEqual({ days: 9, daysToPay: 8 });
+    const res = await request(app).get('/api/orders?tab=unpaid_by_agent&limit=100').set(auth(owner));
+    expect(res.status).toBe(200);
+    const body = res.body;
+    const ids = body.orders.map((o: any) => o.id).filter((id: number) => mine.includes(id)).sort();
+    expect(ids).toEqual([f4.orderId, s21.orderId, n8.orderId].sort());
+    expect(body.orders.find((o: any) => o.id === n8.orderId).unpaid).toEqual({ days: 8, daysToPay: 7 });
 
-    // Count matches the aging card and the partner table
+    // Count matches the aging card, the partner table and the Dashboard tile
     const aging = (await agentAging()).body;
     expect(body.pagination.total).toBe(aging.summary.overdueOrders);
     expect((await unpaidByAge()).body.overdue.orders).toBe(body.pagination.total);
+    expect((await cash.cashHeldByPartners(tenantId)).detail?.overdueOrders).toBe(body.pagination.total);
 
-    // Settings default of 5 days applies to the partner with none, not to those with their own
-    await prismaBase.systemConfig.create({ data: { tenantId, features: { defaultDaysToPay: 5 } } });
-    body = await tab();
-    expect(ids(body)).toEqual([f4.orderId, s21.orderId, n9.orderId, n8.orderId].sort());
-    expect(body.orders.find((o: any) => o.id === n8.orderId).unpaid.daysToPay).toBe(5);
-    expect(body.pagination.total).toBe((await agentAging()).body.summary.overdueOrders);
+    // Paging happens in the database
+    const page = await request(app).get('/api/orders?tab=unpaid_by_agent&limit=1&page=2').set(auth(owner));
+    expect([page.body.orders.length, page.body.pagination.total]).toEqual([1, body.pagination.total]);
   });
 
   it('a role without financial view is refused', async () => {

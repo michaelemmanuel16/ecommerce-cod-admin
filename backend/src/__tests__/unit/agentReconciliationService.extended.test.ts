@@ -66,8 +66,8 @@ describe('AgentReconciliationService (extended branch coverage)', () => {
     jest.clearAllMocks();
     mockPrisma.$transaction.mockImplementation((cb: any) => cb(mockTx));
     mockTx.agentBalance.updateMany.mockResolvedValue({ count: 1 }); // the conditional debit of the balance
-    mockTx.agentDeposit.updateMany.mockResolvedValue({ count: 1 }); // the claim of the row
-    mockTx.agentCollection.updateMany.mockResolvedValue({ count: 1 }); // the claim of a collection
+    mockTx.agentDeposit.updateMany.mockImplementation(async (a: any) => ({ count: a.where.id.in?.length ?? 1 })); // the claim wins every row asked for
+    mockTx.agentCollection.updateMany.mockImplementation(async (a: any) => ({ count: a.where.id.in?.length ?? 1 })); // the claim wins every row asked for
     require('../../services/glAutomationService').GLAutomationService.createAgentDepositEntry.mockResolvedValue({ entry: {}, excessFindingId: null });
   });
 
@@ -220,7 +220,7 @@ describe('AgentReconciliationService (extended branch coverage)', () => {
   describe('verifyCollection - orderId null branch', () => {
     it('skips order update when collection.orderId is null', async () => {
       const collection = { id: 1, orderId: null, agentId: 456, amount: 500, status: 'draft', verifiedAt: null, verifiedById: null };
-      mockTx.agentCollection.findUnique.mockResolvedValue(collection as any);
+      mockTx.agentCollection.findMany.mockResolvedValue([collection] as any);
       mockTx.agentCollection.update.mockResolvedValue({ ...collection, status: 'reconciled' } as any);
       mockTx.agentBalance.findUnique.mockResolvedValue({ id: 10, agentId: 456 } as any);
       mockTx.agentBalance.update.mockResolvedValue({} as any);
@@ -234,7 +234,7 @@ describe('AgentReconciliationService (extended branch coverage)', () => {
 
     it('posts no GL entry when a collection is reconciled (F-904)', async () => {
       const collection = { id: 1, orderId: 100, agentId: 456, amount: 500, status: 'draft', verifiedAt: null, verifiedById: null };
-      mockTx.agentCollection.findUnique.mockResolvedValue(collection as any);
+      mockTx.agentCollection.findMany.mockResolvedValue([collection] as any);
       mockTx.agentCollection.update.mockResolvedValue({ ...collection, status: 'reconciled' } as any);
       mockTx.agentBalance.findUnique.mockResolvedValue({ id: 10, agentId: 456 } as any);
       mockTx.agentBalance.update.mockResolvedValue({} as any);

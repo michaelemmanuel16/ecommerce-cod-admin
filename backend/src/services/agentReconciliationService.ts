@@ -50,7 +50,7 @@ export function planCover(open: OpenCollection[], amount: Money.Money): {
 
 /** A verify that would take a partner's cash held below zero (F-912). It carries what the Finding needs; the caller opens it after the rollback. */
 export class BalanceBelowZeroError extends AppError {
-  constructor(message: string, readonly agentId: number, readonly shortfall: Money.Money, readonly subject: { type: string; id: string }) {
+  constructor(message: string, readonly agentId: number, readonly shortfall: Money.Money, readonly what: string) {
     super(message, 400, 'BALANCE_BELOW_ZERO');
   }
 }
@@ -103,21 +103,9 @@ export class AgentReconciliationService {
         return collection;
     }
 
-    /**
-     * Verify a collection record - this completes reconciliation
-     * Updates order paymentStatus to 'reconciled' and clears agent balance
-     */
-    /**
-     * Verify a collection record - this is a step towards full reconciliation
-     * Internal version that handles state transitions and GL integration
-     */
+    /** Verify and reconcile one collection in one step (F-912). It is `bulkVerifyCollections` of one id. */
     async verifyCollection(collectionId: number, verifierId: number) {
-        const result = await this.openFindingOnBelowZero(() => prisma.$transaction(async (tx) => {
-            return await this.verifyCollectionInternal(tx, collectionId, verifierId);
-        }, TRANSACTION_CONFIG));
-        // Emit AFTER transaction commits so aging refresh reads committed data
-        appEvents.emit(AppEvent.AGENT_COLLECTION_RECONCILED);
-        return result;
+        return (await this.bulkVerifyCollections([collectionId], verifierId))[0];
     }
 
     async getOrCreateBalance(agentId: number, tx?: any): Promise<any> {
@@ -142,13 +130,13 @@ export class AgentReconciliationService {
      * Take `amount` off the partner's cash held and add it to deposited, only while the balance stays at zero or above.
      * One conditional UPDATE, so two verifies at once cannot both pass a read-then-write check (F-912).
      */
-    private async debitBalance(extTx: any, agentId: number, amount: Money.Money, subject: { type: string; id: string }, message: string): Promise<void> {
+    private async debitBalance(extTx: any, agentId: number, amount: Money.Money, what: string, message: string): Promise<void> {
         const balance = await this.getOrCreateBalance(agentId, extTx);
         const done = await extTx.agentBalance.updateMany({
             where: { id: balance.id, currentBalance: { gte: amount } },
             data: { totalDeposited: { increment: amount }, currentBalance: { decrement: amount }, lastSettlementDate: new Date() },
         });
-        if (done.count === 0) throw new BalanceBelowZeroError(message, agentId, amount.minus(Money.orZero(balance.currentBalance)), subject);
+        if (done.count === 0) throw new BalanceBelowZeroError(message, agentId, amount.minus(Money.orZero(balance.currentBalance)), what);
     }
 
     /**
@@ -162,11 +150,11 @@ export class AgentReconciliationService {
             if (error instanceof BalanceBelowZeroError) {
                 await openFindingOnce({
                     tenantId: resolveTenantId(),
-                    type: 'negative_cash_held',
-                    subjectType: error.subject.type,
-                    subjectId: error.subject.id,
+                    type: 'verify_exceeds_cash_held',
+                    subjectType: 'delivery_partner',
+                    subjectId: String(error.agentId),
                     amount: error.shortfall,
-                    note: `A verify was refused: it would take partner #${error.agentId} ${Money.toApi(error.shortfall)} below zero cash held.`,
+                    note: `Verifying ${error.what} was refused: it would take the partner ${Money.toApi(error.shortfall)} below zero cash held.`,
                 }, { updateAmount: true }).catch((e) => logger.error('Could not open the below-zero Finding', e));
             }
             throw error;
@@ -285,18 +273,20 @@ export class AgentReconciliationService {
      * claim the covers, post the entry, keep the allocations. Does not touch the partner balance (the callers do).
      * `open` is the partner's open collections; bulk passes the same list for each deposit of a partner.
      */
-    private async verifyOne(extTx: any, deposit: any, verifierId: number, open: OpenCollection[], claimed?: DepositClaim): Promise<any> {
-        const claimData = claimed ?? await this.claimDeposit(extTx, deposit, verifierId);
+    private async verifyOne(extTx: any, deposit: any, verifierId: number, open: OpenCollection[], claimed: DepositClaim): Promise<any> {
         const plan = planCover(open, Money.parse(deposit.amount));
         // The allocations are kept for a later reject; an unallocated remainder goes in the note
-        return (await this.settleDeposit(extTx, { ...deposit, ...claimData }, verifierId, plan)).deposit;
+        return (await this.settleDeposit(extTx, { ...deposit, ...claimed }, verifierId, plan)).deposit;
     }
 
-    /** Claim the row first: of two people verifying (or a verify and a reject) at once, only one gets count 1; the other gets "Already verified". */
-    private async claimDeposit(extTx: any, deposit: any, verifierId: number): Promise<DepositClaim> {
+    /**
+     * Claim pending deposits first, in one conditional UPDATE: of two people verifying (or a verify and a reject) at once, only
+     * one wins; the other gets "Already verified" (409) and its transaction rolls back.
+     */
+    private async claimDeposits(extTx: any, deposits: any[], verifierId: number): Promise<DepositClaim> {
         const claimData = { status: 'verified' as const, verifiedAt: new Date(), verifiedById: verifierId };
-        const claim = await extTx.agentDeposit.updateMany({ where: { id: deposit.id, status: 'pending' }, data: claimData });
-        if (claim.count === 0) throw new AppError(`Already verified: ${deposit.referenceNumber}`, 409, 'ALREADY_VERIFIED');
+        const claim = await extTx.agentDeposit.updateMany({ where: { id: { in: deposits.map((d) => d.id) }, status: 'pending' }, data: claimData });
+        if (claim.count !== deposits.length) throw new AppError(`Already verified: ${deposits.map((d) => d.referenceNumber).join(', ')}`, 409, 'ALREADY_VERIFIED');
         return claimData;
     }
 
@@ -443,8 +433,8 @@ export class AgentReconciliationService {
             // Claim the row, then take the amount off the balance. The balance update's row lock serialises concurrent verifies
             // of one partner's deposits before they number their journal entries, and it only passes while the balance stays
             // at zero or above.
-            const claimed = await this.claimDeposit(extTx, deposit, verifierId);
-            await this.debitBalance(extTx, deposit.agentId, Money.parse(deposit.amount), { type: 'agent_deposit', id: String(depositId) },
+            const claimed = await this.claimDeposits(extTx, [deposit], verifierId);
+            await this.debitBalance(extTx, deposit.agentId, Money.parse(deposit.amount), `deposit #${depositId}`,
                 'Verification failed: Deposit amount exceeds current agent balance');
 
             const updated = await this.verifyOne(extTx, deposit, verifierId, await this.loadOpenCollections(extTx, deposit.agentId), claimed);
@@ -508,20 +498,16 @@ export class AgentReconciliationService {
             for (const [agentId, agentDeposits] of depositsByAgent) {
                 // Claim the rows first (a row someone else verified meanwhile is "Already verified"), then take the
                 // total off the balance in one conditional update that only passes while it stays at zero or above.
-                const claims: DepositClaim[] = [];
-                for (const deposit of agentDeposits) claims.push(await this.claimDeposit(extTx, deposit, verifierId));
+                const claimed = await this.claimDeposits(extTx, agentDeposits, verifierId);
 
-                const agentTotalDeposit = agentDeposits.reduce(
-                    (sum, d) => sum.plus(Money.parse(d.amount)),
-                    Money.ZERO
-                );
-                await this.debitBalance(extTx, agentId, agentTotalDeposit, { type: 'delivery_partner', id: String(agentId) },
+                const agentTotalDeposit = Money.sum(agentDeposits.map((d) => d.amount));
+                await this.debitBalance(extTx, agentId, agentTotalDeposit, `deposits ${agentDeposits.map((d) => `#${d.id}`).join(', ')}`,
                     `Verification failed: agent #${agentId} has insufficient balance for ${Money.toApi(agentTotalDeposit)}`);
 
                 // Verify the deposits oldest first; the partner's open collections are read once and matched in memory
                 const open = await this.loadOpenCollections(extTx, agentId);
-                for (const [i, deposit] of agentDeposits.entries()) {
-                    await this.verifyOne(extTx, deposit, verifierId, open, claims[i]);
+                for (const deposit of agentDeposits) {
+                    await this.verifyOne(extTx, deposit, verifierId, open, claimed);
                     totalAmount = totalAmount.plus(Money.parse(deposit.amount));
                 }
             }
@@ -575,71 +561,45 @@ export class AgentReconciliationService {
     }
 
     /**
-     * Bulk verify collections
-     * Atomic: rolls back entirely if any verification fails
-     */
-    async bulkVerifyCollections(collectionIds: number[], verifierId: number) {
-        const results = await this.openFindingOnBelowZero(() => prisma.$transaction(async (tx) => {
-            const extTx = tx as any;
-            const results = [];
-            for (const id of collectionIds) {
-                // Fail fast - any error will roll back the transaction
-                const result = await this.verifyCollectionInternal(extTx, id, verifierId);
-                results.push(result);
-            }
-            return results;
-        }, TRANSACTION_CONFIG));
-        // Emit AFTER transaction commits so aging refresh reads committed data
-        appEvents.emit(AppEvent.AGENT_COLLECTION_RECONCILED);
-        return results;
-    }
-
-    /**
-     * Verify and reconcile a collection in one step (F-912). The path is draft to reconciled:
-     * 1. Claim the row (draft only; a second caller gets "Already verified"), mark the order paid
-     * 2. Take the open amount off the partner's cash held, only while it stays at zero or above
+     * Verify and reconcile collections in one step (F-912), at most 50 at a time, all or none. The path is draft to reconciled:
+     * 1. One claim for all rows (draft only; a row someone else verified meanwhile gives "Already verified", 409), orders marked paid
+     * 2. Per partner, one conditional debit of what no deposit covered yet: it only passes while cash held stays at zero or above
      * No journal entry: 1015 already holds the cash, net of the delivery fee. It moves to 1010 once, when a deposit
      * is verified or a settlement line matches (F-904).
      */
-    private async verifyCollectionInternal(tx: any, collectionId: number, verifierId: number) {
-        const collection = await (tx as any).agentCollection.findUnique({
-            where: { id: collectionId },
-            include: { order: true }
-        });
+    async bulkVerifyCollections(collectionIds: number[], verifierId: number) {
+        if (collectionIds.length === 0) throw new AppError('No collection IDs provided', 400);
+        if (collectionIds.length > 50) throw new AppError('Cannot verify more than 50 collections at once', 400);
 
-        if (!collection) {
-            throw new AppError('Collection record not found', 404);
-        }
+        const results = await this.openFindingOnBelowZero(() => prisma.$transaction(async (tx) => {
+            const extTx = tx as any;
+            const collections = await extTx.agentCollection.findMany({ where: { id: { in: collectionIds } } });
+            if (collections.length !== new Set(collectionIds).size) throw new AppError('Collection record not found', 404);
 
-        if (collection.status === 'reconciled') throw new AppError('Already verified', 409, 'ALREADY_VERIFIED');
-        if (collection.status !== 'draft') {
-            throw new AppError(`Collection cannot be reconciled from status: ${collection.status} `, 400);
-        }
+            const done = collections.filter((c: any) => c.status === 'reconciled');
+            if (done.length > 0) throw new AppError('Already verified', 409, 'ALREADY_VERIFIED');
+            const other = collections.find((c: any) => c.status !== 'draft');
+            if (other) throw new AppError(`Collection cannot be reconciled from status: ${other.status} `, 400);
 
-        // 1. The claim: status draft to reconciled and the order's paymentStatus, through the one writer
-        await this.reconcileCollectionRows(tx, [{ collectionId, orderId: collection.orderId ?? null }], verifierId, { onlyFrom: ['draft'] });
-        const updated = { ...collection, status: 'reconciled', approvedById: verifierId };
+            await this.reconcileCollectionRows(extTx, collections.map((c: any) => ({ collectionId: c.id, orderId: c.orderId ?? null })), verifierId, { onlyFrom: ['draft'] });
 
-        // 2. Cash held drops by what no deposit covered yet
-        await this.debitBalance(tx, collection.agentId, outstandingOf(collection), { type: 'agent_collection', id: String(collectionId) },
-            'Verification failed: the collection amount exceeds the partner cash held');
+            const byAgent = new Map<number, any[]>();
+            for (const c of collections) {
+                const list = byAgent.get(c.agentId);
+                if (list) list.push(c); else byAgent.set(c.agentId, [c]);
+            }
+            for (const [agentId, rows] of byAgent) {
+                await this.debitBalance(extTx, agentId, Money.sum(rows.map(outstandingOf)), `collection${rows.length > 1 ? 's' : ''} ${rows.map((c) => `#${c.id}`).join(', ')}`,
+                    'Verification failed: the collection amount exceeds the partner cash held');
+                // Legacy User total
+                await extTx.user.update({ where: { id: agentId }, data: { totalCollected: { increment: Money.sum(rows.map((c) => c.amount)) } } });
+            }
 
-        // 3. Legacy User total
-        await tx.user.update({
-            where: { id: collection.agentId },
-            data: {
-                totalCollected: {
-                    increment: collection.amount,
-                },
-            },
-        });
-
-        logger.info(`Collection ${collectionId} reconciled by user ${verifierId} `);
-
-        // Note: aging refresh event is emitted by the caller AFTER the transaction commits
-        // to avoid race conditions where refreshAll() reads uncommitted data
-
-        return updated;
+            logger.info(`Collections ${collectionIds.join(', ')} reconciled by user ${verifierId} `);
+            return collections.map((c: any) => ({ ...c, status: 'reconciled', approvedById: verifierId }));
+        }, TRANSACTION_CONFIG));
+        appEvents.emit(AppEvent.AGENT_COLLECTION_RECONCILED);
+        return results;
     }
 
     /**

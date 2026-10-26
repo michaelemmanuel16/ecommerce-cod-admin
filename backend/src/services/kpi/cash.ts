@@ -9,17 +9,13 @@ import { runInTenant } from '../../utils/tenantContext';
 import * as Money from '../../utils/money';
 import { getCurrency } from '../../utils/currency';
 import { DAY_MS } from './dates';
-import { OPEN_COLLECTION_STATUSES } from '../../utils/collectionCash';
+import agingService from '../agingService';
 import { medianRounded } from './median';
 import { kpiMeta, type KpiResult } from './types';
-
-/** The Dashboard's "orders over 8 days" (F-204): cash older than this many days is chased. */
-export const CASH_OVERDUE_DAYS = 8;
 
 export async function cashHeldByPartners(tenantId: string): Promise<KpiResult<string>> {
   return runInTenant(tenantId, async () => {
     const now = new Date();
-    const overdueBefore = new Date(now.getTime() - CASH_OVERDUE_DAYS * 24 * 60 * 60 * 1000);
     const [currency, held, overdueOrders] = await Promise.all([
       getCurrency(),
       prisma.agentBalance.aggregate({
@@ -27,12 +23,9 @@ export async function cashHeldByPartners(tenantId: string): Promise<KpiResult<st
         _sum: { currentBalance: true },
         _count: { _all: true },
       }),
-      // The orders behind the cash: per-order AgentCollection rows the partner still holds (draft, verified, approved; a
-      // part-paid row stays approved) with a collectionDate older than 8 days. Differs on purpose from agingService, which
-      // keeps `deposited` as outstanding until reconciled: here a deposited collection is no longer with the partner.
-      prisma.agentCollection.count({
-        where: { status: { in: [...OPEN_COLLECTION_STATUSES] }, collectionDate: { lt: overdueBefore }, order: { deletedAt: null } },
-      }),
+      // The orders behind the cash: open collections past their partner's days to pay. The same rule and query as the aging
+      // card and the Orders "Unpaid by agent" tab (agingService), so the three show one number.
+      agingService.countOverdue(),
     ]);
     return {
       name: 'Cash held by partners', value: Money.toApi(Money.orZero(held._sum.currentBalance)), unit: 'money', currency,

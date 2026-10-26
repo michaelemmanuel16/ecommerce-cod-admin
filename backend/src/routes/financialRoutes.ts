@@ -60,7 +60,7 @@ router.get('/agents/settlement/:agentId', requireResourcePermission('financial',
 router.get('/health', requireResourcePermission('financial', 'view'), getFinancialHealth);
 
 // Admin maintenance endpoints
-router.post('/refresh-aging', requireRole('admin', 'super_admin'), financialController.refreshAgingBuckets);
+router.post('/sync-cash-findings', requireRole('admin', 'super_admin'), financialController.syncCashFindings);
 router.post('/backfill-collections', requireRole('admin', 'super_admin'), financialController.backfillMissingCollections);
 router.post('/backfill-delivery-dates', requireRole('admin', 'super_admin'), financialController.backfillDeliveryDates);
 router.post('/backfill-commissions', requireRole('admin', 'super_admin'), financialController.backfillCommissions);
