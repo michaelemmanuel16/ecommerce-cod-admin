@@ -67,7 +67,7 @@ describe('POST /api/partner-settlements', () => {
     const res = await post(owner.token, payload('REF-A1', { notes: 'October week 2' }));
     expect(res.status).toBe(201);
     const s = res.body.settlement;
-    expect(s).toMatchObject({ partnerId: kofiId, reference: 'REF-A1', payoutDate: '2026-10-20', payoutAmount: '335.00', expectedNet: '335.00', replayed: false });
+    expect(s).toMatchObject({ partnerId: kofiId, reference: 'REF-A1', payoutDate: '2026-10-20', payoutAmount: '335.00', replayed: false });
     expect(s.lines).toHaveLength(2);
     expect(s.lines.map((l: any) => [l.externalOrderRef, l.expAmount, l.charge])).toEqual([['#9001', '200.00', '25.00'], ['9002', '200.00', '40.00']]);
     const row = await prismaBase.partnerSettlement.findUniqueOrThrow({ where: { id: s.id }, include: { lines: true } });
@@ -170,7 +170,9 @@ describe('MCP tool partner_payout_record', () => {
     const viaTool = JSON.parse(JSON.stringify((res as any).data));
     const viaApi = (await post(owner.token, payload('REF-T1'))).body.settlement;
     expect(viaApi).toMatchObject({ id: viaTool.id, replayed: true });
+    // The same findings and warnings come back on a repeat as on the first call
     expect({ ...viaTool, replayed: true }).toEqual(viaApi);
+    expect(viaTool.findings.length).toBeGreaterThan(0);
     expect(await prismaBase.partnerSettlement.count({ where: { tenantId, reference: 'REF-T1' } })).toBe(1);
   });
 

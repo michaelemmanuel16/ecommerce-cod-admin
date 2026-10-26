@@ -470,6 +470,61 @@ export class GLAutomationService {
   }
 
   /**
+   * Fee true-up of one settlement (F-906, F-936): the partner's real charges replace the fees booked at delivery.
+   * `net` is the sum over the settlement's lines of (charge - fee booked). Above 0: DR 5070 / CR 1015. Below 0 the
+   * entry is flipped. One entry per settlement, keyed `trueup:<settlementId>`, so a repeat posts nothing. 0 posts nothing.
+   */
+  static async createFeeTrueUpEntry(
+    tx: Prisma.TransactionClient,
+    settlement: { id: number; reference: string; tenantId?: string | null },
+    net: Money.MoneyInput,
+    userId: number,
+    entryDate: Date = new Date()
+  ): Promise<JournalEntryWithTransactions | null> {
+    const amount = Money.parse(net);
+    if (amount.isZero()) return null;
+
+    const externalRef = `trueup:${settlement.id}`;
+    const existingEntry = await tx.journalEntry.findFirst({
+      where: { sourceType: JournalSourceType.delivery_fee, externalRef, isVoided: false },
+      include: { transactions: { include: { account: true } } }
+    });
+    if (existingEntry) return existingEntry as JournalEntryWithTransactions;
+
+    const [expenseAccountId, cashAccountId] = await Promise.all([
+      GLAccountService.getAccountIdByCode(GL_ACCOUNTS.DELIVERY_FEES, tx),
+      GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT, tx),
+    ]);
+    const size = amount.abs();
+    const more = amount.gt(0);
+    return await this.createJournalEntryWithRetry(tx, {
+      entryDate,
+      description: `Delivery fee true-up - settlement ${settlement.reference}`,
+      sourceType: JournalSourceType.delivery_fee,
+      sourceId: settlement.id,
+      externalRef,
+      createdBy: userId,
+      tenantId: settlement.tenantId ?? undefined,
+      transactions: {
+        create: [
+          {
+            accountId: expenseAccountId,
+            debitAmount: more ? size : Money.ZERO,
+            creditAmount: more ? Money.ZERO : size,
+            description: `Partner charge ${more ? 'above' : 'below'} the fee booked (settlement ${settlement.reference})`,
+          },
+          {
+            accountId: cashAccountId,
+            debitAmount: more ? Money.ZERO : size,
+            creditAmount: more ? size : Money.ZERO,
+            description: 'Fee true-up netted from the cash the partner holds',
+          },
+        ],
+      },
+    });
+  }
+
+  /**
    * Reverses the order's delivered fee entry when the order leaves `delivered`, like the revenue reversal (D7):
    * the original is linked to its reversal through `reversingEntryId`, so the order has no active delivered fee
    * afterwards and a later delivery posts a fresh one. Returns null when the order has none (fee 0, or booked before M5).
