@@ -72,6 +72,10 @@ const MODELS: Array<[string, string, string, string]> = [
   ['stock count lines', 'stockCountLine', 'stockCountLine', 'StockCountLine'],
   ['delivery partner profiles', 'deliveryPartnerProfile', 'deliveryPartnerProfile', 'DeliveryPartnerProfile'],
   ['delivery attempts', 'deliveryAttempt', 'deliveryAttempt', 'DeliveryAttempt'],
+  // M5 models
+  ['partner settlements', 'partnerSettlement', 'partnerSettlement', 'PartnerSettlement'],
+  ['partner settlement lines', 'partnerSettlementLine', 'partnerSettlementLine', 'PartnerSettlementLine'],
+  ['commission entries', 'commissionEntry', 'commissionEntry', 'CommissionEntry'],
 ];
 
 describe('tenant B data never shows for tenant A', () => {

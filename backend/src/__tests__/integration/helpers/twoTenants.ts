@@ -213,7 +213,7 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
       data: { type: 'ledger_gap', subjectType: 'day', subjectId: `2026-10-01-${marker}`, amount, note: `finding ${marker}`, tenantId },
     })),
     seed('feeRule', prismaBase.feeRule.create({
-      data: { partnerUserId: deliveryAgent.id, outcome: 'delivered', amount: '25', tenantId },
+      data: { partnerUserId: deliveryAgent.id, outcome: 'delivered', amount: '25', validFrom: new Date('2026-10-01'), tenantId },
     })),
     seed('fxRate', prismaBase.fxRate.create({
       data: { fromCurrency: 'GHS', toCurrency: 'NGN', rate: '112', date: new Date('2026-10-01'), source: 'auto', createdById: admin.id, tenantId },
@@ -292,6 +292,22 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
     })),
   ]);
 
+  // M5 models: a partner payout list with one matched line, and one earned commission entry.
+  const settlement = await seed('partnerSettlement', prismaBase.partnerSettlement.create({
+    data: {
+      tenantId, partnerId: deliveryAgent.id, payoutDate: new Date('2026-10-20'), payoutAmount: '86.11', currency: side === 'a' ? 'GHS' : 'NGN',
+      reference: `settle-${tag}`, expectedNet: '86.11', status: 'matched',
+    },
+  }));
+  await wave([
+    seed('partnerSettlementLine', prismaBase.partnerSettlementLine.create({
+      data: { tenantId, settlementId: settlement.id, orderId: order.id, externalOrderRef: `ext-${marker}`, expAmount: amount, charge: '25', matched: true, matchedBy: 'order_id' },
+    })),
+    seed('commissionEntry', prismaBase.commissionEntry.create({
+      data: { tenantId, orderId: order.id, userId: salesRep.id, kind: 'base', status: 'earned', amount: '8', earnedAt: new Date('2026-10-20') },
+    })),
+  ]);
+
   // The MCP key acts as an ai_agent user. admin holds every cell the 14 tools need and the Legacy role lists all
   // 14 tools, so suites that call every tool work. A suite that tests a narrower key makes its own user, role and key.
   const legacyRole = await prismaBase.role.findFirstOrThrow({ where: { tenantId, name: 'Legacy MCP (14 tools)' } });
@@ -333,7 +349,10 @@ export async function deleteTenantRows(tenantIds: string[]): Promise<void> {
     db.downloadToken.deleteMany({ where: t }),
     db.call.deleteMany({ where: t }),
     db.orderHistory.deleteMany({ where: t }),
+    db.commissionEntry.deleteMany({ where: t }),
     db.agentCollection.deleteMany({ where: t }),
+    db.partnerSettlementLine.deleteMany({ where: t }),
+    db.partnerSettlement.deleteMany({ where: t }),
     db.delivery.deleteMany({ where: t }),
     db.messageLog.deleteMany({ where: t }),
     db.payout.deleteMany({ where: t }),

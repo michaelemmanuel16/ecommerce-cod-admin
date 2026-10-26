@@ -84,6 +84,9 @@ model Tenant {
   findings                Finding[]
   feeRules                FeeRule[]
   fxRates                 FxRate[]
+  partnerSettlements      PartnerSettlement[]
+  partnerSettlementLines  PartnerSettlementLine[]
+  commissionEntries       CommissionEntry[]
 
   @@index([paystackCustomerCode])
   @@index([paystackSubscriptionCode])
@@ -184,6 +187,11 @@ model User {
   targetsAsOwner        Target[]                @relation("TargetUser")
   feeRules              FeeRule[]               @relation("FeeRulePartner")
   fxRatesCreated        FxRate[]                @relation("FxRateCreator")
+  feeRulesCreated       FeeRule[]               @relation("FeeRuleCreator")
+  findingsAssigned      Finding[]               @relation("FindingAssignee")
+  findingsResolved      Finding[]               @relation("FindingResolver")
+  partnerSettlements    PartnerSettlement[]     @relation("SettlementPartner")
+  commissionEntries     CommissionEntry[]       @relation("CommissionEntryUser")
   kind                  UserKind                @default(person)
   roleAssignments       RoleAssignment[]        @relation("RoleAssignmentHolder")
   sessions              UserSession[]
@@ -292,89 +300,94 @@ model Product {
 }
 
 model Order {
-  id                 Int                 @id @default(autoincrement())
-  customerId         Int                 @map("customer_id")
-  customerRepId      Int?                @map("customer_rep_id")
-  deliveryAgentId    Int?                @map("delivery_agent_id")
-  status             OrderStatus         @default(pending_confirmation)
-  paymentStatus      PaymentStatus       @default(pending) @map("payment_status")
-  subtotal           Decimal             @db.Decimal(19, 4)
-  shippingCost       Decimal             @default(0) @map("shipping_cost") @db.Decimal(19, 4)
-  discount           Decimal             @default(0) @db.Decimal(19, 4)
-  totalAmount        Decimal             @map("total_amount") @db.Decimal(19, 4)
+  id                 Int                     @id @default(autoincrement())
+  customerId         Int                     @map("customer_id")
+  customerRepId      Int?                    @map("customer_rep_id")
+  deliveryAgentId    Int?                    @map("delivery_agent_id")
+  status             OrderStatus             @default(pending_confirmation)
+  paymentStatus      PaymentStatus           @default(pending) @map("payment_status")
+  subtotal           Decimal                 @db.Decimal(19, 4)
+  shippingCost       Decimal                 @default(0) @map("shipping_cost") @db.Decimal(19, 4)
+  discount           Decimal                 @default(0) @db.Decimal(19, 4)
+  totalAmount        Decimal                 @map("total_amount") @db.Decimal(19, 4)
   // Currency the amounts above were entered in (M1-T31). The DB trigger orders_set_currency fills it from
   // Tenant.currency on insert; null on an old row reads as the store currency. Never rewritten on a store currency change.
-  currency           String?             @db.VarChar(3)
-  codAmount          Decimal?            @map("cod_amount") @db.Decimal(19, 4)
+  currency           String?                 @db.VarChar(3)
+  codAmount          Decimal?                @map("cod_amount") @db.Decimal(19, 4)
   notes              String?
-  internalNotes      String?             @map("internal_notes")
-  orderType          String              @default("physical") @map("order_type")
-  paymentMethod      String              @default("cod") @map("payment_method")
-  paymentReference   String?             @map("payment_reference")
-  paymentProvider    String?             @map("payment_provider")
-  depositPaid        Decimal             @default(0) @map("deposit_paid") @db.Decimal(19, 4)
-  balanceDue         Decimal             @default(0) @map("balance_due") @db.Decimal(19, 4)
-  capiEventFired     Boolean             @default(false) @map("capi_event_fired")
+  internalNotes      String?                 @map("internal_notes")
+  orderType          String                  @default("physical") @map("order_type")
+  paymentMethod      String                  @default("cod") @map("payment_method")
+  paymentReference   String?                 @map("payment_reference")
+  paymentProvider    String?                 @map("payment_provider")
+  depositPaid        Decimal                 @default(0) @map("deposit_paid") @db.Decimal(19, 4)
+  balanceDue         Decimal                 @default(0) @map("balance_due") @db.Decimal(19, 4)
+  capiEventFired     Boolean                 @default(false) @map("capi_event_fired")
   // Meta click identifiers captured from the buyer's browser at checkout, forwarded
   // to the CAPI Purchase event as un-hashed match keys (fbp = browser id cookie,
   // fbc = click id from the _fbc cookie / fbclid). Nullable: only set for orders
   // placed through the hosted checkout with a Facebook Pixel configured.
-  fbp                String?             @map("fbp")
-  fbc                String?             @map("fbc")
-  deliveryAddress    String?             @map("delivery_address")
-  deliveryState      String?             @map("delivery_state")
-  deliveryArea       String?             @map("delivery_area")
-  estimatedDelivery  DateTime?           @map("estimated_delivery")
-  priority           Int                 @default(0)
-  tags               String[]            @default([])
-  source             String              @default("manual")
-  externalOrderId    String?             @map("external_order_id")
-  webhookData        Json?               @map("webhook_data")
-  webhookFingerprint String?             @unique @map("webhook_fingerprint")
-  createdById        Int?                @map("created_by_id")
+  fbp                String?                 @map("fbp")
+  fbc                String?                 @map("fbc")
+  deliveryAddress    String?                 @map("delivery_address")
+  deliveryState      String?                 @map("delivery_state")
+  deliveryArea       String?                 @map("delivery_area")
+  estimatedDelivery  DateTime?               @map("estimated_delivery")
+  priority           Int                     @default(0)
+  tags               String[]                @default([])
+  source             String                  @default("manual")
+  externalOrderId    String?                 @map("external_order_id")
+  webhookData        Json?                   @map("webhook_data")
+  webhookFingerprint String?                 @unique @map("webhook_fingerprint")
+  createdById        Int?                    @map("created_by_id")
   // True when COD is off for the customer and the order needs a manual call first (F-317, F-357).
-  requiresManualCall Boolean             @default(false) @map("requires_manual_call")
-  createdAt          DateTime            @default(now()) @map("created_at")
-  updatedAt          DateTime            @updatedAt @map("updated_at")
-  deletedAt          DateTime?           @map("deleted_at")
-  commissionPaid     Boolean             @default(false) @map("commission_paid")
-  payoutId           Int?                @map("payout_id")
-  revenueRecognized  Boolean             @default(false) @map("revenue_recognized")
-  glJournalEntryId   Int?                @map("gl_journal_entry_id")
-  deliveryDate       DateTime?           @map("delivery_date")
+  requiresManualCall Boolean                 @default(false) @map("requires_manual_call")
+  createdAt          DateTime                @default(now()) @map("created_at")
+  updatedAt          DateTime                @updatedAt @map("updated_at")
+  deletedAt          DateTime?               @map("deleted_at")
+  commissionPaid     Boolean                 @default(false) @map("commission_paid")
+  payoutId           Int?                    @map("payout_id")
+  revenueRecognized  Boolean                 @default(false) @map("revenue_recognized")
+  glJournalEntryId   Int?                    @map("gl_journal_entry_id")
+  deliveryDate       DateTime?               @map("delivery_date")
+  // M5: delivery fee stamped once by the order state machine; null = not stamped yet, 0 = stamped as zero.
+  deliveryFee        Decimal?                @map("delivery_fee") @db.Decimal(19, 4)
+  deliveryFeeSource  DeliveryFeeSource?      @map("delivery_fee_source")
   // M1: lifecycle timestamps, set only if empty by the order state machine.
-  confirmedAt        DateTime?           @map("confirmed_at")
-  confirmedById      Int?                @map("confirmed_by_id")
-  dispatchedAt       DateTime?           @map("dispatched_at")
-  firstContactAt     DateTime?           @map("first_contact_at")
-  returnedAt         DateTime?           @map("returned_at")
+  confirmedAt        DateTime?               @map("confirmed_at")
+  confirmedById      Int?                    @map("confirmed_by_id")
+  dispatchedAt       DateTime?               @map("dispatched_at")
+  firstContactAt     DateTime?               @map("first_contact_at")
+  returnedAt         DateTime?               @map("returned_at")
   // Optimistic lock. The DB trigger orders_status_version_bump raises it on every status change.
-  statusVersion      Int                 @default(0) @map("status_version")
-  declineReason      DeclineReason?      @map("decline_reason")
-  failureReason      FailureReason?      @map("failure_reason")
-  nextAttemptDate    DateTime?           @map("next_attempt_date")
+  statusVersion      Int                     @default(0) @map("status_version")
+  declineReason      DeclineReason?          @map("decline_reason")
+  failureReason      FailureReason?          @map("failure_reason")
+  nextAttemptDate    DateTime?               @map("next_attempt_date")
   // Cost of the units at delivery time, set once (F-611). Null until delivered.
-  landedCostTotal    Decimal?            @map("landed_cost_total") @db.Decimal(19, 4)
+  landedCostTotal    Decimal?                @map("landed_cost_total") @db.Decimal(19, 4)
   calls              Call[]
   delivery           Delivery?
   formSubmissions    FormSubmission[]
   orderHistory       OrderHistory[]
   orderItems         OrderItem[]
-  createdBy          User?               @relation("OrderCreatedBy", fields: [createdById], references: [id])
-  customer           Customer            @relation(fields: [customerId], references: [id])
-  customerRep        User?               @relation("OrderCustomerRep", fields: [customerRepId], references: [id])
-  deliveryAgent      User?               @relation("OrderDeliveryAgent", fields: [deliveryAgentId], references: [id])
-  confirmedBy        User?               @relation("OrderConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+  createdBy          User?                   @relation("OrderCreatedBy", fields: [createdById], references: [id])
+  customer           Customer                @relation(fields: [customerId], references: [id])
+  customerRep        User?                   @relation("OrderCustomerRep", fields: [customerRepId], references: [id])
+  deliveryAgent      User?                   @relation("OrderDeliveryAgent", fields: [deliveryAgentId], references: [id])
+  confirmedBy        User?                   @relation("OrderConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
   transaction        Transaction?
-  payout             Payout?             @relation(fields: [payoutId], references: [id])
-  glJournalEntry     JournalEntry?       @relation(fields: [glJournalEntryId], references: [id])
+  payout             Payout?                 @relation(fields: [payoutId], references: [id])
+  glJournalEntry     JournalEntry?           @relation(fields: [glJournalEntryId], references: [id])
   agentCollection    AgentCollection?
   inventoryTransfers InventoryTransfer[]
   deliveryAttempts   DeliveryAttempt[]
+  settlementLines    PartnerSettlementLine[]
+  commissionEntries  CommissionEntry[]
   messageLogs        MessageLog[]
   downloadTokens     DownloadToken[]
-  tenantId           String?             @map("tenant_id")
-  tenant             Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tenantId           String?                 @map("tenant_id")
+  tenant             Tenant?                 @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   // Settlement resolves an order by its Paystack reference; scope uniqueness to the
   // tenant so a cross-account reference collision can never map to another tenant's
@@ -1118,6 +1131,10 @@ model AuditLog {
 model AgentAgingBucket {
   id                   Int       @id @default(autoincrement())
   agentId              Int       @unique @map("agent_id")
+  // M5 buckets are 0-3, 4-7, 8-14, 15+. bucket_0_1, bucket_2_3 and bucket_8_plus are read by agingService until M5-T14 replaces it.
+  bucket_0_3           Decimal   @default(0) @map("bucket_0_3") @db.Decimal(19, 4)
+  bucket_8_14          Decimal   @default(0) @map("bucket_8_14") @db.Decimal(19, 4)
+  bucket_15_plus       Decimal   @default(0) @map("bucket_15_plus") @db.Decimal(19, 4)
   bucket_0_1           Decimal   @default(0) @map("bucket_0_1") @db.Decimal(19, 4)
   bucket_2_3           Decimal   @default(0) @map("bucket_2_3") @db.Decimal(19, 4)
   bucket_4_7           Decimal   @default(0) @map("bucket_4_7") @db.Decimal(19, 4)
@@ -1158,27 +1175,29 @@ model AgentBalance {
 }
 
 model AgentCollection {
-  id              Int              @id @default(autoincrement())
-  orderId         Int              @unique @map("order_id")
-  agentId         Int              @map("agent_id")
-  amount          Decimal          @map("amount") @db.Decimal(19, 4)
-  allocatedAmount Decimal          @default(0) @map("allocated_amount") @db.Decimal(19, 4)
-  status          CollectionStatus @default(draft)
-  collectionDate  DateTime         @map("collection_date")
-  verifiedAt      DateTime?        @map("verified_at")
-  verifiedById    Int?             @map("verified_by_id")
-  approvedAt      DateTime?        @map("approved_at")
-  approvedById    Int?             @map("approved_by_id")
-  notes           String?
-  createdAt       DateTime         @default(now()) @map("created_at")
-  updatedAt       DateTime         @updatedAt @map("updated_at")
+  id               Int              @id @default(autoincrement())
+  orderId          Int              @unique @map("order_id")
+  agentId          Int              @map("agent_id")
+  amount           Decimal          @map("amount") @db.Decimal(19, 4)
+  allocatedAmount  Decimal          @default(0) @map("allocated_amount") @db.Decimal(19, 4)
+  status           CollectionStatus @default(draft)
+  collectionDate   DateTime         @map("collection_date")
+  verifiedAt       DateTime?        @map("verified_at")
+  verifiedById     Int?             @map("verified_by_id")
+  approvedAt       DateTime?        @map("approved_at")
+  approvedById     Int?             @map("approved_by_id")
+  settlementLineId Int?             @map("settlement_line_id")
+  notes            String?
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
 
-  order    Order  @relation(fields: [orderId], references: [id])
-  agent    User   @relation("AgentCollections", fields: [agentId], references: [id])
-  verifier User?  @relation("VerifiedCollections", fields: [verifiedById], references: [id])
-  approver User?  @relation("ApprovedCollections", fields: [approvedById], references: [id])
-  tenantId String @map("tenant_id")
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  settlementLine PartnerSettlementLine? @relation(fields: [settlementLineId], references: [id], onDelete: SetNull)
+  order          Order                  @relation(fields: [orderId], references: [id])
+  agent          User                   @relation("AgentCollections", fields: [agentId], references: [id])
+  verifier       User?                  @relation("VerifiedCollections", fields: [verifiedById], references: [id])
+  approver       User?                  @relation("ApprovedCollections", fields: [approvedById], references: [id])
+  tenantId       String                 @map("tenant_id")
+  tenant         Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([tenantId])
   @@index([agentId])
@@ -1186,6 +1205,7 @@ model AgentCollection {
   @@index([collectionDate])
   @@index([agentId, status])
   @@index([status, collectionDate])
+  @@index([settlementLineId])
   @@map("agent_collections")
 }
 
@@ -1201,19 +1221,24 @@ model AgentDeposit {
   verifiedById    Int?          @map("verified_by_id")
   notes           String?
   receiptUrl      String?       @map("receipt_url")
+  rejectReason    String?       @map("reject_reason")
+  settlementId    Int?          @map("settlement_id")
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
 
-  agent    User   @relation("AgentDeposits", fields: [agentId], references: [id])
-  verifier User?  @relation("VerifiedDeposits", fields: [verifiedById], references: [id])
-  tenantId String @map("tenant_id")
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  settlement       PartnerSettlement? @relation("DepositSettlement", fields: [settlementId], references: [id], onDelete: SetNull)
+  settlementPayout PartnerSettlement? @relation("SettlementDeposit")
+  agent            User               @relation("AgentDeposits", fields: [agentId], references: [id])
+  verifier         User?              @relation("VerifiedDeposits", fields: [verifiedById], references: [id])
+  tenantId         String             @map("tenant_id")
+  tenant           Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([tenantId])
   @@index([agentId])
   @@index([depositDate])
   @@index([agentId, depositDate])
   @@index([status])
+  @@index([settlementId])
   @@map("agent_deposits")
 }
 
@@ -1351,18 +1376,58 @@ enum FindingType {
   payment_unmatched
   ledger_post_failed
   paystack_unsettled
+  // M5: raised by fee rules, settlement matching, the cash chain and aging.
+  fee_rule_missing
+  unmatched_line
+  charge_variance
+  over_pay
+  excess_deposit
+  negative_cash_held
 }
 
 enum FindingStatus {
   open
   explained
   closed
+  written_off
 }
 
 enum FeeOutcome {
   delivered
   failed
   returned
+}
+
+enum FeeBasis {
+  flat
+  percent
+}
+
+enum DeliveryFeeSource {
+  rule
+  settlement
+  manual
+}
+
+enum CommissionKind {
+  base
+  upsell
+  reward
+}
+
+enum CommissionStatus {
+  pending
+  earned
+  paid
+  void
+  no_payout
+}
+
+enum SettlementStatus {
+  matched
+  short
+  over
+  unmatched
 }
 
 enum FxSource {
@@ -1881,7 +1946,7 @@ model Target {
   @@map("targets")
 }
 
-/// Minimal shape from M1; extended in M5/M6. Money or stock gaps found by the nightly jobs (F-905).
+/// Minimal shape from M1, extended in M5. Money or stock gaps found by the nightly jobs (F-905).
 /// subjectId is text because subjects are not all integer rows (a ledger gap is a day, a cash gap a partner).
 model Finding {
   id              Int              @id @default(autoincrement())
@@ -1891,30 +1956,43 @@ model Finding {
   subjectId       String           @map("subject_id")
   amount          Decimal?         @db.Decimal(19, 4)
   note            String?
+  // M5: who works the Finding, why it was closed, and when (F-909).
+  assigneeId      Int?             @map("assignee_id")
+  resolvedById    Int?             @map("resolved_by_id")
+  resolvedAt      DateTime?        @map("resolved_at")
+  explanation     String?
   createdAt       DateTime         @default(now()) @map("created_at")
   tenantId        String           @map("tenant_id")
   tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  assignee        User?            @relation("FindingAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  resolvedBy      User?            @relation("FindingResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
   stockCountLines StockCountLine[]
 
   @@index([tenantId])
+  @@index([tenantId, assigneeId])
   @@index([tenantId, type, status])
   @@index([tenantId, type, subjectType, subjectId])
   @@map("findings")
 }
 
-/// Minimal shape from M1; extended in M5/M6. Fee a delivery partner keeps per outcome (F-935, F-936). No rule means fee 0.
+/// Minimal shape from M1, extended in M5. Fee a delivery partner keeps per outcome (F-935, F-936). No rule means fee 0.
+/// basis flat: amount is money. basis percent: amount is a percent of the order total (0 to 100). validFrom starts the rule; the latest validFrom on or before the outcome date applies.
 model FeeRule {
   id            Int        @id @default(autoincrement())
   partnerUserId Int        @map("partner_user_id")
   outcome       FeeOutcome
+  basis         FeeBasis   @default(flat)
   amount        Decimal    @db.Decimal(19, 4)
+  validFrom     DateTime   @map("valid_from") @db.Date
+  createdById   Int?       @map("created_by_id")
   createdAt     DateTime   @default(now()) @map("created_at")
   updatedAt     DateTime   @updatedAt @map("updated_at")
   partner       User       @relation("FeeRulePartner", fields: [partnerUserId], references: [id], onDelete: Cascade)
+  createdBy     User?      @relation("FeeRuleCreator", fields: [createdById], references: [id], onDelete: SetNull)
   tenantId      String     @map("tenant_id")
   tenant        Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@unique([tenantId, partnerUserId, outcome])
+  @@unique([tenantId, partnerUserId, outcome, validFrom])
   @@index([tenantId])
   @@map("fee_rules")
 }
@@ -2017,4 +2095,86 @@ model PaymentConnection {
   @@unique([tenantId, provider])
   @@index([tenantId])
   @@map("payment_connections")
+}
+
+/// One payout a delivery partner (3PL or agent) sent, recorded by an outside agent or by hand (F-906, F-908).
+/// Generic: no partner-specific fields. Idempotent on (tenantId, partnerId, reference).
+model PartnerSettlement {
+  id              Int                     @id @default(autoincrement())
+  partnerId       Int                     @map("partner_id")
+  payoutDate      DateTime                @map("payout_date")
+  payoutAmount    Decimal                 @map("payout_amount") @db.Decimal(19, 4)
+  currency        String?                 @db.VarChar(3)
+  reference       String
+  expectedNet     Decimal                 @default(0) @map("expected_net") @db.Decimal(19, 4)
+  shortAmount     Decimal                 @default(0) @map("short_amount") @db.Decimal(19, 4)
+  unappliedAmount Decimal                 @default(0) @map("unapplied_amount") @db.Decimal(19, 4)
+  status          SettlementStatus
+  needsReview     Boolean                 @default(false) @map("needs_review")
+  isManual        Boolean                 @default(false) @map("is_manual")
+  depositId       Int?                    @unique @map("deposit_id")
+  recordedById    Int?                    @map("recorded_by_id")
+  notes           String?
+  payload         Json?
+  createdAt       DateTime                @default(now()) @map("created_at")
+  partner         User                    @relation("SettlementPartner", fields: [partnerId], references: [id])
+  deposit         AgentDeposit?           @relation("SettlementDeposit", fields: [depositId], references: [id], onDelete: SetNull)
+  deposits        AgentDeposit[]          @relation("DepositSettlement")
+  lines           PartnerSettlementLine[]
+  tenantId        String                  @map("tenant_id")
+  tenant          Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([tenantId, partnerId, reference])
+  @@index([tenantId])
+  @@index([tenantId, partnerId, payoutDate])
+  @@map("partner_settlements")
+}
+
+/// One row of a partner payout list. orderId is null until the line matches an order.
+model PartnerSettlementLine {
+  id               Int               @id @default(autoincrement())
+  settlementId     Int               @map("settlement_id")
+  orderId          Int?              @map("order_id")
+  externalOrderRef String            @map("external_order_ref")
+  expAmount        Decimal           @map("exp_amount") @db.Decimal(19, 4)
+  charge           Decimal           @default(0) @db.Decimal(19, 4)
+  outcome          FeeOutcome?
+  matched          Boolean           @default(false)
+  matchedBy        String?           @map("matched_by")
+  note             String?
+  settlement       PartnerSettlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  order            Order?            @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  collections      AgentCollection[]
+  tenantId         String            @map("tenant_id")
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([tenantId])
+  @@index([settlementId])
+  @@index([orderId])
+  @@map("partner_settlement_lines")
+}
+
+/// Pay ledger for call reps and delivery-agent rewards (F-769, F-914). No delivery fee entry exists: partners keep the fee from cash (F4).
+/// journalEntryId is the 2020 accrual posted for the entry; postedAt guards against posting twice.
+model CommissionEntry {
+  id             Int              @id @default(autoincrement())
+  orderId        Int?             @map("order_id")
+  userId         Int              @map("user_id")
+  kind           CommissionKind
+  status         CommissionStatus @default(pending)
+  amount         Decimal          @db.Decimal(19, 4)
+  earnedAt       DateTime?        @map("earned_at")
+  journalEntryId Int?             @map("journal_entry_id")
+  note           String?
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+  order          Order?           @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  user           User             @relation("CommissionEntryUser", fields: [userId], references: [id])
+  tenantId       String           @map("tenant_id")
+  tenant         Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([tenantId])
+  @@index([tenantId, userId, status])
+  @@index([orderId])
+  @@map("commission_entries")
 }

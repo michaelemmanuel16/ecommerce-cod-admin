@@ -293,7 +293,7 @@ describe('Delivery GL Integration', () => {
     it('should create GL entry for failed delivery expense', async () => {
       // The fee comes from the agent's FeeRule (M1-T10); with no rule nothing posts
       await prisma.feeRule.create({
-        data: { partnerUserId: testOrder.deliveryAgentId, outcome: 'failed', amount: 50 },
+        data: { partnerUserId: testOrder.deliveryAgentId, outcome: 'failed', amount: 50, validFrom: new Date('2026-01-01') },
       });
       // markDeliveryFailed is gone (M4-T20); the fail goes through the state machine, as the order status route does
       await transitionOrder(testOrder.id, 'failed_delivery', actorOf(undefined, testUser.id), {
