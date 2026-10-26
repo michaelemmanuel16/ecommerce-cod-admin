@@ -1,4 +1,5 @@
 import { Card, Tag } from '../../../components/ui-v2';
+import { shortDay } from '../../dashboard/format';
 import type { MonthlyPl, PlColumn } from '../../../services/financeReports.service';
 import { formatRateUsed } from '../../../utils/format';
 import { parseMoney } from '../../../utils/money';
@@ -24,7 +25,7 @@ export function MonthlyPlCard({ block }: { block: FinanceBlock<MonthlyPl> }) {
         const showPaystack = anyColumn(cols, (c) => c.paystackFees);
         const last = cols[cols.length - 1];
         return (
-          <Card title="Monthly profit and loss" aside={last ? `${last.label} runs to ${last.to}` : undefined} className="fincard">
+          <Card title="Monthly profit and loss" aside={last ? `Up to ${shortDay(last.to)}` : undefined} className="fincard">
             {cols.length === 0 ? (
               <p className="note">Nothing is booked in the ledger yet.</p>
             ) : (
