@@ -71,7 +71,6 @@ export const login = async (req: AuthRequest, res: Response, next: NextFunction)
           role: user.role,
           isPlatformAdmin: user.isPlatformAdmin || false,
           commissionAmount: Money.orZero(user.commissionAmount),
-          deliveryRate: user.deliveryRate,
           preferences: user.preferences,
         },
         tokens: {

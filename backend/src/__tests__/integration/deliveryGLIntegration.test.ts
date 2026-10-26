@@ -88,7 +88,7 @@ describe('Delivery GL Integration', () => {
       { id: parseInt(GL_ACCOUNTS.COGS), code: GL_ACCOUNTS.COGS, name: 'COGS', accountType: 'expense', normalBalance: 'debit' },
       { id: parseInt(GL_ACCOUNTS.FAILED_DELIVERY_EXPENSE), code: GL_ACCOUNTS.FAILED_DELIVERY_EXPENSE, name: 'Failed Delivery Expense', accountType: 'expense', normalBalance: 'debit' },
       { id: parseInt(GL_ACCOUNTS.RETURN_PROCESSING_EXPENSE), code: GL_ACCOUNTS.RETURN_PROCESSING_EXPENSE, name: 'Return Processing Expense', accountType: 'expense', normalBalance: 'debit' },
-      { id: parseInt(GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION), code: GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION, name: 'Delivery Agent Commission', accountType: 'expense', normalBalance: 'debit' },
+      { id: parseInt(GL_ACCOUNTS.DELIVERY_FEES), code: GL_ACCOUNTS.DELIVERY_FEES, name: 'Delivery Fees', accountType: 'expense', normalBalance: 'debit' },
       { id: parseInt(GL_ACCOUNTS.SALES_REP_COMMISSION), code: GL_ACCOUNTS.SALES_REP_COMMISSION, name: 'Sales Rep Commission', accountType: 'expense', normalBalance: 'debit' },
       { id: parseInt(GL_ACCOUNTS.REFUND_LIABILITY), code: GL_ACCOUNTS.REFUND_LIABILITY, name: 'Refund Liability', accountType: 'liability', normalBalance: 'credit' },
     ];
@@ -291,7 +291,7 @@ describe('Delivery GL Integration', () => {
 
   describe('Failed Delivery', () => {
     it('should create GL entry for failed delivery expense', async () => {
-      // The fee comes from the agent's FeeRule (M1-T10); with no rule nothing posts
+      // The fee comes from the agent's FeeRule (M1-T10, M5-T06); with no rule nothing posts
       await prisma.feeRule.create({
         data: { partnerUserId: testOrder.deliveryAgentId, outcome: 'failed', amount: 50, validFrom: new Date('2026-01-01') },
       });
@@ -311,23 +311,25 @@ describe('Delivery GL Integration', () => {
       expect(updatedOrder!.status).toBe('failed_delivery');
 
       // Verify GL entry was created
-      // M1-T11: the fee is keyed on the OrderHistory row of the failed_delivery move (D6)
+      // M1-T11, M5-T06: the fee is keyed on the OrderHistory row of the failed_delivery move (D6)
       const failedMove = await prisma.orderHistory.findFirstOrThrow({
         where: { orderId: testOrder.id, status: 'failed_delivery' },
       });
       const glEntries = await prisma.journalEntry.findMany({
         where: {
-          sourceType: 'order_failed_delivery',
-          sourceId: failedMove.id,
+          sourceType: 'delivery_fee',
+          sourceId: testOrder.id,
+          externalRef: `failed:${failedMove.id}`,
         },
-        include: { transactions: true },
+        include: { transactions: { include: { account: true } } },
       });
 
       expect(glEntries).toHaveLength(1);
 
       const glEntry = glEntries[0];
-      expect(glEntry.description).toContain('Failed delivery expense');
+      expect(glEntry.description).toContain('Delivery fee (failed)');
       expect(glEntry.transactions).toHaveLength(2);
+      expect(glEntry.transactions.map((t) => t.account.code).sort()).toEqual([GL_ACCOUNTS.CASH_IN_TRANSIT, GL_ACCOUNTS.DELIVERY_FEES]);
     });
   });
 

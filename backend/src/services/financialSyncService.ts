@@ -121,11 +121,10 @@ export class FinancialSyncService {
 
       // Step 5: Create AgentCollection record if it has a delivery agent
       // This is crucial for the Agent Reconciliation module
-      // Agents are held accountable for NET amount: Gross - Agent Commission
+      // Partners are held accountable for the NET amount: gross minus the delivery fee they keep (F-936)
       if (order.deliveryAgentId) {
-        const agentComm = Money.orZero(order.deliveryAgent?.commissionAmount);
         const grossAmount = Money.parse(order.totalAmount);
-        const netAmount = Money.sub(grossAmount, agentComm);
+        const netAmount = Money.sub(grossAmount, Money.orZero(order.deliveryFee));
 
         const existingCollection = await tx.agentCollection.findUnique({
           where: { orderId: order.id }

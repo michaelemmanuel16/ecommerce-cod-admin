@@ -306,12 +306,11 @@ export class DeliveryService {
 
       logger.info(`GL entry created for order ${orderWithItems.id}: ${glEntry.entryNumber}`);
 
-      // Create draft agent collection record with net amount (gross - agent commission)
+      // Create draft agent collection record with the net amount: the cash collected minus the delivery fee the
+      // partner keeps (F-936). The state machine stamped the fee before it posted the revenue.
       if (orderWithItems.deliveryAgentId && Money.isNonZero(orderWithItems.codAmount)) {
         const grossAmount = Money.orZero(orderWithItems.codAmount);
-        // Uses profile flat rate — must match createRevenueRecognitionEntry in glAutomationService
-        const agentCommission = Money.orZero(orderWithItems.deliveryAgent?.commissionAmount);
-        const netAmount = Money.sub(grossAmount, agentCommission);
+        const netAmount = Money.sub(grossAmount, Money.orZero(orderWithItems.deliveryFee));
 
         await agentReconciliationService.createDraftCollection(
           tx,

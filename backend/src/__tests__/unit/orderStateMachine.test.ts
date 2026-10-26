@@ -26,10 +26,13 @@ jest.mock('../../services/stockService', () => ({ fulfilOrder: jest.fn(async () 
 jest.mock('../../middleware/auth', () => ({ __esModule: true, hasPermission: jest.fn() }));
 // The attempt row has its own integration test (deliveryProofAttempts.test.ts); here only the call is checked
 jest.mock('../../services/deliveryAttemptHook', () => ({ recordDeliveryAttempt: jest.fn(async () => undefined) }));
+// The fee stamp has its own integration test (feeRules.test.ts); here only the call is checked
+jest.mock('../../services/feeRuleService', () => ({ stampDeliveryFee: jest.fn(async () => null) }));
 
 import { transitionOrder, allowedTransitions, OrderTransitionError, TransitionActor } from '../../services/orderStateMachine';
 import { hasPermission } from '../../middleware/auth';
 import { recordDeliveryAttempt } from '../../services/deliveryAttemptHook';
+import { stampDeliveryFee } from '../../services/feeRuleService';
 import { fulfilOrder, reverseOrder } from '../../services/stockService';
 
 const S: OrderStatus[] = [
@@ -415,6 +418,17 @@ describe('side effects', () => {
     setOrder({ status: 'failed_delivery' });
     expect((await transitionOrder(5, 'failed_delivery', ADMIN)).changed).toBe(false);
     expect(recordDeliveryAttempt).not.toHaveBeenCalled();
+  });
+  it('every changed move stamps the delivery fee once, in the move transaction, dated by the outcome; a same-status call does not (M5-T05)', async () => {
+    setOrder({ status: 'out_for_delivery' });
+    const deliveryDate = new Date('2026-10-10T12:00:00.000Z');
+    await transitionOrder(5, 'delivered', ADMIN, { deliveryDate });
+    expect(stampDeliveryFee).toHaveBeenCalledTimes(1);
+    expect(stampDeliveryFee).toHaveBeenCalledWith(tx, expect.objectContaining({ id: 5, deliveryAgentId: 30 }), 'out_for_delivery', 'delivered', deliveryDate);
+    (stampDeliveryFee as jest.Mock).mockClear();
+    setOrder({ status: 'delivered' });
+    expect((await transitionOrder(5, 'delivered', ADMIN)).changed).toBe(false);
+    expect(stampDeliveryFee).not.toHaveBeenCalled();
   });
   it('stock: entering delivered calls fulfilOrder once, leaving it calls reverseOrder once, other moves call neither', async () => {
     setOrder({ status: 'out_for_delivery' });

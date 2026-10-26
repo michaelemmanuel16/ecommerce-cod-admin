@@ -12,7 +12,7 @@ import {
   emitTransactionDeposited,
   emitTransactionReconciled
 } from '../sockets/index';
-import { GL_ACCOUNTS } from '../config/glAccounts';
+import { GL_ACCOUNTS, RETIRED_EXPENSE_CODES } from '../config/glAccounts';
 import { TRANSACTION_CONFIG } from '../config/transactionConfig';
 import { GLAutomationService } from './glAutomationService';
 import { getSystemUserId } from './systemUserService';
@@ -142,7 +142,8 @@ export class FinancialService {
       GL_ACCOUNTS.COGS,
       GL_ACCOUNTS.FAILED_DELIVERY_EXPENSE,
       GL_ACCOUNTS.RETURN_PROCESSING_EXPENSE,
-      GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION,
+      ...RETIRED_EXPENSE_CODES, // Aug and Sep agent commission, as booked
+      GL_ACCOUNTS.DELIVERY_FEES,
       GL_ACCOUNTS.SALES_REP_COMMISSION,
       GL_ACCOUNTS.PAYSTACK_FEES,
       GL_ACCOUNTS.OPERATING_EXPENSE
@@ -1124,7 +1125,7 @@ export class FinancialService {
     // Revenue account has credit-normal balance
     const glRevenue = Money.sub(Money.orZero(revenueAgg._sum.creditAmount), Money.orZero(revenueAgg._sum.debitAmount));
 
-    const commissionCodes = [GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION, GL_ACCOUNTS.SALES_REP_COMMISSION];
+    const commissionCodes = [...RETIRED_EXPENSE_CODES, GL_ACCOUNTS.DELIVERY_FEES, GL_ACCOUNTS.SALES_REP_COMMISSION];
 
     const expenseAgg = await prisma.accountTransaction.groupBy({
       by: ['accountId'],

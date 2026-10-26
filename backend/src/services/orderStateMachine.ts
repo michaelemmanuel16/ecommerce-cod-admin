@@ -290,8 +290,9 @@ async function applySideEffects(
   if (to === 'delivered') await fulfilOrder(tx, order, actor.userId);
   else if (from === 'delivered') await reverseOrder(tx, order, actor.userId);
   // The fee is stamped before the entries post, so the revenue read and the collection amount see it.
-  await stampDeliveryFee(tx, order, from, to, outcomeDate(to, fields));
-  return applyGlEffects(tx, order, from, to, actor.userId, historyId, { postRevenueAlways: options.postRevenueAlways });
+  const on = outcomeDate(to, fields);
+  const stamped = await stampDeliveryFee(tx, order, from, to, on);
+  return applyGlEffects(tx, order, from, to, actor.userId, historyId, { postRevenueAlways: options.postRevenueAlways, fee: stamped && { ...stamped, on } });
 }
 
 /**

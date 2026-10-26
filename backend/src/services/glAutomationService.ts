@@ -10,9 +10,9 @@
  * All methods are designed to be called from within Prisma transactions to ensure atomicity.
  */
 
-import { Prisma, Order, OrderItem, Product, Customer, User, JournalEntry, AccountTransaction, JournalSourceType, AgentDeposit, InventoryShipment } from '@prisma/client';
+import { Prisma, Order, OrderItem, Product, Customer, User, JournalEntry, AccountTransaction, JournalSourceType, AgentDeposit, InventoryShipment, FeeOutcome } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
-import { BALANCE_TOLERANCE, GL_ACCOUNTS, GL_DEFAULTS } from '../config/glAccounts';
+import { BALANCE_TOLERANCE, GL_ACCOUNTS, GL_DEFAULTS, RETIRED_EXPENSE_CODES } from '../config/glAccounts';
 import { GLAccountService } from './glAccountService';
 import logger from '../utils/logger';
 import { GLUtils } from '../utils/glUtils';
@@ -260,6 +260,19 @@ export class GLAutomationService {
   }
 
   /**
+   * Agent commission an entry booked before M5: the debit on the retired commission expense account (lines must carry
+   * their account). Entries booked from M5 on have none, so this is 0 for them.
+   */
+  static legacyAgentCommission(entry: JournalEntryWithTransactions | undefined | null): Decimal {
+    if (!entry?.transactions) return Money.ZERO;
+    return Money.sum(
+      entry.transactions
+        .filter((t) => t.account && t.account.code !== undefined && RETIRED_EXPENSE_CODES.includes(t.account.code))
+        .map((t) => Money.sub(t.debitAmount, t.creditAmount)),
+    );
+  }
+
+  /**
    * Validate that all products have COGS set
    *
    * @param orderItems - Array of order items with product information
@@ -299,8 +312,7 @@ export class GLAutomationService {
    * Create revenue recognition GL entry when order is delivered
    *
    * Creates journal entry with:
-   * - Debit: Cash in Transit (order amount - delivery commission - sales rep commission)
-   * - Debit: Delivery Agent Commission Expense (if agent assigned)
+   * - Debit: Cash in Transit 1015 (the full order amount; the delivery fee is a separate entry, F-936)
    * - Debit: Sales Rep Commission Expense (if rep assigned)
    * - Credit: Product Revenue (full order amount)
    * - Debit: COGS (if totalCOGS > threshold)
@@ -327,26 +339,21 @@ export class GLAutomationService {
 
     const orderAmount = Money.parse(order.totalAmount);
 
-    const deliveryAgent = order.deliveryAgent;
     const salesRep = order.customerRep;
-
-    // Uses profile flat rate — must match draft collection creation in deliveryService
-    const deliveryCommission = Money.orZero(deliveryAgent?.commissionAmount);
     const salesRepCommission = Money.orZero(salesRep?.commissionAmount);
 
     // Build journal entry transactions
-    // Note: Cash in Transit = Gross Amount - Agent Commission
+    // Cash in Transit = the gross amount the partner collected. The partner keeps its delivery fee from that cash;
+    // the fee posts as its own entry (DR 5070, CR 1015), so 1015 ends at gross minus fee.
     // Commissions Payable = Sales Rep Commission (since they don't hold the cash)
-    const agentComm = deliveryCommission;
     const repComm = salesRepCommission;
-    const netCashInTransit = orderAmount.minus(agentComm);
 
     const transactions: TransactionCreateData[] = [
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT),
-        debitAmount: netCashInTransit,
+        debitAmount: orderAmount,
         creditAmount: Money.ZERO,
-        description: `Net collection held by agent for order ${order.id} (Gross ${orderAmount} - Agent Comm ${agentComm})`,
+        description: `Collection held by partner for order ${order.id} (Gross ${orderAmount})`,
       },
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.PRODUCT_REVENUE),
@@ -355,15 +362,6 @@ export class GLAutomationService {
         description: 'Product sales revenue (Gross)',
       },
     ];
-
-    if (agentComm.greaterThan(0)) {
-      transactions.push({
-        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION),
-        debitAmount: agentComm,
-        creditAmount: Money.ZERO,
-        description: 'Delivery agent commission expense',
-      });
-    }
 
     if (repComm.greaterThan(0)) {
       transactions.push({
@@ -414,64 +412,102 @@ export class GLAutomationService {
   }
 
   /**
-   * Failed-attempt fee entry, one per `failed_delivery` move (D6, F-935). The fee is the FeeRule of the
-   * order's delivery agent with outcome `failed`; no agent or no rule means 0 and nothing is posted.
-   * Keyed on the OrderHistory row of the move, so a repeat of the same move posts nothing and two
-   * attempts post two entries. Accounts: 5020 / cash in hand.
+   * Delivery fee entry, one per outcome move (F-936, F-935): DR 5070 / CR 1015 for the fee stamped on the order.
+   * The partner keeps the fee from the cash it holds, so 1015 goes down by the fee and nothing is paid out.
+   * Keyed on `<outcome>:<OrderHistory id>` in `externalRef` with the order as source, so a repeat of the same
+   * move posts nothing and a second failed attempt posts a second fee. A fee of 0 posts nothing.
+   * Dated by the outcome (delivery date, close date or return date).
    */
-  static async createFailedAttemptEntry(
+  static async createDeliveryFeeEntry(
     tx: Prisma.TransactionClient,
-    order: { id: number; tenantId?: string | null; deliveryAgentId?: number | null },
+    order: { id: number; tenantId?: string | null },
+    outcome: FeeOutcome,
+    fee: Money.MoneyInput,
     historyId: number,
     userId: number,
     entryDate: Date = new Date()
   ): Promise<JournalEntryWithTransactions | null> {
-    const rule = order.deliveryAgentId
-      ? await tx.feeRule.findFirst({
-          where: {
-            partnerUserId: order.deliveryAgentId,
-            outcome: 'failed',
-            ...(order.tenantId ? { tenantId: order.tenantId } : {}),
-          },
-        })
-      : null;
-    const fee = rule ? Money.parse(rule.amount) : Money.ZERO;
-    if (!fee.greaterThan(0)) return null;
+    const amount = Money.parse(fee);
+    if (!amount.greaterThan(0)) return null;
 
+    const externalRef = `${outcome}:${historyId}`;
     const existingEntry = await tx.journalEntry.findFirst({
-      where: { sourceType: JournalSourceType.order_failed_delivery, sourceId: historyId, isVoided: false },
+      where: { sourceType: JournalSourceType.delivery_fee, externalRef, isVoided: false },
       include: { transactions: { include: { account: true } } }
     });
     if (existingEntry) return existingEntry as JournalEntryWithTransactions;
 
     const [expenseAccountId, cashAccountId] = await Promise.all([
-      GLAccountService.getAccountIdByCode(GL_ACCOUNTS.FAILED_DELIVERY_EXPENSE),
-      GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND),
+      GLAccountService.getAccountIdByCode(GL_ACCOUNTS.DELIVERY_FEES),
+      GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT),
     ]);
     return await this.createJournalEntryWithRetry(tx, {
       entryDate,
-      description: `Failed delivery expense - Order #${order.id}`,
-      sourceType: JournalSourceType.order_failed_delivery,
-      sourceId: historyId,
+      description: `Delivery fee (${outcome}) - Order #${order.id}`,
+      sourceType: JournalSourceType.delivery_fee,
+      sourceId: order.id,
+      externalRef,
       createdBy: userId,
       tenantId: order.tenantId ?? undefined,
       transactions: {
         create: [
           {
             accountId: expenseAccountId,
-            debitAmount: fee,
+            debitAmount: amount,
             creditAmount: Money.ZERO,
-            description: `Failed delivery - Order #${order.id}`,
+            description: `Delivery fee kept by partner (${outcome}) - Order #${order.id}`,
           },
           {
             accountId: cashAccountId,
             debitAmount: Money.ZERO,
-            creditAmount: fee,
-            description: 'Cash impact of failed delivery',
+            creditAmount: amount,
+            description: 'Fee netted from the cash the partner holds',
           },
         ],
       },
     });
+  }
+
+  /**
+   * Reverses the order's delivered fee entry when the order leaves `delivered`, like the revenue reversal (D7):
+   * the original is linked to its reversal through `reversingEntryId`, so the order has no active delivered fee
+   * afterwards and a later delivery posts a fresh one. Returns null when the order has none (fee 0, or booked before M5).
+   */
+  static async reverseDeliveredFee(
+    tx: Prisma.TransactionClient,
+    order: { id: number; tenantId?: string | null },
+    userId: number,
+    entryDate: Date = new Date()
+  ): Promise<JournalEntryWithTransactions | null> {
+    const original = await tx.journalEntry.findFirst({
+      where: {
+        sourceType: JournalSourceType.delivery_fee, sourceId: order.id, externalRef: { startsWith: 'delivered:' },
+        isVoided: false, reversingEntryId: null,
+      },
+      include: { transactions: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!original) return null;
+
+    const reversal = await this.createJournalEntryWithRetry(tx, {
+      entryDate,
+      description: `Delivery fee reversal - Order #${order.id} (Original JE: ${original.entryNumber})`,
+      sourceType: JournalSourceType.delivery_fee,
+      sourceId: order.id,
+      externalRef: `reversal:${original.id}`,
+      createdBy: userId,
+      tenantId: order.tenantId ?? undefined,
+      transactions: {
+        create: original.transactions.map((t) => ({
+          accountId: t.accountId,
+          debitAmount: t.creditAmount as unknown as Decimal,
+          creditAmount: t.debitAmount as unknown as Decimal,
+          description: `Reversal: ${t.description}`,
+        })),
+      },
+    });
+    await tx.journalEntry.update({ where: { id: original.id }, data: { reversingEntryId: reversal.id } });
+    return reversal;
   }
 
   /**
@@ -504,18 +540,15 @@ export class GLAutomationService {
   ): Promise<JournalEntryWithTransactions> {
     const orderAmount = Money.parse(order.totalAmount);
 
-    const deliveryAgent = order.deliveryAgent;
     const salesRep = order.customerRep;
-
-    // Uses profile flat rate — must match draft collection creation in deliveryService
-    const deliveryCommission = Money.orZero(deliveryAgent?.commissionAmount);
     const salesRepCommission = Money.orZero(salesRep?.commissionAmount);
 
     // COGS to reverse: the amount the original entry booked (F-611), so a later cost change never makes the ledger uneven.
     const totalCOGS = this.cogsBooked(originalEntry) ?? this.calculateTotalCOGS(order.orderItems);
 
-    // Build reversal transactions (flip debits/credits from original entry)
-    const agentComm = deliveryCommission;
+    // An entry booked before M5 netted the agent commission against cash in transit and booked it to the retired
+    // commission expense account. Reverse exactly that amount, and credit it to 5070 (delivery fees): nothing posts to a retired account.
+    const agentComm = this.legacyAgentCommission(originalEntry);
     const repComm = salesRepCommission;
     const netCashInTransit = orderAmount.minus(agentComm);
 
@@ -524,7 +557,7 @@ export class GLAutomationService {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT),
         debitAmount: Money.ZERO,
         creditAmount: netCashInTransit,
-        description: 'Cash in transit reversal (Net)',
+        description: 'Cash in transit reversal',
       },
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.PRODUCT_REVENUE),
@@ -536,10 +569,10 @@ export class GLAutomationService {
 
     if (agentComm.greaterThan(0)) {
       transactions.push({
-        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION),
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.DELIVERY_FEES),
         debitAmount: Money.ZERO,
         creditAmount: agentComm,
-        description: 'Delivery agent commission reversal',
+        description: 'Delivery fee reversal (booked as agent commission before M5)',
       });
     }
 
