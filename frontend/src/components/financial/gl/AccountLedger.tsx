@@ -1,31 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { financialService } from '../../../services/financial.service';
-import { formatCurrency, formatDate } from '../../../utils/format';
+import React, { useState, useEffect, useRef } from 'react';
+import { financialService, AccountLedgerResponse, LedgerLine } from '../../../services/financial.service';
+import { formatCurrency, formatDate, todayYmd } from '../../../utils/format';
+import { downloadBlob } from '../../../utils/downloadBlob';
 import { useFinancialStore } from '../../../stores/financialStore';
+import { GuardedButton } from '../GuardedButton';
+import { VoidJournalModal } from './VoidJournalModal';
 
-interface LedgerTransaction {
-    id: number;
-    accountId: number;
-    debitAmount: number;
-    creditAmount: number;
-    runningBalance: number;
-    description: string;
-    createdAt: string;
-    journalEntry: {
-        entryNumber: string;
-        entryDate: string;
-        description: string;
-        sourceType: string;
-    };
-}
-
-interface AccountInfo {
-    id: number;
-    code: string;
-    name: string;
-    normalBalance: string;
-    currentBalance: number;
-}
 
 interface AccountLedgerProps {
     accountId: number;
@@ -34,13 +14,20 @@ interface AccountLedgerProps {
 }
 
 export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, onBack, refreshKey = 0 }) => {
-    const [data, setData] = useState<LedgerTransaction[]>([]);
-    const [account, setAccount] = useState<AccountInfo | null>(null);
+    const [data, setData] = useState<LedgerLine[]>([]);
+    const [account, setAccount] = useState<AccountLedgerResponse['account'] | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const { dateRange } = useFinancialStore();
     const [page, setPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
+    const [voiding, setVoiding] = useState<{ id: number; entryNumber: string } | null>(null);
+    const [notice, setNotice] = useState<string | null>(null);
+    const [exporting, setExporting] = useState(false);
+    const exportAbort = useRef<AbortController | null>(null);
+
+    // Leaving the screen cancels a running export
+    useEffect(() => () => exportAbort.current?.abort(), []);
 
     useEffect(() => {
         fetchLedger();
@@ -58,7 +45,7 @@ export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, onBack,
             });
             setData(res.transactions);
             setAccount(res.account);
-            setTotalPages(res.pagination.totalPages);
+            setTotalPages(res.pagination.pages);
             setError(null);
         } catch (err) {
             setError('Failed to load ledger data');
@@ -69,28 +56,23 @@ export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, onBack,
     };
 
     const handleExport = async () => {
+        const abort = new AbortController();
+        exportAbort.current = abort;
+        setExporting(true);
         try {
             const { startDate, endDate } = dateRange;
-            // For export, we still need the raw apiClient for blob response, 
-            // but the financialService should ideally handle it.
-            // Using financialService would require another method that returns blob.
-            // For now, I'll just use the direct URL with the same token logic if I had access to apiClient.
-            // Actually, financialService.exportAccountLedgerToCSV (wait, I didn't add that)
-            // Let's use a simple approach for now or add it to financialService.
-
-            // I'll add getAccountLedgerExport to financialService.
-            const response = await financialService.getAccountLedgerExport(accountId, { startDate, endDate });
-
-            const url = window.URL.createObjectURL(new Blob([response]));
-            const link = document.createElement('a');
-            link.href = url;
-            link.setAttribute('download', `ledger-${account?.code}-${new Date().toISOString().split('T')[0]}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
+            const { blob, filename } = await financialService.exportAccountLedger(accountId, { startDate, endDate }, {
+                signal: abort.signal,
+                onQueued: () => setNotice('This ledger is large. The file is being prepared; it downloads when ready.'),
+            });
+            downloadBlob(blob, filename ?? `ledger-${account?.code}-${todayYmd()}.csv`);
         } catch (err) {
+            if (abort.signal.aborted) return; // the user left the screen
             console.error('Export failed', err);
             alert('Failed to export ledger');
+        } finally {
+            setNotice(null);
+            if (!abort.signal.aborted) setExporting(false);
         }
     };
 
@@ -112,6 +94,9 @@ export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, onBack,
                     <div>
                         <h2 className="text-xl font-bold text-gray-900">
                             {account?.code} - {account?.name}
+                            {account && account.isActive === false && (
+                                <span className="ml-2 px-2 py-0.5 text-xs font-medium rounded-full bg-gray-200 text-gray-600 align-middle">Inactive</span>
+                            )}
                         </h2>
                         <p className="text-sm text-gray-500">
                             Detailed transaction ledger and audit trail
@@ -125,7 +110,8 @@ export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, onBack,
                     </div>
                     <button
                         onClick={handleExport}
-                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 transition-colors"
+                        disabled={exporting}
+                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -135,47 +121,65 @@ export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, onBack,
                 </div>
             </div>
 
+            {notice && <p role="status" className="px-4 py-2 text-sm text-indigo-700 bg-indigo-50">{notice}</p>}
+
             <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                         <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reference</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
-                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Debit</th>
-                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Credit</th>
-                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Balance</th>
+                            <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                            <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reference</th>
+                            <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                            <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Debit</th>
+                            <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Credit</th>
+                            <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Balance</th>
+                            <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Entry</th>
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                         {data.map((txn) => (
                             <tr key={txn.id} className="hover:bg-gray-50 transition-colors">
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-600">
                                     {formatDate(txn.journalEntry.entryDate)}
                                 </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                    <span className="text-xs font-mono bg-gray-100 px-2 py-1 rounded text-gray-700">
+                                <td className="px-3 py-4 max-w-[10rem]">
+                                    <span className="text-xs font-mono bg-gray-100 px-2 py-1 rounded text-gray-700 break-all">
                                         {txn.journalEntry.entryNumber}
                                     </span>
-                                    <span className="ml-2 text-xs text-indigo-600 block">{txn.journalEntry.sourceType}</span>
+                                    <span className="text-xs text-indigo-600 block mt-1">{txn.journalEntry.sourceType}</span>
                                 </td>
-                                <td className="px-6 py-4 text-sm text-gray-900 max-w-md truncate">
+                                <td className="px-3 py-4 text-sm text-gray-900 min-w-[10rem] whitespace-normal break-words">
                                     {txn.description || txn.journalEntry.description}
                                 </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 font-medium">
+                                <td className="px-3 py-4 whitespace-nowrap text-sm text-right text-gray-900 font-medium">
                                     {txn.debitAmount > 0 ? formatCurrency(txn.debitAmount) : '-'}
                                 </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 font-medium">
+                                <td className="px-3 py-4 whitespace-nowrap text-sm text-right text-gray-900 font-medium">
                                     {txn.creditAmount > 0 ? formatCurrency(txn.creditAmount) : '-'}
                                 </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 font-bold">
+                                <td className="px-3 py-4 whitespace-nowrap text-sm text-right text-gray-900 font-bold">
                                     {formatCurrency(txn.runningBalance)}
+                                </td>
+                                <td className="px-3 py-4 whitespace-nowrap text-right text-sm">
+                                    {txn.journalEntry.isVoided ? (
+                                        <span className="text-xs text-gray-500">Voided</span>
+                                    ) : txn.journalEntry.voidableByHand ? (
+                                        <GuardedButton
+                                            perm="voidJournal"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="text-red-600 hover:text-red-800"
+                                            onClick={() => setVoiding({ id: txn.journalEntry.id, entryNumber: txn.journalEntry.entryNumber })}
+                                        >
+                                            Void
+                                        </GuardedButton>
+                                    ) : null}
                                 </td>
                             </tr>
                         ))}
                         {data.length === 0 && (
                             <tr>
-                                <td colSpan={6} className="px-6 py-10 text-center text-gray-500">
+                                <td colSpan={7} className="px-3 py-10 text-center text-gray-500">
                                     No transactions found for this period.
                                 </td>
                             </tr>
@@ -207,6 +211,11 @@ export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, onBack,
                     </div>
                 </div>
             )}
+            <VoidJournalModal
+                entry={voiding}
+                onClose={() => setVoiding(null)}
+                onVoided={() => { setVoiding(null); fetchLedger(); }}
+            />
         </div>
     );
 };

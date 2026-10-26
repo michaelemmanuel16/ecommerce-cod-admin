@@ -302,13 +302,6 @@ export const createJournalEntryValidation: ValidationChain[] = [
     .trim()
     .notEmpty().withMessage('Description is required')
     .isLength({ min: 3, max: 500 }).withMessage('Description must be 3-500 characters'),
-  body('sourceType')
-    .notEmpty().withMessage('Source type is required')
-    .isIn(['order_delivery', 'agent_deposit', 'expense', 'payout', 'manual', 'reversal'])
-    .withMessage('Invalid source type'),
-  body('sourceId')
-    .optional()
-    .isInt({ min: 1 }).withMessage('Source ID must be a positive integer'),
   body('transactions')
     .isArray({ min: 2 }).withMessage('At least 2 transactions are required'),
   body('transactions.*.accountId')
