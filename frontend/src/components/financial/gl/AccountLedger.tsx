@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { financialService } from '../../../services/financial.service';
 import { formatCurrency, formatDate } from '../../../utils/format';
 import { useFinancialStore } from '../../../stores/financialStore';
+import { GuardedButton } from '../GuardedButton';
+import { VoidJournalModal } from './VoidJournalModal';
+import { NO_PERMISSION, useFinancePermissions } from '../../../hooks/useFinancePermissions';
 
 interface LedgerTransaction {
     id: number;
@@ -12,6 +15,10 @@ interface LedgerTransaction {
     description: string;
     createdAt: string;
     journalEntry: {
+        id: number;
+        isVoided: boolean;
+        /** From the server's void rules: false for an entry an automatic posting made. No Void button then. */
+        voidableByHand: boolean;
         entryNumber: string;
         entryDate: string;
         description: string;
@@ -25,6 +32,7 @@ interface AccountInfo {
     name: string;
     normalBalance: string;
     currentBalance: number;
+    isActive?: boolean;
 }
 
 interface AccountLedgerProps {
@@ -41,6 +49,9 @@ export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, onBack,
     const { dateRange } = useFinancialStore();
     const [page, setPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
+    const [voiding, setVoiding] = useState<{ id: number; entryNumber: string } | null>(null);
+    const [notice, setNotice] = useState<string | null>(null);
+    const perms = useFinancePermissions();
 
     useEffect(() => {
         fetchLedger();
@@ -58,7 +69,7 @@ export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, onBack,
             });
             setData(res.transactions);
             setAccount(res.account);
-            setTotalPages(res.pagination.totalPages);
+            setTotalPages(res.pagination.pages ?? res.pagination.totalPages ?? 1);
             setError(null);
         } catch (err) {
             setError('Failed to load ledger data');
@@ -68,28 +79,42 @@ export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, onBack,
         }
     };
 
+    const save = (blob: Blob, name: string) => {
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', name);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+    };
+
     const handleExport = async () => {
         try {
             const { startDate, endDate } = dateRange;
-            // For export, we still need the raw apiClient for blob response, 
-            // but the financialService should ideally handle it.
-            // Using financialService would require another method that returns blob.
-            // For now, I'll just use the direct URL with the same token logic if I had access to apiClient.
-            // Actually, financialService.exportAccountLedgerToCSV (wait, I didn't add that)
-            // Let's use a simple approach for now or add it to financialService.
+            const response: Blob = await financialService.getAccountLedgerExport(accountId, { startDate, endDate });
 
-            // I'll add getAccountLedgerExport to financialService.
-            const response = await financialService.getAccountLedgerExport(accountId, { startDate, endDate });
-
-            const url = window.URL.createObjectURL(new Blob([response]));
-            const link = document.createElement('a');
-            link.href = url;
-            link.setAttribute('download', `ledger-${account?.code}-${new Date().toISOString().split('T')[0]}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
+            // A very large ledger answers with a job id instead of a file (HTTP 202)
+            if (response.type.includes('json')) {
+                const { jobId } = JSON.parse(await response.text());
+                setNotice('This ledger is large. The file is being prepared; it downloads when ready.');
+                for (let i = 0; i < 300; i++) {
+                    await new Promise((r) => setTimeout(r, 1000));
+                    const job = await financialService.getFinanceJob(jobId);
+                    if (job.status === 'failed') throw new Error(job.error);
+                    if (job.status === 'done' && job.result) {
+                        save(await financialService.downloadFinanceJob(job.result.downloadUrl), job.result.filename);
+                        setNotice(null);
+                        return;
+                    }
+                }
+                throw new Error('The export took too long');
+            }
+            save(new Blob([response]), `ledger-${account?.code}-${new Date().toISOString().split('T')[0]}.csv`);
         } catch (err) {
             console.error('Export failed', err);
+            setNotice(null);
             alert('Failed to export ledger');
         }
     };
@@ -112,6 +137,9 @@ export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, onBack,
                     <div>
                         <h2 className="text-xl font-bold text-gray-900">
                             {account?.code} - {account?.name}
+                            {account && account.isActive === false && (
+                                <span className="ml-2 px-2 py-0.5 text-xs font-medium rounded-full bg-gray-200 text-gray-600 align-middle">Inactive</span>
+                            )}
                         </h2>
                         <p className="text-sm text-gray-500">
                             Detailed transaction ledger and audit trail
@@ -135,6 +163,8 @@ export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, onBack,
                 </div>
             </div>
 
+            {notice && <p role="status" className="px-4 py-2 text-sm text-indigo-700 bg-indigo-50">{notice}</p>}
+
             <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
@@ -145,6 +175,7 @@ export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, onBack,
                             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Debit</th>
                             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Credit</th>
                             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Balance</th>
+                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Entry</th>
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
@@ -171,11 +202,25 @@ export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, onBack,
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 font-bold">
                                     {formatCurrency(txn.runningBalance)}
                                 </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
+                                    {txn.journalEntry.isVoided ? (
+                                        <span className="text-xs text-gray-500">Voided</span>
+                                    ) : txn.journalEntry.voidableByHand ? (
+                                        <GuardedButton
+                                            allowed={perms.canVoidJournal}
+                                            reason={NO_PERMISSION.voidJournal}
+                                            className="text-red-600 hover:text-red-800 text-sm font-medium"
+                                            onClick={() => setVoiding({ id: txn.journalEntry.id, entryNumber: txn.journalEntry.entryNumber })}
+                                        >
+                                            Void
+                                        </GuardedButton>
+                                    ) : null}
+                                </td>
                             </tr>
                         ))}
                         {data.length === 0 && (
                             <tr>
-                                <td colSpan={6} className="px-6 py-10 text-center text-gray-500">
+                                <td colSpan={7} className="px-6 py-10 text-center text-gray-500">
                                     No transactions found for this period.
                                 </td>
                             </tr>
@@ -207,6 +252,11 @@ export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, onBack,
                     </div>
                 </div>
             )}
+            <VoidJournalModal
+                entry={voiding}
+                onClose={() => setVoiding(null)}
+                onVoided={() => { setVoiding(null); fetchLedger(); }}
+            />
         </div>
     );
 };

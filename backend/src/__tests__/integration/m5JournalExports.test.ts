@@ -99,6 +99,16 @@ describe('manual journal permission', () => {
   });
 });
 
+describe('POST /api/gl/journal-entries without a source type', () => {
+  it('posts as manual when the screen sends no sourceType', async () => {
+    const body = entry('1010', '3010', 4);
+    delete (body as Record<string, unknown>).sourceType;
+    const res = await post(body, clerk);
+    expect(res.status).toBe(201);
+    expect(res.body.entry.sourceType).toBe('manual');
+  });
+});
+
 describe('the void route reverses hand-made entries only', () => {
   it('the clerk and the owner both get 400 on an expense entry, and it stays posted', async () => {
     const exp = await request(app).post('/api/financial/expenses').set(auth(owner))
@@ -144,6 +154,11 @@ describe('ledger browse', () => {
     expect(res.body.account.isActive).toBe(true);
     expect(Number(res.body.transactions[0].runningBalance)).toBe(Number(res.body.account.currentBalance));
     expect((await get(`/api/gl/accounts/${ids['1020']}/ledger`)).body.account.isActive).toBe(false);
+    // Each line says whether its entry may be voided here, so the screen keeps no list of its own
+    const bySource = Object.fromEntries(res.body.transactions.map((t: any) => [t.journalEntry.sourceType, t.journalEntry.voidableByHand]));
+    expect(bySource.manual).toBe(true);
+    if ('expense' in bySource) expect(bySource.expense).toBe(false);
+    expect(bySource.reversal === undefined || bySource.reversal === false).toBe(true);
   });
 });
 

@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { financialService } from '../../../services/financial.service';
+import { journalBalance, JournalState } from '../../../utils/journalBalance';
+import { formatCurrency } from '../../../utils/format';
+import { GuardedButton } from '../GuardedButton';
+import { NO_PERMISSION, useFinancePermissions } from '../../../hooks/useFinancePermissions';
 
 interface Account {
     id: number;
@@ -20,6 +24,9 @@ interface TransactionLine {
     description: string;
 }
 
+const STATE_LABEL: Record<JournalState, string> = { empty: 'Empty', balanced: 'Balanced', out_of_balance: 'Out of balance' };
+const STATE_STYLE: Record<JournalState, string> = { empty: 'text-gray-500', balanced: 'text-green-600', out_of_balance: 'text-red-600' };
+
 export const JournalEntryModal: React.FC<JournalEntryModalProps> = ({ isOpen, onClose, onSuccess }) => {
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [description, setDescription] = useState('');
@@ -30,6 +37,7 @@ export const JournalEntryModal: React.FC<JournalEntryModalProps> = ({ isOpen, on
     ]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const { canPostJournal } = useFinancePermissions();
 
     useEffect(() => {
         if (isOpen) {
@@ -60,14 +68,13 @@ export const JournalEntryModal: React.FC<JournalEntryModalProps> = ({ isOpen, on
         }
     };
 
-    const totalDebits = lines.reduce((sum, line) => sum + (parseFloat(line.debitAmount) || 0), 0);
-    const totalCredits = lines.reduce((sum, line) => sum + (parseFloat(line.creditAmount) || 0), 0);
-    const isBalanced = Math.abs(totalDebits - totalCredits) < 0.001 && totalDebits > 0;
+    const balance = journalBalance(lines);
+    const { totalDebits, totalCredits } = balance;
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!isBalanced) {
-            setError('Journal entry must be balanced (Total Debits = Total Credits)');
+        if (!balance.canPost) {
+            setError('Journal entry must be balanced (Total Debits = Total Credits) with an account on at least two lines');
             return;
         }
 
@@ -205,12 +212,14 @@ export const JournalEntryModal: React.FC<JournalEntryModalProps> = ({ isOpen, on
                     <div className="mt-8 border-t border-gray-200 pt-4 flex justify-end">
                         <div className="grid grid-cols-2 gap-x-8 text-right bg-gray-50 px-6 py-4 rounded-xl">
                             <span className="text-gray-500 font-medium">Total Debits:</span>
-                            <span className="font-bold text-gray-900">${totalDebits.toFixed(2)}</span>
+                            <span className="font-bold text-gray-900">{formatCurrency(totalDebits)}</span>
                             <span className="text-gray-500 font-medium">Total Credits:</span>
-                            <span className="font-bold text-gray-900">${totalCredits.toFixed(2)}</span>
+                            <span className="font-bold text-gray-900">{formatCurrency(totalCredits)}</span>
                             <div className="col-span-2 border-t border-gray-200 mt-2 pt-2">
-                                <span className={`text-sm font-bold ${isBalanced ? 'text-green-600' : 'text-red-600'}`}>
-                                    {isBalanced ? '✓ Balanced' : `⚠ Out of balance: $${Math.abs(totalDebits - totalCredits).toFixed(2)}`}
+                                <span data-testid="journal-state" className={`text-sm font-bold ${STATE_STYLE[balance.state]}`}>
+                                    {balance.state === 'out_of_balance'
+                                        ? `${STATE_LABEL.out_of_balance}: ${formatCurrency(balance.difference)}`
+                                        : STATE_LABEL[balance.state]}
                                 </span>
                             </div>
                         </div>
@@ -226,13 +235,15 @@ export const JournalEntryModal: React.FC<JournalEntryModalProps> = ({ isOpen, on
                         >
                             Cancel
                         </button>
-                        <button
+                        <GuardedButton
                             type="submit"
-                            disabled={loading || !isBalanced}
+                            allowed={canPostJournal}
+                            reason={NO_PERMISSION.postJournal}
+                            disabled={loading || !balance.canPost}
                             className="px-8 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 transition-all font-bold"
                         >
                             {loading ? 'Posting...' : 'Post Journal Entry'}
-                        </button>
+                        </GuardedButton>
                     </div>
                 </form>
             </div>

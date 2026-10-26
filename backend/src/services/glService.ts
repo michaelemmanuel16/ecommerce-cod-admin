@@ -91,6 +91,9 @@ const VOID_RULES: Record<JournalSourceType, { voidableByHand: boolean; hint: str
   reversal: { voidableByHand: false, hint: 'This entry was posted by a reversal. A reversal cannot be voided.' },
 };
 
+/** True when the journal void route may reverse an entry of this source type. The screens read this, so they never keep their own list. */
+export const isVoidableByHand = (sourceType: JournalSourceType): boolean => VOID_RULES[sourceType].voidableByHand;
+
 export class GLService {
   /**
    * Validate normal balance matches account type
@@ -1251,7 +1254,7 @@ export class GLService {
 
     return {
       account,
-      transactions,
+      transactions: transactions.map((t) => ({ ...t, journalEntry: { ...t.journalEntry, voidableByHand: isVoidableByHand(t.journalEntry.sourceType) } })),
       pagination: {
         page,
         limit,

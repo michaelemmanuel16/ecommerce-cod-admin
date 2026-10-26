@@ -302,8 +302,9 @@ export const createJournalEntryValidation: ValidationChain[] = [
     .trim()
     .notEmpty().withMessage('Description is required')
     .isLength({ min: 3, max: 500 }).withMessage('Description must be 3-500 characters'),
+  // A hand-made entry is always source `manual` (glController), so the body needs neither field.
   body('sourceType')
-    .notEmpty().withMessage('Source type is required')
+    .optional()
     .isIn(['order_delivery', 'agent_deposit', 'expense', 'payout', 'manual', 'reversal'])
     .withMessage('Invalid source type'),
   body('sourceId')

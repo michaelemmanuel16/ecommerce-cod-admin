@@ -25,7 +25,15 @@ export const AccountsList: React.FC<AccountsListProps> = ({ onSelectAccount, ref
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [search, setSearch] = useState('');
+    const [trial, setTrial] = useState<{ totalDebits: string; totalCredits: string; balanced: boolean } | null>(null);
     const { dateRange } = useFinancialStore();
+
+    // The server searches the whole chart by code or name; wait a moment after typing
+    useEffect(() => {
+        const t = setTimeout(() => { setSearch(searchTerm.trim()); setPagination(prev => ({ ...prev, page: 1 })); }, 300);
+        return () => clearTimeout(t);
+    }, [searchTerm]);
 
     const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, pages: 1 });
 
@@ -39,6 +47,7 @@ export const AccountsList: React.FC<AccountsListProps> = ({ onSelectAccount, ref
             const data = await financialService.getAllGLAccounts({
                 page: pagination.page,
                 limit: pagination.limit,
+                search: search || undefined,
                 startDate: dateRange.startDate,
                 endDate: dateRange.endDate
             });
@@ -52,17 +61,18 @@ export const AccountsList: React.FC<AccountsListProps> = ({ onSelectAccount, ref
             setLoading(false);
             setRefreshing(false);
         }
-    }, [pagination.page, pagination.limit, dateRange.startDate, dateRange.endDate]);
+    }, [pagination.page, pagination.limit, search, dateRange.startDate, dateRange.endDate]);
 
     useEffect(() => {
         fetchAccounts();
     }, [fetchAccounts, refreshKey]);
 
-    const filteredAccounts = accounts.filter(
-        acc =>
-            acc.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            acc.code.includes(searchTerm)
-    );
+    // Trial balance line: total debits equal total credits
+    useEffect(() => {
+        financialService.getTrialBalance({ endDate: dateRange.endDate }).then(setTrial).catch(() => setTrial(null));
+    }, [dateRange.endDate, refreshKey]);
+
+    const filteredAccounts = accounts;
 
     const getAccountTypeBadge = (type: string) => {
         const colors: Record<string, string> = {
@@ -166,7 +176,12 @@ export const AccountsList: React.FC<AccountsListProps> = ({ onSelectAccount, ref
                             return (
                                 <tr key={account.id} className="hover:bg-gray-50 transition-colors">
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-600">{account.code}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{account.name}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                        {account.name}
+                                        {!account.isActive && (
+                                            <span className="ml-2 px-2 py-0.5 text-xs font-medium rounded-full bg-gray-200 text-gray-600">Inactive</span>
+                                        )}
+                                    </td>
                                     <td className="px-6 py-4 whitespace-nowrap">{getAccountTypeBadge(account.accountType)}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold text-gray-900">
                                         {formatCurrency(account.currentBalance)}
@@ -206,6 +221,18 @@ export const AccountsList: React.FC<AccountsListProps> = ({ onSelectAccount, ref
                     </tbody>
                 </table>
             </div>
+
+            {trial && (
+                <div className="px-6 py-3 border-t border-gray-200 text-sm flex flex-wrap items-center justify-between gap-2" data-testid="trial-balance">
+                    <span className="text-gray-600">
+                        Trial balance: debits <span className="font-semibold text-gray-900">{formatCurrency(trial.totalDebits)}</span>
+                        {' '}and credits <span className="font-semibold text-gray-900">{formatCurrency(trial.totalCredits)}</span>
+                    </span>
+                    <span className={trial.balanced ? 'font-semibold text-green-700' : 'font-semibold text-red-700'}>
+                        {trial.balanced ? 'In balance' : 'Out of balance'}
+                    </span>
+                </div>
+            )}
 
             {pagination.pages > 1 && (
                 <div className="p-4 border-t border-gray-200 flex items-center justify-between bg-gray-50 rounded-b-lg">
