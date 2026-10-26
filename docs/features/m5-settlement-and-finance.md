@@ -226,3 +226,27 @@ Agent collections are verified in one step, aging is computed live per tenant, a
 ### Open points
 - The aging table still shows three columns (8+ joins 8–14 and 15+); the four-bucket view comes with the T36 screen.
 - PRD F-309 says 8 days; align to 7. Follow-up ticket.
+
+## COD-54 (part 2) — Finance report screens: statements, profit cards, cash flow tab, Reports profit tab (T40, T41, T44)
+**Date:** 2026-10-26 | **Type:** feat | **Branch:** feature/m5-settlement-and-finance (lane `m5/cod-54-t40-t41-t44-reports-ui`, merge 22a2c10) | **Commits:** 3c5fd8a, 47f0bdc, e6aea36, 017ee33, 6aab900, ed64b0f, 4fab082
+
+### Summary
+The finance report screens. Plan tasks: M5-T40 (statements, monthly P&L and profit cards), M5-T41 (cash flow tab with scenario switch, trend chart and Export menu), M5-T44 (Reports "Products and profit" tab that reuses the Finance cards).
+
+### Changes
+- **Statements and profit (T40):** income statement and balance sheet cards; monthly P&L with the August and September note and "Not split out" commission for those months; profit by product with the store's net margin target from the API; order cohort card; cost of failed deliveries.
+- **Cash flow (T41):** forecast with a pace or target scenario (the target uses the store's own delivery success target); `tightDays` comes from the server; trend chart; Export menu for the reports, using `downloadBlob`.
+- **Reports (T44):** "Products and profit" tab with the same cards.
+- **One loader:** `useBlock` (60 s module cache by key, one request in flight per key, one status value). Lanes A and B use it too. The cache is cleared on sign-in, sign-up and sign-out, so one person never sees another person's answers (6aab900).
+- **Backend:** `parseScenario`, `getCashForecast` (shared by the report and the CSV export), `targetNetMargin` in profit by product.
+- **Browser-check fixes:** the P&L end date reads "Up to 26 Oct", not a raw ISO date (ed64b0f); "Not split out" shows once in a cell (4fab082).
+
+### Verification
+- Merged tree (22a2c10 + 6aab900): generate, typecheck, lint, build clean on backend and frontend. Full run under 3-lane load had 13 Vitest and 3 Jest (`cashChain`) timeouts; each failed file passes alone (192 / 192 and 15 / 15). Finance Vitest 89 / 89 after the browser-check fixes.
+- Browser (demo store, /finance): cards render at 1440 px and 760 px (no sideways scroll), light and dark. Console: two older nesting warnings in `DateRangePicker` and `FinancialDashboard`, not from this lane.
+
+### Open points
+- Demo data: the P&L shows GH₵0 delivery fees but the cohort shows GH₵165. The demo orders got fees written to the database after delivery, so no 5070 lines exist. The app posts fees at delivery, so this is not a code fault.
+- Follow-ups: `DateRangePicker` nested button warning (backlog); "% of revenue" sub-lines; cash-forecast outflows leave out daily Meta spend.
+
+---

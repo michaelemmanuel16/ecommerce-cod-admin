@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **[Finance]**: Finance report screens: income statement, balance sheet, monthly P&L, profit by product, order cohort and failed-delivery cost cards; cash flow tab with pace or target scenario, trend chart and Export menu; Reports "Products and profit" tab; one cached loader cleared on sign-in and sign-out. (COD-54)
 - **[Finance]**: Delivery fee rules per partner and outcome, one fee posted per outcome to 5070 against cash in transit 1015, deposits move 1015 to 1010 once with first-in first-out matching stored for exact rejects, excess to 2040, and the old deposit route on the same path. (COD-48)
 - **[Finance]**: Rep commission entries post DR 5050 / CR 2020 once when earned and reverse on return, with a backfill for open delivered orders; one payout service and API for reps and agents that pays open entries oldest first, rejects above owed and double payment, and adds the payouts permission. (COD-51)
 - **[Finance]**: Expenses post to the ledger by expense date with receipts and F-918 categories; manual journal and void rules (system entries cannot be voided by hand); ledger in entry-date order with a true running balance and exports; new Expenses, Chart of accounts, Ledger and Journal screens that show why a button is disabled. (COD-52)
