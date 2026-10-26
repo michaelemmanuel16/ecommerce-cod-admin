@@ -133,6 +133,13 @@ export class AgingService {
     };
   }
 
+  /** The unpaid delivered orders of these partners, oldest first (the rows behind a short payout on the Finance overview). */
+  async getUnpaidOrdersOf(agentIds: number[]): Promise<UnpaidOrder[]> {
+    const wanted = new Set(agentIds);
+    const { unpaid } = await this.loadAging();
+    return unpaid.filter((o) => wanted.has(o.agentId)).sort((a, b) => b.ageDays - a.ageDays || a.orderId - b.orderId);
+  }
+
   /** How many open collections are past their partner's days to pay (the Dashboard "orders over" count). */
   async countOverdue(): Promise<number> {
     return prisma.agentCollection.count({ where: (await this.overdueFilter()).where });

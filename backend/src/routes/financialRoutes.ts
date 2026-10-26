@@ -20,6 +20,8 @@ router.get('/summary', requireResourcePermission('financial', 'view'), financial
 router.get('/reports', requireResourcePermission('financial', 'view'), financialController.getFinancialReports);
 router.get('/balance-sheet', requireResourcePermission('financial', 'view'), financialController.getBalanceSheet);
 router.get('/profit-loss', requireResourcePermission('financial', 'view'), financialController.getProfitLoss);
+// The Finance overview: six tiles, payout reconciliation, unpaid by age and cash runway in one call (M5-T24)
+router.get('/overview', requireResourcePermission('financial', 'view'), financeReports.getOverview);
 // Monthly P&L, profit by product, order cohort and cost of failed deliveries (M5-T25, M5-T26)
 router.get('/monthly-pl', requireResourcePermission('financial', 'view'), financeReports.getMonthlyPl);
 router.get('/profit-by-product', requireResourcePermission('financial', 'view'), financeReports.getProfitByProduct);
