@@ -57,7 +57,7 @@ describe('Finance Overview profit cards (M5-T40)', () => {
     const table = await screen.findByRole('table', { name: 'Monthly profit and loss' });
     expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Line', 'AugAs booked', 'SepAs booked', '1-17 Sep', '1-17 Oct']);
     expect(cells(rowOf(table, 'Delivered revenue'))).toEqual(['Delivered revenue', 'GH₵166,000', 'GH₵173,000', 'GH₵96,000', 'GH₵92,000']);
-    expect(cells(rowOf(table, 'Rep commission'))).toEqual(['Rep commission and rewards', 'Not split outnot split out', 'Not split outnot split out', 'Not split outnot split out', 'GH₵2,768']);
+    expect(cells(rowOf(table, 'Rep commission'))).toEqual(['Rep commission and rewards', 'Not split out', 'Not split out', 'Not split out', 'GH₵2,768']);
     expect(cells(rowOf(table, 'Net profit'))).toEqual(['Net profit', 'GH₵20,700', 'GH₵21,300', 'GH₵11,800', '-GH₵14,268']);
     expect(cells(rowOf(table, 'Net margin'))[4]).toBe('-16%');
     expect(cells(rowOf(table, 'Meta ad spend'))[4]).toBe('GH₵76,200₦112 = GH₵1');

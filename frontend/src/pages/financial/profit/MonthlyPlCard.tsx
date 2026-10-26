@@ -68,7 +68,7 @@ export function MonthlyPlCard({ block }: { block: FinanceBlock<MonthlyPl> }) {
                       <td>Rep commission and rewards</td>
                       {cols.map((c) => (
                         c.repCommission === null
-                          ? <td key={c.key} className="r ink3">Not split out{c.repCommissionNote && <small>{c.repCommissionNote}</small>}</td>
+                          ? <td key={c.key} className="r ink3">Not split out</td>
                           : <td key={c.key} className="r num">{money(c.repCommission)}</td>
                       ))}
                     </tr>
