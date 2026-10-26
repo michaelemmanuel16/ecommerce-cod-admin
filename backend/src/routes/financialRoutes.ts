@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as financialController from '../controllers/financialController';
 import { getFinancialHealth } from '../controllers/ledgerHealthController';
 import * as financeExport from '../controllers/financeExportController';
+import * as financeReports from '../controllers/financeReportsController';
 import { authenticate, requirePermission, requireResourcePermission, requireRole } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate } from '../middleware/validation';
@@ -19,6 +20,8 @@ router.get('/summary', requireResourcePermission('financial', 'view'), financial
 router.get('/reports', requireResourcePermission('financial', 'view'), financialController.getFinancialReports);
 router.get('/balance-sheet', requireResourcePermission('financial', 'view'), financialController.getBalanceSheet);
 router.get('/profit-loss', requireResourcePermission('financial', 'view'), financialController.getProfitLoss);
+// Monthly P&L (M5-T25)
+router.get('/monthly-pl', requireResourcePermission('financial', 'view'), financeReports.getMonthlyPl);
 router.get('/profit-loss/export', requireResourcePermission('financial', 'view'), financeExport.exportFinanceReport);
 
 // The four Finance exports (CSV or Excel) and the background jobs behind them (M5-T29)
