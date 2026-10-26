@@ -45,7 +45,8 @@ beforeAll(async () => {
     idOf[first] = (await prismaBase.user.findFirstOrThrow({ where: { tenantId, firstName: first } })).id;
   }
   // Kasapa is a trial partner with a profile; Kofi has a fee rule (NUMBERS.md: 25 delivered, 5 failed, 0 returned)
-  await prismaBase.deliveryPartnerProfile.create({ data: { tenantId, userId: idOf.Kasapa, isTrial: true, daysToPay: 7, baseTown: 'Cape Coast', dataSource: 'csv' } });
+  // The fixture gives every partner a profile (days to pay); Kasapa's gets the trial fields.
+  await prismaBase.deliveryPartnerProfile.update({ where: { userId: idOf.Kasapa }, data: { isTrial: true, daysToPay: 7, baseTown: 'Cape Coast', dataSource: 'csv' } });
   await prismaBase.feeRule.createMany({
     data: [
       { tenantId, partnerUserId: idOf.Kofi, outcome: 'delivered', amount: '25', validFrom: new Date('2026-01-01') },
