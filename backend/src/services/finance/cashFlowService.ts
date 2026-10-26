@@ -17,8 +17,10 @@ import { OPEN_COLLECTION_STATUSES, outstandingOf } from '../../utils/collectionC
 import { DAY_MS, getStoreTimeZone, localDate, weekRange } from '../kpi/dates';
 import { deliveredRevenueByDay, revenueScope } from '../kpi/revenue';
 
-/** Days a partner takes to pay when there is no settlement history yet (F-928). */
-export const DEFAULT_DAYS_TO_PAY = 7;
+import { DEFAULT_DAYS_TO_PAY } from '../orderPaymentTag';
+
+/** Days a partner takes to pay when there is no settlement history yet (F-928); one default with the payment tag. */
+export { DEFAULT_DAYS_TO_PAY };
 
 /** A range longer than this many days is grouped by week (F-929). */
 export const TREND_WEEKLY_AFTER_DAYS = 366;
