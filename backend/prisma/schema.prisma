@@ -1516,6 +1516,7 @@ enum JournalSourceType {
   digital_sale
   paystack_payout
   delivery_fee
+  commission_accrual
 }
 
 enum MessageChannel {
