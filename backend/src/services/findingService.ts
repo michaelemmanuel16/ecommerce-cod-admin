@@ -7,6 +7,8 @@ import { resolveTenantId } from '../utils/tenantContext';
 import { fullName } from '../utils/nameUtils';
 import { OPEN_COLLECTION_STATUSES } from '../utils/collectionCash';
 import { auditService } from './auditService';
+import { createNotification } from './notificationService';
+import logger from '../utils/logger';
 
 /**
  * Open a Finding unless one for the same (type, subjectType, subjectId) already exists in the current tenant.
@@ -151,6 +153,16 @@ export async function updateFinding(requester: Requester, id: number, change: Fi
       tx,
     });
   });
+
+  // The new assignee gets an in-app notification (the per-user inbox the app has). Not for a self-assignment, and a failure here never undoes the assignment.
+  if (change.assigneeId && change.assigneeId !== finding.assigneeId && change.assigneeId !== requester.id) {
+    try {
+      await createNotification(String(change.assigneeId), 'finding', 'Finding assigned to you',
+        `A ${finding.type.replace(/_/g, ' ')} Finding was assigned to you.`, { findingId: id, type: finding.type });
+    } catch (error) {
+      logger.warn('Finding assigned but the notification failed', { findingId: id, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
   return findingView(await prisma.finding.findFirstOrThrow({ where: { id }, select: findingSelect }));
 }
 

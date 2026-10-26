@@ -95,6 +95,13 @@ describe('PATCH /api/findings/:id', () => {
     expect(res.status).toBe(200);
     expect(res.body.finding.assignee.id).toBe(manager.id);
     expect(res.body.finding.status).toBe('open');
+    expect(await prismaBase.notification.count({ where: { tenantId, userId: manager.id, type: 'finding' } })).toBe(1);
+    // the same assignee again, and assigning yourself, notify nobody
+    await patch(owner.token, f.id, { assigneeId: manager.id });
+    const mine = await mkFinding('cash_gap');
+    await patch(owner.token, mine.id, { assigneeId: owner.id });
+    expect(await prismaBase.notification.count({ where: { tenantId, userId: owner.id, type: 'finding' } })).toBe(0);
+    expect(await prismaBase.notification.count({ where: { tenantId, userId: manager.id, type: 'finding' } })).toBe(1);
     expect((await patch(owner.token, f.id, { assigneeId: otherOwner.id })).status).toBe(400);
     const cleared = await patch(owner.token, f.id, { assigneeId: null });
     expect(cleared.body.finding.assignee).toBeNull();
