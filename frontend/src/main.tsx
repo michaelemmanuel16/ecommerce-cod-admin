@@ -11,6 +11,7 @@ import './styles/auth.css';
 import './styles/orders.css';
 import './styles/customers.css';
 import './styles/deliveries.css';
+import './styles/financeOverview.css';
 import './styles/inventory.css';
 import './styles/products.css';
 import './styles/onboarding.css';

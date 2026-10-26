@@ -1,16 +1,19 @@
 import React from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useFinancialStore } from '../stores/financialStore';
 import { Tabs } from '../components/ui/Tabs';
 import { DateRangePicker } from '../components/ui/DateRangePicker';
-import { FinancialDashboard } from './financial/FinancialDashboard';
+import { FinanceOverview } from './financial/overview/FinanceOverview';
 import { AgentCollections } from './financial/AgentCollections';
 import { AccountingAnalysis } from './financial/AccountingAnalysis';
 import { RepCommissions } from './financial/RepCommissions';
 import { usePermissions } from '../hooks/usePermissions';
+import { useV2Page } from '../components/shell/useV2Page';
 
 export const Financial: React.FC = () => {
   const { dateRange, setDateRange } = useFinancialStore();
   const { can } = usePermissions();
+  useV2Page();
 
   const handleDateRangeChange = (startDate: string | undefined, endDate: string | undefined) => {
     setDateRange(startDate, endDate);
@@ -20,40 +23,46 @@ export const Financial: React.FC = () => {
     {
       id: 'overview',
       label: 'Overview',
-      content: <FinancialDashboard />
+      content: <FinanceOverview />
     },
     {
       id: 'agent-collections',
       label: 'Agent Collections',
-      content: <AgentCollections />
+      content: <div className="legacy-light"><AgentCollections /></div>
     },
     // F-914: the Rep commissions tab shows for roles that can view payouts
-    ...(can('payouts', 'view') ? [{ id: 'rep-commissions', label: 'Rep commissions', content: <RepCommissions /> }] : []),
+    ...(can('payouts', 'view') ? [{ id: 'rep-commissions', label: 'Rep commissions', content: <div className="legacy-light"><RepCommissions /></div> }] : []),
     {
       id: 'accounting-analysis',
       label: 'Accounting & Analysis',
-      content: <AccountingAnalysis />
+      content: <div className="legacy-light"><AccountingAnalysis /></div>
     }
   ];
 
+  // The date picker drives the old tabs; the Overview has its own range control (in the URL)
+  const [search] = useSearchParams();
+  const onOverview = (search.get('financial-tab') ?? 'overview') === 'overview';
+
   return (
-    <div>
-      <div className="mb-6 flex items-center justify-between">
+    <section className="finance">
+      <div className="head">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Financial Management</h1>
-          <p className="text-sm text-gray-600 mt-1">
-            Track revenue, expenses, COD collections, and agent accountability
-          </p>
+          <h1>Finance</h1>
+          <p>Cash and profit, payouts from delivery partners, and the books.</p>
         </div>
-        <DateRangePicker
-          startDate={dateRange.startDate}
-          endDate={dateRange.endDate}
-          onChange={handleDateRangeChange}
-          placeholder="Select date range"
-        />
+        {!onOverview && (
+          <div className="hd-actions legacy-light">
+            <DateRangePicker
+              startDate={dateRange.startDate}
+              endDate={dateRange.endDate}
+              onChange={handleDateRangeChange}
+              placeholder="Select date range"
+            />
+          </div>
+        )}
       </div>
 
-      <Tabs tabs={tabs} defaultTab="overview" persistKey="financial-tab" />
-    </div>
+      <Tabs tabs={tabs} defaultTab="overview" persistKey="financial-tab" compact />
+    </section>
   );
 };
