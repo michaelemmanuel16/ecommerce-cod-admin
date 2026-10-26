@@ -142,8 +142,8 @@ export class AgentReconciliationService {
         });
     }
 
-    /** The partner's open collections, oldest first. */
-    private async loadOpenCollections(extTx: any, agentId: number): Promise<OpenCollection[]> {
+    /** The partner's open collections, oldest first. The deposit paths and the partner payout (M5-T12) share it. */
+    async loadOpenCollections(extTx: any, agentId: number): Promise<OpenCollection[]> {
         return extTx.agentCollection.findMany({
             where: { agentId, status: { in: [...OPEN_COLLECTION_STATUSES] } },
             orderBy: { collectionDate: 'asc' },

@@ -1,5 +1,5 @@
 /**
- * Partner settlements (M5-T10, T11; F-906): the one generic "record partner payout" action.
+ * Partner settlements (M5-T10, T11, T12; F-906, F-908): the one generic "record partner payout" action.
  *
  * An outside agent (or a person) sends the paid-order list and the payout for any delivery partner. The same service
  * runs behind `POST /api/partner-settlements` and the MCP tool `partner_payout_record`. There is no partner-specific
@@ -18,7 +18,7 @@ import { TRANSACTION_CONFIG } from '../config/transactionConfig';
 import { resolveTenantId } from '../utils/tenantContext';
 import { getCurrency } from '../utils/currency';
 import { looksLikePhone, phoneLookupVariants } from '../utils/phone';
-import { OPEN_COLLECTION_STATUSES } from '../utils/collectionCash';
+import { OPEN_COLLECTION_STATUSES, outstandingOf } from '../utils/collectionCash';
 import * as Money from '../utils/money';
 import { loadPartner } from './deliveryPartnerAdminService';
 import agentReconciliationService, { OpenCollection, planCover } from './agentReconciliationService';
@@ -365,6 +365,95 @@ export async function recordPartnerPayout(actor: SettlementActor, input: Partner
     if (isUniqueViolation(error)) {
       const winner = await findExisting(input.partnerId, input.reference);
       if (winner) return replayView(winner, currency);
+    }
+    throw error;
+  }
+}
+
+// ---- Manual partner payout (F-908): FIFO to the oldest unpaid orders ----
+
+export interface ManualPayoutInput {
+  partnerId: number;
+  amount: unknown;
+  /** YYYY-MM-DD. Defaults to now. */
+  payoutDate?: unknown;
+  reference: unknown;
+  notes?: unknown;
+}
+
+/**
+ * Money from a partner with no paid-order list. The amount clears the partner's oldest unpaid orders first (FIFO); what is
+ * left is held in 2040 and the response says how much. Same postings as a payout list: one verified deposit, collections
+ * paid in full become reconciled. The reference must be new for the partner (409 with the date it was used).
+ */
+export async function recordManualPayout(actor: SettlementActor, input: ManualPayoutInput): Promise<SettlementView> {
+  const tenantId = resolveTenantId();
+  const amount = Money.tryParse(input.amount);
+  if (!amount || amount.lte(0)) throw new AppError('Amount must be above 0', 400, 'INVALID_AMOUNT');
+  const reference = typeof input.reference === 'string' ? input.reference.trim() : '';
+  if (!reference || reference.length > 120) throw new AppError('Reference is required (up to 120 characters)', 400, 'REFERENCE_REQUIRED');
+  const notes = typeof input.notes === 'string' && input.notes.trim() ? input.notes.trim().slice(0, 500) : undefined;
+  let payoutDate = new Date();
+  if (input.payoutDate !== undefined && input.payoutDate !== null && input.payoutDate !== '') {
+    const text = String(input.payoutDate);
+    const parsed = new Date(`${text}T00:00:00.000Z`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(text) || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== text) {
+      throw new AppError('Date must be written YYYY-MM-DD', 400, 'INVALID_DATE');
+    }
+    payoutDate = parsed;
+  }
+
+  const currency = await getCurrency();
+  await loadPartner(input.partnerId);
+  const used = await prisma.partnerSettlement.findFirst({ where: { partnerId: input.partnerId, reference }, select: { payoutDate: true } });
+  if (used) throw new AppError(`This reference was used on ${used.payoutDate.toISOString().slice(0, 10)}`, 409, 'REFERENCE_USED');
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const settlement = await tx.partnerSettlement.create({
+        data: { tenantId, partnerId: input.partnerId, payoutDate, payoutAmount: amount, currency, reference, status: 'matched', isManual: true, recordedById: actor.id, notes },
+      });
+      const balance = await lockBalance(tx, input.partnerId);
+
+      // FIFO over the partner's open collections, read after the lock
+      const open = await agentReconciliationService.loadOpenCollections(tx, input.partnerId);
+      const unpaid = Money.sum(open.map((c) => outstandingOf(c)));
+      const { plan, full } = await claimPlan(tx, open.map((c) => ({ ...c })), amount);
+
+      const orderOf = new Map((await tx.agentCollection.findMany({ where: { id: { in: plan.covers.map((c) => c.id) } }, select: { id: true, orderId: true } })).map((c) => [c.id, c.orderId]));
+      await tx.partnerSettlementLine.createMany({
+        data: plan.covers.map((c) => ({
+          tenantId, settlementId: settlement.id, orderId: orderOf.get(c.id)!, externalOrderRef: `#${orderOf.get(c.id)}`,
+          expAmount: c.take, charge: Money.ZERO, matched: true, matchedBy: 'fifo', outcome: 'delivered' as const,
+        })),
+      });
+      const lines = await tx.partnerSettlementLine.findMany({ where: { settlementId: settlement.id }, orderBy: { id: 'asc' } });
+      const lineOf = new Map(lines.map((l) => [l.orderId!, l.id]));
+      await reconcileCollections(tx, full.map((c) => ({ collectionId: c.id, orderId: orderOf.get(c.id)!, lineId: lineOf.get(orderOf.get(c.id)!)! })), actor.id);
+
+      const deposit = await postDeposit(tx, { settlement, partnerId: input.partnerId, amount, depositDate: payoutDate, method: 'manual', actorId: actor.id }, plan);
+      await tx.agentBalance.update({
+        where: { id: balance.id },
+        data: { totalDeposited: { increment: plan.matched }, currentBalance: { decrement: plan.matched } },
+      });
+
+      const updated = await tx.partnerSettlement.update({
+        where: { id: settlement.id },
+        data: { expectedNet: unpaid, unappliedAmount: plan.remaining, status: plan.remaining.gt(0) ? 'over' : 'matched', depositId: deposit.id },
+        include: { lines: { orderBy: { id: 'asc' } } },
+      });
+      await closeClearedShortPays(tx, input.partnerId, reference);
+
+      const excess = await tx.finding.findFirst({ where: { type: 'excess_deposit', subjectType: 'agent_deposit', subjectId: String(deposit.id) }, select: { id: true } });
+      const warnings = plan.remaining.gt(0) ? [unappliedWarning(currency, plan.remaining, 'will be')] : [];
+      return settlementView(updated, { findings: excess ? [{ type: 'excess_deposit', id: excess.id }] : [], warnings });
+    }, TRANSACTION_CONFIG);
+    appEvents.emit(AppEvent.AGENT_COLLECTION_RECONCILED);
+    return result;
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      const winner = await findExisting(input.partnerId, reference);
+      if (winner) throw new AppError(`This reference was used on ${winner.payoutDate.toISOString().slice(0, 10)}`, 409, 'REFERENCE_USED');
     }
     throw error;
   }
