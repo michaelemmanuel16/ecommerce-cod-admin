@@ -7,6 +7,7 @@ import { TRANSACTION_CONFIG } from '../config/transactionConfig';
 import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 import { OPEN_COLLECTION_STATUSES, outstandingOf } from '../utils/collectionCash';
+import { GLAutomationService } from './glAutomationService';
 
 /** What a verified deposit matched on one collection; kept on AgentDeposit.allocations so a reject reverses exactly this. */
 interface DepositAllocation { collectionId: number; amount: string }
@@ -205,7 +206,6 @@ export class AgentReconciliationService {
         const { byCollection } = await this.claimCovers(extTx, plan.covers);
         if (byCollection.size !== plan.covers.length) throw new AppError('Collections were changed by someone else. Reload and try again.', 409);
 
-        const { GLAutomationService } = await import('./glAutomationService');
         await GLAutomationService.createAgentDepositEntry(extTx, { ...deposit, ...claimData }, verifierId, plan);
 
         // The allocations are kept for a later reject; an unallocated remainder goes in the note
@@ -309,7 +309,6 @@ export class AgentReconciliationService {
 
     /** Undoes what verifying a deposit did: the GL posting (voided by reversal), the balance and the matched collections. */
     private async undoVerifiedDeposit(extTx: any, deposit: any, allocations: DepositAllocation[], userId: number): Promise<void> {
-        const { GLAutomationService } = await import('./glAutomationService');
         await GLAutomationService.voidJournalEntry(extTx, 'agent_deposit', deposit.id, userId);
 
         const balance = await this.getOrCreateBalance(deposit.agentId, extTx);

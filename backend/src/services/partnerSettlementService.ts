@@ -22,6 +22,7 @@ import { OPEN_COLLECTION_STATUSES, outstandingOf } from '../utils/collectionCash
 import * as Money from '../utils/money';
 import { loadPartner } from './deliveryPartnerAdminService';
 import agentReconciliationService, { OpenCollection, planCover } from './agentReconciliationService';
+import { GLAutomationService } from './glAutomationService';
 import { closeClearedShortPays, openFindingOnce } from './findingService';
 import { isChargeVariance, matchLine, MatchIndex, OrderCandidate, parseOrderNumber, settlementOutcome } from './settlementMatching';
 import { PartnerPayoutInput, partnerPayoutSchema } from '../validators/partnerPayoutSchema';
@@ -212,7 +213,6 @@ async function postDeposit(tx: TransactionClient, p: DepositPost, plan: ReturnTy
       notes: plan.remaining.isZero() ? null : `Unallocated remainder: ${plan.remaining.toString()}`,
     },
   });
-  const { GLAutomationService } = await import('./glAutomationService');
   await GLAutomationService.createAgentDepositEntry(tx as unknown as Prisma.TransactionClient, deposit, p.actorId, plan);
   return deposit;
 }
@@ -281,7 +281,6 @@ async function applyPayout(tx: TransactionClient, { tenantId, currency, actor, i
     await tx.order.update({ where: { id: order.id }, data: { deliveryFee: charge, deliveryFeeSource: 'settlement' } });
     trueUp = trueUp.plus(diff);
   }
-  const { GLAutomationService } = await import('./glAutomationService');
   await GLAutomationService.createFeeTrueUpEntry(tx as unknown as Prisma.TransactionClient, settlement, trueUp, actor.id, input.payoutDate);
 
   // 3. Cover the matched collections FIFO with the payout, reconcile what is paid in full, post one deposit

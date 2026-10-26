@@ -7,6 +7,7 @@ import { resolveTenantId } from '../utils/tenantContext';
 import { fullName } from '../utils/nameUtils';
 import { OPEN_COLLECTION_STATUSES } from '../utils/collectionCash';
 import { auditService } from './auditService';
+import { GLAutomationService } from './glAutomationService';
 import { createNotification } from './notificationService';
 import logger from '../utils/logger';
 
@@ -56,16 +57,6 @@ export interface FindingFilters {
   limit?: number;
 }
 
-/** The account a written-off Finding posts against 5100: 1015 for cash we expected and will not get (DR 5100 / CR 1015), 2040 for extra money we hold (DR 2040 / CR 5100). A type not here has no ledger amount: it posts nothing. */
-const WRITE_OFF_CREDIT: Partial<Record<FindingType, '1015' | '2040'>> = {
-  short_pay: '1015',
-  cash_gap: '1015',
-  unpaid_term: '1015',
-  negative_cash_held: '1015',
-  excess_deposit: '2040',
-  over_pay: '2040',
-};
-
 const findingSelect = {
   id: true, type: true, status: true, subjectType: true, subjectId: true, amount: true, note: true,
   explanation: true, assigneeId: true, resolvedById: true, resolvedAt: true, createdAt: true,
@@ -106,7 +97,7 @@ export interface FindingChange {
 
 /**
  * Assign and resolve in one PATCH (F-909). Only an open Finding changes. Explained and written off need a note;
- * a write-off is the owner's call and posts against 5100 and 1015 or 2040 by the Finding type (WRITE_OFF_CREDIT), in the same
+ * a write-off is the owner's call and posts through GLAutomationService.createFindingWriteOffEntry, in the same
  * transaction. The status is claimed with a conditional update, so two people resolving at once cannot both win and
  * the write-off posts once.
  */
@@ -140,10 +131,8 @@ export async function updateFinding(requester: Requester, id: number, change: Fi
       },
     });
     if (claim.count === 0) throw new AppError('This Finding was changed by someone else. Reload and try again.', 409, 'FINDING_CHANGED');
-    const creditCode = WRITE_OFF_CREDIT[finding.type];
-    if (change.status === 'written_off' && creditCode && finding.amount) {
-      const { GLAutomationService } = await import('./glAutomationService');
-      await GLAutomationService.createFindingWriteOffEntry(tx as unknown as Prisma.TransactionClient, finding, finding.amount, creditCode, requester.id, explanation!);
+    if (change.status === 'written_off') {
+      await GLAutomationService.createFindingWriteOffEntry(tx as unknown as Prisma.TransactionClient, finding, requester.id, explanation!);
     }
     await auditService.record({
       tenantId, actorId: requester.id, actorKind: 'person', channel: 'app',

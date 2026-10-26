@@ -414,6 +414,48 @@ export class GLAutomationService {
   }
 
   /**
+   * One two-line entry, posted once: DR `debitCode` / CR `creditCode` for `amount`, keyed `externalRef` under `sourceType`.
+   * A repeat of the key returns the entry already posted; an amount of 0 or below posts nothing (null).
+   */
+  private static async postOnce(
+    tx: Prisma.TransactionClient,
+    p: {
+      sourceType: JournalSourceType; externalRef: string; sourceId: number; entryDate: Date; description: string;
+      createdBy: number; tenantId?: string | null; debitCode: string; creditCode: string; amount: Money.MoneyInput;
+      debitNote: string; creditNote: string;
+    }
+  ): Promise<JournalEntryWithTransactions | null> {
+    const amount = Money.parse(p.amount);
+    if (!amount.greaterThan(0)) return null;
+
+    const existingEntry = await tx.journalEntry.findFirst({
+      where: { sourceType: p.sourceType, externalRef: p.externalRef, isVoided: false },
+      include: { transactions: { include: { account: true } } }
+    });
+    if (existingEntry) return existingEntry as JournalEntryWithTransactions;
+
+    const [debitAccountId, creditAccountId] = await Promise.all([
+      GLAccountService.getAccountIdByCode(p.debitCode, tx),
+      GLAccountService.getAccountIdByCode(p.creditCode, tx),
+    ]);
+    return await this.createJournalEntryWithRetry(tx, {
+      entryDate: p.entryDate,
+      description: p.description,
+      sourceType: p.sourceType,
+      sourceId: p.sourceId,
+      externalRef: p.externalRef,
+      createdBy: p.createdBy,
+      tenantId: p.tenantId ?? undefined,
+      transactions: {
+        create: [
+          { accountId: debitAccountId, debitAmount: amount, creditAmount: Money.ZERO, description: p.debitNote },
+          { accountId: creditAccountId, debitAmount: Money.ZERO, creditAmount: amount, description: p.creditNote },
+        ],
+      },
+    });
+  }
+
+  /**
    * Delivery fee entry, one per outcome move (F-936, F-935): DR 5070 / CR 1015 for the fee stamped on the order.
    * The partner keeps the fee from the cash it holds, so 1015 goes down by the fee and nothing is paid out.
    * Keyed on `<outcome>:<OrderHistory id>` in `externalRef` with the order as source, so a repeat of the same
@@ -429,44 +471,19 @@ export class GLAutomationService {
     userId: number,
     entryDate: Date = new Date()
   ): Promise<JournalEntryWithTransactions | null> {
-    const amount = Money.parse(fee);
-    if (!amount.greaterThan(0)) return null;
-
-    const externalRef = `${outcome}:${historyId}`;
-    const existingEntry = await tx.journalEntry.findFirst({
-      where: { sourceType: JournalSourceType.delivery_fee, externalRef, isVoided: false },
-      include: { transactions: { include: { account: true } } }
-    });
-    if (existingEntry) return existingEntry as JournalEntryWithTransactions;
-
-    const [expenseAccountId, cashAccountId] = await Promise.all([
-      GLAccountService.getAccountIdByCode(GL_ACCOUNTS.DELIVERY_FEES),
-      GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT),
-    ]);
-    return await this.createJournalEntryWithRetry(tx, {
+    return this.postOnce(tx, {
+      sourceType: JournalSourceType.delivery_fee,
+      externalRef: `${outcome}:${historyId}`,
+      sourceId: order.id,
       entryDate,
       description: `Delivery fee (${outcome}) - Order #${order.id}`,
-      sourceType: JournalSourceType.delivery_fee,
-      sourceId: order.id,
-      externalRef,
       createdBy: userId,
-      tenantId: order.tenantId ?? undefined,
-      transactions: {
-        create: [
-          {
-            accountId: expenseAccountId,
-            debitAmount: amount,
-            creditAmount: Money.ZERO,
-            description: `Delivery fee kept by partner (${outcome}) - Order #${order.id}`,
-          },
-          {
-            accountId: cashAccountId,
-            debitAmount: Money.ZERO,
-            creditAmount: amount,
-            description: 'Fee netted from the cash the partner holds',
-          },
-        ],
-      },
+      tenantId: order.tenantId,
+      debitCode: GL_ACCOUNTS.DELIVERY_FEES,
+      creditCode: GL_ACCOUNTS.CASH_IN_TRANSIT,
+      amount: fee,
+      debitNote: `Delivery fee kept by partner (${outcome}) - Order #${order.id}`,
+      creditNote: 'Fee netted from the cash the partner holds',
     });
   }
 
@@ -483,91 +500,63 @@ export class GLAutomationService {
     entryDate: Date = new Date()
   ): Promise<JournalEntryWithTransactions | null> {
     const amount = Money.parse(net);
-    if (amount.isZero()) return null;
-
-    const externalRef = `trueup:${settlement.id}`;
-    const existingEntry = await tx.journalEntry.findFirst({
-      where: { sourceType: JournalSourceType.delivery_fee, externalRef, isVoided: false },
-      include: { transactions: { include: { account: true } } }
-    });
-    if (existingEntry) return existingEntry as JournalEntryWithTransactions;
-
-    const [expenseAccountId, cashAccountId] = await Promise.all([
-      GLAccountService.getAccountIdByCode(GL_ACCOUNTS.DELIVERY_FEES, tx),
-      GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT, tx),
-    ]);
-    const size = amount.abs();
     const more = amount.gt(0);
-    return await this.createJournalEntryWithRetry(tx, {
+    return this.postOnce(tx, {
+      sourceType: JournalSourceType.delivery_fee,
+      externalRef: `trueup:${settlement.id}`,
+      sourceId: settlement.id,
       entryDate,
       description: `Delivery fee true-up - settlement ${settlement.reference}`,
-      sourceType: JournalSourceType.delivery_fee,
-      sourceId: settlement.id,
-      externalRef,
       createdBy: userId,
-      tenantId: settlement.tenantId ?? undefined,
-      transactions: {
-        create: [
-          {
-            accountId: expenseAccountId,
-            debitAmount: more ? size : Money.ZERO,
-            creditAmount: more ? Money.ZERO : size,
-            description: `Partner charge ${more ? 'above' : 'below'} the fee booked (settlement ${settlement.reference})`,
-          },
-          {
-            accountId: cashAccountId,
-            debitAmount: more ? Money.ZERO : size,
-            creditAmount: more ? size : Money.ZERO,
-            description: 'Fee true-up netted from the cash the partner holds',
-          },
-        ],
-      },
+      tenantId: settlement.tenantId,
+      debitCode: more ? GL_ACCOUNTS.DELIVERY_FEES : GL_ACCOUNTS.CASH_IN_TRANSIT,
+      creditCode: more ? GL_ACCOUNTS.CASH_IN_TRANSIT : GL_ACCOUNTS.DELIVERY_FEES,
+      amount: amount.abs(),
+      debitNote: `Partner charge ${more ? 'above' : 'below'} the fee booked (settlement ${settlement.reference})`,
+      creditNote: 'Fee true-up netted from the cash the partner holds',
     });
   }
 
   /**
-   * Write-off of a Finding (F-909). `account` 1015 (cash a partner was to hand in): DR 5100 / CR 1015, an expense.
-   * `account` 2040 (extra money we hold): DR 2040 / CR 5100, the liability is released against operating expense.
-   * (The PRD text "DR 5100 and CR 1015 or 2040" is corrected here for the 2040 types.) Keyed `finding-writeoff:<id>` with its own source type, so a repeat posts
-   * nothing and a manual journal void cannot reach it. An amount of 0 posts nothing.
+   * What a written-off Finding posts, by its type (F-909). Cash we expected and will not get: DR 5100 / CR 1015, an
+   * expense. Extra money we hold: DR 2040 / CR 5100, the liability is released against operating expense. (The PRD text
+   * "DR 5100 and CR 1015 or 2040" is corrected here for the 2040 types.) A type not listed has no ledger amount.
+   */
+  private static readonly WRITE_OFF_ACCOUNTS: Partial<Record<string, { debit: string; credit: string }>> = {
+    short_pay: { debit: GL_ACCOUNTS.OPERATING_EXPENSE, credit: GL_ACCOUNTS.CASH_IN_TRANSIT },
+    cash_gap: { debit: GL_ACCOUNTS.OPERATING_EXPENSE, credit: GL_ACCOUNTS.CASH_IN_TRANSIT },
+    unpaid_term: { debit: GL_ACCOUNTS.OPERATING_EXPENSE, credit: GL_ACCOUNTS.CASH_IN_TRANSIT },
+    negative_cash_held: { debit: GL_ACCOUNTS.OPERATING_EXPENSE, credit: GL_ACCOUNTS.CASH_IN_TRANSIT },
+    excess_deposit: { debit: GL_ACCOUNTS.UNAPPLIED_PARTNER_RECEIPTS, credit: GL_ACCOUNTS.OPERATING_EXPENSE },
+    over_pay: { debit: GL_ACCOUNTS.UNAPPLIED_PARTNER_RECEIPTS, credit: GL_ACCOUNTS.OPERATING_EXPENSE },
+  };
+
+  /**
+   * Write-off of a Finding: the accounts come from its type (see WRITE_OFF_ACCOUNTS). Keyed `finding-writeoff:<id>` with
+   * its own source type, so a repeat posts nothing and a manual journal void cannot reach it. A type with no ledger
+   * amount, or an amount of 0 or none, posts nothing.
    */
   static async createFindingWriteOffEntry(
     tx: Prisma.TransactionClient,
-    finding: { id: number; type: string; tenantId?: string | null },
-    amount: Money.MoneyInput,
-    account: typeof GL_ACCOUNTS.CASH_IN_TRANSIT | typeof GL_ACCOUNTS.UNAPPLIED_PARTNER_RECEIPTS,
+    finding: { id: number; type: string; amount: Money.MoneyInput | null; tenantId?: string | null },
     userId: number,
     note: string
   ): Promise<JournalEntryWithTransactions | null> {
-    const size = Money.parse(amount);
-    if (!size.greaterThan(0)) return null;
-
-    const externalRef = `finding-writeoff:${finding.id}`;
-    const existingEntry = await tx.journalEntry.findFirst({
-      where: { sourceType: JournalSourceType.finding_writeoff, externalRef, isVoided: false },
-      include: { transactions: { include: { account: true } } }
-    });
-    if (existingEntry) return existingEntry as JournalEntryWithTransactions;
-
-    const [expenseAccountId, otherAccountId] = await Promise.all([
-      GLAccountService.getAccountIdByCode(GL_ACCOUNTS.OPERATING_EXPENSE, tx),
-      GLAccountService.getAccountIdByCode(account, tx),
-    ]);
-    const expenseDebit = account === GL_ACCOUNTS.CASH_IN_TRANSIT;
-    return await this.createJournalEntryWithRetry(tx, {
+    const accounts = this.WRITE_OFF_ACCOUNTS[finding.type];
+    if (!accounts || finding.amount === null) return null;
+    return this.postOnce(tx, {
+      sourceType: JournalSourceType.finding_writeoff,
+      externalRef: `finding-writeoff:${finding.id}`,
+      sourceId: finding.id,
       entryDate: new Date(),
       description: `Write-off of finding #${finding.id} (${finding.type}): ${note}`,
-      sourceType: JournalSourceType.finding_writeoff,
-      sourceId: finding.id,
-      externalRef,
       createdBy: userId,
-      tenantId: finding.tenantId ?? undefined,
-      transactions: {
-        create: [
-          { accountId: expenseAccountId, debitAmount: expenseDebit ? size : Money.ZERO, creditAmount: expenseDebit ? Money.ZERO : size, description: `Written-off ${finding.type.replace(/_/g, ' ')}` },
-          { accountId: otherAccountId, debitAmount: expenseDebit ? Money.ZERO : size, creditAmount: expenseDebit ? size : Money.ZERO, description: `Finding #${finding.id} written off` },
-        ],
-      },
+      tenantId: finding.tenantId,
+      debitCode: accounts.debit,
+      creditCode: accounts.credit,
+      amount: finding.amount,
+      debitNote: `Written-off ${finding.type.replace(/_/g, ' ')}`,
+      creditNote: `Finding #${finding.id} written off`,
     });
   }
 
