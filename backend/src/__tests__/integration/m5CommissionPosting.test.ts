@@ -38,7 +38,7 @@ const mkEntry = (orderId: number | null, userId: number, amount: number, extra: 
 const balance = async (code: string) => Number((await prismaBase.account.findFirstOrThrow({ where: { tenantId, code } })).currentBalance);
 const post = (entryId: number) => inTenant(() => prisma.$transaction((tx) => postEntry(tx, entryId, ADMIN.userId!)));
 const jeFor = (entryId: number) => prismaBase.journalEntry.findMany({
-  where: { tenantId, OR: [{ sourceType: 'manual', sourceId: entryId }, { sourceType: 'reversal', sourceId: entryId }] },
+  where: { tenantId, sourceType: 'commission_accrual', sourceId: entryId },
   include: { transactions: { include: { account: true } } },
   orderBy: { id: 'asc' },
 });
@@ -120,7 +120,7 @@ describe('a return voids the entry and reverses the posting (M5-T18)', () => {
     const after = await prismaBase.commissionEntry.findUniqueOrThrow({ where: { id: entry.id } });
     expect(after.status).toBe('void');
     const journals = await jeFor(entry.id);
-    expect(journals.map((j) => j.sourceType)).toEqual(['manual', 'reversal']);
+    expect(journals.map((j) => j.sourceType)).toEqual(['commission_accrual', 'commission_accrual']);
     const reversal = journals[1];
     expect(reversal.transactions.find((t) => Number(t.debitAmount) > 0)!.account.code).toBe('2020');
     expect(reversal.transactions.find((t) => Number(t.creditAmount) > 0)!.account.code).toBe('5050');
@@ -129,6 +129,18 @@ describe('a return voids the entry and reverses the posting (M5-T18)', () => {
 
     // A repeat of the move changes nothing
     await move(orderId, 'returned');
+    expect(await jeFor(entry.id)).toHaveLength(2);
+  });
+
+  it('an entry on top of a delivery entry that booked the same commission: the return takes back each once, 2020 nets 0', async () => {
+    const orderId = await mkOrder('out_for_delivery', { customerRepId: adwoaId });
+    await move(orderId, 'delivered'); // the delivery entry books DR 5050 / CR 2020 of 7 (Adwoa's rate)
+    const entry = await mkEntry(orderId, adwoaId, 7);
+    const before = await balance('2020');
+    await post(entry.id);
+    await move(orderId, 'returned');
+    // The revenue reversal takes back its 7, the entry reversal takes back its own 7: nothing is reversed twice
+    expect(await balance('2020')).toBe(before - 7);
     expect(await jeFor(entry.id)).toHaveLength(2);
   });
 

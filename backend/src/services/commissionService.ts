@@ -63,7 +63,7 @@ export async function voidOpenEntriesForOrder(tx: TransactionClient, orderId: nu
   if (open.length === 0) return 0;
 
   const posted = await tx.journalEntry.findMany({
-    where: { id: { in: open.flatMap((e) => (e.journalEntryId ? [e.journalEntryId] : [])) }, sourceType: JournalSourceType.manual },
+    where: { id: { in: open.flatMap((e) => (e.journalEntryId ? [e.journalEntryId] : [])) }, sourceType: JournalSourceType.commission_accrual },
     select: { id: true },
   });
   const ownPosting = new Set(posted.map((j) => j.id));

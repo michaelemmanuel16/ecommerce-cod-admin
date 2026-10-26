@@ -892,7 +892,7 @@ export class GLAutomationService {
     return await this.createJournalEntryWithRetry(base, {
       entryDate,
       description: `${earned ? 'Commission earned' : 'Commission reversal'} - ${label}`,
-      sourceType: earned ? JournalSourceType.manual : JournalSourceType.reversal,
+      sourceType: JournalSourceType.commission_accrual,
       sourceId: entry.id,
       externalRef: earned ? `commission-entry:${entry.id}` : `commission-entry-void:${entry.id}`,
       createdBy: userId,
@@ -913,7 +913,7 @@ export class GLAutomationService {
 
   /**
    * Commission earned (F-914, M5-T18): DR 5050 Sales rep commission, CR 2020 Commissions payable for one
-   * `CommissionEntry`. Source is the entry (`manual` + entry id), and the external ref `commission-entry:<id>`
+   * `CommissionEntry`. Source is the entry (`commission_accrual` + entry id), and the external ref `commission-entry:<id>`
    * is unique per tenant, so a repeat can never post twice (the caller also locks the entry row).
    */
   static async recordCommissionAccrual(
@@ -937,7 +937,7 @@ export class GLAutomationService {
     entryDate: Date = new Date()
   ): Promise<JournalEntryWithTransactions> {
     const existing = await tx.journalEntry.findFirst({
-      where: { tenantId: entry.tenantId, sourceType: JournalSourceType.reversal, externalRef: `commission-entry-void:${entry.id}` },
+      where: { tenantId: entry.tenantId, sourceType: JournalSourceType.commission_accrual, externalRef: `commission-entry-void:${entry.id}` },
       include: { transactions: { include: { account: true } } },
     });
     if (existing) return existing as JournalEntryWithTransactions;
