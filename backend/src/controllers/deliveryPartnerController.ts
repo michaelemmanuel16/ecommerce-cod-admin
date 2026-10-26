@@ -12,6 +12,7 @@ import {
   createPartner, getPartner, setPartnerAvailability, updatePartner,
 } from '../services/deliveryPartnerAdminService';
 import { createFeeRule, createFeeRules, listFeeRules } from '../services/feeRuleService';
+import { applyPartnerCsv, previewPartnerCsv } from '../services/partnerCsvService';
 import { unmappedRegions } from '../services/regionService';
 import { proofSummaries } from '../services/deliveryProofService';
 
@@ -117,4 +118,14 @@ export const addFeeRule = async (req: AuthRequest, res: Response): Promise<void>
     return;
   }
   res.status(201).json({ rule: await createFeeRule(req.user!, partnerIdOf(req), req.body ?? {}) });
+};
+
+/** POST /api/delivery-partners/:id/csv/preview { csv }: matched, changed, flagged and rejected rows of a partner's status list. Writes nothing (F-712). */
+export const csvPreview = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.json(await previewPartnerCsv(req.user!, partnerIdOf(req), req.body?.csv));
+};
+
+/** POST /api/delivery-partners/:id/csv/apply { csv, fileHash }: applies the rows the preview showed as changed, through the order status service. */
+export const csvApply = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.json(await applyPartnerCsv(req.user!, partnerIdOf(req), req.body?.csv, req.body?.fileHash));
 };

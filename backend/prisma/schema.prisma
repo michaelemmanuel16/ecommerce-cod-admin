@@ -417,6 +417,7 @@ model Order {
   @@index([status, deliveryDate])
   @@index([orderType])
   @@index([tenantId])
+  @@index([tenantId, deliveryAgentId, externalOrderId])
   @@index([tenantId, confirmedAt])
   @@index([tenantId, dispatchedAt])
   @@index([tenantId, status, deliveryDate])
@@ -1517,6 +1518,7 @@ enum JournalSourceType {
   paystack_payout
   delivery_fee
   commission_accrual
+  finding_writeoff
 }
 
 enum MessageChannel {

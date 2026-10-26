@@ -26,7 +26,7 @@ import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
 import { toolActorContext, toolAuditCount, toolAuditRows } from './helpers/callTool';
 import { makeMcpKey } from './helpers/mcpKey';
 
-// 14 tools x two paths would trip the 30 calls a minute bucket. Plain function: resetMocks would wipe a jest.fn.
+// 15 tools x two paths would trip the 30 calls a minute bucket. Plain function: resetMocks would wipe a jest.fn.
 jest.mock('../../mcp/rateLimiter', () => require('./helpers/allowAllRateLimiter').allowAllRateLimiter());
 
 jest.setTimeout(120_000);
@@ -62,7 +62,11 @@ const argsFor = (): Record<string, Record<string, unknown>> => ({
   analytics_weekly: {},
   analytics_monthly: {},
   financial_summary: { period: 'month' },
+  // Not on the Legacy MCP role: only the registry path calls it (the admin role holds payouts:create by default)
+  partner_payout_record: { partnerId: pair.a.users.deliveryAgent.id, payoutDate: '2026-10-20', payoutAmount: 10, reference: 'sec-planted', lines: [{ externalOrderRef: '1', expAmount: 10 }] },
 });
+
+const LEGACY_ONLY = (calls: Record<string, Record<string, unknown>>) => Object.entries(calls).filter(([tool]) => tool !== 'partner_payout_record');
 
 const leakTokens = () => {
   const { b } = pair;
@@ -95,7 +99,7 @@ afterAll(async () => {
   await prismaBase.$disconnect();
 });
 
-describe('a planted tenantId in tool input is ignored (all 14 tools)', () => {
+describe('a planted tenantId in tool input is ignored (all 15 tools)', () => {
   it('registry path: the handler never sees a tenant key, runs in the actor tenant, and the audit rows stay in A', async () => {
     const { a, b } = pair;
     const ctx = await toolActorContext(a.id, 'mcp');
@@ -130,7 +134,7 @@ describe('a planted tenantId in tool input is ignored (all 14 tools)', () => {
     await prismaBase.order.update({ where: { id: a.ids.order }, data: { status: 'confirmed' } });
     const bRowsBefore = await toolAuditCount(b.id);
     let id = 0;
-    for (const [tool, args] of Object.entries(argsFor())) {
+    for (const [tool, args] of LEGACY_ONLY(argsFor())) {
       const spy = spyHandler(tool);
       try {
         const aBefore = (await toolAuditRows(a.id, tool)).length;

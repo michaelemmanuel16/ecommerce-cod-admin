@@ -15,6 +15,8 @@ export const TOOL_PERMISSIONS = {
   orders_search: 'orders:view',
   orders_summary: 'orders:view',
   orders_update_status: 'orders:update_status',
+  // M5-T10: the one generic partner payout action; the key's role needs the payouts permission (decision O7)
+  partner_payout_record: 'payouts:create',
   products_inventory: 'products:view',
   reps_status: 'users:view',
   reps_performance: 'analytics:view',

@@ -2,6 +2,7 @@ import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import { Prisma } from '@prisma/client';
 import agentReconciliationService from '../../services/agentReconciliationService';
 import prisma from '../../utils/prisma';
+import { GLAutomationService } from '../../services/glAutomationService';
 import { AppError } from '../../middleware/errorHandler';
 
 // Mock appEvents
@@ -59,6 +60,7 @@ jest.mock('../../utils/prisma', () => ({
         },
         order: {
             update: jest.fn(),
+            updateMany: jest.fn(),
             count: jest.fn(),
             findUnique: jest.fn(),
         },
@@ -84,7 +86,7 @@ jest.mock('../../utils/socketInstance', () => ({
 
 jest.mock('../../services/glAutomationService', () => ({
     GLAutomationService: {
-        createAgentDepositEntry: jest.fn().mockImplementation(() => Promise.resolve({} as any)),
+        createAgentDepositEntry: jest.fn().mockImplementation(() => Promise.resolve({ entry: {}, excessFindingId: null } as any)),
         voidJournalEntry: jest.fn().mockImplementation(() => Promise.resolve({} as any)),
     },
 }));
@@ -105,6 +107,7 @@ describe('AgentReconciliationService', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         mockPrisma.$transaction.mockImplementation((cb: any) => cb(mockTx));
+        (GLAutomationService.createAgentDepositEntry as any).mockResolvedValue({ entry: {}, excessFindingId: null });
         mockTx.$queryRaw.mockResolvedValue([]);
         mockTx.agentDeposit.updateMany.mockResolvedValue({ count: 1 }); // the claim of a pending deposit
         mockTx.agentCollection.updateMany.mockResolvedValue({ count: 1 }); // the claim of a part-covered collection
@@ -158,7 +161,7 @@ describe('AgentReconciliationService', () => {
 
             const result = await agentReconciliationService.verifyCollection(collectionId, verifierId);
 
-            expect(mockTx.agentCollection.update).toHaveBeenCalled();
+            expect(mockTx.agentCollection.updateMany).toHaveBeenCalled();
             expect(mockTx.journalEntry.create).not.toHaveBeenCalled();
             expect(result.status).toBe('reconciled');
         });
@@ -195,7 +198,7 @@ describe('AgentReconciliationService', () => {
 
             const result = await agentReconciliationService.approveCollection(collectionId, approverId);
 
-            expect(mockTx.agentCollection.update).toHaveBeenCalled();
+            expect(mockTx.agentCollection.updateMany).toHaveBeenCalled();
             expect(mockTx.agentBalance.update).toHaveBeenCalledWith({
                 where: { id: balance.id },
                 data: {
@@ -204,7 +207,7 @@ describe('AgentReconciliationService', () => {
                 },
             });
 
-            expect(result.status).toBe('approved');
+            expect(result.status).toBe('reconciled'); // approve is verify: one step to reconciled
         });
     });
 
@@ -465,7 +468,7 @@ describe('AgentReconciliationService', () => {
             expect(results).toHaveLength(2);
             expect(results[0].status).toBe('reconciled');
             expect(results[1].status).toBe('reconciled');
-            expect(mockTx.agentCollection.update).toHaveBeenCalledTimes(2);
+            expect(mockTx.order.updateMany).toHaveBeenCalledTimes(2);
         });
 
         it('should fail entirely if one verification fails (atomicity)', async () => {
