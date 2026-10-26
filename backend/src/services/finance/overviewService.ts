@@ -17,8 +17,12 @@ import { getTenantId, resolveTenantId } from '../../utils/tenantContext';
 import { getCurrency } from '../../utils/currency';
 import { fullName } from '../../utils/nameUtils';
 import { formatOrderNumber } from '../../utils/orderNumber';
-import { getStoreTimeZone, localDate, parseYmd, shiftYmd, startOfDay } from '../kpi/dates';
+import { getStoreTimeZone, localDate, parseYmd, shiftYmd, startOfDay, utcDateOfYmd } from '../kpi/dates';
 import { deliveredAov, deliveredRevenue } from '../kpi/revenue';
+import { coveringTarget, paceMarker, type Period } from '../kpi/leadership';
+import { progressTag } from '../kpi/status';
+import { ratePercent } from '../kpi/rates';
+import { profitByProduct } from './profitService';
 import { TARGET_NET_MARGIN, incomeStatementOver } from './statementsService';
 import { cashBalances, cashBuckets } from './cashFlowService';
 import agingService from '../agingService';
@@ -95,11 +99,28 @@ export async function financeOverview(opts: OverviewOptions) {
   const revenue = once(() => deliveredRevenue(tenantId, from, to));
   const statement = once(() => incomeStatementOver(from, to));
   const unpaid = once(() => agingService.getUnpaidByAge());
-  const deposits = once(() => prisma.agentDeposit.aggregate({
-    where: { status: 'verified', depositDate: { gte: from, lt: to } },
-    _sum: { amount: true },
-    _count: true,
-  }));
+  // Cash received (F-902): verified deposits and settlement payouts dated in the range. A payout recorded through a settlement
+  // also writes a verified deposit (settlementId set); that one is left out here so the same cash is not counted twice.
+  const cashIn = once(async () => {
+    const [d, p] = await Promise.all([
+      prisma.agentDeposit.aggregate({
+        where: { status: 'verified', settlementId: null, depositDate: { gte: from, lt: to } },
+        _sum: { amount: true }, _count: true,
+      }),
+      prisma.partnerSettlement.aggregate({ where: { payoutDate: { gte: from, lt: to } }, _sum: { payoutAmount: true }, _count: true }),
+    ]);
+    return { amount: Money.add(Money.orZero(d._sum.amount), Money.orZero(p._sum.payoutAmount)), payouts: d._count + p._count };
+  });
+  // The tenant-wide revenue target that covers the range (a month, quarter or year target the range starts on), with the
+  // Dashboard's tag rule: progress against the pace marker of the period.
+  const revenueTarget = once(async () => {
+    const target = await coveringTarget(tenantId, 'revenue', utcDateOfYmd(toDay));
+    const period: Period | null = target?.scope === 'month' ? 'month' : target?.scope === 'quarter' ? 'quarter' : target?.scope === 'north_star' ? 'year' : null;
+    if (!target || !period || Money.parse(target.value).lte(0) || target.periodStart.toISOString().slice(0, 10) !== fromDay) return null;
+    const r = await revenue();
+    const percent = ratePercent(Money.parse(r.total.value).toNumber(), Money.parse(target.value).toNumber());
+    return { value: Money.toApi(target.value), scope: target.scope, percent, status: progressTag(percent, paceMarker(parseYmd(toDay), period).percent) };
+  });
   const runwayData = once(async () => {
     const [balances, ads] = await Promise.all([
       cashBalances(),
@@ -129,22 +150,24 @@ export async function financeOverview(opts: OverviewOptions) {
       const r = await revenue();
       const orders = r.deliveredOrders.value;
       const aov = deliveredAov(r).value;
+      // A missing or failing target read only drops the tag; the revenue stays
+      const target = await revenueTarget().catch((error) => { logger.error('Finance overview: revenue target failed', { error }); return null; });
       return okTile({
         key: 'deliveredRevenue', label: 'Delivered revenue', unit: 'money', dateBasis: 'range', tone: 'neutral',
         value: r.total.value,
-        tooltip: `Orders delivered ${span}, counted on the delivery date. Includes paid digital orders. Returns leave in the month they come back.`,
-        detail: { deliveredOrders: orders, averageOrderValue: aov ?? NOT_AVAILABLE, ofWhichDigital: r.digital.value, ofWhichPhysical: r.physical.value, currency: r.total.currency },
+        tooltip: `By delivery date. Orders delivered ${span}. Includes paid digital orders. Returns leave in the month they come back.`,
+        detail: { deliveredOrders: orders, averageOrderValue: aov ?? NOT_AVAILABLE, ofWhichDigital: r.digital.value, ofWhichPhysical: r.physical.value, currency: r.total.currency, target },
       });
     }),
 
     tile('cashReceived', 'Cash received', async () => {
-      const [d, r] = await Promise.all([deposits(), revenue()]);
-      const received = Money.orZero(d._sum.amount);
+      const [d, r] = await Promise.all([cashIn(), revenue()]);
+      const received = d.amount;
       return okTile({
         key: 'cashReceived', label: 'Cash received', unit: 'money', dateBasis: 'range', tone: 'ok',
         value: Money.toApi(received),
-        tooltip: `Cash that delivery partners paid in ${span}, counted on the payout or deposit date. Only verified payouts count.`,
-        detail: { payouts: d._count, percentOfDeliveredRevenue: Money.percentOrNull(received, r.total.value, 0) },
+        tooltip: `By payment date. Cash that delivery partners paid in ${span}: verified deposits and settlement payouts.`,
+        detail: { payouts: d.payouts, percentOfDeliveredRevenue: Money.percentOrNull(received, r.total.value, 0) },
       });
     }),
 
@@ -154,7 +177,7 @@ export async function financeOverview(opts: OverviewOptions) {
         key: 'cashOutstanding', label: 'Cash outstanding', unit: 'money', dateBasis: 'today',
         tone: u.overdue.orders > 0 ? 'warn' : 'ok',
         value: u.total.amount,
-        tooltip: 'Delivered orders whose cash a partner still holds, as of today, net of the delivery fee the partner keeps. Not limited to the dates you picked.',
+        tooltip: 'As of today. Delivered orders whose cash a partner still holds, net of the delivery fee the partner keeps. Not limited to the dates you picked.',
         detail: { orders: u.total.orders, overdueOrders: u.overdue.orders, overdueAmount: u.overdue.amount },
       });
     }),
@@ -166,7 +189,7 @@ export async function financeOverview(opts: OverviewOptions) {
         key: 'netMargin', label: 'Net margin', unit: 'percent', dateBasis: 'range',
         tone: pct === null ? 'neutral' : pct >= TARGET_NET_MARGIN ? 'ok' : pct >= 0 ? 'warn' : 'bad',
         value: pct ?? NOT_AVAILABLE,
-        tooltip: `Net profit as a share of revenue, from the ledger entries dated ${span}. Product cost, delivery fees, Meta spend, rep commission, Paystack fees and other expenses are all taken off. Target ${TARGET_NET_MARGIN}%.`,
+        tooltip: `By ledger entry date. Net profit as a share of revenue, from the entries dated ${span}. Product cost, delivery fees, Meta spend, rep commission, Paystack fees and other expenses are all taken off. Target ${TARGET_NET_MARGIN}%.`,
         detail: {
           target: TARGET_NET_MARGIN, netProfit: s.netProfit, revenue: s.revenue,
           expenses: {
@@ -181,12 +204,19 @@ export async function financeOverview(opts: OverviewOptions) {
       const [s, r] = await Promise.all([statement(), revenue()]);
       const orders = r.deliveredOrders.value;
       const per = orders > 0 ? Money.roundHalfUp(Money.div(s.netProfit, orders), 2) : null;
+      // The product with the most delivered orders, from profit by product (before rep commission). Best effort: the tile stands without it.
+      const topProduct = await profitByProduct(from, to).then((p) => {
+        const top = [...p.products].sort((a, b) => b.delivered - a.delivered || a.productId - b.productId)[0];
+        return top && top.profitPerDeliveredOrder !== null
+          ? { name: top.name, delivered: top.delivered, profitPerOrder: top.profitPerDeliveredOrder, beforeRepCommission: true as const }
+          : null;
+      }).catch((error) => { logger.error('Finance overview: profit by product failed', { error }); return null; });
       return okTile({
         key: 'profitPerOrder', label: 'Profit per delivered order', unit: 'money', dateBasis: 'range',
         tone: per === null ? 'neutral' : per.lt(0) ? 'bad' : 'ok',
         value: per === null ? NOT_AVAILABLE : Money.toApi(per),
-        tooltip: `Net profit from the ledger entries dated ${span}, divided by the orders delivered in the same dates.`,
-        detail: { netProfit: s.netProfit, deliveredOrders: orders },
+        tooltip: `By delivery date. Net profit of ${span} after rep commission, divided by the orders delivered in the same dates.`,
+        detail: { netProfit: s.netProfit, deliveredOrders: orders, topProduct },
       });
     }),
 
@@ -195,7 +225,7 @@ export async function financeOverview(opts: OverviewOptions) {
       return okTile({
         key: 'cashRunway', label: 'Cash runway', unit: 'days', dateBasis: 'today', tone: w.tone,
         value: w.days ?? NOT_AVAILABLE,
-        tooltip: `Cash at bank and with partners as of today, divided by the average daily Meta spend of the last ${RUNWAY_AD_DAYS} days. How many days of ads the cash pays for.`,
+        tooltip: `As of today. Cash at bank and with partners, divided by the average daily Meta spend of the last ${RUNWAY_AD_DAYS} days. How many days of ads the cash pays for.`,
         detail: { level: w.level, cash: w.cash, adsPerDay: w.adsPerDay, adDays: w.adDays },
       });
     }),

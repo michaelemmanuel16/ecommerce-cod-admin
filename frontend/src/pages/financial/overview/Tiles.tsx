@@ -2,7 +2,8 @@ import type { ReactNode } from 'react';
 import { CircleDollarSign, Fuel, Hourglass, Info, Package, Percent, TriangleAlert, Wallet } from 'lucide-react';
 import { Button, Skeleton, Tag, Tile, Tooltip, type TileTone } from '../../../components/ui-v2';
 import { NOT_AVAILABLE, type OkTile, type Tile as TileData, type TileKey } from '../../../services/finance-overview.service';
-import { isOk, money, plural, TAG_TONE, TILE_ORDER, wholePct } from './model';
+import { compactMoney } from '../../dashboard/format';
+import { isOk, money, plural, TAG_TONE, TARGET_TAG, TILE_ORDER, wholePct } from './model';
 
 const ICON: Record<TileKey, { icon: ReactNode; tone: TileTone; label: string }> = {
   deliveredRevenue: { icon: <CircleDollarSign />, tone: 'pine', label: 'Delivered revenue' },
@@ -13,6 +14,7 @@ const ICON: Record<TileKey, { icon: ReactNode; tone: TileTone; label: string }> 
   cashRunway: { icon: <Fuel />, tone: 'gold', label: 'Cash runway, in days of ads' },
 };
 
+const targetTag = (status: string) => TARGET_TAG[status as keyof typeof TARGET_TAG];
 const toneClass = (t: OkTile) => (t.tone === 'bad' ? 'neg' : undefined);
 
 /** Label with the tooltip that carries the date basis. */
@@ -35,8 +37,10 @@ function parts(t: OkTile, currency: string): { value: ReactNode; footer: ReactNo
     case 'deliveredRevenue':
       return {
         value: money(t.value, currency),
-        footer: <span>{plural(d.deliveredOrders, 'order')} · AOV {money(d.averageOrderValue, currency)}</span>,
-        delta: <>Of which digital {money(d.ofWhichDigital, currency)}</>,
+        footer: d.target
+          ? <><span>Target {compactMoney(d.target.value, currency)}</span><Tag tone={targetTag(d.target.status).tone}>{targetTag(d.target.status).label}</Tag></>
+          : <span>{plural(d.deliveredOrders, 'order')} · AOV {money(d.averageOrderValue, currency)}</span>,
+        delta: <>{d.target && <>{plural(d.deliveredOrders, 'order')} · AOV {money(d.averageOrderValue, currency)}. </>}Of which digital {money(d.ofWhichDigital, currency)}</>,
       };
     case 'cashReceived':
       return {
@@ -57,7 +61,10 @@ function parts(t: OkTile, currency: string): { value: ReactNode; footer: ReactNo
     case 'profitPerOrder':
       return {
         value: <span className={toneClass(t)}>{money(t.value, currency)}</span>,
-        footer: <><span>{plural(d.deliveredOrders, 'delivered order')}</span>{!na && tag(t.tone === 'bad' ? 'Loss' : 'Profit')}</>,
+        footer: <>
+          <span>{d.topProduct ? `${d.topProduct.name} ${money(d.topProduct.profitPerOrder, currency)} (before rep commission)` : plural(d.deliveredOrders, 'delivered order')}</span>
+          {!na && tag(t.tone === 'bad' ? 'Loss' : 'Profit')}
+        </>,
       };
     case 'cashRunway':
       return {

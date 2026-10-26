@@ -59,17 +59,19 @@ beforeAll(async () => {
         lines: { create: Array.from({ length: 2 }, (_, i) => ({ tenantId: a, externalOrderRef: `${reference}-${i}`, expAmount: expected / 2, matched: true })) },
       },
     });
-  await settle('Logiswift', '2026-10-11', 9880, 10720, 'short', 'LS-11OCT');
+  const logiswiftSettlement = await settle('Logiswift', '2026-10-11', 9880, 10720, 'short', 'LS-11OCT');
   await settle('Kofi', '2026-10-09', 3136, 3136, 'matched', 'KA-9OCT');
   await settle('Esi', '2026-10-08', 2788, 2688, 'over', 'EB-8OCT');
   await settle('Kofi', '2026-09-30', 500, 500, 'matched', 'KA-30SEP'); // outside the range
-  const deposit = (partner: string, amount: number, date: string, status: 'verified' | 'pending', ref: string) =>
-    prismaBase.agentDeposit.create({ data: { tenantId: a, agentId: partnerIds[partner], amount, status, depositDate: new Date(`${date}T00:00:00.000Z`), depositMethod: 'momo', referenceNumber: ref } });
-  await deposit('Kofi', 3136, '2026-10-09', 'verified', 'OV-1');
-  await deposit('Logiswift', 9880, '2026-10-11', 'verified', 'OV-2');
+  const deposit = (partner: string, amount: number, date: string, status: 'verified' | 'pending', ref: string, settlementId?: number) =>
+    prismaBase.agentDeposit.create({ data: { tenantId: a, agentId: partnerIds[partner], amount, status, depositDate: new Date(`${date}T00:00:00.000Z`), depositMethod: 'momo', referenceNumber: ref, settlementId } });
+  await deposit('Kofi', 3136, '2026-10-09', 'verified', 'OV-1'); // a direct deposit
+  await deposit('Logiswift', 9880, '2026-10-11', 'verified', 'OV-2', logiswiftSettlement.id); // the deposit the payout wrote: not counted twice
   await deposit('Esi', 777, '2026-10-12', 'pending', 'OV-3'); // not verified: not cash received
   await deposit('Kofi', 400, '2026-10-20', 'verified', 'OV-4'); // after the range
 
+  // Tenant B: a month target of 100 (59 delivered by 12 Oct is ahead of the 12/31 pace)
+  await prismaBase.target.create({ data: { tenantId: b, scope: 'month', metric: 'revenue', unit: 'money', periodStart: new Date('2026-10-01'), periodEnd: new Date('2026-10-31'), value: 100 } });
   // Tenant B: a paid digital order of GH₵59 (4020) with a Paystack fee of 1.50 (5060) and a payout of its own
   const worldB: SettlementWorld = { tenantId: b, customerId: await mkCustomer(b, '+233241000009'), actorId: ownerB.id };
   await mkOrder(worldB, null, 'digital_delivered', { total: 59, paymentStatus: 'paid', deliveryDate: new Date('2026-10-12T10:00:00.000Z'), orderType: 'digital' });
@@ -85,6 +87,7 @@ afterEach(() => { jest.restoreAllMocks(); });
 afterAll(async () => {
   await prismaBase.partnerSettlement.deleteMany({ where: { tenantId: { in: [a, b] } } });
   await prismaBase.agentDeposit.deleteMany({ where: { tenantId: a } });
+  await prismaBase.target.deleteMany({ where: { tenantId: b } });
   await deleteTenantRows([b]);
   await deleteFixtureRows(prismaBase, a);
   await prismaBase.tenant.deleteMany({ where: { slug: FIXTURE_SLUG } });
@@ -133,11 +136,21 @@ describe('GET /api/financial/overview on the NUMBERS fixture', () => {
     expect(t.dateBasis).toBe('today');
   });
 
-  it('cash received counts verified payouts inside the range only', async () => {
+  it('cash received is verified deposits plus settlement payouts in the range, and counts a payout once', async () => {
     const t = tileOf((await overview(owner)).body, 'cashReceived');
-    expect(t.value).toBe('13016.00'); // 3,136 + 9,880. Not the pending 777, not the one on 20 Oct
-    expect(t.detail.payouts).toBe(2);
-    expect(t.detail.percentOfDeliveredRevenue).toBe(14);
+    // Direct deposit 3,136 + payouts 9,880 + 3,136 + 2,788. Not the pending 777, the deposit of 20 Oct, the payout of 30 Sep,
+    // or the deposit the Logiswift payout wrote (already in the payout).
+    expect(t.value).toBe('18940.00');
+    expect(t.detail.payouts).toBe(4);
+    expect(t.detail.percentOfDeliveredRevenue).toBe(21);
+  });
+
+  it('a settlement payout inside the range counts and one outside does not', async () => {
+    const inRange = tileOf((await overview(owner, 'from=2026-10-01&to=2026-10-31&asOf=2026-10-31')).body, 'cashReceived');
+    const septOnly = tileOf((await overview(owner, 'from=2026-09-01&to=2026-09-30&asOf=2026-09-30')).body, 'cashReceived');
+    expect(inRange.value).toBe('19340.00'); // the whole month also takes the 400 deposit of 20 Oct
+    expect(septOnly.value).toBe('500.00'); // only the 30 Sep payout
+    expect(septOnly.detail.payouts).toBe(1);
   });
 
   it('cash outstanding and unpaid by age come from the aging service and agree', async () => {
@@ -171,7 +184,7 @@ describe('GET /api/financial/overview on the NUMBERS fixture', () => {
     const text = JSON.stringify(res.body);
     expect(res.body.tiles.every((t: any) => typeof t.tooltip === 'string' && t.tooltip.length > 20)).toBe(true);
     expect(tileOf(res.body, 'deliveredRevenue').tooltip).toContain('1 Oct to 17 Oct');
-    expect(tileOf(res.body, 'cashOutstanding').tooltip).toContain('as of today');
+    expect(tileOf(res.body, 'cashOutstanding').tooltip).toContain('As of today');
     expect(text).not.toMatch(/26%|delivery rate/i);
     expect(text).not.toMatch(/NaN|Infinity/);
   });
@@ -195,6 +208,39 @@ describe('GET /api/financial/overview on the NUMBERS fixture', () => {
     expect(res.body.runway.days).toBeNull();
     expect(res.body.runway.level).toBe('no_ads');
     expect(tileOf(res.body, 'cashRunway').value).toBe('n/a');
+  });
+
+  it('the revenue tile carries the month target and the Dashboard tag: 51% against a 55% pace is off track', async () => {
+    const t = tileOf((await overview(owner)).body, 'deliveredRevenue');
+    expect(t.detail.target).toMatchObject({ value: '180000.00', scope: 'month', percent: 51.1, status: 'off_track' });
+  });
+
+  it('a target that is ahead of the pace is on track; a range the target does not cover has no tag', async () => {
+    const onTrack = tileOf((await overview(ownerB, 'from=2026-10-01&to=2026-10-12&asOf=2026-10-12')).body, 'deliveredRevenue');
+    expect(onTrack.detail.target).toMatchObject({ value: '100.00', percent: 59, status: 'on_track' });
+    const partial = tileOf((await overview(owner, 'from=2026-10-05&to=2026-10-17&asOf=2026-10-17')).body, 'deliveredRevenue');
+    expect(partial.detail.target).toBeNull(); // does not start on the target's first day
+    const none = tileOf((await overview(owner, 'from=2026-09-01&to=2026-09-30&asOf=2026-09-30')).body, 'deliveredRevenue');
+    expect(none.detail.target).toBeNull(); // no September target
+  });
+
+  it('profit per order names the product with the most delivered orders, before rep commission', async () => {
+    const top = tileOf((await overview(owner)).body, 'profitPerOrder').detail.topProduct;
+    expect(top).toMatchObject({ beforeRepCommission: true });
+    expect(top.name).toMatch(/copybook/i);
+    expect(top.delivered).toBeGreaterThan(200);
+    expect(top.profitPerOrder).toMatch(/^-?\d+\.\d{2}$/);
+  });
+
+  it('every tooltip opens with its date basis label', async () => {
+    const b = (await overview(owner)).body;
+    const first = (key: string) => tileOf(b, key).tooltip.split('.')[0] + '.';
+    expect(first('deliveredRevenue')).toBe('By delivery date.');
+    expect(first('profitPerOrder')).toBe('By delivery date.');
+    expect(first('cashReceived')).toBe('By payment date.');
+    expect(first('netMargin')).toBe('By ledger entry date.');
+    expect(first('cashOutstanding')).toBe('As of today.');
+    expect(first('cashRunway')).toBe('As of today.');
   });
 
   it('with no dates it reads the current month to date', async () => {
@@ -244,7 +290,7 @@ describe('tenants and permissions', () => {
     expect(theirs.reconciliation.rows.map((r: any) => r.reference)).toEqual(['B-ONLY-REF']);
     expect(tileOf(theirs, 'deliveredRevenue').value).toBe('59.00');
     expect(theirs.unpaidByAge.total.orders).toBe(0);
-    expect(tileOf(theirs, 'cashReceived').value).toBe('0.00');
+    expect(tileOf(theirs, 'cashReceived').value).toBe('10.00'); // its own payout only
     expect(JSON.stringify(theirs)).not.toContain('LS-11OCT');
   });
 

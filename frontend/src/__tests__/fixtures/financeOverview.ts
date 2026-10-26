@@ -7,13 +7,13 @@ const ok = (t: Partial<OkTile> & Pick<OkTile, 'key' | 'label' | 'value' | 'unit'
 export const OVERVIEW: FinanceOverview = {
   from: '2026-10-01', to: '2026-10-17', asOf: '2026-10-17', currency: 'GHS',
   tiles: [
-    ok({ key: 'deliveredRevenue', label: 'Delivered revenue', unit: 'money', value: 92000, tooltip: 'Orders delivered 1 Oct to 17 Oct, counted on the delivery date.',
-      detail: { deliveredOrders: 376, averageOrderValue: 244.68, ofWhichDigital: 59 } }),
+    ok({ key: 'deliveredRevenue', label: 'Delivered revenue', unit: 'money', value: 92000, tooltip: 'By delivery date. Orders delivered 1 Oct to 17 Oct.',
+      detail: { deliveredOrders: 376, averageOrderValue: 244.68, ofWhichDigital: 59, target: { value: 180000, scope: 'month', percent: 51.1, status: 'off_track' } } }),
     ok({ key: 'cashReceived', label: 'Cash received', unit: 'money', value: 13016, tone: 'ok', detail: { payouts: 2, percentOfDeliveredRevenue: 14 } }),
     ok({ key: 'cashOutstanding', label: 'Cash outstanding', unit: 'money', value: 23400, dateBasis: 'today', tone: 'warn', detail: { orders: 94, overdueOrders: 38, overdueAmount: 17300 } }),
     ok({ key: 'netMargin', label: 'Net margin', unit: 'percent', value: -15.5, tone: 'bad',
       detail: { target: 35, netProfit: -14268, revenue: 92000, expenses: { total: 106268, paystackFees: 1.5 } } }),
-    ok({ key: 'profitPerOrder', label: 'Profit per delivered order', unit: 'money', value: -37.95, tone: 'bad', detail: { netProfit: -14268, deliveredOrders: 376 } }),
+    ok({ key: 'profitPerOrder', label: 'Profit per delivered order', unit: 'money', value: -37.95, tone: 'bad', detail: { netProfit: -14268, deliveredOrders: 376, topProduct: { name: 'Copybook set', delivered: 306, profitPerOrder: -57, beforeRepCommission: true } } }),
     ok({ key: 'cashRunway', label: 'Cash runway', unit: 'days', value: 9, dateBasis: 'today', tone: 'warn', detail: { level: 'tight', cash: 41900, adsPerDay: 4500, adDays: 7 } }),
   ],
   reconciliation: {

@@ -101,7 +101,7 @@ function periodSpan(day: Ymd, period: Period): { startMonth: number; months: num
 }
 
 /** Pace marker, percent to 1 decimal: days gone in the period / days in the period (straight days). */
-function paceMarker(day: Ymd, period: Period): { percent: number; daysGone: number; daysInPeriod: number } {
+export function paceMarker(day: Ymd, period: Period): { percent: number; daysGone: number; daysInPeriod: number } {
   const { startMonth, months } = periodSpan(day, period);
   let daysInPeriod = 0;
   for (let m = startMonth; m < startMonth + months; m++) daysInPeriod += daysInMonth(day.year, m);

@@ -41,6 +41,23 @@ describe('Finance Overview (M5-T34)', () => {
     expect(await tile('Cash runway, in days of ads')).toHaveTextContent('GH₵41,900 cash ÷ GH₵4,500 ads a day');
   });
 
+  it('shows the revenue target and its tag, and the by-product line of profit per order', async () => {
+    renderPage();
+    const rev = await tile('Delivered revenue');
+    expect(rev).toHaveTextContent('Target GH₵180k');
+    expect(rev).toHaveTextContent('Off track');
+    expect(await tile('Profit per delivered order')).toHaveTextContent('Copybook set -GH₵57 (before rep commission)');
+  });
+
+  it('with no target there is no target text or tag', async () => {
+    get.mockResolvedValue(withTiles((tiles) => tiles.map((t) => (t.key === 'deliveredRevenue' && t.status === 'ok' ? { ...t, detail: { ...t.detail, target: null } } : t))));
+    renderPage();
+    const rev = await tile('Delivered revenue');
+    expect(rev).not.toHaveTextContent('Target');
+    expect(rev).not.toHaveTextContent('Off track');
+    expect(rev).toHaveTextContent('376 orders');
+  });
+
   it('shows the digital line and the Paystack fee line', async () => {
     renderPage();
     expect(await tile('Delivered revenue')).toHaveTextContent('Of which digital GH₵59');
@@ -57,7 +74,7 @@ describe('Finance Overview (M5-T34)', () => {
     renderPage();
     const t = await tile('Delivered revenue');
     await userEvent.hover(within(t).getByRole('img', { name: 'About Delivered revenue' }));
-    expect(within(t).getByRole('tooltip')).toHaveTextContent('1 Oct to 17 Oct, counted on the delivery date');
+    expect(within(t).getByRole('tooltip')).toHaveTextContent('By delivery date. Orders delivered 1 Oct to 17 Oct.');
   });
 
   it('shows n/a for a figure with no basis', async () => {

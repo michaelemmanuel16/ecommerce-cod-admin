@@ -19,3 +19,11 @@ export const wholePct = (v: number | string): string => (typeof v === 'number' ?
 export const dayRange = (from: string, to: string) => (from === to ? shortDay(from) : `${shortDay(from)} to ${shortDay(to)}`);
 
 export const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('');
+
+/** The revenue target tag, same words as the Dashboard (kpi/status.ts progressTag). */
+export const TARGET_TAG: Record<'hit' | 'on_track' | 'behind' | 'off_track', { label: string; tone: 'ok' | 'warn' | 'bad' }> = {
+  hit: { label: 'Hit', tone: 'ok' },
+  on_track: { label: 'On track', tone: 'ok' },
+  behind: { label: 'Behind', tone: 'warn' },
+  off_track: { label: 'Off track', tone: 'bad' },
+};
