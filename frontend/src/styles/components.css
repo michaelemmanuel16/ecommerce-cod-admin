@@ -71,12 +71,13 @@
 
 /* modal (index.html .mveil / .dlg) */
 .v2 .mveil{position:fixed;inset:0;background:var(--veil);backdrop-filter:blur(3px);z-index:65;display:flex;align-items:center;justify-content:center;padding:20px}
-.v2 .dlg{width:520px;max-width:100%;max-height:90vh;overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-pop)}
+.v2 .dlg{width:520px;max-width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-pop)}
 .v2 .dlg .mh{display:flex;align-items:flex-start;gap:12px;padding:18px 20px 14px;border-bottom:1px solid var(--line)}
 .v2 .dlg .mh h3{font-size:19px;font-weight:800}
 .v2 .dlg .mh p{color:var(--ink-3);font-size:13px;margin-top:2px}
 .v2 .dlg .mh .ibtn{margin-left:auto;flex:none}
-.v2 .dlg .mb{padding:18px 20px;display:flex;flex-direction:column;gap:14px}
+/* Only the body scrolls, so the title and the footer buttons stay in view */
+.v2 .dlg .mb{padding:18px 20px;display:flex;flex-direction:column;gap:14px;overflow:auto;min-height:0}
 .v2 .dlg .mf{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end}
 /* modal sizes (Modal `size`): md is the 520px default; the mockup's .modal is 640px and .modal.wide 820px; wide is the 1120px history dialog */
 .v2 .dlg.lg{width:640px}
