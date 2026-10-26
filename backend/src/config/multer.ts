@@ -13,14 +13,14 @@ if (!fs.existsSync(uploadDir)) {
 // (or write them to disk as a fallback). See uploadController.ts.
 const storage = multer.memoryStorage();
 
-// File filter - only allow images
+// File filter - images, and PDF for expense receipts (F-919)
 const fileFilter = (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-  const allowedMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+  const allowedMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'];
 
   if (allowedMimeTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new AppError('Only image files are allowed (JPEG, PNG, GIF, WebP)', 400));
+    cb(new AppError('Only JPEG, PNG, GIF, WebP images and PDF files are allowed (max 15 MB)', 400));
   }
 };
 
@@ -69,7 +69,7 @@ export const handleUploadErrors = (err: any, _req: any, res: any, next: any) => 
   if (err instanceof multer.MulterError) {
     // Multer-specific errors
     if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ error: 'File too large (max 15MB)' });
+      return res.status(400).json({ error: 'File too large (max 15MB). Use a JPEG, PNG, WebP or PDF file under 15 MB.' });
     }
     if (err.code === 'LIMIT_FILE_COUNT') {
       return res.status(400).json({ error: 'Too many files (max 1)' });

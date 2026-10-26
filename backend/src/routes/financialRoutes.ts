@@ -36,8 +36,10 @@ router.post('/transactions/:id/reconcile', requireResourcePermission('financial'
 router.get('/expenses', requireResourcePermission('financial', 'view'), paginationValidation, validate, financialController.getAllExpenses);
 router.post('/expenses', requireResourcePermission('financial', 'create'), financialController.recordExpense);
 router.get('/expenses/breakdown', requireResourcePermission('financial', 'view'), financialController.getExpenseBreakdown);
-router.put('/expenses/:id', requireResourcePermission('financial', 'update'), financialController.updateExpense);
-router.delete('/expenses/:id', requireResourcePermission('financial', 'delete'), financialController.deleteExpense);
+router.get('/expense-categories', requireResourcePermission('financial', 'view', 'create'), financialController.getExpenseCategories);
+// Edit and delete: owner, admin and finance clerk (F-917). The ledger entry is reversed or replaced by the service.
+router.put('/expenses/:id', requireResourcePermission('expenses', 'edit'), financialController.updateExpense);
+router.delete('/expenses/:id', requireResourcePermission('expenses', 'delete'), financialController.deleteExpense);
 
 // Paystack payout to the bank: DR 1010, CR 1030 (F-934)
 router.post('/paystack-payouts', requirePermission(['super_admin', 'admin']), financialController.postPaystackPayout);

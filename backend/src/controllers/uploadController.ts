@@ -14,6 +14,10 @@ export const uploadImage = async (req: AuthRequest, res: Response): Promise<void
     }
 
     const file = req.file;
+    // A PDF must start with %PDF-, so a renamed file of another type is not stored as a receipt.
+    if (file.mimetype === 'application/pdf' && file.buffer.subarray(0, 5).toString('latin1') !== '%PDF-') {
+      throw new AppError('This file is not a valid PDF', 400);
+    }
     const tenantId = req.user?.tenantId;
     const key = buildImageKey(file.originalname, tenantId);
 

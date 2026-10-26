@@ -56,8 +56,8 @@ export const checkResourceOwnership = (
             return false;
 
         case 'expense':
-            // For expenses, we check if the requester is the one who recorded it
-            return resource.recordedBy === requester.id;
+            // The finance clerk manages every expense row (F-917); others only the rows they recorded
+            return requester.role === 'accountant' || resource.recordedBy === requester.id;
 
         case 'transaction':
             // For transactions, we check if the associated order belongs to the requester

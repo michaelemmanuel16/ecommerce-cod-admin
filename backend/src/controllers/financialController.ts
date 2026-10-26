@@ -17,6 +17,7 @@ import { addRowsWithMoney } from '../utils/xlsxMoney';
 import { readDateBound } from '../utils/kpiRequest';
 import { AppError } from '../middleware/errorHandler';
 import { recordPaystackPayout } from '../services/paystackPayoutService';
+import { EXPENSE_CATEGORIES, EXPENSE_PAID_FROM } from '../config/expenseCategories';
 
 export const getFinancialSummary = async (req: AuthRequest, res: Response): Promise<void> => {
   const { startDate, endDate } = req.query;
@@ -44,21 +45,28 @@ export const getAllTransactions = async (req: AuthRequest, res: Response): Promi
 
 export const recordExpense = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { category, amount, description, expenseDate } = req.body;
+    const { category, amount, description, expenseDate, paidFrom, receiptUrl } = req.body;
 
-    const expense = await financialService.recordExpense({
+    const { notice, ...expense } = await financialService.recordExpense({
       category,
       amount,
       description,
       expenseDate: new Date(expenseDate),
-      recordedBy: req.user!.id.toString()
+      recordedBy: req.user!.id.toString(),
+      paidFrom,
+      receiptUrl
     }, req.user);
 
-    res.status(201).json({ expense });
+    res.status(201).json({ expense, notice });
   } catch (error: any) {
     const status = error.statusCode || error.status || 500;
-    res.status(status).json({ error: error.message || 'Failed to record expense' });
+    res.status(status).json({ error: error.message || 'Failed to record expense', code: error.errorCode });
   }
+};
+
+/** GET /api/financial/expense-categories: the one category list, for the Add expense form. */
+export const getExpenseCategories = async (_req: AuthRequest, res: Response): Promise<void> => {
+  res.json({ categories: EXPENSE_CATEGORIES, paidFrom: EXPENSE_PAID_FROM });
 };
 
 export const getCODCollections = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -164,15 +172,16 @@ export const exportProfitabilityAnalysis = async (req: AuthRequest, res: Respons
 };
 
 export const getAllExpenses = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { category, startDate, endDate, page = 1, limit = 20 } = req.query;
+  const { category, search, startDate, endDate, page = 1, limit = 20 } = req.query;
 
   const result = await financialService.getAllExpenses({
     category: category as string | undefined,
+    search: search as string | undefined,
     startDate: readDateBound(startDate, 'from'),
     endDate: readDateBound(endDate, 'to'),
     page: Number(page),
     limit: Number(limit)
-  });
+  }, req.user);
 
   res.json(result);
 };
@@ -183,7 +192,7 @@ export const getExpenseBreakdown = async (req: AuthRequest, res: Response): Prom
   const breakdown = await financialService.getExpenseBreakdown({
     startDate: readDateBound(startDate, 'from'),
     endDate: readDateBound(endDate, 'to')
-  });
+  }, req.user);
 
   res.json({ breakdown });
 };
@@ -191,19 +200,21 @@ export const getExpenseBreakdown = async (req: AuthRequest, res: Response): Prom
 export const updateExpense = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { category, amount, description, expenseDate } = req.body;
+    const { category, amount, description, expenseDate, paidFrom, receiptUrl } = req.body;
 
-    const expense = await financialService.updateExpense(id, {
+    const { notice, ...expense } = await financialService.updateExpense(id, {
       category,
       amount,
       description,
-      expenseDate: expenseDate ? new Date(expenseDate) : undefined
+      expenseDate: expenseDate ? new Date(expenseDate) : undefined,
+      paidFrom,
+      receiptUrl
     }, req.user);
 
-    res.json({ expense });
+    res.json({ expense, notice });
   } catch (error: any) {
     const status = error.statusCode || error.status || 500;
-    res.status(status).json({ error: error.message || 'Failed to update expense' });
+    res.status(status).json({ error: error.message || 'Failed to update expense', code: error.errorCode });
   }
 };
 
@@ -211,12 +222,12 @@ export const deleteExpense = async (req: AuthRequest, res: Response): Promise<vo
   try {
     const { id } = req.params;
 
-    await financialService.deleteExpense(id, req.user);
+    const { message, notice } = await financialService.deleteExpense(id, req.user);
 
-    res.json({ message: 'Expense deleted successfully' });
+    res.json({ message, notice });
   } catch (error: any) {
     const status = error.statusCode || error.status || 500;
-    res.status(status).json({ error: error.message || 'Failed to delete expense' });
+    res.status(status).json({ error: error.message || 'Failed to delete expense', code: error.errorCode });
   }
 };
 

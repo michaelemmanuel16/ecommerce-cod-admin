@@ -28,6 +28,7 @@ import { useTestTenant, TEST_TENANT_ID } from '../mocks/tenant.mock';
 import { revenueResult } from '../mocks/kpiResults';
 import { deliveredRevenue } from '../../services/kpi/revenue';
 import { FinancialService } from '../../services/financialService';
+import { GLAutomationService } from '../../services/glAutomationService';
 import { AppError } from '../../middleware/errorHandler';
 import { PaymentStatus } from '@prisma/client';
 import * as Money from '../../utils/money';
@@ -139,7 +140,7 @@ describe('FinancialService', () => {
 
   describe('recordExpense', () => {
     const expenseData = {
-      category: 'Delivery',
+      category: 'Transport',
       amount: 500,
       description: 'Fuel costs',
       expenseDate: new Date('2024-01-15'),
@@ -156,13 +157,37 @@ describe('FinancialService', () => {
       };
 
       prismaMock.expense.create.mockResolvedValue(mockExpense as any);
+      (GLAutomationService.createExpenseGLEntry as jest.Mock<any>).mockResolvedValue({ id: 1, entryNumber: 'JE-001' });
 
       const expense = await financialService.recordExpense(expenseData);
 
       expect(expense).toBeDefined();
-      expect(expense.category).toBe('Delivery');
+      expect(expense.category).toBe('Transport');
       expect(expense.amount).toBe(500);
       expect(prismaMock.expense.create).toHaveBeenCalled();
+    });
+  });
+
+  describe('expense rows by role (F-917)', () => {
+    beforeEach(() => {
+      prismaMock.expense.findMany.mockResolvedValue([] as any);
+      prismaMock.expense.count.mockResolvedValue(0 as any);
+    });
+
+    it('a delivery agent sees only the rows they recorded', async () => {
+      await financialService.getAllExpenses({}, { id: 7, role: 'delivery_agent' } as any);
+      expect(prismaMock.expense.findMany.mock.calls[0][0]).toMatchObject({ where: { recordedBy: 7 } });
+    });
+
+    it('the finance clerk sees every row', async () => {
+      await financialService.getAllExpenses({}, { id: 8, role: 'accountant' } as any);
+      expect((prismaMock.expense.findMany.mock.calls[0][0] as any).where.recordedBy).toBeUndefined();
+    });
+
+    it('rejects a category that is not on the list', async () => {
+      await expect(financialService.recordExpense({
+        category: 'Airtime and rewards', amount: 10, description: 'x', expenseDate: new Date(), recordedBy: '1'
+      })).rejects.toThrow('Category must be one of');
     });
   });
 

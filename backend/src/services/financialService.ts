@@ -3,7 +3,7 @@ import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma, PaymentStatus } from '@prisma/client';
 import logger from '../utils/logger';
-import { checkResourceOwnership, Requester } from '../utils/authUtils';
+import { checkResourceOwnership, isManagerUp, Requester } from '../utils/authUtils';
 import { getSocketInstance } from '../utils/socketInstance';
 import {
   emitExpenseCreated,
@@ -19,7 +19,8 @@ import { getSystemUserId } from './systemUserService';
 import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 import { roleScope } from '../utils/kpiRequest';
-import { getStoreTimeZone, kpiWindow, parseInclusiveBound } from './kpi/dates';
+import { EXPENSE_PAID_FROM, matchExpenseCategory, EXPENSE_CATEGORIES } from '../config/expenseCategories';
+import { getStoreTimeZone, kpiWindow, localDate, parseInclusiveBound } from './kpi/dates';
 import { deliveredRevenue, revenueScope } from './kpi/revenue';
 import { PENDING_STATUSES } from './kpi/pending';
 
@@ -35,6 +36,44 @@ interface CreateExpenseData {
   expenseDate: Date;
   recordedBy: string;
   receiptUrl?: string;
+  paidFrom?: string | null;
+}
+
+/** Shown when an expense is dated in a month that has already ended (F-917). The entry is still saved. */
+export const CLOSED_MONTH_NOTICE = 'This month is closed; the P&L changes';
+
+/** The list entry for a category, or a 400 that names the list. */
+function expenseCategoryOrThrow(input: unknown): string {
+  const category = matchExpenseCategory(input);
+  if (!category) throw new AppError(`Category must be one of: ${EXPENSE_CATEGORIES.join(', ')}`, 400, 'EXPENSE_CATEGORY_INVALID');
+  return category;
+}
+
+/** `momo`, `bank` or `cash`; null and undefined mean "not given". */
+function paidFromOrThrow(input: unknown): (typeof EXPENSE_PAID_FROM)[number] | null {
+  if (input === undefined || input === null || input === '') return null;
+  if (!(EXPENSE_PAID_FROM as readonly unknown[]).includes(input)) {
+    throw new AppError(`Paid from must be one of: ${EXPENSE_PAID_FROM.join(', ')}`, 400, 'EXPENSE_PAID_FROM_INVALID');
+  }
+  return input as (typeof EXPENSE_PAID_FROM)[number];
+}
+
+/** A date in an earlier store-zone month than today is in a closed month. */
+function closedMonthNotice(...dates: Date[]): string | null {
+  const zone = getStoreTimeZone(getTenantId());
+  const thisMonth = localDate(new Date(), zone).slice(0, 7);
+  return dates.some((d) => localDate(d, zone).slice(0, 7) < thisMonth) ? CLOSED_MONTH_NOTICE : null;
+}
+
+/** Only the finance roles and the owner side see every expense row; others (a delivery agent) see the rows they recorded. */
+const seesAllExpenses = (requester?: Requester) =>
+  !requester || isManagerUp(requester) || requester.role === 'accountant';
+
+/** Rows posted by the system (Meta pull, delivery fee, AI) cannot be edited or deleted by hand (F-917). */
+function assertExpenseEditable(expense: { source: string }) {
+  if (expense.source !== 'manual') {
+    throw new AppError('This expense is posted by the system and cannot be edited or deleted by hand', 403, 'EXPENSE_LOCKED');
+  }
 }
 
 interface CashFlowForecast {
@@ -349,26 +388,32 @@ export class FinancialService {
   }
 
   /**
-   * Create expense record
+   * Create expense record. A manual expense posts DR 5100, CR 1010 dated by the expense date, and keeps the entry id.
+   * Every way of paying (cash, bank, MoMo) credits 1010, the one cash account. The result carries `notice` when the
+   * date is in a closed month.
    */
   async recordExpense(data: CreateExpenseData, requester?: Requester) {
     const amount = Money.tryParse(data.amount);
     if (!amount || amount.lte(0)) {
       throw new AppError('Expense amount must be a positive number', 400);
     }
+    const category = expenseCategoryOrThrow(data.category);
+    const paidFrom = paidFromOrThrow(data.paidFrom);
 
     const userId = requester ? requester.id : parseInt(data.recordedBy, 10);
 
     const expense = await prisma.$transaction(async (tx) => {
       const created = await tx.expense.create({
         data: {
-          category: data.category,
+          category,
           amount,
           description: data.description,
           expenseDate: data.expenseDate,
           recordedBy: userId,
           receiptUrl: data.receiptUrl,
-            },
+          paidFrom,
+          source: 'manual',
+        },
         include: {
           user: {
             select: {
@@ -380,17 +425,19 @@ export class FinancialService {
       });
 
       // Create GL journal entry for the expense
-      await GLAutomationService.createExpenseGLEntry(
+      const entry = await GLAutomationService.createExpenseGLEntry(
         tx as any,
         created.id,
         amount,
         data.description,
-        userId
+        userId,
+        data.expenseDate
       );
+      await tx.expense.update({ where: { id: created.id }, data: { journalEntryId: entry.id } });
 
       // Remap Prisma relation `user` → `recordedBy` for frontend compatibility
       const { user, ...rest } = created as any;
-      return { ...rest, recordedBy: user || null };
+      return { ...rest, journalEntryId: entry.id, recordedBy: user || null };
     }, TRANSACTION_CONFIG);
 
     // Invalidate forecast cache since expense data changed
@@ -408,14 +455,14 @@ export class FinancialService {
       emitExpenseCreated(ioInstance as any, expense);
     }
 
-    return expense;
+    return { ...expense, notice: closedMonthNotice(data.expenseDate) };
   }
 
   /**
-   * Get all expenses
+   * Get all expenses. `search` matches the description or the category. A delivery agent sees only their own rows.
    */
-  async getAllExpenses(filters: DateFilters & { category?: string; page?: number; limit?: number }, requester?: Requester) {
-    const { startDate, endDate, category, page = 1, limit = 20 } = filters;
+  async getAllExpenses(filters: DateFilters & { category?: string; search?: string; page?: number; limit?: number }, requester?: Requester) {
+    const { startDate, endDate, category, search, page = 1, limit = 20 } = filters;
 
     const where: Prisma.ExpenseWhereInput = {};
 
@@ -426,11 +473,15 @@ export class FinancialService {
     }
 
     if (category) where.category = category;
+    if (search?.trim()) {
+      where.OR = [
+        { description: { contains: search.trim(), mode: 'insensitive' } },
+        { category: { contains: search.trim(), mode: 'insensitive' } }
+      ];
+    }
 
-
-    // Role-based filtering for expenses
-    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
-      where.recordedBy = requester.id;
+    if (!seesAllExpenses(requester)) {
+      where.recordedBy = requester!.id;
     }
 
     const skip = (page - 1) * limit;
@@ -448,14 +499,15 @@ export class FinancialService {
             }
           }
         },
-        orderBy: { expenseDate: 'desc' }
+        orderBy: [{ expenseDate: 'desc' }, { id: 'desc' }]
       }),
       prisma.expense.count({ where })
     ]);
 
-    // Remap Prisma relation `user` → `recordedBy` for frontend compatibility
+    // Remap Prisma relation `user` → `recordedBy` for frontend compatibility. `locked` rows are read-only (F-917).
     const expenses = rawExpenses.map(({ user, ...rest }: any) => ({
       ...rest,
+      locked: rest.source !== 'manual',
       recordedBy: user || null
     }));
 
@@ -916,9 +968,8 @@ export class FinancialService {
 
 
 
-    // Role-based filtering for expense breakdown
-    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
-      where.recordedBy = requester.id;
+    if (!seesAllExpenses(requester)) {
+      where.recordedBy = requester!.id;
     }
 
     const breakdown = await prisma.expense.findMany({
@@ -928,7 +979,8 @@ export class FinancialService {
     const normalizedBreakdown: Record<string, { totalAmount: Money.Money; count: number }> = {};
 
     breakdown.forEach((item) => {
-      const category = item.category.trim().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ');
+      const category = matchExpenseCategory(item.category)
+        ?? item.category.trim().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ');
       if (!normalizedBreakdown[category]) {
         normalizedBreakdown[category] = { totalAmount: Money.ZERO, count: 0 };
       }
@@ -1215,7 +1267,8 @@ export class FinancialService {
   }
 
   /**
-   * Update an existing expense
+   * Update an existing expense. A new amount or date voids the old ledger entry (reversal kept) and posts a new one
+   * dated by the expense date. A change of category, description, paid from or receipt leaves the ledger alone.
    */
   async updateExpense(
     expenseId: string,
@@ -1224,11 +1277,18 @@ export class FinancialService {
       amount?: Money.MoneyInput;
       description?: string;
       expenseDate?: Date;
+      paidFrom?: string | null;
+      receiptUrl?: string | null;
     }
     , requester?: Requester) {
-    if (data.amount !== undefined && Money.parse(data.amount).lte(0)) {
-      throw new AppError('Expense amount must be a positive number', 400);
+    let newAmount: Money.Money | undefined;
+    if (data.amount !== undefined) {
+      const parsed = Money.tryParse(data.amount);
+      if (!parsed || parsed.lte(0)) throw new AppError('Expense amount must be a positive number', 400);
+      newAmount = parsed;
     }
+    const category = data.category !== undefined ? expenseCategoryOrThrow(data.category) : undefined;
+    const paidFrom = data.paidFrom !== undefined ? paidFromOrThrow(data.paidFrom) : undefined;
 
     const expense = await prisma.expense.findUnique({
       where: { id: parseInt(expenseId, 10) }
@@ -1237,6 +1297,7 @@ export class FinancialService {
     if (!expense) {
       throw new AppError('Expense not found', 404);
     }
+    assertExpenseEditable(expense);
 
     // Role-based ownership check for updating expense
     if (!checkResourceOwnership(requester!, expense, 'expense')) {
@@ -1245,17 +1306,18 @@ export class FinancialService {
 
     const numericId = parseInt(expenseId, 10);
     const actorId = requester?.id ?? await getSystemUserId();
+    const amountChanged = newAmount !== undefined && !newAmount.eq(expense.amount);
+    const dateChanged = data.expenseDate !== undefined && data.expenseDate.getTime() !== expense.expenseDate.getTime();
     const updated = await prisma.$transaction(async (tx) => {
-      // Void old GL entry before updating
-      await GLAutomationService.voidJournalEntry(tx as any, 'expense', numericId, actorId);
-
       const result = await tx.expense.update({
         where: { id: numericId },
         data: {
-          ...(data.category && { category: data.category }),
-          ...(data.amount !== undefined && { amount: data.amount }),
+          ...(category && { category }),
+          ...(newAmount !== undefined && { amount: newAmount }),
           ...(data.description && { description: data.description }),
-          ...(data.expenseDate && { expenseDate: data.expenseDate })
+          ...(data.expenseDate && { expenseDate: data.expenseDate }),
+          ...(paidFrom !== undefined && { paidFrom }),
+          ...(data.receiptUrl !== undefined && { receiptUrl: data.receiptUrl })
         },
         include: {
           user: {
@@ -1267,20 +1329,25 @@ export class FinancialService {
         }
       });
 
-      // Create new GL entry with updated amount
-      const newAmount = data.amount !== undefined ? data.amount : expense.amount;
-      const newDescription = data.description || expense.description;
-      await GLAutomationService.createExpenseGLEntry(
-        tx as any,
-        numericId,
-        newAmount,
-        newDescription,
-        actorId
-      );
+      let journalEntryId = result.journalEntryId;
+      if (amountChanged || dateChanged) {
+        // Void the old entry, then post the new one with the new amount and date
+        await GLAutomationService.voidJournalEntry(tx as any, 'expense', numericId, actorId);
+        const entry = await GLAutomationService.createExpenseGLEntry(
+          tx as any,
+          numericId,
+          result.amount,
+          result.description,
+          actorId,
+          result.expenseDate
+        );
+        journalEntryId = entry.id;
+        await tx.expense.update({ where: { id: numericId }, data: { journalEntryId } });
+      }
 
       // Remap Prisma relation `user` → `recordedBy` for frontend compatibility
       const { user, ...rest } = result as any;
-      return { ...rest, recordedBy: user || null };
+      return { ...rest, journalEntryId, recordedBy: user || null };
     }, TRANSACTION_CONFIG);
 
     // Invalidate forecast cache since expense data changed
@@ -1297,11 +1364,12 @@ export class FinancialService {
       emitExpenseUpdated(ioInstance as any, updated);
     }
 
-    return updated;
+    return { ...updated, notice: closedMonthNotice(updated.expenseDate, expense.expenseDate) };
   }
 
   /**
-   * Delete an expense
+   * Delete an expense. Its ledger entry is voided by a reversal first, so the account balances return to what
+   * they were before the expense.
    */
   async deleteExpense(expenseId: string, requester?: Requester) {
     const expense = await prisma.expense.findUnique({
@@ -1311,6 +1379,7 @@ export class FinancialService {
     if (!expense) {
       throw new AppError('Expense not found', 404);
     }
+    assertExpenseEditable(expense);
 
     // Role-based ownership check for deleting expense
     if (!checkResourceOwnership(requester!, expense, 'expense')) {
@@ -1342,7 +1411,7 @@ export class FinancialService {
       emitExpenseDeleted(ioInstance as any, expenseId);
     }
 
-    return { message: 'Expense deleted successfully' };
+    return { message: 'Expense deleted successfully', notice: closedMonthNotice(expense.expenseDate) };
   }
 
   /**

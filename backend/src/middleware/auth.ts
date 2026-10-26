@@ -72,6 +72,8 @@ function getDefaultPermissions() {
       settings: ['view', 'update'],
       calls: ['create', 'view', 'update', 'delete'],
       gl: ['create', 'view', 'update', 'delete'],
+      journal: ['post', 'void'],
+      expenses: ['edit', 'delete'],
       audit: ['view'],
     },
     admin: {
@@ -86,6 +88,7 @@ function getDefaultPermissions() {
       settings: ['view'],
       calls: ['create', 'view', 'update', 'delete'],
       gl: ['create', 'view', 'update', 'delete'],
+      expenses: ['edit', 'delete'],
       audit: ['view'],
     },
     manager: {
@@ -152,6 +155,8 @@ function getDefaultPermissions() {
       calls: [],
       settings: [],
       gl: ['create', 'view', 'update'],
+      journal: ['post', 'void'],
+      expenses: ['edit', 'delete'],
     },
   };
 }
