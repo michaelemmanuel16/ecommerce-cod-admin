@@ -7,7 +7,7 @@ import { checkMcp } from './rateLimiter';
 import { MCP_CONFIG } from './config';
 import { mcpError, mcpRateLimited, toMcpResult } from './utils';
 import { allowedTools, listTools, runTool, ToolContext } from '../tools/registry';
-import '../tools'; // registers the 14 tools
+import '../tools'; // registers the 15 tools
 
 // Import resource registrations
 import { registerResources } from './resources/schema';

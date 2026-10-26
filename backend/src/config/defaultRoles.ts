@@ -16,6 +16,9 @@ export function roleToolList(tools: unknown): string[] {
 
 export const LEGACY_MCP_ROLE_NAME = 'Legacy MCP (14 tools)';
 
+/** Tools added after the 14 that old MCP keys were issued with. The Legacy role never gets them: an old key must not gain a tool that moves money. */
+const ADDED_AFTER_LEGACY: readonly ToolName[] = ['partner_payout_record'];
+
 export const DEFAULT_ROLES: DefaultRole[] = [
   {
     name: 'Owner', area: 'Management', isSystem: false, tools: [...ALL_TOOL_NAMES],
@@ -47,7 +50,7 @@ export const DEFAULT_ROLES: DefaultRole[] = [
     contract: { purpose: 'Counts stock and prepares orders for dispatch.' },
   },
   {
-    name: LEGACY_MCP_ROLE_NAME, area: 'Integrations', isSystem: true, tools: [...ALL_TOOL_NAMES],
+    name: LEGACY_MCP_ROLE_NAME, area: 'Integrations', isSystem: true, tools: ALL_TOOL_NAMES.filter((t) => !ADDED_AFTER_LEGACY.includes(t)),
     contract: { purpose: 'Old MCP keys keep working with all 14 tools until the owner tightens them.' },
   },
 ];

@@ -37,7 +37,7 @@ describe('orders_update_status on the registry', () => {
     expect(def.kind).toBe('write');
     expect(def.allowedChannels).toEqual(['mcp']);
     expect(listTools().filter((t) => !t.allowedChannels).every((t) => t.kind === 'read')).toBe(true);
-    expect(listTools()).toHaveLength(14);
+    expect(listTools()).toHaveLength(15);
   });
 
   it.each(['chat', 'app'] as const)('a call from channel %s returns "not available" and changes nothing', async (channel) => {

@@ -108,6 +108,9 @@ async function makeKey(label: string, userRole: 'admin' | 'sales_rep' | 'super_a
 const toolRows = (tool: string) => toolAuditRows(pair.a.id, tool);
 
 /** Valid input per tool, aimed at tenant A's own rows. */
+/** The tools the Legacy MCP role holds: the registry without the tools added after the 14. */
+const legacyToolNames = () => listTools().map((t) => t.name).filter((n) => n !== 'partner_payout_record').sort();
+
 const argsFor = (): Record<string, Record<string, unknown>> => ({
   orders_search: { limit: 5 },
   orders_summary: { period: 'month' },
@@ -163,9 +166,9 @@ describe.each(TRANSPORTS)('Done when 1: one audit row per call over %s', (transp
   it('each of the 14 tools writes exactly one row with actor, kind, channel mcp, tool, input, status, duration', async () => {
     const caller = await connect(pair.a.mcpKey);
     try {
-      expect(await caller.list()).toEqual(listTools().map((t) => t.name).sort());
+      expect(await caller.list()).toEqual(legacyToolNames());
       const calls = argsFor();
-      expect(Object.keys(calls).sort()).toEqual(listTools().map((t) => t.name).sort());
+      expect(Object.keys(calls).sort()).toEqual(legacyToolNames());
 
       for (const [tool, args] of Object.entries(calls)) {
         const before = (await toolRows(tool)).length;
