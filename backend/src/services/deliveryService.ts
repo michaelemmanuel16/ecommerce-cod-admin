@@ -12,6 +12,7 @@ import agentReconciliationService from './agentReconciliationService';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitGLEntryCreated } from '../sockets/index';
 import * as Money from '../utils/money';
+import { partnerNetCash } from './feeRuleService';
 import { customerPhoneSearch } from '../utils/phone';
 
 
@@ -309,8 +310,7 @@ export class DeliveryService {
       // Create draft agent collection record with the net amount: the cash collected minus the delivery fee the
       // partner keeps (F-936). The state machine stamped the fee before it posted the revenue.
       if (orderWithItems.deliveryAgentId && Money.isNonZero(orderWithItems.codAmount)) {
-        const grossAmount = Money.orZero(orderWithItems.codAmount);
-        const netAmount = Money.sub(grossAmount, Money.orZero(orderWithItems.deliveryFee));
+        const netAmount = partnerNetCash(orderWithItems, Money.orZero(orderWithItems.codAmount));
 
         await agentReconciliationService.createDraftCollection(
           tx,

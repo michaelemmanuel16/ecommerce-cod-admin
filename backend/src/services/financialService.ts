@@ -1,7 +1,7 @@
 import { Parser } from 'json2csv';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
-import { Prisma, PaymentStatus, CollectionStatus } from '@prisma/client';
+import { Prisma, PaymentStatus } from '@prisma/client';
 import logger from '../utils/logger';
 import { checkResourceOwnership, Requester } from '../utils/authUtils';
 import { getSocketInstance } from '../utils/socketInstance';
@@ -22,6 +22,9 @@ import { roleScope } from '../utils/kpiRequest';
 import { getStoreTimeZone, kpiWindow, parseInclusiveBound } from './kpi/dates';
 import { deliveredRevenue, revenueScope } from './kpi/revenue';
 import { PENDING_STATUSES } from './kpi/pending';
+import { OPEN_COLLECTION_STATUSES, outstandingOf } from '../utils/collectionCash';
+import agentReconciliationService, { Cover } from './agentReconciliationService';
+import { partnerNetCash } from './feeRuleService';
 
 interface DateFilters {
   startDate?: Date;
@@ -746,10 +749,9 @@ export class FinancialService {
       });
 
       // The same entry a verified deposit posts (F-904): DR 1010, CR 1015, for the cash the partner kept net of its delivery fee.
-      // Only what no deposit has covered yet is posted: a collection's amount minus its allocatedAmount. Skipped: a collection
-      // already 'deposited' and one the old verify step posted (an agent_collection journal entry).
-      // Then the collections are marked covered ('deposited', allocatedAmount = amount) and the partner balance drops, exactly
-      // as verifying a deposit does, so a later deposit cannot match the same collections again.
+      // Only what no deposit has covered yet is posted: a collection's outstanding amount. Skipped: a collection already
+      // 'deposited' and one the old verify step posted (an agent_collection journal entry). The open collections are covered
+      // through the same claim a verified deposit uses, so a later deposit cannot match them again and the partner balance drops.
       const collections = await tx.agentCollection.findMany({
         where: { orderId: { in: orderIds } },
         select: { id: true, orderId: true, agentId: true, status: true, amount: true, allocatedAmount: true },
@@ -758,32 +760,22 @@ export class FinancialService {
         where: { sourceType: 'agent_collection', sourceId: { in: collections.map((c) => c.id) }, isVoided: false },
         select: { sourceId: true },
       })).map((e) => e.sourceId));
-      const open: CollectionStatus[] = ['draft', 'verified', 'approved'];
       const collectionOf = new Map(collections.map((c) => [c.orderId, c]));
-      const owed = (c: (typeof collections)[number]) =>
-        c.status === 'deposited' || oldPosted.has(c.id) ? Money.ZERO : Money.sub(c.amount, Money.orZero(c.allocatedAmount));
+      const isOpen = (c: (typeof collections)[number]) => (OPEN_COLLECTION_STATUSES as readonly string[]).includes(c.status);
+      const owed = (c: (typeof collections)[number]) => (c.status === 'deposited' || oldPosted.has(c.id) ? Money.ZERO : outstandingOf(c));
 
-      // Claim each open collection with a conditional update: if a deposit verify allocated it since we read it, count is 0
-      // and it counts toward neither the GL amount nor the balance drop.
-      const claimed = new Map<number, Money.Money>();
-      const dropByAgent = new Map<number, Money.Money>();
-      for (const coll of collections.filter((c) => open.includes(c.status) && owed(c).gt(0))) {
-        const won = await tx.agentCollection.updateMany({
-          where: { id: coll.id, status: { in: open }, allocatedAmount: coll.allocatedAmount },
-          data: { status: 'deposited', allocatedAmount: coll.amount },
-        });
-        if (won.count !== 1) continue;
-        claimed.set(coll.id, owed(coll));
-        dropByAgent.set(coll.agentId, Money.add(dropByAgent.get(coll.agentId) ?? Money.ZERO, owed(coll)));
-      }
+      const covers: Cover[] = collections.filter((c) => isOpen(c) && owed(c).gt(0)).map((c) => ({
+        id: c.id, agentId: c.agentId, amount: Money.parse(c.amount), allocated: Money.orZero(c.allocatedAmount), take: owed(c),
+      }));
+      const { byCollection, byAgent } = await agentReconciliationService.claimCovers(tx, covers);
 
       // The collection holds the net amount; with no collection the net is the transaction minus the fee stamped on the order
       const depositAmount = Money.sum(
         transactions.map((t) => {
           const coll = t.orderId == null ? undefined : collectionOf.get(t.orderId);
-          if (!coll) return Money.sub(t.amount, Money.orZero(t.order?.deliveryFee));
+          if (!coll) return partnerNetCash(t.order ?? {}, t.amount);
           // An open collection counts only if we won it; a reconciled one (no old posting) counts in full
-          return open.includes(coll.status) ? (claimed.get(coll.id) ?? Money.ZERO) : owed(coll);
+          return isOpen(coll) ? (byCollection.get(coll.id) ?? Money.ZERO) : owed(coll);
         })
       );
 
@@ -795,7 +787,7 @@ export class FinancialService {
         await GLAutomationService.createDepositGLEntry(tx as any, depositAmount, sourceId, userId);
       }
 
-      for (const [agentId, drop] of dropByAgent) {
+      for (const [agentId, drop] of byAgent) {
         await tx.agentBalance.updateMany({
           where: { agentId },
           data: { totalDeposited: { increment: drop }, currentBalance: { decrement: drop }, lastSettlementDate: new Date() },
@@ -1447,7 +1439,7 @@ export class FinancialService {
         by: ['agentId'],
         where: {
           agentId: { in: agentIds },
-          status: { in: ['draft', 'verified', 'approved'] }
+          status: { in: [...OPEN_COLLECTION_STATUSES] }
         },
         _count: { id: true },
       }),
@@ -1455,7 +1447,7 @@ export class FinancialService {
         by: ['agentId'],
         where: {
           agentId: { in: agentIds },
-          status: { in: ['draft', 'verified', 'approved'] }
+          status: { in: [...OPEN_COLLECTION_STATUSES] }
         },
         _min: { collectionDate: true },
       }),

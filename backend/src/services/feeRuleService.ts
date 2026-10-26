@@ -12,21 +12,22 @@ import { AppError } from '../middleware/errorHandler';
 import { Requester } from '../utils/authUtils';
 import { resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
-import { getStoreTimeZone, localDate, YMD } from './kpi/dates';
+import { getStoreTimeZone, localDate, parseYmd, utcDateOfYmd, ymdOfUtc } from './kpi/dates';
 import { auditService } from './auditService';
 import { openFindingOnce } from './findingService';
+import { loadPartner } from './deliveryPartnerAdminService';
 
-export const FEE_OUTCOMES: readonly FeeOutcome[] = ['delivered', 'failed', 'returned'];
+const FEE_OUTCOMES: readonly FeeOutcome[] = ['delivered', 'failed', 'returned'];
 
 /** The outcome an order status stands for, or null when the status carries no delivery fee. */
-export function feeOutcomeOf(status: OrderStatus): FeeOutcome | null {
+function feeOutcomeOf(status: OrderStatus): FeeOutcome | null {
   if (status === 'delivered') return 'delivered';
   if (status === 'failed_delivery') return 'failed';
   if (status === 'returned') return 'returned';
   return null;
 }
 
-export interface FeeRuleInput {
+interface FeeRuleInput {
   outcome?: unknown;
   basis?: unknown;
   amount?: unknown;
@@ -34,7 +35,22 @@ export interface FeeRuleInput {
   validFrom?: unknown;
 }
 
-const dateOf = (ymd: string): Date => new Date(`${ymd}T00:00:00.000Z`);
+/** Today in the store zone, as the DATE value a rule's `validFrom` is compared with. */
+export const storeToday = (tenantId?: string | null): Date => utcDateOfYmd(localDate(new Date(), getStoreTimeZone(tenantId)));
+
+/** The rule in force on `day` for each outcome: the latest `validFrom` on or before it. An outcome with no rule in force is absent. */
+export function currentFeeRules<T extends { outcome: FeeOutcome; validFrom: Date }>(rules: T[], day: Date): Partial<Record<FeeOutcome, T>> {
+  const current: Partial<Record<FeeOutcome, T>> = {};
+  for (const rule of rules) {
+    const held = current[rule.outcome];
+    if (rule.validFrom <= day && (!held || rule.validFrom > held.validFrom)) current[rule.outcome] = rule;
+  }
+  return current;
+}
+
+/** What a partner keeps from the cash it collects on an order: the gross minus the fee stamped on the order (F-936). */
+export const partnerNetCash = (order: { deliveryFee?: Money.MoneyInput | null }, gross: Money.MoneyInput): Money.Money =>
+  Money.sub(gross, Money.orZero(order.deliveryFee));
 
 /** One rule as the API returns it. */
 const ruleView = (r: { id: number; outcome: FeeOutcome; basis: FeeBasis; amount: Prisma.Decimal; validFrom: Date; createdById: number | null; createdAt: Date }) => ({
@@ -42,34 +58,27 @@ const ruleView = (r: { id: number; outcome: FeeOutcome; basis: FeeBasis; amount:
   outcome: r.outcome,
   basis: r.basis,
   amount: Money.toApi(r.amount),
-  validFrom: r.validFrom.toISOString().slice(0, 10),
+  validFrom: ymdOfUtc(r.validFrom),
   createdById: r.createdById,
   createdAt: r.createdAt,
 });
 
-async function requirePartner(partnerId: number): Promise<void> {
-  const partner = await prisma.user.findFirst({ where: { id: partnerId, role: 'delivery_agent' }, select: { id: true } });
-  if (!partner) throw new AppError('Delivery partner not found', 404);
-}
-
 /** All rules of a partner (history, newest first) and the rule in force today for each outcome. */
 export async function listFeeRules(partnerId: number) {
-  await requirePartner(partnerId);
+  await loadPartner(partnerId);
   const rules = await prisma.feeRule.findMany({
     where: { partnerUserId: partnerId },
     orderBy: [{ outcome: 'asc' }, { validFrom: 'desc' }],
   });
-  const today = dateOf(localDate(new Date(), getStoreTimeZone(resolveTenantId())));
-  const current: Record<FeeOutcome, ReturnType<typeof ruleView> | null> = { delivered: null, failed: null, returned: null };
-  for (const rule of rules) {
-    if (rule.validFrom <= today && !current[rule.outcome]) current[rule.outcome] = ruleView(rule);
-  }
+  const inForce = currentFeeRules(rules, storeToday(resolveTenantId()));
+  const current = Object.fromEntries(FEE_OUTCOMES.map((o) => [o, inForce[o] ? ruleView(inForce[o]!) : null])) as
+    Record<FeeOutcome, ReturnType<typeof ruleView> | null>;
   return { rules: rules.map(ruleView), current };
 }
 
 /** Validates and stores one rule. Percent above 100 and a second rule with the same valid-from are rejected. */
 export async function createFeeRule(requester: Requester, partnerId: number, input: FeeRuleInput) {
-  await requirePartner(partnerId);
+  await loadPartner(partnerId);
   const tenantId = resolveTenantId();
 
   if (!FEE_OUTCOMES.includes(input.outcome as FeeOutcome)) throw new AppError('Outcome must be delivered, failed or returned', 400, 'INVALID_OUTCOME');
@@ -83,15 +92,16 @@ export async function createFeeRule(requester: Requester, partnerId: number, inp
   const ymd = input.validFrom === undefined || input.validFrom === null || input.validFrom === ''
     ? localDate(new Date(), getStoreTimeZone(tenantId))
     : String(input.validFrom);
-  const parsed = YMD.exec(ymd);
-  if (!parsed || Number.isNaN(dateOf(ymd).getTime()) || dateOf(ymd).toISOString().slice(0, 10) !== ymd) {
+  try {
+    parseYmd(ymd);
+  } catch {
     throw new AppError('Valid from must be a date written YYYY-MM-DD', 400, 'INVALID_DATE');
   }
 
   try {
     const rule = await prisma.$transaction(async (tx) => {
       const created = await tx.feeRule.create({
-        data: { tenantId, partnerUserId: partnerId, outcome, basis, amount, validFrom: dateOf(ymd), createdById: requester.id },
+        data: { tenantId, partnerUserId: partnerId, outcome, basis, amount, validFrom: utcDateOfYmd(ymd), createdById: requester.id },
       });
       await auditService.record({
         actorId: requester.id, actorKind: 'person', channel: 'app',
@@ -110,14 +120,14 @@ export async function createFeeRule(requester: Requester, partnerId: number, inp
   }
 }
 
-export interface ResolvedFee {
+interface ResolvedFee {
   fee: Money.Money;
   /** False when the partner has no rule at all in force on the date (the fee is 0 and a Finding is raised). */
   hasRule: boolean;
 }
 
 /** The fee for one outcome on one date: the latest rule on or before the date; a percent rule applies to the order total. */
-export async function resolveFee(
+async function resolveFee(
   db: Pick<TransactionClient, 'feeRule'>,
   partnerId: number,
   outcome: FeeOutcome,
@@ -125,54 +135,48 @@ export async function resolveFee(
   orderTotal: Money.MoneyInput,
   tenantId?: string | null,
 ): Promise<ResolvedFee> {
-  const day = dateOf(localDate(on, getStoreTimeZone(tenantId)));
-  const rules = await db.feeRule.findMany({
-    where: { partnerUserId: partnerId, validFrom: { lte: day }, ...(tenantId ? { tenantId } : {}) },
-    orderBy: { validFrom: 'desc' },
-    select: { outcome: true, basis: true, amount: true },
-  });
-  const rule = rules.find((r) => r.outcome === outcome);
-  if (!rule) return { fee: Money.ZERO, hasRule: rules.length > 0 };
-  const fee = rule.basis === 'percent' ? Money.roundHalfUp(Money.mul(orderTotal, Money.div(rule.amount, 100)), 2) : Money.parse(rule.amount);
-  return { fee, hasRule: true };
+  const scope = { partnerUserId: partnerId, validFrom: { lte: utcDateOfYmd(localDate(on, getStoreTimeZone(tenantId))) }, ...(tenantId ? { tenantId } : {}) };
+  const rule = await db.feeRule.findFirst({ where: { ...scope, outcome }, orderBy: { validFrom: 'desc' }, select: { basis: true, amount: true } });
+  if (rule) {
+    const fee = rule.basis === 'percent' ? Money.roundHalfUp(Money.mul(orderTotal, Money.div(rule.amount, 100)), 2) : Money.parse(rule.amount);
+    return { fee, hasRule: true };
+  }
+  // No rule for this outcome: it is only "missing" when the partner has no rule in force at all
+  return { fee: Money.ZERO, hasRule: !!(await db.feeRule.findFirst({ where: scope, select: { id: true } })) };
 }
+
+export interface DeliveryFeeStamp { outcome: FeeOutcome; fee: Money.Money; on: Date }
 
 type StampOrder = { id: number; tenantId?: string | null; deliveryAgentId?: number | null; totalAmount: Prisma.Decimal | number | string };
 
 /**
- * Stamps `Order.deliveryFee` and `deliveryFeeSource` for the outcome the order just reached, in the move's transaction.
- * Moving to the same status again is not a move, so a repeat never gets here and never changes the fee.
- * A partner with no rule stamps 0 and raises `fee_rule_missing`, once per partner per day.
- * Leaving `delivered` for a status with no outcome clears the stamp (the delivered fee entry is reversed with the revenue).
+ * The delivery fee for the outcome an order just reached: `{ outcome, fee, on }`, or null when the status carries no
+ * delivery fee. The state machine writes `fee` to `Order.deliveryFee` (source `rule`) in the same update as the status,
+ * and posts it. Moving to the same status again is not a move, so a repeat never gets here and never changes the fee.
+ * A partner with no rule gives 0 and raises `fee_rule_missing`, once per partner per day.
  */
 export async function stampDeliveryFee(
   tx: TransactionClient,
   order: StampOrder,
-  from: OrderStatus,
   to: OrderStatus,
   on: Date,
-): Promise<{ outcome: FeeOutcome; fee: Money.Money } | null> {
+): Promise<DeliveryFeeStamp | null> {
   const outcome = feeOutcomeOf(to);
-  if (!outcome) {
-    if (from === 'delivered') await tx.order.update({ where: { id: order.id }, data: { deliveryFee: null, deliveryFeeSource: null } });
-    return null;
-  }
+  if (!outcome) return null;
 
   let fee: Money.Money = Money.ZERO;
   if (order.deliveryAgentId != null) {
     const resolved = await resolveFee(tx, order.deliveryAgentId, outcome, on, order.totalAmount, order.tenantId);
     fee = resolved.fee;
     if (!resolved.hasRule) {
-      const day = localDate(on, getStoreTimeZone(order.tenantId));
       await openFindingOnce({
         tenantId: resolveTenantId(order.tenantId),
         type: 'fee_rule_missing',
         subjectType: 'delivery_partner',
-        subjectId: `${order.deliveryAgentId}:${day}`,
+        subjectId: `${order.deliveryAgentId}:${localDate(on, getStoreTimeZone(order.tenantId))}`,
         note: 'This delivery partner has no fee rule. Orders closed today were stamped with a delivery fee of 0.',
       }, { includeClosed: true }, tx);
     }
   }
-  await tx.order.update({ where: { id: order.id }, data: { deliveryFee: fee, deliveryFeeSource: 'rule' } });
-  return { outcome, fee };
+  return { outcome, fee, on };
 }

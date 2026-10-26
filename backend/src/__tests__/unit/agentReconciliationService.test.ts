@@ -107,6 +107,7 @@ describe('AgentReconciliationService', () => {
         mockPrisma.$transaction.mockImplementation((cb: any) => cb(mockTx));
         mockTx.$queryRaw.mockResolvedValue([]);
         mockTx.agentDeposit.updateMany.mockResolvedValue({ count: 1 }); // the claim of a pending deposit
+        mockTx.agentCollection.updateMany.mockResolvedValue({ count: 1 }); // the claim of a part-covered collection
         mockTx.account.findUnique.mockResolvedValue({ id: 10 });
     });
 
@@ -274,6 +275,7 @@ describe('AgentReconciliationService', () => {
     });
 
     describe('verifyDeposit', () => {
+        useTestTenant(); // the claim of fully covered collections is tenant scoped
         it('should verify deposit, update balance, and perform FIFO matching to collections', async () => {
             const depositId = 1;
             const verifierId = 789;
@@ -282,29 +284,27 @@ describe('AgentReconciliationService', () => {
             const balance = { id: 10, agentId, currentBalance: 2000 };
 
             const collections = [
-                { id: 101, agentId, amount: 1000, status: 'approved', collectionDate: new Date('2024-01-01') },
-                { id: 102, agentId, amount: 500, status: 'approved', collectionDate: new Date('2024-01-02') },
-                { id: 103, agentId, amount: 1000, status: 'approved', collectionDate: new Date('2024-01-03') },
+                { id: 101, agentId, amount: 1000, allocatedAmount: 0, status: 'approved', collectionDate: new Date('2024-01-01') },
+                { id: 102, agentId, amount: 500, allocatedAmount: 0, status: 'approved', collectionDate: new Date('2024-01-02') },
+                { id: 103, agentId, amount: 1000, allocatedAmount: 0, status: 'approved', collectionDate: new Date('2024-01-03') },
             ];
 
             mockTx.agentDeposit.findUnique.mockResolvedValue(deposit);
             mockTx.agentDeposit.update.mockResolvedValue({ ...deposit, status: 'verified' });
             mockTx.agentBalance.findUnique.mockResolvedValue(balance);
             mockTx.agentCollection.findMany.mockResolvedValue(collections);
+            mockTx.$queryRaw.mockResolvedValue([{ id: 101 }, { id: 102 }]); // the one UPDATE that claims the fully covered rows
 
             const result = await agentReconciliationService.verifyDeposit(depositId, verifierId);
 
-            expect(mockTx.agentDeposit.update).toHaveBeenCalled();
             expect(mockTx.agentBalance.update).toHaveBeenCalled();
 
-            // [FIX] Verify FIFO Matching with individual updates (Partial Support)
-            expect(mockTx.agentCollection.update).toHaveBeenCalledWith({
-                where: { id: 101 },
-                data: { status: 'deposited', allocatedAmount: expect.any(Prisma.Decimal) }
-            });
-            expect(mockTx.agentCollection.update).toHaveBeenCalledWith({
-                where: { id: 102 },
-                data: { status: 'deposited', allocatedAmount: expect.any(Prisma.Decimal) }
+            // FIFO: 101 and 102 are fully covered in one UPDATE, 103 is untouched; the deposit keeps what it matched
+            expect(mockTx.$queryRaw).toHaveBeenCalledTimes(1);
+            expect(mockTx.agentCollection.updateMany).not.toHaveBeenCalled();
+            expect(mockTx.agentDeposit.update).toHaveBeenCalledWith({
+                where: { id: depositId },
+                data: { allocations: [{ collectionId: 101, amount: '1000' }, { collectionId: 102, amount: '500' }] },
             });
 
             expect(result.status).toBe('verified');
@@ -326,12 +326,12 @@ describe('AgentReconciliationService', () => {
 
             await agentReconciliationService.verifyDeposit(depositId, 789);
 
-            // Verify partial update
-            const updateCall = mockTx.agentCollection.update.mock.calls.find((call: any) => call[0].where.id === 101);
-            expect(updateCall[0].data.allocatedAmount.toString()).toBe('500');
-
-            // Should NOT be marked as deposited
-            expect(updateCall[0].data.status).toBeUndefined();
+            // Partial cover: one conditional update of the allocation, never marked as deposited, no raw UPDATE
+            const call = mockTx.agentCollection.updateMany.mock.calls[0][0];
+            expect(call.where.id).toBe(101);
+            expect(call.data.allocatedAmount.toString()).toBe('500');
+            expect(call.data.status).toBeUndefined();
+            expect(mockTx.$queryRaw).not.toHaveBeenCalled();
         });
 
         it('should handle multiple deposits covering one collection fully', async () => {
@@ -349,8 +349,8 @@ describe('AgentReconciliationService', () => {
 
             await agentReconciliationService.verifyDeposit(1, 789);
 
-            const firstUpdate = mockTx.agentCollection.update.mock.calls.find((call: any) => call[0].where.id === 101);
-            expect(firstUpdate[0].data.allocatedAmount.toString()).toBe('400');
+            const firstUpdate = mockTx.agentCollection.updateMany.mock.calls[0][0];
+            expect(firstUpdate.data.allocatedAmount.toString()).toBe('400');
 
             // Second deposit (completes it)
             const dep2 = { id: 2, agentId, amount: 600, status: 'pending' };
@@ -359,14 +359,16 @@ describe('AgentReconciliationService', () => {
             mockTx.agentDeposit.findUnique.mockResolvedValue(dep2);
             mockTx.agentDeposit.update.mockResolvedValue({ ...dep2, status: 'verified' });
             mockTx.agentCollection.findMany.mockResolvedValue([partiallyAllocatedColl]);
+            mockTx.$queryRaw.mockResolvedValue([{ id: 101 }]);
 
             await agentReconciliationService.verifyDeposit(2, 789);
 
-            const secondUpdate = mockTx.agentCollection.update.mock.calls.find((call: any) =>
-                call[0].where.id === 101 && call[0].data.status === 'deposited'
-            );
-            expect(secondUpdate[0].data.allocatedAmount.toString()).toBe('1000');
-            expect(secondUpdate[0].data.status).toBe('deposited');
+            // The second deposit covers the rest: the raw UPDATE sets status deposited and allocated = amount
+            expect(mockTx.$queryRaw).toHaveBeenCalledTimes(1);
+            expect(mockTx.agentDeposit.update).toHaveBeenLastCalledWith({
+                where: { id: 2 },
+                data: { allocations: [{ collectionId: 101, amount: '600' }] },
+            });
         });
 
         it('should handle unallocated remainder by updating deposit notes', async () => {
@@ -384,6 +386,7 @@ describe('AgentReconciliationService', () => {
             mockTx.agentDeposit.update.mockResolvedValue({ ...deposit, status: 'verified' });
             mockTx.agentBalance.findUnique.mockResolvedValue(balance);
             mockTx.agentCollection.findMany.mockResolvedValue(collections);
+            mockTx.$queryRaw.mockResolvedValue([{ id: 101 }]);
 
             await agentReconciliationService.verifyDeposit(depositId, verifierId);
 
@@ -569,6 +572,7 @@ describe('AgentReconciliationService', () => {
     });
 
     describe('bulkVerifyDeposits', () => {
+        useTestTenant();
         const verifierId = 789;
         const agentId = 456;
         const balance = { id: 10, agentId, currentBalance: 5000 };
@@ -701,14 +705,10 @@ describe('AgentReconciliationService', () => {
 
             await agentReconciliationService.bulkVerifyDeposits(depositIds, verifierId);
 
-            expect(mockTx.agentCollection.update).toHaveBeenCalledWith({
-                where: { id: 101 },
-                data: {
-                    allocatedAmount: expect.any(Prisma.Decimal)
-                }
-            });
-            // Verify it didn't set status to 'deposited' since it's only partial
-            const updateArgs = mockTx.agentCollection.update.mock.calls[0][0];
+            // Only partly covered: one conditional allocation update, no 'deposited'
+            const updateArgs = mockTx.agentCollection.updateMany.mock.calls[0][0];
+            expect(updateArgs.where.id).toBe(101);
+            expect(updateArgs.data.allocatedAmount).toEqual(expect.any(Prisma.Decimal));
             expect(updateArgs.data.status).toBeUndefined();
         });
 
@@ -721,7 +721,8 @@ describe('AgentReconciliationService', () => {
 
             await agentReconciliationService.bulkVerifyDeposits(depositIds, verifierId);
 
-            expect(mockTx.agentCollection.update).not.toHaveBeenCalled();
+            expect(mockTx.agentCollection.updateMany).not.toHaveBeenCalled();
+            expect(mockTx.$queryRaw).not.toHaveBeenCalled();
         });
     });
 });

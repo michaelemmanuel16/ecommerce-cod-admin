@@ -8,6 +8,7 @@ import { Prisma } from '@prisma/client';
 import agentReconciliationService from '../../services/agentReconciliationService';
 import prisma from '../../utils/prisma';
 import { AppError } from '../../middleware/errorHandler';
+import { useTestTenant } from '../mocks/tenant.mock';
 
 jest.mock('../../utils/appEvents', () => ({
   __esModule: true,
@@ -112,9 +113,10 @@ describe('AgentReconciliationService (extended branch coverage)', () => {
       mockTx.agentDeposit.findUnique.mockResolvedValueOnce(deposit as any).mockResolvedValueOnce({ ...deposit, status: 'rejected' } as any);
       mockTx.agentBalance.findUnique.mockResolvedValue({ id: 10, agentId: 5 } as any);
       mockTx.agentBalance.update.mockResolvedValue({} as any);
-      mockTx.agentCollection.findUnique
-        .mockResolvedValueOnce({ id: 1, status: 'deposited', amount: 100, allocatedAmount: 100 } as any)
-        .mockResolvedValueOnce({ id: 2, status: 'draft', amount: 100, allocatedAmount: 80 } as any);
+      mockTx.agentCollection.findMany.mockResolvedValue([
+        { id: 1, status: 'deposited', allocatedAmount: 100 },
+        { id: 2, status: 'draft', allocatedAmount: 80 },
+      ] as any);
       mockTx.agentCollection.update.mockResolvedValue({} as any);
 
       await agentReconciliationService.rejectDeposit(1, 99, 'Receipt is unclear');
@@ -163,6 +165,7 @@ describe('AgentReconciliationService (extended branch coverage)', () => {
 
   // ───────────────────────────── verifyDeposit - unallocated remainder with null notes ─────────────────────────────
   describe('verifyDeposit - remainder note branches', () => {
+    useTestTenant(); // the claim of fully covered collections is tenant scoped
     it('updates deposit notes when unallocated remainder and deposit.notes is null', async () => {
       const depositId = 1;
       const deposit = { id: depositId, agentId: 456, amount: 1000, status: 'pending', notes: null };
@@ -176,7 +179,7 @@ describe('AgentReconciliationService (extended branch coverage)', () => {
       mockTx.agentDeposit.update.mockResolvedValue({ ...deposit, status: 'verified' } as any);
       mockTx.agentBalance.findUnique.mockResolvedValue(balance as any);
       mockTx.agentCollection.findMany.mockResolvedValue(collections as any);
-      mockTx.agentCollection.update.mockResolvedValue({} as any);
+      mockPrisma.$queryRaw.mockResolvedValue([{ id: 101 }]); // the UPDATE that claims the fully covered row
       mockTx.agentBalance.update.mockResolvedValue({} as any);
 
       await agentReconciliationService.verifyDeposit(depositId, 789);
@@ -200,7 +203,7 @@ describe('AgentReconciliationService (extended branch coverage)', () => {
       mockTx.agentDeposit.update.mockResolvedValue({ ...deposit, status: 'verified' } as any);
       mockTx.agentBalance.findUnique.mockResolvedValue(balance as any);
       mockTx.agentCollection.findMany.mockResolvedValue(collections as any);
-      mockTx.agentCollection.update.mockResolvedValue({} as any);
+      mockPrisma.$queryRaw.mockResolvedValue([{ id: 101 }]);
       mockTx.agentBalance.update.mockResolvedValue({} as any);
 
       await agentReconciliationService.verifyDeposit(1, 789);

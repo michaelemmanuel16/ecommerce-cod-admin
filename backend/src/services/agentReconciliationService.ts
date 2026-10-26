@@ -6,12 +6,43 @@ import appEvents, { AppEvent } from '../utils/appEvents';
 import { TRANSACTION_CONFIG } from '../config/transactionConfig';
 import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
-
-/** Collections a deposit can still cover. Same list as GLAutomationService.openCollectionCash. */
-const OPEN_COLLECTION_STATUSES = ['draft', 'verified', 'approved'];
+import { OPEN_COLLECTION_STATUSES, outstandingOf } from '../utils/collectionCash';
 
 /** What a verified deposit matched on one collection; kept on AgentDeposit.allocations so a reject reverses exactly this. */
 interface DepositAllocation { collectionId: number; amount: string }
+
+/** An open collection as read for matching. `allocatedAmount` is what the database holds now. */
+export interface OpenCollection { id: number; agentId: number; amount: Prisma.Decimal; allocatedAmount: Prisma.Decimal }
+
+/** One collection a deposit covers: `take` of its outstanding amount. `allocated` is the value it must still hold to be claimed. */
+export interface Cover { id: number; agentId: number; amount: Money.Money; allocated: Money.Money; take: Money.Money }
+
+/**
+ * FIFO match of `amount` over `open` (oldest first), in memory. Updates `open` in place (a fully covered row leaves the list,
+ * a part-covered row holds its new allocation) so the next deposit of the same partner plans on what is left.
+ */
+export function planCover(open: OpenCollection[], amount: Money.Money): {
+  covers: Cover[]; allocations: DepositAllocation[]; matched: Money.Money; remaining: Money.Money;
+} {
+  let remaining = amount;
+  const covers: Cover[] = [];
+  for (let i = 0; i < open.length && remaining.gt(0);) {
+    const coll = open[i];
+    const outstanding = outstandingOf(coll);
+    if (outstanding.lte(0)) { open.splice(i, 1); continue; }
+    const take = Prisma.Decimal.min(remaining, outstanding);
+    covers.push({ id: coll.id, agentId: coll.agentId, amount: Money.parse(coll.amount), allocated: Money.orZero(coll.allocatedAmount), take });
+    remaining = remaining.minus(take);
+    if (take.gte(outstanding)) open.splice(i, 1);
+    else { coll.allocatedAmount = Money.orZero(coll.allocatedAmount).plus(take); i++; }
+  }
+  return {
+    covers,
+    allocations: covers.map((c) => ({ collectionId: c.id, amount: c.take.toString() })),
+    matched: amount.minus(remaining),
+    remaining,
+  };
+}
 
 export class AgentReconciliationService {
     /**
@@ -111,57 +142,84 @@ export class AgentReconciliationService {
         });
     }
 
+    /** The partner's open collections, oldest first. */
+    private async loadOpenCollections(extTx: any, agentId: number): Promise<OpenCollection[]> {
+        return extTx.agentCollection.findMany({
+            where: { agentId, status: { in: [...OPEN_COLLECTION_STATUSES] } },
+            orderBy: { collectionDate: 'asc' },
+            select: { id: true, agentId: true, amount: true, allocatedAmount: true },
+        });
+    }
+
     /**
-     * Apply FIFO matching from a deposit amount to the partner's open collections (draft, verified or approved).
-     * Marks fully-covered collections as 'deposited' and updates allocatedAmount.
-     * Returns the unmatched remainder (zero if fully allocated).
+     * Cover open collections, the one write path for verified deposits and the old "mark COD deposited" route.
+     * Each cover is claimed conditionally: the row must still be open and hold the allocation the plan read, so two
+     * callers can never cover the same cash. A fully covered row becomes 'deposited' (one tenant-scoped UPDATE for all of
+     * them); a part-covered row only gets its new allocation. Returns what was claimed, per collection and per partner.
      */
-    private async matchDepositsToCollections(
-        extTx: any,
-        agentId: number,
-        depositAmount: Prisma.Decimal
-    ): Promise<{ remaining: Prisma.Decimal; allocations: DepositAllocation[] }> {
-        let remainingAmount = depositAmount;
-        const allocations: DepositAllocation[] = [];
+    async claimCovers(extTx: any, covers: Cover[]): Promise<{ byCollection: Map<number, Money.Money>; byAgent: Map<number, Money.Money> }> {
+        const byCollection = new Map<number, Money.Money>();
+        const full = covers.filter((c) => c.allocated.plus(c.take).gte(c.amount));
+        const part = covers.filter((c) => !full.includes(c));
+        const won = new Set<number>();
 
-        const approvedCollections = await extTx.agentCollection.findMany({
-            where: { agentId, status: { in: OPEN_COLLECTION_STATUSES } },
-            orderBy: { collectionDate: 'asc' }
-        });
-
-        const pendingMatches = approvedCollections.filter((coll: any) => {
-            const amount = Money.parse(coll.amount);
-            const allocated = new Prisma.Decimal(coll.allocatedAmount?.toString() || '0');
-            return allocated.lessThan(amount);
-        });
-
-        for (const coll of pendingMatches) {
-            if (remainingAmount.isZero()) break;
-
-            const collAmount = Money.parse(coll.amount);
-            const allocated = new Prisma.Decimal(coll.allocatedAmount?.toString() || '0');
-            const outstanding = collAmount.minus(allocated);
-
-            if (remainingAmount.greaterThanOrEqualTo(outstanding)) {
-                // Fully cover this collection
-                await extTx.agentCollection.update({
-                    where: { id: coll.id },
-                    data: { status: 'deposited', allocatedAmount: collAmount }
-                });
-                allocations.push({ collectionId: coll.id, amount: outstanding.toString() });
-                remainingAmount = remainingAmount.minus(outstanding);
-            } else if (remainingAmount.greaterThan(0)) {
-                // Partially cover this collection
-                await extTx.agentCollection.update({
-                    where: { id: coll.id },
-                    data: { allocatedAmount: allocated.plus(remainingAmount) }
-                });
-                allocations.push({ collectionId: coll.id, amount: remainingAmount.toString() });
-                remainingAmount = Money.ZERO;
-            }
+        if (full.length > 0) {
+            const rows = Prisma.join(full.map((c) => Prisma.sql`(${c.id}::int, ${c.allocated.toFixed(4)}::numeric)`));
+            const claimed: Array<{ id: number }> = await extTx.$queryRaw`
+                UPDATE agent_collections AS c
+                SET status = 'deposited'::"CollectionStatus", allocated_amount = c.amount, updated_at = now()
+                FROM (VALUES ${rows}) AS v(id, alloc)
+                WHERE c.id = v.id AND c.tenant_id = ${resolveTenantId()} AND c.allocated_amount = v.alloc
+                  AND c.status::text IN (${Prisma.join([...OPEN_COLLECTION_STATUSES])})
+                RETURNING c.id`;
+            claimed.forEach((r) => won.add(r.id));
+        }
+        for (const c of part) {
+            const res = await extTx.agentCollection.updateMany({
+                where: { id: c.id, status: { in: [...OPEN_COLLECTION_STATUSES] }, allocatedAmount: c.allocated },
+                data: { allocatedAmount: c.allocated.plus(c.take) },
+            });
+            if (res.count === 1) won.add(c.id);
         }
 
-        return { remaining: remainingAmount, allocations };
+        const byAgent = new Map<number, Money.Money>();
+        for (const c of covers.filter((x) => won.has(x.id))) {
+            byCollection.set(c.id, c.take);
+            byAgent.set(c.agentId, Money.add(byAgent.get(c.agentId) ?? Money.ZERO, c.take));
+        }
+        return { byCollection, byAgent };
+    }
+
+    /**
+     * Verify one pending deposit (single and bulk verify share this): claim the row, match its amount FIFO over `open`,
+     * claim the covers, post the entry, keep the allocations. Does not touch the partner balance (the callers do).
+     * `open` is the partner's open collections; bulk passes the same list for each deposit of a partner.
+     */
+    private async verifyOne(extTx: any, deposit: any, verifierId: number, open: OpenCollection[]): Promise<any> {
+        const claimData = { status: 'verified', verifiedAt: new Date(), verifiedById: verifierId };
+        // Claim the row first: of two people verifying (or a verify and a reject) at once, only one gets count 1
+        const claim = await extTx.agentDeposit.updateMany({ where: { id: deposit.id, status: 'pending' }, data: claimData });
+        if (claim.count === 0) throw new AppError(`Already verified: ${deposit.referenceNumber}`, 409);
+
+        const plan = planCover(open, Money.parse(deposit.amount));
+        const { byCollection } = await this.claimCovers(extTx, plan.covers);
+        if (byCollection.size !== plan.covers.length) throw new AppError('Collections were changed by someone else. Reload and try again.', 409);
+
+        const { GLAutomationService } = await import('./glAutomationService');
+        await GLAutomationService.createAgentDepositEntry(extTx, { ...deposit, ...claimData }, verifierId, plan);
+
+        // The allocations are kept for a later reject; an unallocated remainder goes in the note
+        return extTx.agentDeposit.update({
+            where: { id: deposit.id },
+            data: {
+                allocations: plan.allocations,
+                ...(plan.remaining.isZero() ? {} : {
+                    notes: deposit.notes
+                        ? `${deposit.notes} (Unallocated remainder: ${plan.remaining.toString()})`
+                        : `Unallocated remainder: ${plan.remaining.toString()} `,
+                }),
+            },
+        });
     }
 
     /**
@@ -222,7 +280,8 @@ export class AgentReconciliationService {
             }
 
             // A deposit verified before allocations were recorded cannot be reversed exactly: no newest-first guess
-            if (deposit.status === 'verified' && !Array.isArray(deposit.allocations)) {
+            const allocations: DepositAllocation[] | null = Array.isArray(deposit.allocations) ? deposit.allocations : null;
+            if (deposit.status === 'verified' && !allocations) {
                 throw new AppError('This deposit was verified before allocation tracking. Reconcile it by hand.', 409);
             }
 
@@ -230,20 +289,18 @@ export class AgentReconciliationService {
             const formattedNotes = notes ? `${deposit.notes ? deposit.notes + '\n' : ''} [REJECTED] ${dateStr}: ${notes} ` : deposit.notes;
 
             // Claim the change first: of two concurrent rejects (or a reject and a verify) only one gets count 1 and runs the undo.
-            const claim = await extTx.agentDeposit.updateMany({
-                where: { id: depositId, status: deposit.status },
-                data: {
-                    status: 'rejected',
-                    verifiedAt: new Date(),
-                    verifiedById: rejectedById,
-                    notes: formattedNotes,
-                    ...(notes ? { rejectReason: notes } : {}),
-                },
-            });
+            const claimData = {
+                status: 'rejected',
+                verifiedAt: new Date(),
+                verifiedById: rejectedById,
+                notes: formattedNotes,
+                ...(notes ? { rejectReason: notes } : {}),
+            };
+            const claim = await extTx.agentDeposit.updateMany({ where: { id: depositId, status: deposit.status }, data: claimData });
             if (claim.count === 0) throw new AppError('This deposit was changed by someone else. Reload and try again.', 409);
 
-            if (deposit.status === 'verified') await this.undoVerifiedDeposit(extTx, deposit, rejectedById);
-            const updated = await extTx.agentDeposit.findUnique({ where: { id: depositId } });
+            if (deposit.status === 'verified') await this.undoVerifiedDeposit(extTx, deposit, allocations!, rejectedById);
+            const updated = { ...deposit, ...claimData };
 
             logger.info(`Deposit ${depositId} rejected by user ${rejectedById} `);
             return updated;
@@ -251,7 +308,7 @@ export class AgentReconciliationService {
     }
 
     /** Undoes what verifying a deposit did: the GL posting (voided by reversal), the balance and the matched collections. */
-    private async undoVerifiedDeposit(extTx: any, deposit: any, userId: number): Promise<void> {
+    private async undoVerifiedDeposit(extTx: any, deposit: any, allocations: DepositAllocation[], userId: number): Promise<void> {
         const { GLAutomationService } = await import('./glAutomationService');
         await GLAutomationService.voidJournalEntry(extTx, 'agent_deposit', deposit.id, userId);
 
@@ -265,12 +322,13 @@ export class AgentReconciliationService {
         });
 
         // Open the collections this deposit matched again: exactly its own allocations, never another deposit's
-        const allocations: DepositAllocation[] = Array.isArray(deposit.allocations) ? deposit.allocations : [];
-        for (const alloc of allocations) {
-            const coll = await extTx.agentCollection.findUnique({ where: { id: alloc.collectionId } });
-            if (!coll) continue;
-            const allocated = Money.parse(coll.allocatedAmount);
-            const left = Prisma.Decimal.max(allocated.minus(Money.parse(alloc.amount)), Money.ZERO);
+        const matched: Array<{ id: number; status: string; allocatedAmount: Prisma.Decimal }> = await extTx.agentCollection.findMany({
+            where: { id: { in: allocations.map((a) => a.collectionId) } },
+            select: { id: true, status: true, allocatedAmount: true },
+        });
+        const amountOf = new Map(allocations.map((a) => [a.collectionId, Money.parse(a.amount)]));
+        for (const coll of matched) {
+            const left = Prisma.Decimal.max(Money.parse(coll.allocatedAmount).minus(amountOf.get(coll.id)!), Money.ZERO);
             await extTx.agentCollection.update({
                 where: { id: coll.id },
                 data: { allocatedAmount: left, ...(coll.status === 'deposited' ? { status: 'draft' } : {}) },
@@ -313,14 +371,8 @@ export class AgentReconciliationService {
                 throw new AppError('Verification failed: Deposit amount exceeds current agent balance', 400);
             }
 
-            // Claim the row first: of two people verifying (or a verify and a reject) at once, only one gets count 1
-            const claim = await extTx.agentDeposit.updateMany({
-                where: { id: depositId, status: 'pending' },
-                data: { status: 'verified', verifiedAt: new Date(), verifiedById: verifierId },
-            });
-            if (claim.count === 0) throw new AppError('Already verified', 409);
-            const claimed = { ...deposit, status: 'verified', verifiedAt: new Date(), verifiedById: verifierId };
-
+            // The balance update comes first on purpose: its row lock serialises concurrent verifies of one partner's deposits
+            // before they number their journal entries
             await extTx.agentBalance.update({
                 where: { id: balance.id },
                 data: {
@@ -330,25 +382,7 @@ export class AgentReconciliationService {
                 },
             });
 
-            // Create GL Entry via GLAutomationService
-            const { GLAutomationService } = await import('./glAutomationService');
-            await GLAutomationService.createAgentDepositEntry(extTx, claimed, verifierId);
-
-            // FIFO Matching to open collections (Partial Allocation Support); the allocations are kept for a later reject
-            const { remaining: remainingAmount, allocations } = await this.matchDepositsToCollections(extTx, deposit.agentId, depAmt);
-            const updated = await extTx.agentDeposit.update({ where: { id: depositId }, data: { allocations } });
-
-            // If there's an unallocated remainder, update the deposit note
-            if (!remainingAmount.isZero()) {
-                await extTx.agentDeposit.update({
-                    where: { id: depositId },
-                    data: {
-                        notes: deposit.notes
-                            ? `${deposit.notes} (Unallocated remainder: ${remainingAmount.toString()})`
-                            : `Unallocated remainder: ${remainingAmount.toString()} `
-                    }
-                });
-            }
+            const updated = await this.verifyOne(extTx, deposit, verifierId, await this.loadOpenCollections(extTx, deposit.agentId));
 
             logger.info(`Deposit ${depositId} verified by user ${verifierId} `);
 
@@ -405,8 +439,6 @@ export class AgentReconciliationService {
                 depositsByAgent.set(deposit.agentId, agentDeposits);
             }
 
-            const { GLAutomationService } = await import('./glAutomationService');
-
             // Process each agent's deposits
             for (const [agentId, agentDeposits] of depositsByAgent) {
                 // Use Prisma ORM (not $queryRaw) to stay on the transaction's connection.
@@ -433,20 +465,10 @@ export class AgentReconciliationService {
                     );
                 }
 
-                // Update all deposits for this agent
+                // Verify the deposits oldest first; the partner's open collections are read once and matched in memory
+                const open = await this.loadOpenCollections(extTx, agentId);
                 for (const deposit of agentDeposits) {
-                    // Claim each row first (a concurrent verify or reject of the same row gets count 0)
-                    const claim = await extTx.agentDeposit.updateMany({
-                        where: { id: deposit.id, status: 'pending' },
-                        data: { status: 'verified', verifiedAt: new Date(), verifiedById: verifierId },
-                    });
-                    if (claim.count === 0) throw new AppError(`Already verified: ${deposit.referenceNumber}`, 409);
-
-                    // Create GL Entry for each deposit, then match it (FIFO) so the next deposit sees what is still open
-                    await GLAutomationService.createAgentDepositEntry(extTx, deposit, verifierId);
-                    const { allocations } = await this.matchDepositsToCollections(extTx, agentId, Money.parse(deposit.amount));
-                    await extTx.agentDeposit.update({ where: { id: deposit.id }, data: { allocations } });
-
+                    await this.verifyOne(extTx, deposit, verifierId, open);
                     totalAmount = totalAmount.plus(Money.parse(deposit.amount));
                 }
 

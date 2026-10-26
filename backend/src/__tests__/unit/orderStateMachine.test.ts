@@ -424,7 +424,7 @@ describe('side effects', () => {
     const deliveryDate = new Date('2026-10-10T12:00:00.000Z');
     await transitionOrder(5, 'delivered', ADMIN, { deliveryDate });
     expect(stampDeliveryFee).toHaveBeenCalledTimes(1);
-    expect(stampDeliveryFee).toHaveBeenCalledWith(tx, expect.objectContaining({ id: 5, deliveryAgentId: 30 }), 'out_for_delivery', 'delivered', deliveryDate);
+    expect(stampDeliveryFee).toHaveBeenCalledWith(tx, expect.objectContaining({ id: 5, deliveryAgentId: 30 }), 'delivered', deliveryDate);
     (stampDeliveryFee as jest.Mock).mockClear();
     setOrder({ status: 'delivered' });
     expect((await transitionOrder(5, 'delivered', ADMIN)).changed).toBe(false);

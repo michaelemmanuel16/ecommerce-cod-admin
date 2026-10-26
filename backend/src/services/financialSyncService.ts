@@ -15,6 +15,7 @@ import logger from '../utils/logger';
 import { getSystemUserId } from './systemUserService';
 import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
+import { partnerNetCash } from './feeRuleService';
 
 interface OrderForSync extends Order {
   orderItems: (OrderItem & { product: Product })[];
@@ -123,8 +124,7 @@ export class FinancialSyncService {
       // This is crucial for the Agent Reconciliation module
       // Partners are held accountable for the NET amount: gross minus the delivery fee they keep (F-936)
       if (order.deliveryAgentId) {
-        const grossAmount = Money.parse(order.totalAmount);
-        const netAmount = Money.sub(grossAmount, Money.orZero(order.deliveryFee));
+        const netAmount = partnerNetCash(order, Money.parse(order.totalAmount));
 
         const existingCollection = await tx.agentCollection.findUnique({
           where: { orderId: order.id }

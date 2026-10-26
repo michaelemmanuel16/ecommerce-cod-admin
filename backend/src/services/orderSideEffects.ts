@@ -1,4 +1,5 @@
-import { FeeOutcome, OrderStatus } from '@prisma/client';
+import { OrderStatus } from '@prisma/client';
+import type { DeliveryFeeStamp } from './feeRuleService';
 import { TransactionClient } from '../utils/prisma';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
@@ -20,7 +21,7 @@ import { AppEvent, OrderStatusChangedEvent, emitOrderEvent } from '../utils/appE
 export const ORDER_EVENT_INCLUDE = {
   customer: { select: { id: true, firstName: true, lastName: true, phoneNumber: true, alternatePhone: true, email: true } },
   customerRep: { select: { id: true, firstName: true, lastName: true, email: true, role: true, commissionAmount: true } },
-  deliveryAgent: { select: { id: true, firstName: true, lastName: true, phoneNumber: true, role: true, commissionAmount: true } },
+  deliveryAgent: { select: { id: true, firstName: true, lastName: true, phoneNumber: true, role: true } },
   orderItems: { include: { product: { select: { id: true, name: true, sku: true, cogs: true } } } },
 } as const;
 
@@ -91,15 +92,16 @@ async function reverseRevenue(
   return reversal;
 }
 
-/** GL posting for one move, in the move's transaction. `fee` is the outcome and fee the state machine just stamped on the order. */
+/** GL posting for one move, in the move's transaction. `stamp` is the outcome and fee the state machine just wrote on the order. */
 export async function applyGlEffects(
   tx: TransactionClient,
-  order: { id: number; tenantId?: string | null; deliveryAgentId?: number | null },
+  order: { id: number; tenantId?: string | null },
   from: OrderStatus,
   to: OrderStatus,
   userId: number | undefined,
   historyId: number,
-  opts: { postRevenueAlways?: boolean; fee?: { outcome: FeeOutcome; fee: Money.Money; on: Date } | null } = {},
+  stamp: DeliveryFeeStamp | null,
+  opts: { postRevenueAlways?: boolean } = {},
 ): Promise<GlEffects> {
   // Only a move that posts to the ledger needs an actor, so look it up lazily.
   const actor = async () => userId ?? await getSystemUserId();
@@ -114,9 +116,9 @@ export async function applyGlEffects(
     effects.revenue = posted?.entry;
     effects.revenueOrder = posted?.order;
   }
-  if (opts.fee) {
+  if (stamp) {
     effects.deliveryFee = (await GLAutomationService.createDeliveryFeeEntry(
-      tx as any, order, opts.fee.outcome, opts.fee.fee, historyId, await actor(), opts.fee.on,
+      tx as any, order, stamp.outcome, stamp.fee, historyId, await actor(), stamp.on,
     )) ?? undefined;
   }
   return effects;

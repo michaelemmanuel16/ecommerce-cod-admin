@@ -8,7 +8,7 @@ import { OrderStatusChangedEvent } from '../utils/appEvents';
 import { afterCommitEffects, applyGlEffects, GlEffects } from './orderSideEffects';
 import { fulfilOrder, reverseOrder } from './stockService';
 import { recordDeliveryAttempt } from './deliveryAttemptHook';
-import { stampDeliveryFee } from './feeRuleService';
+import { stampDeliveryFee, DeliveryFeeStamp } from './feeRuleService';
 
 /**
  * Order state machine (F-301, F-302). `transitionOrder` is the one function that writes Order.status.
@@ -279,20 +279,17 @@ const outcomeDate = (to: OrderStatus, fields: Prisma.OrderUncheckedUpdateManyInp
 /** Side effects of a move, in the move's transaction: stock (F-657, one call site), the delivery fee stamp (F-703) and GL posting. */
 async function applySideEffects(
   tx: TransactionClient,
-  order: SideEffectOrder & { totalAmount: Prisma.Decimal },
+  order: SideEffectOrder,
   from: OrderStatus,
   to: OrderStatus,
   actor: TransitionActor,
   options: TransitionOptions,
   historyId: number,
-  fields: Prisma.OrderUncheckedUpdateManyInput,
+  stamp: DeliveryFeeStamp | null,
 ): Promise<GlEffects> {
   if (to === 'delivered') await fulfilOrder(tx, order, actor.userId);
   else if (from === 'delivered') await reverseOrder(tx, order, actor.userId);
-  // The fee is stamped before the entries post, so the revenue read and the collection amount see it.
-  const on = outcomeDate(to, fields);
-  const stamped = await stampDeliveryFee(tx, order, from, to, on);
-  return applyGlEffects(tx, order, from, to, actor.userId, historyId, { postRevenueAlways: options.postRevenueAlways, fee: stamped && { ...stamped, on } });
+  return applyGlEffects(tx, order, from, to, actor.userId, historyId, stamp, { postRevenueAlways: options.postRevenueAlways });
 }
 
 /**
@@ -390,9 +387,15 @@ async function move(
   }
 
   const fields = moveFields(order, from, to, actor, { ...options, metadata: meta });
+  // The delivery fee of the outcome is looked up before the lock update and written with it (F-703). Leaving
+  // `delivered` for a status with no outcome clears it; the delivered fee entry is reversed with the revenue.
+  const stamp = await stampDeliveryFee(tx, order, to, outcomeDate(to, fields));
+  const feeFields = stamp
+    ? { deliveryFee: stamp.fee, deliveryFeeSource: 'rule' as const }
+    : from === 'delivered' ? { deliveryFee: null, deliveryFeeSource: null } : {};
   const locked = await tx.order.updateMany({
     where: { id: orderId, statusVersion: order.statusVersion },
-    data: { status: to, ...fields },
+    data: { status: to, ...fields, ...feeFields },
   });
   if (locked.count === 0) {
     throw new OrderTransitionError('STALE_ORDER', 'This order was changed by someone else. Reload and try again.', { from, to });
@@ -426,7 +429,7 @@ async function move(
     });
   }
 
-  const gl = await applySideEffects(tx, order, from, to, actor, options, history.id, fields);
+  const gl = await applySideEffects(tx, order, from, to, actor, options, history.id, stamp);
   await recordDeliveryAttempt(tx, order, to, options);
 
   const statusChanged: OrderStatusChangedEvent = {

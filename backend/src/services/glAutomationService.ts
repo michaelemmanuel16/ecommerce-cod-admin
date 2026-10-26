@@ -499,12 +499,7 @@ export class GLAutomationService {
       createdBy: userId,
       tenantId: order.tenantId ?? undefined,
       transactions: {
-        create: original.transactions.map((t) => ({
-          accountId: t.accountId,
-          debitAmount: t.creditAmount as unknown as Decimal,
-          creditAmount: t.debitAmount as unknown as Decimal,
-          description: `Reversal: ${t.description}`,
-        })),
+        create: this.flippedLines(original.transactions, 'Reversal'),
       },
     });
     await tx.journalEntry.update({ where: { id: original.id }, data: { reversingEntryId: reversal.id } });
@@ -787,34 +782,25 @@ export class GLAutomationService {
   }
 
   /**
-   * Cash a partner still holds for us, from the app side: what is left of its collections that no deposit has
-   * covered yet (draft, verified or approved, minus the amount a verified deposit already matched to them).
-   */
-  static async openCollectionCash(tx: Prisma.TransactionClient, agentId: number): Promise<Decimal> {
-    const open = await tx.agentCollection.findMany({
-      where: { agentId, status: { in: ['draft', 'verified', 'approved'] } },
-      select: { amount: true, allocatedAmount: true },
-    });
-    return Money.sum(open.map((c) => Money.sub(c.amount, Money.orZero(c.allocatedAmount))));
-  }
-
-  /**
    * GL entry for a verified agent deposit (F-904). The only place cash moves from the partner to the bank:
    * - Debit: Cash at bank and MoMo 1010 (the amount received, which is cash collected minus the fees the partner kept)
-   * - Credit: Cash in Transit 1015 (the part that matches the partner's open collections, FIFO)
-   * - Credit: Unapplied Partner Receipts 2040 (any excess), with an `excess_deposit` Finding
+   * - Credit: Cash in Transit 1015 (`cover.matched`: the part that matched the partner's open collections, FIFO)
+   * - Credit: Unapplied Partner Receipts 2040 (`cover.remaining`: any excess), with an `excess_deposit` Finding
+   * The caller matches the collections first and passes the result in.
    * Verifying a single collection posts nothing; 1015 already holds the net amount from the delivery.
    * Idempotent per deposit.
    *
    * @param tx - Prisma transaction client
    * @param deposit - Agent deposit record
    * @param userId - ID of user verifying the deposit
+   * @param cover - What the FIFO match covered (`matched`) and what is left over (`remaining`)
    * @returns Created journal entry
    */
   static async createAgentDepositEntry(
     tx: Prisma.TransactionClient,
     deposit: AgentDeposit,
-    userId: number
+    userId: number,
+    cover: { matched: Money.MoneyInput; remaining: Money.MoneyInput }
   ): Promise<JournalEntryWithTransactions> {
     // Idempotency guard — prevent duplicate GL entries for the same agent deposit
     const existingEntry = await tx.journalEntry.findFirst({
@@ -831,9 +817,8 @@ export class GLAutomationService {
     }
 
     const depositAmount = Money.parse(deposit.amount);
-    const open = await this.openCollectionCash(tx, deposit.agentId);
-    const matched = Decimal.min(depositAmount, Decimal.max(open, Money.ZERO));
-    const excess = depositAmount.minus(matched);
+    const matched = Money.parse(cover.matched);
+    const excess = Money.parse(cover.remaining);
 
     const transactions: TransactionCreateData[] = [
       {
@@ -947,6 +932,19 @@ export class GLAutomationService {
     });
   }
 
+  /** The lines of an entry with debit and credit swapped, each description prefixed. */
+  private static flippedLines(
+    transactions: Array<{ accountId: number; debitAmount: Decimal | Prisma.Decimal; creditAmount: Decimal | Prisma.Decimal; description: string | null }>,
+    prefix: string
+  ): TransactionCreateData[] {
+    return transactions.map((t) => ({
+      accountId: t.accountId,
+      debitAmount: t.creditAmount as unknown as Decimal,
+      creditAmount: t.debitAmount as unknown as Decimal,
+      description: `${prefix}: ${t.description ?? ''}`,
+    }));
+  }
+
   /**
    * Void a journal entry by creating a reversing entry and marking the original as voided.
    * Used when updating or deleting expenses to maintain GL integrity.
@@ -985,12 +983,7 @@ export class GLAutomationService {
     }
 
     // Create reversing transactions (flip debits and credits)
-    const reversingTransactions: TransactionCreateData[] = originalEntry.transactions.map(txn => ({
-      accountId: txn.accountId,
-      debitAmount: txn.creditAmount as unknown as Decimal,
-      creditAmount: txn.debitAmount as unknown as Decimal,
-      description: `Void: ${txn.description}`,
-    }));
+    const reversingTransactions = this.flippedLines(originalEntry.transactions, 'Void');
 
     // Create the reversing journal entry (marked as voided so idempotency guards
     // and future void calls don't pick it up as an active entry)

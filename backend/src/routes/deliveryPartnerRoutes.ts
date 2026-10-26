@@ -54,18 +54,8 @@ router.post(
 router.get('/:id(\\d+)', canRead, controller.getOne);
 router.get('/:id(\\d+)/order-proofs', canSeeProofs, controller.orderProofs);
 router.get('/:id(\\d+)/fee-rules', canSeeFees, controller.feeRules);
-router.post(
-  '/:id(\\d+)/fee-rules',
-  canEdit,
-  [
-    body('outcome').isIn(['delivered', 'failed', 'returned']).withMessage('outcome must be delivered, failed or returned'),
-    body('basis').optional().isIn(['flat', 'percent']).withMessage('basis must be flat or percent'),
-    body('amount').exists().withMessage('amount is required'),
-    body('validFrom').optional({ nullable: true }).isString(),
-    validate,
-  ],
-  controller.addFeeRule,
-);
+// The service validates outcome, basis, amount and date (one place)
+router.post('/:id(\\d+)/fee-rules', canEdit, controller.addFeeRule);
 router.patch('/:id(\\d+)', canEdit, [...profileFields, validate], controller.update);
 router.patch(
   '/:id(\\d+)/availability',
