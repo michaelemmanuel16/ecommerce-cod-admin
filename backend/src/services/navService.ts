@@ -26,7 +26,7 @@ const HOME_ROUTE: Record<UserRole, string> = {
   sales_rep: '/',
   delivery_agent: '/',
   accountant: '/finance',
-  inventory_manager: '/products', // Inventory and stock is M4
+  inventory_manager: '/inventory', // the stock keeper lives on Inventory and stock (M4-T29)
 };
 
 const OWNER_ADMIN: UserRole[] = ['super_admin', 'admin'];

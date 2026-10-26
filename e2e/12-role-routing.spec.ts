@@ -25,9 +25,9 @@ test.describe('role home and route guards', () => {
     await expect(page.getByText(NO_ACCESS)).toHaveCount(0);
   });
 
-  test('stock keeper lands on Products', async ({ page }) => {
+  test('stock keeper lands on Inventory', async ({ page }) => {
     await signIn(page, 'e2e-stock@codadmin.com');
-    await expect(page).toHaveURL(/\/products$/);
+    await expect(page).toHaveURL(/\/inventory$/);
   });
 
   test('manager sees the Dashboard', async ({ page }) => {
@@ -42,7 +42,7 @@ test.describe('role home and route guards', () => {
     await page.goto('/finance');
     await expect(page.getByText(NO_ACCESS)).toBeVisible();
     await expect(page).toHaveURL(/\/finance$/);
-    await expect(page.getByRole('link', { name: 'Go to Products' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Go to Inventory & stock' })).toBeVisible();
   });
 
   test('flags off: a call rep stays on the current page and cannot open Finance', async ({ page }) => {

@@ -4,6 +4,8 @@ import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import { Prisma } from '@prisma/client';
 import * as Money from '../utils/money';
+import { normalizeOrderRegion } from './regionService';
+import { getAvailableToSell } from './stockService';
 
 interface PublicOrderData {
   // Customer info
@@ -51,6 +53,9 @@ export class PublicOrderService {
       throw new AppError('Checkout form not found or inactive', 404);
     }
 
+    // O3: the region is a value of the store country's list; an unknown one stays as typed
+    orderData = { ...orderData, deliveryState: await normalizeOrderRegion(orderData.deliveryState, form.tenantId) };
+
     // Validate selected package
     const selectedPackage = form.packages.find(
       (pkg) => pkg.id === orderData.selectedPackageId
@@ -60,13 +65,16 @@ export class PublicOrderService {
       throw new AppError('Invalid package selection', 400);
     }
 
-    // Validate product stock
+    // Validate product stock: available to sell (on hand less reserved, F-651). A digital product has none.
     const totalQuantity = selectedPackage.quantity;
-    if (form.product.stockQuantity < totalQuantity) {
-      throw new AppError(
-        `Insufficient stock. Available: ${form.product.stockQuantity}`,
-        400
-      );
+    if (form.product.productType !== 'digital') {
+      const available = await getAvailableToSell(form.productId);
+      if (available < totalQuantity) {
+        throw new AppError(
+          `Insufficient stock. Available: ${Math.max(available, 0)}`,
+          400
+        );
+      }
     }
 
     // Validate and calculate upsells
@@ -279,16 +287,6 @@ export class PublicOrderService {
           totalAmount,
           ipAddress: orderData.ipAddress,
           userAgent: orderData.userAgent
-        }
-      });
-
-      // Update product stock
-      await tx.product.update({
-        where: { id: form.productId },
-        data: {
-          stockQuantity: {
-            decrement: selectedPackage.quantity
-          }
         }
       });
 

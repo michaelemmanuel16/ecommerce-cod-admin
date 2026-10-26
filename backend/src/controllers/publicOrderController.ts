@@ -15,6 +15,7 @@ import { metaCapiService } from '../services/metaCapiService';
 import * as Money from '../utils/money';
 import { cleanText, deliveryAddressOf, slotRule, CheckoutSlot } from '../utils/checkoutLocation';
 import { isUpsellAvailable } from '../utils/checkoutFormRules';
+import { getAvailableMany } from '../services/stockService';
 import { formatOrderNumber } from '../utils/orderNumber';
 import { getFrontendUrl } from '../utils/url';
 
@@ -159,7 +160,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
         // from these, NEVER from the client-supplied amounts (price tampering).
         packages: true,
         // The linked product tells whether an upsell is still on offer (inactive or out of stock hides it).
-        upsells: { include: { product: { select: { isActive: true, stockQuantity: true, productType: true } } } }
+        upsells: { include: { product: { select: { isActive: true, productType: true } } } }
       }
     });
 
@@ -178,7 +179,11 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       reject(isDigital ? 'Product is no longer available' : 'This product is sold out');
       return;
     }
-    if (!isDigital && form.product.stockQuantity <= 0) {
+    // Available to sell: on hand less the units reserved for open orders (M4-T16). A digital product has no stock.
+    // One read covers the form product and the add-ons the buyer chose, not every add-on of the form.
+    const pickedUpsells = Array.isArray(selectedUpsells) ? selectedUpsells.map((upsell) => form.upsells.find((u) => u.id === Number(upsell?.id))) : [];
+    const stockById = await getAvailableMany([form.productId, ...pickedUpsells.flatMap((u) => (u?.productId != null ? [u.productId] : []))]);
+    if (!isDigital && (stockById.get(form.productId) ?? 0) <= 0) {
       reject('This product is sold out');
       return;
     }
@@ -264,18 +269,12 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
 
     // Resolve each selected upsell against the form's DB upsells (by id) and sum
     // their server-side prices.
-    const dbUpsells = (form as any).upsells as Array<{
-      id: number; name: string; description: string | null; price: Prisma.Decimal;
-      productId: number | null; items: any; originalPrice: Prisma.Decimal | null;
-      discountType: string; discountValue: Prisma.Decimal;
-      product: { isActive: boolean; stockQuantity: number; productType: string } | null;
-    }>;
+    const dbUpsells = form.upsells;
     const resolvedUpsells: typeof dbUpsells = [];
     if (selectedUpsells && Array.isArray(selectedUpsells)) {
-      for (const upsell of selectedUpsells) {
-        const dbUpsell = dbUpsells.find((u) => u.id === Number(upsell?.id));
+      for (const dbUpsell of pickedUpsells) {
         // An add-on the public form no longer shows (its product is off or out of stock) cannot be bought either.
-        if (!dbUpsell || !isUpsellAvailable(dbUpsell)) {
+        if (!dbUpsell || !isUpsellAvailable(dbUpsell, stockById)) {
           res.status(400).json({ error: 'Selected add-on is not available' });
           return;
         }
@@ -437,7 +436,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
     for (const dbUpsell of resolvedUpsells) {
       // Use upsell's productId if available, otherwise fallback to form's productId
       const upsellProductId = dbUpsell.productId || form.productId;
-      const upsellQuantity = dbUpsell.items?.quantity || 1;
+      const upsellQuantity = (dbUpsell.items as { quantity?: number } | null)?.quantity || 1;
 
       orderItemsData.push({
         productId: upsellProductId,

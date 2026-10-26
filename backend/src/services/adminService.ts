@@ -1,11 +1,11 @@
 import { getPaymentProvider, clearPaymentConfigCache } from './payments';
 import { saveConnection } from './paymentConnectionService';
 import { parseFeaturePatch, clearTenantFeaturesCache } from './tenantFeatures';
-import prisma from '../utils/prisma';
+import prisma, { TransactionClient } from '../utils/prisma';
 import { sessionService } from './sessionService';
 import { withSoftDeleted } from '../utils/prismaExtensions';
 import bcrypt from 'bcrypt';
-import { UserRole } from '@prisma/client';
+import { UserKind, UserRole } from '@prisma/client';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import { Requester, canManageRole } from '../utils/authUtils';
@@ -374,7 +374,7 @@ export const adminService = {
         users: ['create', 'view', 'update', 'delete'],
         orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign', 'update_status'],
         customers: ['create', 'view', 'update', 'delete', 'export'],
-        products: ['create', 'view', 'update', 'delete'],
+        products: ['create', 'view', 'update', 'delete', 'update_stock'],
         financial: ['view', 'create'],
         analytics: ['view', 'export'],
         marketing: ['view'],
@@ -531,6 +531,12 @@ export const adminService = {
     role: UserRole;
     commissionAmount?: number;
     deliveryRate?: number;
+    /** A delivery partner company is `company` (M4-T19). Default: person. */
+    kind?: UserKind;
+    vehicleType?: string;
+    vehicleId?: string;
+    /** Create inside the caller's transaction (M4-T19). The caller writes the audit row for the whole unit of work. */
+    tx?: TransactionClient;
   }) {
     await this.checkAdminPrivilege(requester, 'admin');
 
@@ -548,7 +554,7 @@ export const adminService = {
 
     const commission = data.commissionAmount !== undefined ? data.commissionAmount : data.deliveryRate;
 
-    const user = await prisma.user.create({
+    const user = await (data.tx ?? prisma).user.create({
       data: {
         email: data.email,
         firstName: data.firstName,
@@ -558,6 +564,9 @@ export const adminService = {
         password: hashedPassword,
         commissionAmount: commission || 0,
         deliveryRate: commission || 0,
+        ...(data.kind && { kind: data.kind }),
+        ...(data.vehicleType && { vehicleType: data.vehicleType }),
+        ...(data.vehicleId && { vehicleId: data.vehicleId }),
       },
       select: {
         id: true,
@@ -573,7 +582,7 @@ export const adminService = {
       } as any,
     });
 
-    await this.createAuditLog(requester, 'create', 'user', user.id.toString(), { email: user.email, role: user.role });
+    if (!data.tx) await this.createAuditLog(requester, 'create', 'user', user.id.toString(), { email: user.email, role: user.role });
 
     return user;
   },

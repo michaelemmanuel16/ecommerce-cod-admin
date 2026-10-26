@@ -11,6 +11,7 @@ import { prismaBase } from '../../utils/prisma';
 import { seedFixture, deleteFixtureRows, FIXTURE_SLUG, SeedFixtureResult } from '../fixtures/numbersFixture';
 import { historyFixtureChecks } from './fixtureChecks/history';
 import { partnersFixtureChecks } from './fixtureChecks/partners';
+import { stockFixtureChecks } from './fixtureChecks/stock';
 
 jest.setTimeout(180_000);
 
@@ -196,3 +197,4 @@ describe('numbers fixture (M1-T23)', () => {
 
 historyFixtureChecks(() => tenantId);
 partnersFixtureChecks(() => tenantId);
+stockFixtureChecks(() => tenantId);

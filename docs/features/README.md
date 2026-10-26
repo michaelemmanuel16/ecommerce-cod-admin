@@ -15,6 +15,7 @@ Each file documents one feature area. Related Linear issues are appended as work
 | Email Channel | [email-channel.md](email-channel.md) | In Progress |
 | M0 Correctness Base | [m0-correctness-base.md](m0-correctness-base.md) | Done |
 | M1 KPI Definitions | [m1-kpi-definitions.md](m1-kpi-definitions.md) | In Progress |
+| M4 Stock and Fulfilment | [m4-stock-fulfilment.md](m4-stock-fulfilment.md) | In Progress |
 
 ## Adding a new feature doc
 

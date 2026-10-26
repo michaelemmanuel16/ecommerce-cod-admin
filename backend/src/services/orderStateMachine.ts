@@ -5,7 +5,9 @@ import { hasPermission } from '../middleware/auth';
 import { resolveTenantId } from '../utils/tenantContext';
 import { Requester } from '../utils/authUtils';
 import { OrderStatusChangedEvent } from '../utils/appEvents';
-import { afterCommitEffects, applyGlEffects, GlEffects, legacyStockHook } from './orderSideEffects';
+import { afterCommitEffects, applyGlEffects, GlEffects } from './orderSideEffects';
+import { fulfilOrder, reverseOrder } from './stockService';
+import { recordDeliveryAttempt } from './deliveryAttemptHook';
 
 /**
  * Order state machine (F-301, F-302). `transitionOrder` is the one function that writes Order.status.
@@ -79,8 +81,6 @@ export interface TransitionOptions {
   imported?: boolean;
   /** M2-T17: loop guard depth. A workflow's `update_order` passes the depth of the run that caused it, plus one. */
   workflowDepth?: number;
-  /** D8: a writer that does no stock work today (completeDelivery) keeps doing none. */
-  skipLegacyStock?: boolean;
   tx?: TransactionClient;
 }
 
@@ -271,7 +271,7 @@ function moveFields(
   return data;
 }
 
-/** Side effects of a move, in the move's transaction: the legacy stock seam (M1-T10) and GL posting. */
+/** Side effects of a move, in the move's transaction: stock (F-657, one call site) and GL posting. */
 async function applySideEffects(
   tx: TransactionClient,
   order: SideEffectOrder,
@@ -281,7 +281,8 @@ async function applySideEffects(
   options: TransitionOptions,
   historyId: number,
 ): Promise<GlEffects> {
-  if (!options.skipLegacyStock) await legacyStockHook(tx, order, from, to, { changedBy: actor.userId });
+  if (to === 'delivered') await fulfilOrder(tx, order, actor.userId);
+  else if (from === 'delivered') await reverseOrder(tx, order, actor.userId);
   return applyGlEffects(tx, order, from, to, actor.userId, historyId, { postRevenueAlways: options.postRevenueAlways });
 }
 
@@ -417,6 +418,7 @@ async function move(
   }
 
   const gl = await applySideEffects(tx, order, from, to, actor, options, history.id);
+  await recordDeliveryAttempt(tx, order, to, options);
 
   const statusChanged: OrderStatusChangedEvent = {
     orderId, tenantId, customerId: order.customerId, from, to,

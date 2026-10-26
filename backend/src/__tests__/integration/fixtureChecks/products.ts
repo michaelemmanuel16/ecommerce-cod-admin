@@ -20,6 +20,21 @@ export function productsFixtureChecks(getTenantId: () => string): void {
       expect(bySku).toEqual({ 'MG-COPYBOOK-SET': 306, 'MG-REFILL-PENS': 172, 'MG-GRIP-TRAINER': 89, 'MG-PARENT-GUIDE': 58, 'DT-CREAM': 10 });
     });
 
+    it('product costs give margins 88 / 70 / 69 / 95, and the average margin 86 over the four products of the Products table', async () => {
+      const products = await prismaBase.product.findMany({ where: { tenantId: getTenantId() } });
+      const all = await productDeliveredUnits(getTenantId(), 'all', from, to);
+      const units = Object.fromEntries((all.byProduct ?? []).map((p) => [p.sku, p.units]));
+      const margin = (sku: string) => { const p = products.find((x) => x.sku === sku)!; return Math.round(((Number(p.price) - Number(p.cogs)) / Number(p.price)) * 100); };
+      expect(['MG-COPYBOOK-SET', 'MG-REFILL-PENS', 'MG-GRIP-TRAINER', 'MG-PARENT-GUIDE'].map(margin)).toEqual([88, 70, 69, 95]);
+      // Revenue-weighted: sum(units x (price - cost)) / sum(units x price). The Dictamni cream is not in the Products table (and has no cost here).
+      const weighted = (skus: string[]) => {
+        const rows = skus.map((sku) => ({ u: Number(units[sku]), p: Number(products.find((x) => x.sku === sku)!.price), c: Number(products.find((x) => x.sku === sku)!.cogs) }));
+        return Math.round((rows.reduce((s, r) => s + r.u * (r.p - r.c), 0) / rows.reduce((s, r) => s + r.u * r.p, 0)) * 100);
+      };
+      expect(weighted(['MG-COPYBOOK-SET', 'MG-REFILL-PENS', 'MG-GRIP-TRAINER', 'MG-PARENT-GUIDE'])).toBe(86);
+      expect(weighted(['MG-COPYBOOK-SET', 'MG-REFILL-PENS', 'MG-GRIP-TRAINER', 'MG-PARENT-GUIDE', 'DT-CREAM'])).toBe(87);
+    });
+
     it('gives the same number for one product as the all-products row', async () => {
       const set = await prismaBase.product.findFirstOrThrow({ where: { tenantId: getTenantId(), sku: 'MG-COPYBOOK-SET' } });
       expect((await productDeliveredUnits(getTenantId(), set.id, from, to)).units.value).toBe(306);

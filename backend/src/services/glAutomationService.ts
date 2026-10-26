@@ -238,8 +238,25 @@ export class GLAutomationService {
    * @param orderItems - Array of order items with product information
    * @returns Total COGS as Decimal
    */
-  static calculateTotalCOGS(orderItems: OrderItemWithProduct[]): Decimal {
+  static calculateTotalCOGS(orderItems: Array<{ quantity: number; product: { cogs: Decimal | null } }>): Decimal {
     return Money.sum(orderItems.map((item) => Money.mul(Money.orZero(item.product.cogs), item.quantity)));
+  }
+
+  /**
+   * The COGS of an order being delivered: the landed cost booked on the order when it entered delivered (F-611), else the
+   * items at the product cost now (orders delivered before M4, and an order with no physical line).
+   */
+  static cogsOfOrder(order: { landedCostTotal?: Decimal | null; orderItems: OrderItemWithProduct[] }): Decimal {
+    return order.landedCostTotal != null ? Money.parse(order.landedCostTotal) : this.calculateTotalCOGS(order.orderItems);
+  }
+
+  /**
+   * The COGS leg of an entry, read from its lines: what the entry booked, not what the product costs today.
+   * Null when the lines were not loaded.
+   */
+  static cogsBooked(entry: JournalEntryWithTransactions | undefined | null): Decimal | null {
+    if (!entry?.transactions) return null;
+    return Money.sum(entry.transactions.filter((t) => t.account?.code === GL_ACCOUNTS.COGS).map((t) => t.debitAmount));
   }
 
   /**
@@ -494,8 +511,8 @@ export class GLAutomationService {
     const deliveryCommission = Money.orZero(deliveryAgent?.commissionAmount);
     const salesRepCommission = Money.orZero(salesRep?.commissionAmount);
 
-    // Calculate total COGS to determine if we need to reverse COGS/inventory
-    const totalCOGS = this.calculateTotalCOGS(order.orderItems);
+    // COGS to reverse: the amount the original entry booked (F-611), so a later cost change never makes the ledger uneven.
+    const totalCOGS = this.cogsBooked(originalEntry) ?? this.calculateTotalCOGS(order.orderItems);
 
     // Build reversal transactions (flip debits/credits from original entry)
     const agentComm = deliveryCommission;
@@ -596,32 +613,6 @@ export class GLAutomationService {
       });
     }
     return reversal;
-  }
-
-  /**
-   * Restore inventory quantities when order is returned
-   *
-   * Increases product stock quantities by the amounts in the order
-   *
-   * @param tx - Prisma transaction client
-   * @param orderItems - Array of order items with product information
-   */
-  static async restoreInventory(
-    tx: Prisma.TransactionClient,
-    orderItems: OrderItemWithProduct[]
-  ): Promise<void> {
-    for (const item of orderItems) {
-      await tx.product.update({
-        where: { id: item.productId },
-        data: {
-          stockQuantity: {
-            increment: item.quantity,
-          },
-        },
-      });
-
-      logger.info(`Restored inventory for product ${item.product.name}: +${item.quantity} units`);
-    }
   }
 
   /**
@@ -1013,28 +1004,19 @@ export class GLAutomationService {
   }
 
   /**
-   * Create GL entry for inventory purchase (when a shipment arrives at warehouse)
-   *
-   * DR: Inventory (1200)       = totalCost
-   * CR: Cash in Hand (1010)    = totalCost
-   *
-   * @param tx - Prisma transaction client
-   * @param shipment - The inventory shipment record
-   * @param userId - ID of user marking arrival
-   * @returns Created journal entry
+   * One two-line inventory entry for a shipment: DR `debitCode` / CR `creditCode` for `amount`. The shipment is the source
+   * (`sourceType` + `sourceId`), so a repeat returns the entry already posted (idempotent).
    */
-  static async createInventoryPurchaseEntry(
+  private static async postInventoryEntry(
     tx: Prisma.TransactionClient,
-    shipment: InventoryShipment & { product: Product },
-    userId: number
+    shipment: Pick<InventoryShipment, 'id' | 'tenantId'>,
+    o: {
+      sourceType: JournalSourceType; debitCode: string; creditCode: string; amount: Money.MoneyInput; entryDate: Date; userId: number;
+      description: string; debitDescription: string; creditDescription: string;
+    }
   ): Promise<JournalEntryWithTransactions> {
-    // Idempotency guard — prevent duplicate GL entries for the same shipment
     const existingEntry = await tx.journalEntry.findFirst({
-      where: {
-        sourceType: JournalSourceType.inventory_purchase,
-        sourceId: shipment.id,
-        isVoided: false
-      },
+      where: { sourceType: o.sourceType, sourceId: shipment.id, isVoided: false },
       include: { transactions: { include: { account: true } } }
     });
     if (existingEntry) {
@@ -1042,32 +1024,67 @@ export class GLAutomationService {
       return existingEntry as JournalEntryWithTransactions;
     }
 
-    const totalCost = Money.parse(shipment.totalCost);
-
-    const transactions: TransactionCreateData[] = [
-      {
-        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.INVENTORY, tx),
-        debitAmount: totalCost,
-        creditAmount: Money.ZERO,
-        description: `Inventory purchase - ${shipment.product.name} (${shipment.quantity} units)`,
-      },
-      {
-        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND, tx),
-        debitAmount: Money.ZERO,
-        creditAmount: totalCost,
-        description: `Payment for inventory - ${shipment.supplier || 'Unknown supplier'}`,
-      },
-    ];
-
+    const amount = Money.parse(o.amount);
     return await this.createJournalEntryWithRetry(tx, {
-      entryDate: new Date(),
-      description: `Inventory purchase - ${shipment.product.name} x${shipment.quantity} from ${shipment.supplier || 'Unknown'}`,
-      sourceType: JournalSourceType.inventory_purchase,
+      entryDate: o.entryDate,
+      description: o.description,
+      sourceType: o.sourceType,
       sourceId: shipment.id,
-      createdBy: userId,
+      createdBy: o.userId,
+      tenantId: shipment.tenantId ?? undefined,
       transactions: {
-        create: transactions,
+        create: [
+          { accountId: await GLAccountService.getAccountIdByCode(o.debitCode, tx), debitAmount: amount, creditAmount: Money.ZERO, description: o.debitDescription },
+          { accountId: await GLAccountService.getAccountIdByCode(o.creditCode, tx), debitAmount: Money.ZERO, creditAmount: amount, description: o.creditDescription },
+        ],
       },
+    });
+  }
+
+  /**
+   * Inventory purchase entry, posted once when a shipment is received (M4-T12, F-606).
+   *
+   * DR: Inventory (1200)       = total in store currency (the full shipment total, not only the counted units)
+   * CR: Cash in Hand (1010)    = the same
+   *
+   * Dated the received date.
+   */
+  static async createInventoryPurchaseEntry(
+    tx: Prisma.TransactionClient,
+    shipment: Pick<InventoryShipment, 'id' | 'tenantId' | 'supplier' | 'quantity'>,
+    productName: string,
+    totalStore: Money.MoneyInput,
+    entryDate: Date,
+    userId: number
+  ): Promise<JournalEntryWithTransactions> {
+    return this.postInventoryEntry(tx, shipment, {
+      sourceType: JournalSourceType.inventory_purchase, debitCode: GL_ACCOUNTS.INVENTORY, creditCode: GL_ACCOUNTS.CASH_IN_HAND,
+      amount: totalStore, entryDate, userId,
+      description: `Inventory purchase - ${productName} x${shipment.quantity} from ${shipment.supplier || 'Unknown'}`,
+      debitDescription: `Inventory purchase - ${productName} (${shipment.quantity} units shipped)`,
+      creditDescription: `Payment for inventory - ${shipment.supplier || 'Unknown supplier'}`,
+    });
+  }
+
+  /**
+   * Supplier claim settled with money recovered (M4-T12, F-608): the cash comes back and the inventory value goes down.
+   *
+   * DR: Cash in Hand (1010)    = amount recovered
+   * CR: Inventory (1200)       = amount recovered
+   */
+  static async createInventoryClaimEntry(
+    tx: Prisma.TransactionClient,
+    shipment: Pick<InventoryShipment, 'id' | 'tenantId' | 'supplier'>,
+    productName: string,
+    amountRecovered: Money.MoneyInput,
+    userId: number
+  ): Promise<JournalEntryWithTransactions> {
+    return this.postInventoryEntry(tx, shipment, {
+      sourceType: JournalSourceType.inventory_claim, debitCode: GL_ACCOUNTS.CASH_IN_HAND, creditCode: GL_ACCOUNTS.INVENTORY,
+      amount: amountRecovered, entryDate: new Date(), userId,
+      description: `Supplier claim recovered - ${productName} shipment #${shipment.id}`,
+      debitDescription: `Supplier claim recovered - ${shipment.supplier || 'Unknown supplier'}`,
+      creditDescription: `Short shipment recovered - ${productName}`,
     });
   }
 

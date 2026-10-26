@@ -98,7 +98,7 @@ export class FinancialSyncService {
       logger.info(`Created Transaction record for order ${order.id} (Transaction ID: ${transaction.id})`);
 
       // Step 2: Calculate COGS
-      const totalCOGS = Money.sum(order.orderItems.map((item) => Money.mul(Money.orZero(item.product.cogs), item.quantity)));
+      const totalCOGS = GLAutomationService.cogsOfOrder(order);
 
       // Step 3: Create GL entries using GLAutomationService
       const journalEntry = await GLAutomationService.createRevenueRecognitionEntry(

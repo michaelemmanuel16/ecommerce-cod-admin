@@ -40,7 +40,7 @@ export interface ProductUnitsLine {
 interface ProductDeliveredUnits {
   units: KpiResult<number>;
   lineRevenue: KpiResult<string>;
-  /** One row per product, most units first. Only for productId 'all'. */
+  /** One row per product, most units first. For productId 'all' or a list of ids. */
   byProduct?: ProductUnitsLine[];
 }
 
@@ -48,9 +48,11 @@ const FORMULA_ID = 'products.deliveredUnits.v1';
 
 export async function productDeliveredUnits(
   tenantId: string,
-  productId: number | 'all',
+  productId: number | number[] | 'all',
   from: Date,
   to: Date,
+  /** `idsOnly`: the caller reads only productId and units, so skip the currency and the sku / name lookups (sku and name come back empty, no currency). */
+  opts: { idsOnly?: boolean } = {},
 ): Promise<ProductDeliveredUnits> {
   return runInTenant(tenantId, async () => {
     const window = {
@@ -72,16 +74,16 @@ export async function productDeliveredUnits(
     };
     const where: Prisma.OrderItemWhereInput = {
       order,
-      ...(productId === 'all' ? {} : { productId }),
+      ...(productId === 'all' ? {} : { productId: Array.isArray(productId) ? { in: productId } : productId }),
       // free bundled digital item
       NOT: { totalPrice: 0, product: { productType: 'digital' } },
     };
 
     const [currency, groups] = await Promise.all([
-      getCurrency(),
+      opts.idsOnly ? undefined : getCurrency(),
       prisma.orderItem.groupBy({ by: ['productId'], where, _sum: { quantity: true, totalPrice: true } }),
     ]);
-    const products = productId === 'all' && groups.length
+    const products = typeof productId !== 'number' && !opts.idsOnly && groups.length
       ? await prisma.product.findMany({ where: { id: { in: groups.map((g) => g.productId) } }, select: { id: true, sku: true, name: true } })
       : [];
 
@@ -93,7 +95,7 @@ export async function productDeliveredUnits(
       units: { name: 'Delivered units', value: totalUnits, unit: 'count', ...meta },
       lineRevenue: { name: 'Delivered line revenue', value: Money.toApi(totalRevenue), unit: 'money', currency, ...meta },
     };
-    if (productId === 'all') {
+    if (typeof productId !== 'number') {
       const byId = new Map(products.map((p) => [p.id, p]));
       result.byProduct = groups
         .map((g) => ({

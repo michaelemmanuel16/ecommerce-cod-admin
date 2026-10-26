@@ -381,7 +381,7 @@ Pages in this file use the v2 style from `docs/mockups/v2/app.css`. Every button
   - [ ] The card "Own store" shows "Set up own store" when none exists (F-650).
   - [ ] Table "Stock by location": Product, Location, On hand, Reserved, In transit, "Our records vs <count source>", Difference, Actions (icons: Allocate, Return, Transfer, Adjust). One row per location and product with stock or with a recent count.
   - [ ] Difference = our records − the latest count at that location for that product. A tag shows "Matches" or "−12 units". A count older than the latest movement after it shows "Count is old" instead of a gap (GUESS: a stale count can mislead; check wording).
-  - [ ] Sample values must hold: Logiswift copybook on hand 100, reserved 34, count 88, difference 12; Kofi copybook 36 on hand, 11 reserved, 20 in transit; Logiswift total on hand 342 (100 + 62 + 180), reserved 59 (34 + 11 + 14); Kofi total 99 (36 + 18 + 45). The page computes these. It does not store them.
+  - [ ] Sample values must hold: Logiswift copybook on hand 200, reserved 116, count 188, difference 12; Kofi copybook 36 on hand, 21 reserved, 20 in transit; Logiswift total on hand 442 (200 + 62 + 180), reserved 116 (all copybook); Kofi total 99 (36 + 18 + 45). The page computes these. It does not store them.
   - [ ] Filters: product, location type, "Show only differences". A query `?product=<id>` pre-filters (used by F-603).
   - [ ] Table "Recent transfers": Date, Move, Items, Status (In transit, Pickup planned, Received, Received 12 short), button "View all with filters" (opens F-659).
   - [ ] Suggestion cards: F-661.
@@ -407,7 +407,7 @@ Pages in this file use the v2 style from `docs/mockups/v2/app.css`. Every button
   - [ ] After save, the sheet offers per line: "Apply count" (writes a `count_adjustment` movement; our records become the counted figure; reason defaults to "Physical count correction"; the user can pick another reason, including "Short on arrival" which links the shipment) or "Keep investigating" (the Finding stays open, our records stay).
   - [ ] Applying a count marks the matching Finding as Explained and links the movement.
   - [ ] The most recent count per location and product feeds F-652 "Our records vs count" and F-603 notes.
-  - [ ] Worked example: Logiswift copybook set, our records 100, 3PL dashboard 88 on 15 Oct. Difference −12. Finding "Stock gap, Logiswift, 12 units, GH₵362.50 at cost" (12 × 30.21). The owner links it to the 9 Oct shipment short of 12 (F-606) and applies the count with reason "Short on arrival". On-hand becomes 88. The gap is 0. The same 12 units are not counted twice in the cost of failed deliveries (Builder C): the shipment claim (F-608) carries the loss.
+  - [ ] Worked example: Logiswift copybook set, our records 200, 3PL dashboard 188 on 15 Oct. Difference −12. Finding "Stock gap, Logiswift, 12 units, GH₵362.50 at cost" (12 × 30.21). The owner links it to the 9 Oct shipment short of 12 (F-606) and applies the count with reason "Short on arrival". On-hand becomes 188. The gap is 0. The same 12 units are not counted twice in the cost of failed deliveries (Builder C): the shipment claim (F-608) carries the loss.
   - [ ] Counts of agents: the agent app does not run counts in this release (GUESS: owner may want agents to count; ask). The owner enters the agent's count by hand (source `agent_count`).
   - [ ] The count date cannot be in the future.
 - Data: new `StockCount` {id, tenantId, locationId, countDate, source, countedById, note, createdAt}; new `StockCountLine` {id, tenantId, countId, productId, systemQuantity, countedQuantity, difference, appliedMovementId?}. Depends on `Finding` (Builder C owns the model and list; this file creates rows of type `stock_gap`).
@@ -569,7 +569,7 @@ Pages in this file use the v2 style from `docs/mockups/v2/app.css`. Every button
   - [ ] `Product.stockQuantity` (warehouse) becomes the level at the default 3PL location (Logiswift). The owner can pick another location during the run (a dry-run report shows the choice).
   - [ ] Old `InventoryTransfer` rows get `fromLocationId` and `toLocationId` from the agent ids (warehouse side = the default 3PL location) and status `received`.
   - [ ] A dry-run prints: per product, sum before and after. They must be equal. The run fails if any differ.
-  - [ ] After migration, the Logiswift copybook level still reads 100 and the 3PL count (88) shows as a 12-unit gap (F-653). The migration does not "fix" it.
+  - [ ] After migration, the Logiswift copybook level is unchanged and the 3PL count shows as a 12-unit gap (F-653). The migration does not "fix" it.
   - [ ] A nightly job compares `Product.stockQuantity` with the sum of levels and opens a Finding on any difference.
   - [ ] The job and the migration run per tenant with a tenant context (design risk 8).
 - Data: backfill as above. `AgentStock` kept read-only.

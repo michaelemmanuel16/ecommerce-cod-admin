@@ -37,7 +37,7 @@ import { rates, ratePercent } from './rates';
 import { kpiMeta, type KpiResult } from './types';
 
 const DEFAULT_CONFIRMATION_TARGET = 70;
-const DEFAULT_SUCCESS_TARGET = 60;
+export const DEFAULT_SUCCESS_TARGET = 60;
 /** The lever asks "what is +5 points of this rate worth". */
 const LEVER_POINTS = 5;
 /** Days of delivered orders behind the default planned AOV (R12). */
@@ -111,6 +111,13 @@ function paceMarker(day: Ymd, period: Period): { percent: number; daysGone: numb
 
 const dayStart = (year: number, month: number) => new Date(Date.UTC(year, month - 1, 1));
 
+/** The tenant-wide target of `metric` whose period covers `day`: the latest period start, then the newest row. */
+export const coveringTarget = (tenantId: string, metric: string, day: Date) =>
+  prisma.target.findFirst({
+    where: { tenantId, roleId: null, userId: null, metric, periodStart: { lte: day }, periodEnd: { gte: day } },
+    orderBy: [{ periodStart: 'desc' }, { createdAt: 'desc' }],
+  });
+
 export async function leadership(tenantId: string, asOf?: string, options: LeadershipOptions = {}): Promise<Leadership> {
   const zone = getStoreTimeZone(tenantId);
   const asOfDate = asOf ?? localDate(new Date(), zone);
@@ -136,11 +143,6 @@ export async function leadership(tenantId: string, asOf?: string, options: Leade
         where: { ...targetBase, scope, metric: 'revenue', periodStart: dayStart(day.year, startMonth) },
         orderBy: { createdAt: 'desc' },
       });
-    const coveringTarget = (metric: string) =>
-      prisma.target.findFirst({
-        where: { ...targetBase, metric, periodStart: { lte: asOfDay }, periodEnd: { gte: asOfDay } },
-        orderBy: [{ periodStart: 'desc' }, { createdAt: 'desc' }],
-      });
 
     const [currency, quarterTarget, monthTarget, yearTarget, confTarget, successTarget, aovTarget,
       monthRevenue, quarterRevenue, yearRevenue, aovWindow, monthRates] = await Promise.all([
@@ -148,9 +150,9 @@ export async function leadership(tenantId: string, asOf?: string, options: Leade
       periodRevenueTarget('quarter', spans[1].startMonth),
       periodRevenueTarget('month', month.startMonth),
       periodRevenueTarget('north_star', 1),
-      coveringTarget('confirmation_rate'),
-      coveringTarget('delivery_success_rate'),
-      coveringTarget('planned_aov'),
+      coveringTarget(tenantId, 'confirmation_rate', asOfDay),
+      coveringTarget(tenantId, 'delivery_success_rate', asOfDay),
+      coveringTarget(tenantId, 'planned_aov', asOfDay),
       deliveredRevenue(tenantId, month.from, to, revScope),
       deliveredRevenue(tenantId, spans[1].from, to, revScope),
       deliveredRevenue(tenantId, spans[2].from, to, revScope),

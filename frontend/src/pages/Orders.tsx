@@ -17,6 +17,7 @@ import { NewOrderSheet } from './orders/NewOrderSheet';
 import { RowStatus } from './orders/RowStatus';
 import { useOrderActions, type FocusSet } from './orders/useOrderActions';
 import { CLOSED, DELETABLE, orderNumber, tabCount, visibleTabs, type StatusTabId } from './orders/model';
+import { failureReasonLabel } from './orders/reasons';
 import { readPref, writePref } from './orders/prefs';
 import { DEFAULT_SIZE } from '../utils/urlState';
 import { DEFAULT_VIEW, MAX_IDS, PAGE_SIZES, listParams, parseView, rangeOf, rangePhrase, sizeOf, writeView, type ListView } from './orders/urlState';
@@ -180,6 +181,12 @@ export function Orders({ onOpen }: OrdersProps) {
             onDelete={() => actions.askDelete(selectedRows)}
             onClear={() => setSelected(new Set())}
           />
+        )}
+        {view.failure && (
+          <div className="shownote" role="status">
+            Showing failed and returned orders where the reason is {failureReasonLabel(view.failure).toLowerCase()}.
+            <Button size="mini" onClick={() => go({ ...view, failure: null, page: 1 })}>Show all orders</Button>
+          </div>
         )}
         {view.ids && (
           <div className="shownote" role="status">

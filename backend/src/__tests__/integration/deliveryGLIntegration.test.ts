@@ -7,6 +7,7 @@
 import { jest, describe, it, expect, beforeAll, beforeEach, afterAll } from '@jest/globals';
 import prisma from '../../utils/prisma';
 import { DeliveryService } from '../../services/deliveryService';
+import { transitionOrder, actorOf } from '../../services/orderStateMachine';
 import { OrderService } from '../../services/orderService';
 import { Decimal } from '@prisma/client/runtime/library';
 import { GL_ACCOUNTS } from '../../config/glAccounts';
@@ -51,6 +52,7 @@ describe('Delivery GL Integration', () => {
     await withGlTestTenant(async () => {
       await prisma.accountTransaction.deleteMany({});
       await (prisma as any).agentCollection.deleteMany({});
+      await prisma.deliveryAttempt.deleteMany({}); // written by the state machine on a failed delivery (M4-T20)
       await prisma.delivery.deleteMany({});
       await prisma.orderItem.deleteMany({});
       await (prisma as any).formSubmission.deleteMany({});
@@ -63,6 +65,10 @@ describe('Delivery GL Integration', () => {
       await (prisma as any).webhookLog.deleteMany({});
       await (prisma as any).webhookConfig.deleteMany({});
       await (prisma as any).product_cost_entries.deleteMany({});
+      await prisma.stockLevel.deleteMany({});
+      await prisma.inventoryTransfer.deleteMany({});
+      await prisma.stockLocation.deleteMany({});
+      await prisma.finding.deleteMany({});
       await prisma.product.deleteMany({});
       await prisma.customer.deleteMany({});
       await prisma.account.deleteMany({});
@@ -190,7 +196,11 @@ describe('Delivery GL Integration', () => {
     await (prisma as any).webhookLog.deleteMany({});
     await (prisma as any).webhookConfig.deleteMany({});
     await (prisma as any).product_cost_entries.deleteMany({});
-    await prisma.product.deleteMany({});
+    await prisma.stockLevel.deleteMany({});
+      await prisma.inventoryTransfer.deleteMany({});
+      await prisma.stockLocation.deleteMany({});
+      await prisma.finding.deleteMany({});
+      await prisma.product.deleteMany({});
     await prisma.customer.deleteMany({});
     await prisma.user.deleteMany({
       where: { email: { in: ['testuser@example.com', 'testagent@example.com'] } },
@@ -285,11 +295,11 @@ describe('Delivery GL Integration', () => {
       await prisma.feeRule.create({
         data: { partnerUserId: testOrder.deliveryAgentId, outcome: 'failed', amount: 50 },
       });
-      await deliveryService.markDeliveryFailed(
-        testDelivery.id.toString(),
-        'Customer not home',
-        testUser.id.toString()
-      );
+      // markDeliveryFailed is gone (M4-T20); the fail goes through the state machine, as the order status route does
+      await transitionOrder(testOrder.id, 'failed_delivery', actorOf(undefined, testUser.id), {
+        note: 'Delivery failed: Customer not home',
+        failureReason: 'other',
+      });
 
       const updatedDelivery = await prisma.delivery.findUnique({
         where: { id: testDelivery.id }

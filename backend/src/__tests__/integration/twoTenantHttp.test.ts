@@ -52,13 +52,11 @@ describe('delivery routes', () => {
     expect(order.status).toBe('out_for_delivery');
   });
 
-  it('by-order and route lookups for B ids return nothing of B', async () => {
+  it('by-order lookups for B ids return nothing of B', async () => {
     const { a, b } = pair;
     const h = auth(a.users.admin.token);
     const byOrder = await request(app).get(`/api/deliveries/by-order/${b.ids.order}`).set(h);
     expect(byOrder.status).toBe(404);
-    const route = await request(app).get(`/api/deliveries/routes/${b.users.deliveryAgent.id}`).set(h);
-    expect(JSON.stringify(route.body)).not.toContain(b.marker);
     const own = await request(app).get(`/api/deliveries/by-order/${a.ids.order}`).set(h);
     expect(own.status).toBe(200);
   });

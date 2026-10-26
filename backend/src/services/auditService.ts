@@ -1,5 +1,5 @@
 import { AuditChannel, Prisma, UserKind } from '@prisma/client';
-import prisma from '../utils/prisma';
+import prisma, { TransactionClient } from '../utils/prisma';
 import logger from '../utils/logger';
 import { getTenantId, resolveTenantId, runInTenant } from '../utils/tenantContext';
 
@@ -102,6 +102,8 @@ export interface AuditRecordInput {
   aiActionId?: string | null;
   ipAddress?: string | null;
   userAgent?: string | null;
+  /** Write inside this transaction, so the row commits or rolls back with the change it records. */
+  tx?: TransactionClient;
 }
 
 async function write(tenantId: string, p: AuditRecordInput) {
@@ -111,7 +113,7 @@ async function write(tenantId: string, p: AuditRecordInput) {
   if (p.durationMs !== undefined) metadata.durationMs = p.durationMs;
   if (p.input !== undefined) metadata.input = p.input;
   const json = (v: unknown) => (v === undefined || v === null ? undefined : (redactSecrets(v) as Prisma.InputJsonValue));
-  return prisma.auditLog.create({
+  return (p.tx ?? prisma).auditLog.create({
     data: {
       tenantId,
       userId: p.actorId ?? null,

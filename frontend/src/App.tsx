@@ -23,14 +23,14 @@ import { ResetPassword } from './pages/ResetPassword';
 import { DynamicDashboard } from './pages/DynamicDashboard';
 import { Dashboard } from './pages/Dashboard';
 import { SettingsTabRedirect } from './pages/settings/SettingsTabRedirect';
+import { ProductEditRedirect } from './pages/products/ProductEditRedirect';
 // Lazy load all other pages for better initial load performance
 const Pricing = lazy(() => import('./pages/Pricing').then(m => ({ default: m.Pricing })));
 const OrdersRoute = lazy(() => import('./pages/orders/OrdersRoute').then(m => ({ default: m.OrdersRoute })));
 const Products = lazy(() => import('./pages/Products').then(m => ({ default: m.Products })));
-const ProductForm = lazy(() => import('./pages/ProductForm').then(m => ({ default: m.ProductForm })));
 const Customers = lazy(() => import('./pages/Customers').then(m => ({ default: m.Customers })));
 const CustomerDetails = lazy(() => import('./pages/CustomerDetails').then(m => ({ default: m.CustomerDetails })));
-const DeliveryAgents = lazy(() => import('./pages/DeliveryAgents').then(m => ({ default: m.DeliveryAgents })));
+const Deliveries = lazy(() => import('./pages/Deliveries').then(m => ({ default: m.Deliveries })));
 const CustomerReps = lazy(() => import('./pages/CustomerReps').then(m => ({ default: m.CustomerReps })));
 const Financial = lazy(() => import('./pages/Financial').then(m => ({ default: m.Financial })));
 const Reports = lazy(() => import('./pages/Reports').then(m => ({ default: m.Reports })));
@@ -47,7 +47,7 @@ const PaymentCallback = lazy(() => import('./pages/PaymentCallback').then(m => (
 const UiGallery = import.meta.env.DEV ? lazy(() => import('./pages/dev/UiGallery')) : null;
 const EarningsHistory = lazy(() => import('./pages/EarningsHistory'));
 const AgentMyInventory = lazy(() => import('./pages/AgentMyInventory'));
-const AgentInventoryManagement = lazy(() => import('./pages/AgentInventoryManagement'));
+const Inventory = lazy(() => import('./pages/Inventory').then(m => ({ default: m.Inventory })));
 const Communications = lazy(() => import('./pages/Communications'));
 const SubscriptionCallback = lazy(() => import('./pages/SubscriptionCallback').then(m => ({ default: m.SubscriptionCallback })));
 const PlatformLogin = lazy(() => import('./pages/PlatformLogin').then(m => ({ default: m.PlatformLogin })));
@@ -66,12 +66,13 @@ const MobileDeliveries = lazy(() => import('./pages/mobile/MobileDeliveries'));
 const MobileDeliveryDetail = lazy(() => import('./pages/mobile/MobileDeliveryDetail'));
 const MobileCollections = lazy(() => import('./pages/mobile/MobileCollections'));
 
+// The agent's own stock screen. Everyone else who opens the old path lands on Inventory & stock (M4-T25).
 const AgentInventoryRoute: React.FC = () => {
   const { user } = useAuthStore();
   if (user?.role === 'delivery_agent') {
     return <AgentMyInventory />;
   }
-  return <AgentInventoryManagement />;
+  return <Navigate to="/inventory" replace />;
 };
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode; skipOnboardingCheck?: boolean }> = ({ children, skipOnboardingCheck }) => {
@@ -285,11 +286,11 @@ function App() {
             <Route path="products" element={
               <Suspense fallback={<Loading />}><Products /></Suspense>
             } />
-            <Route path="products/new" element={
-              <Suspense fallback={<Loading />}><ProductForm /></Suspense>
-            } />
-            <Route path="products/:id/edit" element={
-              <Suspense fallback={<Loading />}><ProductForm /></Suspense>
+            {/* The product form is a drawer on the Products page (M4-T22): old links open it. */}
+            <Route path="products/new" element={<Navigate to="/products?edit=new" replace />} />
+            <Route path="products/:id/edit" element={<ProductEditRedirect />} />
+            <Route path="inventory" element={
+              <Suspense fallback={<Loading />}><Inventory /></Suspense>
             } />
             <Route path="customers" element={
               <Suspense fallback={<Loading />}><Customers /></Suspense>
@@ -298,7 +299,7 @@ function App() {
               <Suspense fallback={<Loading />}><CustomerDetails /></Suspense>
             } />
             <Route path="delivery-agents" element={
-              <Suspense fallback={<Loading />}><DeliveryAgents /></Suspense>
+              <Suspense fallback={<Loading />}><Deliveries /></Suspense>
             } />
             <Route path="customer-reps" element={
               <Suspense fallback={<Loading />}><CustomerReps /></Suspense>
@@ -341,13 +342,13 @@ function App() {
             <Route path="webhooks" element={
               <Suspense fallback={<Loading />}><Webhooks /></Suspense>
             } />
-            <Route path="agent-inventory" element={
-              <Suspense fallback={<Loading />}><AgentInventoryRoute /></Suspense>
-            } />
             <Route path="earnings-history" element={
               <Suspense fallback={<Loading />}><EarningsHistory /></Suspense>
             } />
             </Route>
+            <Route path="agent-inventory" element={
+              <Suspense fallback={<Loading />}><AgentInventoryRoute /></Suspense>
+            } />
             <Route path="platform" element={platformRoute(PlatformDashboard)} />
             <Route path="platform/tenants" element={platformRoute(PlatformTenants)} />
             <Route path="platform/tenants/:id" element={platformRoute(PlatformTenantDetail)} />

@@ -12,6 +12,7 @@ import { prismaBase } from '../../utils/prisma';
 import { metaCapiService } from '../../services/metaCapiService';
 import { clearCheckoutFormConfigCache } from '../../services/checkoutFormService';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
+import { stockUp } from './helpers/stock';
 
 jest.setTimeout(120_000);
 
@@ -27,10 +28,15 @@ let mainSlug: string;
 let mainFormId: number;
 let packages: { one: number; two: number };
 
-const product = (data: Record<string, unknown>) =>
-  prismaBase.product.create({
+// A physical product starts with `stockQuantity` units at a test location: available to sell comes from the levels (M4-T16)
+const product = async (data: Record<string, unknown>) => {
+  const p = await prismaBase.product.create({
     data: { name: `P${++seq}`, sku: `T09-${Date.now()}-${seq}`, category: 'test', price: 10, stockQuantity: 10, tenantId, ...data } as never,
   });
+  const units = (data.stockQuantity ?? 10) as number;
+  if (units > 0 && data.productType !== 'digital') await stockUp(tenantId, p.id, units);
+  return p;
+};
 
 const makeForm = async (productId: number, extra: Record<string, unknown> = {}) => {
   const slug = `t09-${pair.a.slug}-${++seq}`;
@@ -270,5 +276,38 @@ describe('form and product switches', () => {
       expect(res.status).toBe(404);
     }
     expect(mainFormId).toBeGreaterThan(0);
+  });
+});
+
+describe('reserved units (M4-T16)', () => {
+  it('a product whose units are all reserved for open orders is sold out, and its add-on is hidden, though the cache still shows stock', async () => {
+    const reserved = await product({ stockQuantity: 5 });
+    const swiftUser = await prismaBase.user.create({ data: { email: `t09-swift-${Date.now()}@codadmin.test`, password: 'x', firstName: 'Swift', lastName: 'T', role: 'delivery_agent', kind: 'company', tenantId } });
+    await prismaBase.stockLocation.update({ where: { id: (await prismaBase.stockLocation.findFirstOrThrow({ where: { tenantId, name: 'Test store' } })).id }, data: { userId: swiftUser.id, type: 'partner_3pl' } });
+    const customer = await prismaBase.customer.create({ data: { firstName: 'Kofi', lastName: 'O', phoneNumber: phone(), address: '2 Test Rd', state: 'Greater Accra', area: 'Accra', tenantId } });
+    await prismaBase.order.create({
+      data: {
+        customerId: customer.id, status: 'out_for_delivery', subtotal: 50, totalAmount: 50, tenantId, deliveryAgentId: swiftUser.id,
+        deliveryAddress: '1 St', deliveryState: 'Greater Accra', deliveryArea: 'Accra',
+        orderItems: { create: [{ productId: reserved.id, quantity: 5, unitPrice: 10, totalPrice: 50 }] },
+      } as never,
+    });
+    expect((await prismaBase.product.findUniqueOrThrow({ where: { id: reserved.id } })).stockQuantity).toBe(5);
+
+    const form = await makeForm(reserved.id);
+    const page = await request(app).get(`/api/public/forms/${form.slug}`);
+    expect(page.body.form.product.inStock).toBe(false);
+    const res = await place(form.slug, { formData: buyer(), selectedPackage: { name: 'One' } });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'This product is sold out' });
+
+    const addOn = await prismaBase.formUpsell.create({ data: { formId: mainFormId, name: 'Reserved extra', price: 4, productId: reserved.id } });
+    clearCheckoutFormConfigCache();
+    const main = await request(app).get(`/api/public/forms/${mainSlug}`);
+    expect(main.body.form.upsells.map((u: any) => u.name)).not.toContain('Reserved extra');
+    const buy = await place(mainSlug, { formData: buyer(), selectedPackage: { id: packages.one }, selectedUpsells: [{ id: addOn.id }] });
+    expect(buy.status).toBe(400);
+    expect(buy.body.error).toBe('Selected add-on is not available');
+    await prismaBase.formUpsell.delete({ where: { id: addOn.id } });
   });
 });

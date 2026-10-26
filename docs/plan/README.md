@@ -63,7 +63,7 @@ With one builder, calendar time follows the total, not the path: **3608 planned 
 | M2 end | Read the legacy MCP key list and decide which keys to tighten. | M2-T22 |
 | M3 | Review at gates G1 (shell and Dashboard), G2 (Orders and Customers), G3 (Reports and Settings). Confirm the menu matrix and the Dashboard defaults at G1. | M3-T41, M3-T50, M3-T69, M3-T75 |
 | M3b | One phone test of the public form in the Facebook in-app browser. Review at gate G1. | M3b-T19, M3b-T25 |
-| M4 end | Pick the default 3PL location for the stock migration dry run. Approve the production stock migration (verified backup first). | M4-T41 |
+| M4 end | Review the summary of all M4 work and approve the PR. M4 never touches production. | M4-T41 |
 | M5 | Approve before any production backfill of the 1,321 draft collections. Tell the outside agents (the ones that run partner syncs) how to call the "record partner payout" action with a normal API or MCP key. | M5-T30, M5-T10 |
 | M8 start | Submit Meta App Review and Business Verification on day 1, as soon as the scope check is written. | M8-T01 |
 | Every milestone end | Owner review of the PR and the "Decide at task time" results. Push and the PR to `develop` only after the owner says yes. Never push to `main`. | Last task of each file |

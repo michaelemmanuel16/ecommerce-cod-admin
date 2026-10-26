@@ -1,4 +1,5 @@
 import { randomBytes } from 'crypto';
+import { UserRole } from '@prisma/client';
 import prisma, { prismaBase } from '../../../utils/prisma';
 import { runInTenant } from '../../../utils/tenantContext';
 import { generateAccessToken } from '../../../utils/jwt';
@@ -16,7 +17,7 @@ import { clearSystemUserIdCache } from '../../../services/systemUserService';
  *
  * Always call `cleanup()` in afterAll; it deletes only rows of these two tenants.
  *
- * "Partner" has no model of its own: a partner is a `delivery_agent` user.
+ * A partner is a `delivery_agent` user; M4 adds its DeliveryPartnerProfile and stock location.
  */
 
 export type SeedUser = { id: number; email: string; role: string; token: string };
@@ -54,6 +55,15 @@ export function createTenant(label: string, extra: { currency?: string } = {}) {
   return prismaBase.tenant.create({
     data: { name: `${label} ${suffix}`, slug: `${label.toLowerCase().replace(/\s+/g, '-')}-${suffix}`, ...extra },
   });
+}
+
+let userSeq = 0;
+
+/** One user in a tenant, with an access token for the API. Email is unique per call. Pair with deleteTenantRows. */
+export async function mkUser(tenantId: string, label: string, role: UserRole, extra: Record<string, unknown> = {}) {
+  const email = `${label}-${tenantId.slice(0, 8)}-${Date.now()}-${userSeq++}@codadmin.test`;
+  const u = await prismaBase.user.create({ data: { email, password: 'x', firstName: label, lastName: 'T', role, tenantId, ...extra } });
+  return { id: u.id, token: generateAccessToken({ id: u.id, email, role, tenantId }) };
 }
 
 /** Run one wave of independent creates. Waits for all of them, so a failure never leaves a write in flight behind the cleanup. */
@@ -262,6 +272,26 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
     data: { tenantId, provider: 'paystack', mode: 'test', publicKey: `pk_test_${marker}`, secretKey: `sk_test_${marker}`, supportedCurrencies: ['GHS'] },
   }));
 
+  // M4 models: a delivery agent's stock location, one level, one count with one line, a partner profile and one attempt.
+  const location = await seed('stockLocation', prismaBase.stockLocation.create({
+    data: { tenantId, type: 'agent', name: `Loc ${marker}`, userId: deliveryAgent.id },
+  }));
+  const count = await seed('stockCount', prismaBase.stockCount.create({
+    data: { tenantId, locationId: location.id, countDate: new Date('2026-10-15'), source: 'own_count', countedById: admin.id, note: `count ${marker}` },
+  }));
+  await wave([
+    seed('stockLevel', prismaBase.stockLevel.create({ data: { tenantId, locationId: location.id, productId: product.id, quantity: 10 } })),
+    seed('stockCountLine', prismaBase.stockCountLine.create({
+      data: { tenantId, countId: count.id, productId: product.id, systemQuantity: 10, countedQuantity: 8, difference: -2 },
+    })),
+    seed('deliveryPartnerProfile', prismaBase.deliveryPartnerProfile.create({
+      data: { tenantId, userId: deliveryAgent.id, daysToPay: 7, baseTown: `Town ${marker}` },
+    })),
+    seed('deliveryAttempt', prismaBase.deliveryAttempt.create({
+      data: { tenantId, orderId: order.id, partnerUserId: deliveryAgent.id, attemptedAt: new Date(), reason: 'not_reachable', note: `attempt ${marker}` },
+    })),
+  ]);
+
   // The MCP key acts as an ai_agent user. admin holds every cell the 14 tools need and the Legacy role lists all
   // 14 tools, so suites that call every tool work. A suite that tests a narrower key makes its own user, role and key.
   const legacyRole = await prismaBase.role.findFirstOrThrow({ where: { tenantId, name: 'Legacy MCP (14 tools)' } });
@@ -329,6 +359,14 @@ export async function deleteTenantRows(tenantIds: string[]): Promise<void> {
     db.roleAssignment.deleteMany({ where: t }),
     db.userSession.deleteMany({ where: t }),
     db.paymentConnection.deleteMany({ where: t }),
+    db.stockCountLine.deleteMany({ where: t }),
+    db.stockCount.deleteMany({ where: t }),
+    db.stockLevel.deleteMany({ where: t }),
+    db.deliveryAttempt.deleteMany({ where: t }),
+    db.deliveryPartnerProfile.deleteMany({ where: t }),
+    db.inventoryTransfer.deleteMany({ where: t }),
+    db.inventoryShipment.deleteMany({ where: t }),
+    db.stockLocation.deleteMany({ where: t }),
   ]);
   await inSequence([
     db.order.deleteMany({ where: t }),
@@ -340,6 +378,7 @@ export async function deleteTenantRows(tenantIds: string[]): Promise<void> {
     db.role.deleteMany({ where: t }),
   ]);
   await inSequence([
+    db.agentStock.deleteMany({ where: t }),
     db.product.deleteMany({ where: t }),
     db.customer.deleteMany({ where: t }),
     db.account.deleteMany({ where: t }),

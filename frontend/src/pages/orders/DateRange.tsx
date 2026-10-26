@@ -5,9 +5,10 @@ import { PRESET_LABELS, presetOf, presetRange, type DateBasis, type RangePreset 
 
 interface DateRangeProps {
   range: { from: string; to: string };
-  basis: DateBasis;
+  /** Both left out: no Order date | Delivery date switch (the Deliveries page has one date basis). */
+  basis?: DateBasis;
   onRange: (range: { from: string; to: string }) => void;
-  onBasis: (basis: DateBasis) => void;
+  onBasis?: (basis: DateBasis) => void;
 }
 
 const PRESETS: Array<Exclude<RangePreset, 'custom'>> = ['today', 'yesterday', 'last7', 'month', 'lastMonth'];
@@ -90,14 +91,16 @@ export function DateRange({ range, basis, onRange, onBasis }: DateRangeProps) {
           />
         </>
       )}
-      <div className="seg" role="group" aria-label="Date basis">
-        <button type="button" className={basis === 'created' ? 'on' : undefined} aria-pressed={basis === 'created'} onClick={() => onBasis('created')}>
-          Order date
-        </button>
-        <button type="button" className={basis === 'delivery' ? 'on' : undefined} aria-pressed={basis === 'delivery'} onClick={() => onBasis('delivery')}>
-          Delivery date
-        </button>
-      </div>
+      {basis && onBasis && (
+        <div className="seg" role="group" aria-label="Date basis">
+          <button type="button" className={basis === 'created' ? 'on' : undefined} aria-pressed={basis === 'created'} onClick={() => onBasis('created')}>
+            Order date
+          </button>
+          <button type="button" className={basis === 'delivery' ? 'on' : undefined} aria-pressed={basis === 'delivery'} onClick={() => onBasis('delivery')}>
+            Delivery date
+          </button>
+        </div>
+      )}
     </>
   );
 }

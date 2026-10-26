@@ -39,7 +39,7 @@ export function readDateBound(value: unknown, edge: 'from' | 'to', opts?: { snap
   }
 }
 
-function readId(value: unknown, label: string): number | undefined {
+export function readId(value: unknown, label: string): number | undefined {
   if (value === undefined) return undefined;
   const n = Number(value);
   if (!Number.isInteger(n) || n <= 0) throw invalidRange(`${label} must be a positive integer`);

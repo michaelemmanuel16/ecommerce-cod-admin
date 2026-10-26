@@ -51,6 +51,8 @@ import customerRoutes from './routes/customerRoutes';
 import productRoutes from './routes/productRoutes';
 import orderRoutes from './routes/orderRoutes';
 import deliveryRoutes from './routes/deliveryRoutes';
+import deliveryPartnerRoutes from './routes/deliveryPartnerRoutes';
+import { getProofPhoto } from './controllers/deliveryProofPhotoController';
 import financialRoutes from './routes/financialRoutes';
 import workflowRoutes from './routes/workflowRoutes';
 import webhookRoutes from './routes/webhookRoutes';
@@ -70,6 +72,8 @@ import callRoutes from './routes/callRoutes';
 import glRoutes from './routes/glRoutes';
 import agentReconciliationRoutes from './routes/agentReconciliationRoutes';
 import agentInventoryRoutes from './routes/agentInventoryRoutes';
+import inventoryRoutes from './routes/inventoryRoutes';
+import shipmentRoutes from './routes/shipmentRoutes';
 import whatsappRoutes from './routes/whatsappRoutes';
 import smsRoutes from './routes/smsRoutes';
 import emailRoutes from './routes/emailRoutes';
@@ -109,6 +113,7 @@ import { setupAgingCron } from './queues/agingQueue';
 import { setupFxRateCron } from './queues/fxRateQueue';
 import { setupFinancialReconciliationCron } from './queues/financialReconciliationQueue';
 import { setupLedgerCheckCron } from './queues/ledgerCheckQueue';
+import { setupStockCheckCron } from './queues/stockCheckQueue';
 import { setupMessageCleanupCron } from './queues/messageCleanupQueue';
 import { setupPendingCheckoutCleanupCron } from './queues/pendingCheckoutCleanupQueue';
 import * as Money from './utils/money';
@@ -252,7 +257,10 @@ app.use('/api/users', apiLimiter, userRoutes);
 app.use('/api/customers', apiLimiter, customerRoutes);
 app.use('/api/products', apiLimiter, productRoutes);
 app.use('/api/orders', apiLimiter, orderRoutes);
+// Signed photo link (M4-T20): no bearer token, so it is registered before the authenticated delivery routes
+app.get('/api/deliveries/proof-photo/:deliveryId', apiLimiter, getProofPhoto);
 app.use('/api/deliveries', apiLimiter, deliveryRoutes);
+app.use('/api/delivery-partners', apiLimiter, deliveryPartnerRoutes);
 app.use('/api/financial', apiLimiter, financialRoutes);
 app.use('/api/gl', apiLimiter, glRoutes);
 app.use('/api/workflows', apiLimiter, workflowRoutes);
@@ -268,6 +276,8 @@ app.use('/api/checkout-forms', apiLimiter, checkoutFormRoutes);
 app.use('/api/calls', apiLimiter, callRoutes);
 app.use('/api/agent-reconciliation', apiLimiter, agentReconciliationRoutes);
 app.use('/api/agent-inventory', apiLimiter, agentInventoryRoutes);
+app.use('/api/inventory', apiLimiter, inventoryRoutes);
+app.use('/api/shipments', apiLimiter, shipmentRoutes);
 // WhatsApp webhook endpoints — dedicated high-limit rate limiter (1000/15min prod)
 // bypasses apiLimiter (500/15min) since Meta sends bursts of status callbacks
 app.get('/api/whatsapp/webhook', whatsappWebhookLimiter, verifyWebhook);
@@ -355,6 +365,9 @@ if (process.env.NODE_ENV !== 'test') {
 
     // Setup nightly order-versus-ledger check (M1-T28)
     await setupLedgerCheckCron();
+
+    // Setup nightly product-total versus stock-levels check (M4-T17)
+    await setupStockCheckCron();
 
     // Setup Message Log Cleanup Cron Job
     await setupMessageCleanupCron();

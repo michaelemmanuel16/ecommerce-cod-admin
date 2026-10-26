@@ -65,6 +65,13 @@ const MODELS: Array<[string, string, string, string]> = [
   ['user sessions', 'userSession', 'userSession', 'UserSession'],
   // M3b models
   ['payment connections', 'paymentConnection', 'paymentConnection', 'PaymentConnection'],
+  // M4 models
+  ['stock locations', 'stockLocation', 'stockLocation', 'StockLocation'],
+  ['stock levels', 'stockLevel', 'stockLevel', 'StockLevel'],
+  ['stock counts', 'stockCount', 'stockCount', 'StockCount'],
+  ['stock count lines', 'stockCountLine', 'stockCountLine', 'StockCountLine'],
+  ['delivery partner profiles', 'deliveryPartnerProfile', 'deliveryPartnerProfile', 'DeliveryPartnerProfile'],
+  ['delivery attempts', 'deliveryAttempt', 'deliveryAttempt', 'DeliveryAttempt'],
 ];
 
 describe('tenant B data never shows for tenant A', () => {

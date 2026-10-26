@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { AuthRequest } from '../types';
-import { OrderStatus } from '@prisma/client';
+import { FailureReason, OrderStatus } from '@prisma/client';
 import orderService, { OrderFilters, OrderInclude, OrderSortField } from '../services/orderService';
 import { clearCache } from '../middleware/cache';
 import { readDateBound } from '../utils/kpiRequest';
@@ -20,6 +20,7 @@ const readOrderFilters = (query: AuthRequest['query']): OrderFilters => {
     customerRepId: customerRepId ? Number(customerRepId) : undefined,
     unassigned: unassigned === 'true',
     deliveryAgentId: deliveryAgentId ? Number(deliveryAgentId) : undefined,
+    failureReason: (Object.values(FailureReason) as string[]).includes(query.failureReason as string) ? query.failureReason as FailureReason : undefined,
     // `productId=1&productId=2` and `productId[]=1` both arrive as an array
     productIds: many(query.productId).map(Number).filter(Number.isInteger),
     area: area as string | undefined,

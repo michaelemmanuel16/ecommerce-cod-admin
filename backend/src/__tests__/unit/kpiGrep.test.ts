@@ -34,7 +34,6 @@ const ALLOWED: Array<{ file: string; match: string; reason: string }> = [
   { file: 'services/orderService.ts', match: '_avg: { totalAmount', reason: 'AOV, not revenue; currency conversion is Backlog' },
   { file: 'services/financialService.ts', match: '_sum: { totalAmount', reason: 'not delivered revenue: sums over open orders (out-for-delivery pipeline, cash position); delivered revenue in getFinancialSummary is the KPI layer (M1-T25)' },
   // Not named by any M1 ticket. Opus decides: assign a ticket or leave as non-KPI.
-  { file: 'services/deliveryService.ts', match: '/ totalDeliveries) * 100', reason: 'UNASSIGNED: agent successRate (completed / total deliveries)' },
   { file: 'services/webhookService.ts', match: '/ totalLogs) * 100', reason: 'not a KPI: webhook log success rate' },
   { file: 'services/customerStatsService.ts', match: 'SUM(o.total_amount', reason: 'not order revenue: the customer deliveredValue stat (F-357)' },
   { file: 'services/checkoutFormService.ts', match: '_sum: { totalAmount', reason: 'UNASSIGNED: checkout form revenue and submission conversion' },

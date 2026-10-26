@@ -1,4 +1,4 @@
-import prisma from '../utils/prisma';
+import prisma, { TransactionClient } from '../utils/prisma';
 import logger from '../utils/logger';
 import { runInTenant } from '../utils/tenantContext';
 import { DEFAULT_GL_ACCOUNTS } from '../config/glAccounts';
@@ -6,23 +6,45 @@ import { DEFAULT_ROLES } from '../config/defaultRoles';
 import { seedDefaultEmailTemplates } from './emailTemplateService';
 import { ensureSystemUser } from './systemUserService';
 
+type GrantResult = 'granted' | 'already there' | 'no stored list';
+
 /**
- * M2: a tenant that saved its role permissions before `orders:update_status` was granted to admin keeps the old
- * list (stored cells replace the defaults). Add the cell when it is missing; nothing is ever removed.
- * Run once from the backfill script, not on every seed, so an owner who later removes the cell keeps it removed.
+ * A tenant that saved its role permissions before a cell was granted to admin keeps the old list (stored cells replace
+ * the defaults). Add `action` to the stored admin `resource` list when it is missing; nothing is ever removed; no row or
+ * no stored list changes nothing. `dryRun` only reports. Run once from a backfill or migration script, not on every seed,
+ * so an owner who later removes the cell keeps it removed.
  */
-export async function grantAdminUpdateStatus(tenantId: string): Promise<void> {
-  await runInTenant(tenantId, async () => {
-    const config = await prisma.systemConfig.findFirst();
+async function grantAdminCell(
+  tenantId: string,
+  resource: string,
+  action: string,
+  db: Pick<TransactionClient, 'systemConfig'> = prisma,
+  dryRun = false,
+): Promise<GrantResult> {
+  return runInTenant(tenantId, async () => {
+    const config = await db.systemConfig.findFirst();
     const stored = config?.rolePermissions as Record<string, Record<string, string[]>> | null | undefined;
-    const orders = stored?.admin?.orders;
-    if (!config || !Array.isArray(orders) || orders.includes('update_status')) return;
-    await prisma.systemConfig.update({
-      where: { id: config.id },
-      data: { rolePermissions: { ...stored, admin: { ...stored!.admin, orders: [...orders, 'update_status'] } } },
-    });
+    const cells = stored?.admin?.[resource];
+    if (!config || !Array.isArray(cells)) return 'no stored list';
+    if (cells.includes(action)) return 'already there';
+    if (!dryRun) {
+      await db.systemConfig.update({
+        where: { id: config.id },
+        data: { rolePermissions: { ...stored, admin: { ...stored!.admin, [resource]: [...cells, action] } } },
+      });
+    }
+    return 'granted';
   });
 }
+
+/** M2: `orders:update_status` for admin. */
+export async function grantAdminUpdateStatus(tenantId: string): Promise<void> {
+  await grantAdminCell(tenantId, 'orders', 'update_status');
+}
+
+/** M4: `products:update_stock` for admin (F-654). Called by the stock migration script, with its transaction. */
+export const grantAdminUpdateStock = (tenantId: string, db?: Pick<TransactionClient, 'systemConfig'>, dryRun?: boolean): Promise<GrantResult> =>
+  grantAdminCell(tenantId, 'products', 'update_stock', db, dryRun);
 
 /**
  * Create what a tenant is missing: the chart of accounts, the default email

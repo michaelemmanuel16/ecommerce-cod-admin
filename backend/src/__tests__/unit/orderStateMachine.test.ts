@@ -17,16 +17,20 @@ jest.mock('../../utils/prisma', () => ({
   __esModule: true,
   default: { $transaction: (cb: any) => cb(tx) },
 }));
-// GL, stock and post-commit effects have their own integration tests (orderSideEffects.test.ts)
+// GL and post-commit effects have their own integration tests (orderSideEffects.test.ts), stock has stockOnce.test.ts
 jest.mock('../../services/orderSideEffects', () => ({
-  legacyStockHook: jest.fn(async () => undefined),
   applyGlEffects: jest.fn(async () => ({})),
   afterCommitEffects: jest.fn(),
 }));
+jest.mock('../../services/stockService', () => ({ fulfilOrder: jest.fn(async () => undefined), reverseOrder: jest.fn(async () => undefined) }));
 jest.mock('../../middleware/auth', () => ({ __esModule: true, hasPermission: jest.fn() }));
+// The attempt row has its own integration test (deliveryProofAttempts.test.ts); here only the call is checked
+jest.mock('../../services/deliveryAttemptHook', () => ({ recordDeliveryAttempt: jest.fn(async () => undefined) }));
 
 import { transitionOrder, allowedTransitions, OrderTransitionError, TransitionActor } from '../../services/orderStateMachine';
 import { hasPermission } from '../../middleware/auth';
+import { recordDeliveryAttempt } from '../../services/deliveryAttemptHook';
+import { fulfilOrder, reverseOrder } from '../../services/stockService';
 
 const S: OrderStatus[] = [
   'pending_confirmation', 'payment_pending', 'payment_failed', 'confirmed', 'preparing', 'ready_for_pickup',
@@ -401,6 +405,38 @@ describe('side effects', () => {
     setOrder({ status: 'out_for_delivery' });
     await transitionOrder(5, 'failed_delivery', ADMIN, { failureReason: 'other' });
     expect(tx.order.updateMany.mock.calls[0][0].data.nextAttemptDate).toBeUndefined();
+  });
+  it('every changed move calls the delivery attempt hook once, in the move transaction; a same-status call does not', async () => {
+    setOrder({ status: 'out_for_delivery' });
+    await transitionOrder(5, 'failed_delivery', ADMIN, { failureReason: 'refused', note: 'Brother refused' });
+    expect(recordDeliveryAttempt).toHaveBeenCalledTimes(1);
+    expect(recordDeliveryAttempt).toHaveBeenCalledWith(tx, expect.objectContaining({ id: 5, deliveryAgentId: 30 }), 'failed_delivery', expect.objectContaining({ failureReason: 'refused', note: 'Brother refused' }));
+    (recordDeliveryAttempt as jest.Mock).mockClear();
+    setOrder({ status: 'failed_delivery' });
+    expect((await transitionOrder(5, 'failed_delivery', ADMIN)).changed).toBe(false);
+    expect(recordDeliveryAttempt).not.toHaveBeenCalled();
+  });
+  it('stock: entering delivered calls fulfilOrder once, leaving it calls reverseOrder once, other moves call neither', async () => {
+    setOrder({ status: 'out_for_delivery' });
+    await transitionOrder(5, 'delivered', ADMIN);
+    expect(fulfilOrder).toHaveBeenCalledTimes(1);
+    expect(fulfilOrder).toHaveBeenCalledWith(tx, expect.objectContaining({ id: 5, deliveryAgentId: 30 }), 1);
+    expect(reverseOrder).not.toHaveBeenCalled();
+    setOrder({ status: 'delivered' });
+    await transitionOrder(5, 'returned', ADMIN);
+    expect(reverseOrder).toHaveBeenCalledTimes(1);
+    expect(fulfilOrder).toHaveBeenCalledTimes(1);
+    setOrder({ status: 'confirmed' });
+    await transitionOrder(5, 'out_for_delivery', ADMIN);
+    setOrder({ status: 'out_for_delivery' });
+    await transitionOrder(5, 'failed_delivery', ADMIN, { failureReason: 'refused' });
+    expect(fulfilOrder).toHaveBeenCalledTimes(1);
+    expect(reverseOrder).toHaveBeenCalledTimes(1);
+  });
+  it('stock: a repeated delivered call is not a move and calls nothing', async () => {
+    setOrder({ status: 'delivered' });
+    expect((await transitionOrder(5, 'delivered', ADMIN)).changed).toBe(false);
+    expect(fulfilOrder).not.toHaveBeenCalled();
   });
   it('cancelled stores declineReason', async () => {
     await transitionOrder(5, 'cancelled', ADMIN, { declineReason: 'changed_mind' });

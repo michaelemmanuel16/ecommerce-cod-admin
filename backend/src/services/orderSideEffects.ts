@@ -1,12 +1,10 @@
 import { OrderStatus } from '@prisma/client';
 import { TransactionClient } from '../utils/prisma';
 import prisma from '../utils/prisma';
-import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import { getSystemUserId } from './systemUserService';
 import * as Money from '../utils/money';
 import { GLAutomationService, ORDER_GL_INCLUDE } from './glAutomationService';
-import agentInventoryService from './agentInventoryService';
 import { enqueueOrderFinancialSync } from '../queues/financialReconciliationQueue';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderUpdated, emitOrderStatusChanged, emitGLEntryCreated } from '../sockets';
@@ -15,7 +13,7 @@ import { AppEvent, OrderStatusChangedEvent, emitOrderEvent } from '../utils/appE
 /**
  * Side effects of a status move (M1-T10), called by the state machine in the move's transaction.
  * GL: revenue on entering delivered, reversal on leaving delivered, fee per failed attempt.
- * Everything here is idempotent. Stock stays on the legacy code path until M4 (`legacyStockHook`).
+ * Everything here is idempotent. Stock moves in stockService, called by the state machine (M4-T07).
  */
 
 /** Same shape the order status endpoint returns and the socket events carry. */
@@ -25,126 +23,6 @@ export const ORDER_EVENT_INCLUDE = {
   deliveryAgent: { select: { id: true, firstName: true, lastName: true, phoneNumber: true, role: true, commissionAmount: true } },
   orderItems: { include: { product: { select: { id: true, name: true, sku: true, cogs: true } } } },
 } as const;
-
-/**
- * D8: exactly today's `updateOrderStatus` stock logic, moved here unchanged. Each writer keeps its own
- * stock behaviour; a writer that does no stock work today (completeDelivery) passes `skipLegacyStock`.
- * The double decrement (M0-T04 test A) is pinned by stockDoubleDecrement.test.ts and is not fixed here.
- */
-export async function legacyStockHook(
-  tx: TransactionClient,
-  order: { id: number; deliveryAgentId?: number | null },
-  from: OrderStatus,
-  to: OrderStatus,
-  options: { changedBy?: number | null } = {},
-): Promise<void> {
-  const orderId = order.id;
-  const changedBy = options.changedBy ?? undefined;
-  // Handle inventory based on status change.
-  // All three transition types are handled in one block to keep the logic explicit:
-  //   A. entering deducted zone  (e.g. confirmed → out_for_delivery, or any → delivered)
-  //   B. leaving deducted zone   (e.g. out_for_delivery → cancelled)
-  //   C. out_for_delivery → delivered (stock already deducted; agent delivery confirmed)
-  const deductedStatuses: OrderStatus[] = ['out_for_delivery', 'delivered'];
-  const isOldDeducted = deductedStatuses.includes(from);
-  const isNewDeducted = deductedStatuses.includes(to);
-  const isConfirmingDelivery =
-    from === 'out_for_delivery' && to === 'delivered' && !!order.deliveryAgentId;
-
-  if (isOldDeducted === isNewDeducted && !isConfirmingDelivery) return;
-
-  const orderWithItems = await tx.order.findUnique({
-    where: { id: orderId },
-    include: { orderItems: true }
-  });
-  if (!orderWithItems) return;
-
-  if (!isOldDeducted && isNewDeducted) {
-    // Transition A: entering deducted zone — deduct stock
-    // Check if delivery agent has allocated stock for any items
-    let fulfilledFromAgent: number[] = [];
-    if (order.deliveryAgentId) {
-      fulfilledFromAgent = await agentInventoryService.recordOrderFulfillment(
-        tx,
-        orderId,
-        order.deliveryAgentId,
-        orderWithItems.orderItems.map(item => ({
-          productId: item.productId,
-          quantity: item.quantity,
-        })),
-        changedBy ?? order.deliveryAgentId
-      );
-    }
-
-    // If jumping directly to delivered (skipping out_for_delivery), also confirm delivery
-    if (to === 'delivered' && order.deliveryAgentId && fulfilledFromAgent.length > 0) {
-      await agentInventoryService.confirmOrderDelivery(
-        tx,
-        orderId,
-        order.deliveryAgentId,
-        orderWithItems.orderItems
-          .filter(item => fulfilledFromAgent.includes(item.productId))
-          .map(item => ({ productId: item.productId, quantity: item.quantity })),
-        changedBy ?? order.deliveryAgentId
-      );
-    }
-
-    // Deduct warehouse stock only for items NOT fulfilled from agent stock
-    for (const item of orderWithItems.orderItems) {
-      if (fulfilledFromAgent.includes(item.productId)) continue;
-
-      const result = await tx.product.updateMany({
-        where: {
-          id: item.productId,
-          stockQuantity: { gte: item.quantity }
-        },
-        data: {
-          stockQuantity: { decrement: item.quantity }
-        }
-      });
-
-      if (result.count === 0) {
-        const product = await tx.product.findUnique({
-          where: { id: item.productId },
-          select: { name: true, stockQuantity: true }
-        });
-        throw new AppError(
-          `"${product?.name ?? 'A product'}" is out of stock (${product?.stockQuantity ?? 0} units available). Please restock before marking this order as delivered.`,
-          400
-        );
-      }
-    }
-  } else if (isOldDeducted && !isNewDeducted) {
-    // Transition B: leaving deducted zone — restore stock
-    // Restore stock - check agent stock first, then warehouse for remaining
-    let reversedFromAgent: number[] = [];
-    if (order.deliveryAgentId) {
-      reversedFromAgent = await agentInventoryService.reverseOrderFulfillment(
-        tx,
-        orderId,
-        order.deliveryAgentId,
-        changedBy ?? order.deliveryAgentId,
-        from === 'delivered'
-      );
-    }
-    for (const item of orderWithItems.orderItems) {
-      if (reversedFromAgent.includes(item.productId)) continue;
-      await tx.product.update({
-        where: { id: item.productId },
-        data: { stockQuantity: { increment: item.quantity } }
-      });
-    }
-  } else if (isConfirmingDelivery) {
-    // Transition C: out_for_delivery → delivered — stock already deducted; confirm agent delivery.
-    await agentInventoryService.confirmOrderDelivery(
-      tx,
-      orderId,
-      order.deliveryAgentId!,
-      orderWithItems.orderItems.map(item => ({ productId: item.productId, quantity: item.quantity })),
-      changedBy ?? order.deliveryAgentId!
-    );
-  }
-}
 
 export interface GlEffects {
   /** Reversal entry posted by this move, for the `gl_entry_created` socket event. */
@@ -173,7 +51,7 @@ async function postRevenue(
   const entry = await GLAutomationService.createRevenueRecognitionEntry(
     tx as any,
     order,
-    GLAutomationService.calculateTotalCOGS(order.orderItems),
+    GLAutomationService.cogsOfOrder(order),
     userId,
   );
   // completeDelivery (`always`) books its own cash collection, so the flag is set with the entry link. The

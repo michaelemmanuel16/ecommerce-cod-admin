@@ -19,6 +19,7 @@ import { workflowQueue, processExecuteWorkflow, executeAction } from '../../queu
 import orderService from '../../services/orderService';
 import { runTool } from '../../tools/registry';
 import '../../tools';
+import { stockUp } from './helpers/stock';
 import appEvents, { AppEvent } from '../../utils/appEvents';
 
 jest.mock('../../utils/socketInstance', () => ({
@@ -88,11 +89,12 @@ beforeAll(async () => {
     data: { firstName: 'Ama', lastName: 'Mensah', phoneNumber: `+2332${String(SUFFIX).slice(-8)}`, address: '3 Test Rd', state: 'Greater Accra', area: 'Accra', tenantId },
   })).id;
   productId = (await prismaBase.product.create({
-    data: { sku: `WTS-${SUFFIX}`, name: 'WTS Product', category: 'test', price: 50, cogs: 20, stockQuantity: 50, tenantId },
+    data: { sku: `WTS-${SUFFIX}`, name: 'WTS Product', category: 'test', price: 50, cogs: 20, stockQuantity: 0, tenantId },
   })).id;
   agentId = (await prismaBase.user.create({
     data: { email: `wts-agent-${SUFFIX}@codadmin.test`, password: 'x', firstName: 'Kofi', lastName: 'Agent', role: 'delivery_agent', tenantId },
   })).id;
+  await stockUp(tenantId, productId, 50, { name: 'Kofi Agent', type: 'agent', userId: agentId });
   admin = await prismaBase.user.create({
     data: { email: `wts-admin-${SUFFIX}@codadmin.test`, password: 'x', firstName: 'Ada', lastName: 'Admin', role: 'admin', tenantId },
   });
@@ -132,7 +134,7 @@ describe('M2-T16 workflow actions go through the services', () => {
       expect(rows[0]).toMatchObject({ actorKind: 'system', changedBy: systemUserId });
     }
     expect(await live(toOut.id)).toHaveLength(1);
-    // warehouse stock leaves once (entering out_for_delivery); delivering confirms, it does not deduct again
+    // stock leaves once, at delivered, from the holder (F-657); dispatch moved nothing
     expect(await stock()).toBe(stockBefore - 2);
     expect(await prismaBase.journalEntry.count({ where: { tenantId, sourceType: 'order_delivery', sourceId: id } })).toBe(1);
   });

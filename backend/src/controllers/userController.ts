@@ -10,6 +10,7 @@ import { readDateBound, toInvalidRange } from '../utils/kpiRequest';
 import { accountService } from '../services/accountService';
 import { dataExportService } from '../services/dataExportService';
 import { isManagerUp } from '../utils/authUtils';
+import { announceAvailability } from '../services/deliveryPartnerAdminService';
 
 export const getAllUsers = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -97,16 +98,19 @@ export const toggleAvailability = async (req: AuthRequest, res: Response, next: 
 
     const { isAvailable } = req.body;
 
-    const user = await prisma.user.update({
+    const { role, ...user } = await prisma.user.update({
       where: { id },
       data: { isAvailable },
       select: {
         id: true,
+        role: true,
         firstName: true,
         lastName: true,
         isAvailable: true
       }
     });
+    // F-709: the Deliveries screens listen for agent:availability_changed
+    if (role === 'delivery_agent') announceAvailability(id, user.isAvailable);
 
     res.json({ user });
   } catch (error) {

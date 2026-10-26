@@ -8,6 +8,29 @@ export const ORDER_EVENTS = ['order:created', 'order:updated', 'order:status_cha
 /** Several events often arrive together (a bulk change): one refresh answers them all. */
 export const SOCKET_REFRESH_MS = 400;
 
+/**
+ * Runs `reload` (debounced by SOCKET_REFRESH_MS) when the server emits any of `events`. Takes this page's handler off the
+ * socket only on cleanup: the toast and the other stores listen to the same events.
+ */
+export function useSocketRefresh(events: readonly string[], reload: () => unknown) {
+  const reloadRef = useRef(reload);
+  reloadRef.current = reload;
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const refresh = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => void reloadRef.current(), SOCKET_REFRESH_MS);
+    };
+    events.forEach((e) => socket.on(e, refresh));
+    return () => {
+      clearTimeout(timer);
+      events.forEach((e) => socket.off(e, refresh));
+    };
+  }, [events]);
+}
+
 interface ListState {
   rows: OrderListRow[];
   pagination: PaginationMeta;
@@ -49,21 +72,7 @@ export function useOrderList(params: OrderListParams) {
     void load(false);
   }, [viewKey, load]);
 
-  useEffect(() => {
-    const socket = getSocket();
-    if (!socket) return;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const refresh = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => void load(true), SOCKET_REFRESH_MS);
-    };
-    ORDER_EVENTS.forEach((e) => socket.on(e, refresh));
-    return () => {
-      clearTimeout(timer);
-      // this page's handler only: the toast and the other stores listen to the same events
-      ORDER_EVENTS.forEach((e) => socket.off(e, refresh));
-    };
-  }, [load]);
+  useSocketRefresh(ORDER_EVENTS, () => load(true));
 
   const refetch = useCallback(() => load(true), [load]);
   return { ...state, refetch };

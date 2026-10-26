@@ -10,7 +10,7 @@ import { useAuthStore } from '../../stores/authStore';
 const MENU = {
   manager: ['dashboard', 'inbox', 'orders', 'customers', 'checkoutForms', 'messages', 'products', 'deliveries', 'reports', 'workflows', 'settings'],
   accountant: ['inbox', 'finance', 'reports', 'settings'],
-  inventory_manager: ['inbox', 'products', 'settings'],
+  inventory_manager: ['inbox', 'products', 'inventory', 'settings'],
   sales_rep: ['inbox', 'orders', 'customers', 'settings'],
   delivery_agent: ['inbox', 'orders', 'settings'],
 };
@@ -35,6 +35,7 @@ function renderAt(path: string) {
           <Route path="orders/:id" element={<div>ORDER DETAIL PAGE</div>} />
           <Route path="finance" element={<div>FINANCE PAGE</div>} />
           <Route path="products" element={<div>PRODUCTS PAGE</div>} />
+          <Route path="inventory" element={<div>INVENTORY PAGE</div>} />
           <Route path="checkout-forms" element={<div>FORMS PAGE</div>} />
           <Route path="checkout-forms/:id/edit" element={<div>FORM EDITOR PAGE</div>} />
           <Route path="earnings-history" element={<div>EARNINGS PAGE</div>} />
@@ -59,7 +60,7 @@ describe('canOpenPath', () => {
   });
   it('closes a page whose menu item is missing', () => {
     expect(canOpenPath('/finance', MENU.manager, 'manager', '/')).toBe(false);
-    expect(canOpenPath('/orders', MENU.inventory_manager, 'inventory_manager', '/products')).toBe(false);
+    expect(canOpenPath('/orders', MENU.inventory_manager, 'inventory_manager', '/inventory')).toBe(false);
   });
   it('closes a path no menu item owns', () => {
     expect(canOpenPath('/nothing-here', MENU.manager, 'manager', '/')).toBe(false);
@@ -94,10 +95,10 @@ describe('AccessGate', () => {
     renderAt('/');
     expect(screen.getByText('FINANCE PAGE')).toBeInTheDocument();
   });
-  it('stock keeper at "/" lands on Products', () => {
-    signIn('inventory_manager', '/products');
+  it('stock keeper at "/" lands on Inventory (M4-T29)', () => {
+    signIn('inventory_manager', '/inventory');
     renderAt('/');
-    expect(screen.getByText('PRODUCTS PAGE')).toBeInTheDocument();
+    expect(screen.getByText('INVENTORY PAGE')).toBeInTheDocument();
   });
   it('manager at "/" sees the Dashboard', () => {
     signIn('manager', '/');
@@ -105,11 +106,11 @@ describe('AccessGate', () => {
     expect(screen.getByText('DASHBOARD PAGE')).toBeInTheDocument();
   });
   it('a direct URL to a hidden page shows "no access" and keeps the page out', () => {
-    signIn('inventory_manager', '/products');
+    signIn('inventory_manager', '/inventory');
     renderAt('/finance');
     expect(screen.getByText('You do not have access to this page')).toBeInTheDocument();
     expect(screen.queryByText('FINANCE PAGE')).toBeNull();
-    expect(screen.getByRole('link', { name: 'Go to Products' })).toHaveAttribute('href', '/products');
+    expect(screen.getByRole('link', { name: 'Go to Inventory & stock' })).toHaveAttribute('href', '/inventory');
   });
   it('shows a loading state until the first /api/auth/me answer', () => {
     signIn('manager', '/');

@@ -55,10 +55,10 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Stock',
     items: [
       { key: 'products', label: 'Products', icon: Package, to: '/products' },
-      { key: 'inventory', label: 'Inventory & stock', icon: Boxes, to: null }, // M4
-      { key: 'deliveries', label: 'Deliveries', icon: Truck, to: '/delivery-agents' }, // the current Delivery Agents page
-      // Agent stock page: replaced by Inventory & stock (M4) and the agent app (M10). Guard in App.tsx.
-      { key: 'agentInventory', label: 'Agent stock', icon: PackageOpen, to: '/agent-inventory', oldPageFor: (r) => [...MANAGER_UP, 'inventory_manager', 'delivery_agent'].includes(r) },
+      { key: 'inventory', label: 'Inventory & stock', icon: Boxes, to: '/inventory' },
+      { key: 'deliveries', label: 'Deliveries', icon: Truck, to: '/delivery-agents' }, // the Deliveries page (M4-T30); the route keeps its old path
+      // The agent's own stock screen: replaced by the agent app (M10). The other roles use Inventory & stock; /agent-inventory sends them there (App.tsx).
+      { key: 'agentInventory', label: 'Agent stock', icon: PackageOpen, to: '/agent-inventory', oldPageFor: (r) => r === 'delivery_agent' },
     ],
   },
   {

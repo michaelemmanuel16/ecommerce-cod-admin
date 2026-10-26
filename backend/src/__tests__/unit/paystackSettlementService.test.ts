@@ -64,6 +64,7 @@ describe('settlePayment (issue #3 — paid → confirmed)', () => {
     // jest config has resetMocks:true, so re-arm the fire-and-forget mocks each test.
     (prismaMock.$transaction as any).mockImplementation(async (cb: any) => cb(prismaMock));
     (prismaMock.product.count as any).mockResolvedValue(1); // the snapshot's one product still exists
+    (prismaMock.finding.create as any).mockResolvedValue({ id: 1 }); // openFindingOnce returns the Finding id
     (workflowService.triggerOrderCreatedWorkflows as any).mockResolvedValue(undefined);
     (metaCapiService.fireCapiPurchaseEvent as any).mockResolvedValue(undefined);
   });
