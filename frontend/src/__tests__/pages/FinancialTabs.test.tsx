@@ -5,7 +5,7 @@ import { Financial } from '../../pages/Financial';
 
 let canView = true;
 vi.mock('../../hooks/usePermissions', () => ({ usePermissions: () => ({ can: (r: string, a: string) => (r === 'payouts' && a === 'view' ? canView : true) }) }));
-vi.mock('../../pages/financial/FinancialDashboard', () => ({ FinancialDashboard: () => <div>overview</div> }));
+vi.mock('../../pages/financial/overview/FinanceOverview', () => ({ FinanceOverview: () => <div>overview</div> }));
 vi.mock('../../pages/financial/AgentCollections', () => ({ AgentCollections: () => <div>collections</div> }));
 vi.mock('../../pages/financial/AccountingAnalysis', () => ({ AccountingAnalysis: () => <div>accounting</div> }));
 vi.mock('../../pages/financial/RepCommissions', () => ({ RepCommissions: () => <div>rep commissions content</div> }));

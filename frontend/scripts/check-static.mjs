@@ -57,6 +57,9 @@ export const SCANNED = [
   'src/pages/deliveries',
   'src/styles/deliveries.css',
   'src/services/delivery-partners.service.ts',
+  'src/pages/financial/overview',
+  'src/styles/financeOverview.css',
+  'src/services/finance-overview.service.ts',
   // later tasks: 'src/pages/v2', ...
 ];
 

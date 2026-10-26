@@ -2,7 +2,7 @@ import React from 'react';
 import { useFinancialStore } from '../stores/financialStore';
 import { Tabs } from '../components/ui/Tabs';
 import { DateRangePicker } from '../components/ui/DateRangePicker';
-import { FinancialDashboard } from './financial/FinancialDashboard';
+import { FinanceOverview } from './financial/overview/FinanceOverview';
 import { AgentCollections } from './financial/AgentCollections';
 import { AccountingAnalysis } from './financial/AccountingAnalysis';
 import { RepCommissions } from './financial/RepCommissions';
@@ -26,7 +26,7 @@ export const Financial: React.FC = () => {
     {
       id: 'overview',
       label: 'Overview',
-      content: <><FinancialDashboard /><div className="mt-12"><OverviewProfitCards /></div></>
+      content: <><FinanceOverview /><div className="mt-4"><OverviewProfitCards /></div></>
     },
     {
       id: 'agent-collections',
@@ -34,7 +34,7 @@ export const Financial: React.FC = () => {
       content: <AgentCollections />
     },
     // F-914: the Rep commissions tab shows for roles that can view payouts
-    ...(can('payouts', 'view') ? [{ id: 'rep-commissions', label: 'Rep commissions', content: <RepCommissions /> }] : []),
+    ...(can('payouts', 'view') ? [{ id: 'rep-commissions', label: 'Rep commissions', content: <div className="legacy-light"><RepCommissions /></div> }] : []),
     {
       id: 'accounting-analysis',
       label: 'Accounting & Analysis',
@@ -48,24 +48,26 @@ export const Financial: React.FC = () => {
   ];
 
   return (
-    <div>
+    <section className="finance">
       <div className="head">
         <div>
-          <h1>Financial Management</h1>
-          <p>Track revenue, expenses, COD collections, and agent accountability</p>
+          <h1>Finance</h1>
+          <p>Cash and profit, payouts from delivery partners, and the books.</p>
         </div>
         <div className="finhead">
           <ExportMenu />
-          <DateRangePicker
-            startDate={dateRange.startDate}
-            endDate={dateRange.endDate}
-            onChange={handleDateRangeChange}
-            placeholder="Select date range"
-          />
+          <div className="legacy-light">
+            <DateRangePicker
+              startDate={dateRange.startDate}
+              endDate={dateRange.endDate}
+              onChange={handleDateRangeChange}
+              placeholder="Select date range"
+            />
+          </div>
         </div>
       </div>
 
       <Tabs tabs={tabs} defaultTab="overview" persistKey="financial-tab" compact />
-    </div>
+    </section>
   );
 };

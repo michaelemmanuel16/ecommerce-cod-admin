@@ -71,20 +71,23 @@ export class AgingService {
    * The one read behind the aging card, the partner table and the CSV (F-309, F-910): delivered orders whose collection is
    * still open (no verified deposit or settlement covers it), each with its age and whether it is past the partner's days to
    * pay. A part-covered collection counts for what is left. Amounts are the collection amount, already net of the fee.
-   * The partner balances come with it. `onlyAgentId` reads one partner's collections. Runs in the current tenant context.
+   * The partner balances come with it. `agentIds` limits the read to those partners. Runs in the current tenant context.
    */
-  private async loadAging(onlyAgentId?: number) {
+  private async loadAging(agentIds?: number[]) {
     const tenantId = resolveTenantId();
     const zone = getStoreTimeZone(tenantId);
     const todayMs = utcDateOfYmd(localDate(new Date(), zone)).getTime();
 
     const [collections, daysToPayOf, balances] = await Promise.all([
       prisma.agentCollection.findMany({
-        where: { ...(onlyAgentId !== undefined && { agentId: onlyAgentId }), status: { in: [...OPEN_COLLECTION_STATUSES] }, order: { status: 'delivered', deletedAt: null, deliveryDate: { not: null } } },
+        where: {
+          status: { in: [...OPEN_COLLECTION_STATUSES] }, order: { status: 'delivered', deletedAt: null, deliveryDate: { not: null } },
+          ...(agentIds ? { agentId: { in: agentIds } } : {}),
+        },
         select: { agentId: true, amount: true, allocatedAmount: true, orderId: true, order: { select: { deliveryDate: true } } },
       }),
       this.daysToPayOf(),
-      prisma.agentBalance.findMany({ select: { agentId: true, currentBalance: true, isBlocked: true } }),
+      prisma.agentBalance.findMany({ where: agentIds ? { agentId: { in: agentIds } } : undefined, select: { agentId: true, currentBalance: true, isBlocked: true } }),
     ]);
 
     const unpaid: UnpaidOrder[] = [];
@@ -134,6 +137,12 @@ export class AgingService {
       daysToPayOf: (agentId: number) => own.get(agentId) ?? resolveDaysToPay(),
       ageOf: (deliveredAt: Date) => ageInDays(deliveredAt, zone, todayMs),
     };
+  }
+
+  /** The unpaid delivered orders of these partners only, oldest first (the rows behind a short payout on the Finance overview). */
+  async getUnpaidOrdersOf(agentIds: number[]): Promise<UnpaidOrder[]> {
+    const { unpaid } = await this.loadAging(agentIds);
+    return unpaid.sort((a, b) => b.ageDays - a.ageDays || a.orderId - b.orderId);
   }
 
   /** How many open collections are past their partner's days to pay (the Dashboard "orders over" count). */
@@ -254,7 +263,7 @@ export class AgingService {
   async remindPartner(agentId: number): Promise<{ sent: boolean; unpaidOrders: number; overdueOrders: number }> {
     const [partner, { unpaid, daysToPayOf }, currency] = await Promise.all([
       prisma.user.findFirst({ where: { id: agentId, role: 'delivery_agent' }, select: { id: true, firstName: true, phoneNumber: true } }),
-      this.loadAging(agentId),
+      this.loadAging([agentId]),
       getCurrency(),
     ]);
     if (!partner) throw new AppError('Delivery partner not found', 404);
