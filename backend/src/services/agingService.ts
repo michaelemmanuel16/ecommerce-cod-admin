@@ -70,18 +70,21 @@ export class AgingService {
    * pay. A part-covered collection counts for what is left. Amounts are the collection amount, already net of the fee.
    * The partner balances come with it. Runs in the current tenant context.
    */
-  private async loadAging() {
+  private async loadAging(agentIds?: number[]) {
     const tenantId = resolveTenantId();
     const zone = getStoreTimeZone(tenantId);
     const todayMs = utcDateOfYmd(localDate(new Date(), zone)).getTime();
 
     const [collections, daysToPayOf, balances] = await Promise.all([
       prisma.agentCollection.findMany({
-        where: { status: { in: [...OPEN_COLLECTION_STATUSES] }, order: { status: 'delivered', deletedAt: null, deliveryDate: { not: null } } },
+        where: {
+          status: { in: [...OPEN_COLLECTION_STATUSES] }, order: { status: 'delivered', deletedAt: null, deliveryDate: { not: null } },
+          ...(agentIds ? { agentId: { in: agentIds } } : {}),
+        },
         select: { agentId: true, amount: true, allocatedAmount: true, orderId: true, order: { select: { deliveryDate: true } } },
       }),
       this.daysToPayOf(),
-      prisma.agentBalance.findMany({ select: { agentId: true, currentBalance: true, isBlocked: true } }),
+      prisma.agentBalance.findMany({ where: agentIds ? { agentId: { in: agentIds } } : undefined, select: { agentId: true, currentBalance: true, isBlocked: true } }),
     ]);
 
     const unpaid: UnpaidOrder[] = [];
@@ -133,11 +136,10 @@ export class AgingService {
     };
   }
 
-  /** The unpaid delivered orders of these partners, oldest first (the rows behind a short payout on the Finance overview). */
+  /** The unpaid delivered orders of these partners only, oldest first (the rows behind a short payout on the Finance overview). */
   async getUnpaidOrdersOf(agentIds: number[]): Promise<UnpaidOrder[]> {
-    const wanted = new Set(agentIds);
-    const { unpaid } = await this.loadAging();
-    return unpaid.filter((o) => wanted.has(o.agentId)).sort((a, b) => b.ageDays - a.ageDays || a.orderId - b.orderId);
+    const { unpaid } = await this.loadAging(agentIds);
+    return unpaid.sort((a, b) => b.ageDays - a.ageDays || a.orderId - b.orderId);
   }
 
   /** How many open collections are past their partner's days to pay (the Dashboard "orders over" count). */

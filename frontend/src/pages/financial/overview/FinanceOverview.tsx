@@ -29,7 +29,6 @@ export function FinanceOverview() {
     next.set('to', r.to);
     setSearch(next, { replace: true });
   }, [search, setSearch]);
-  const retry = useCallback(() => void refetch(), [refetch]);
 
   return (
     <div className={`fov${loading && data ? ' busy' : ''}`} aria-busy={loading}>
@@ -40,14 +39,14 @@ export function FinanceOverview() {
 
       {error && !data ? (
         <div className="card" role="alert">
-          <EmptyState title={error} action={<Button onClick={retry}>Try again</Button>} />
+          <EmptyState title={error} action={<Button onClick={refetch}>Try again</Button>} />
         </div>
       ) : (
         <>
           <div className="grid kpis k6">
-            {data ? <Tiles tiles={data.tiles} currency={currency} onRetry={retry} /> : <TileSkeletons />}
+            {data ? <Tiles tiles={data.tiles} currency={currency} onRetry={refetch} /> : <TileSkeletons />}
           </div>
-          {data && <ReconciliationCard data={data.reconciliation} currency={currency} onRetry={retry} />}
+          {data && <ReconciliationCard data={data.reconciliation} range={{ from: data.from, to: data.to }} currency={currency} onRetry={refetch} />}
         </>
       )}
     </div>

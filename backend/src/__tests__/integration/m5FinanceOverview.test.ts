@@ -10,6 +10,8 @@ import request from 'supertest';
 import '../mocks/logger.mock';
 import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
+import { runInTenant } from '../../utils/tenantContext';
+import agingService from '../../services/agingService';
 import * as kpiRevenue from '../../services/kpi/revenue';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import { seedFixture, deleteFixtureRows, FIXTURE_SLUG } from '../fixtures/numbersFixture';
@@ -104,6 +106,20 @@ describe('GET /api/financial/overview on the NUMBERS fixture', () => {
     expect(res.body.to).toBe('2026-10-17');
   });
 
+  it('each tile sends its own badge, so the page holds no tag rule', async () => {
+    const { body } = await overview(owner);
+    const badges = Object.fromEntries(body.tiles.map((t: any) => [t.key, t.badge]));
+    expect(badges).toEqual({
+      deliveredRevenue: null, // its tag is the target's progress key in detail.target.status
+      cashReceived: { label: 'Paid in', tone: 'ok' },
+      cashOutstanding: { label: 'Chase', tone: 'warn' },
+      netMargin: { label: 'Loss', tone: 'bad' },
+      profitPerOrder: { label: 'Loss', tone: 'bad' },
+      cashRunway: { label: 'Tight', tone: 'warn' },
+    });
+    expect(body.tiles.map((t: any) => t.label)).toEqual(['Delivered revenue', 'Cash received', 'Cash outstanding', 'Net margin', 'Profit per delivered order', 'Cash runway, in days of ads']);
+  });
+
   it('delivered revenue is 92,000 over 376 orders, AOV 245, with the digital line', async () => {
     const t = tileOf((await overview(owner)).body, 'deliveredRevenue');
     expect(t.value).toBe('92000.00');
@@ -119,9 +135,9 @@ describe('GET /api/financial/overview on the NUMBERS fixture', () => {
     expect(margin.detail.netProfit).toBe('-14268.00');
     expect(margin.value).toBe(-15.5); // shown as -16%
     expect(-Math.round(-margin.value)).toBe(-16); // half away from zero, as the page rounds
-    expect(margin.tone).toBe('bad');
+    expect(margin.badge).toEqual({ label: 'Loss', tone: 'bad' });
     expect(margin.detail.target).toBe(35);
-    expect(margin.detail.expenses).toMatchObject({ deliveryFees: '12200.00', metaSpend: '76200.00', repCommission: '2768.00', paystackFees: '0.00', other: '2703.00' });
+    expect(margin.detail.expenses).toEqual({ total: '106268.00', paystackFees: '0.00' });
     const per = tileOf(body, 'profitPerOrder');
     expect(per.value).toBe('-37.95');
     expect(Math.round(Number(per.value))).toBe(-38);
@@ -129,10 +145,11 @@ describe('GET /api/financial/overview on the NUMBERS fixture', () => {
 
   it('cash runway is 9 days: GH₵41.9k over GH₵4,500 a day of ads, from the last seven days', async () => {
     const body = (await overview(owner)).body;
-    expect(body.runway).toMatchObject({ days: 9, cash: '41900.00', adsPerDay: '4500.00', adDays: 7, level: 'tight', tone: 'warn' });
+    expect(body.runway).toBeUndefined(); // the runway is the sixth tile, not a section
     const t = tileOf(body, 'cashRunway');
     expect(t.value).toBe(9);
-    expect(t.detail).toMatchObject({ cash: '41900.00', adsPerDay: '4500.00' });
+    expect(t.badge).toEqual({ label: 'Tight', tone: 'warn' });
+    expect(t.detail).toEqual({ cash: '41900.00', adsPerDay: '4500.00', adDays: 7 });
     expect(t.dateBasis).toBe('today');
   });
 
@@ -156,18 +173,16 @@ describe('GET /api/financial/overview on the NUMBERS fixture', () => {
   it('cash outstanding and unpaid by age come from the aging service and agree', async () => {
     const body = (await overview(owner)).body;
     const out = tileOf(body, 'cashOutstanding');
-    expect(out.value).toBe(body.unpaidByAge.total.amount);
-    expect(out.detail.orders).toBe(body.unpaidByAge.total.orders);
-    expect(out.detail.overdueOrders).toBe(body.unpaidByAge.overdue.orders);
-    expect(body.unpaidByAge.buckets.map((x: any) => x.key)).toEqual(['0-3', '4-7', '8-14', '15+']);
-    expect(body.unpaidByAge.basis).toBe('net_of_delivery_fee');
+    const aging = await runInTenant(a, () => agingService.getUnpaidByAge());
+    expect(body.unpaidByAge).toBeUndefined(); // the aging card has its own endpoint
+    expect(out.value).toBe(aging.total.amount);
+    expect(out.detail).toEqual({ orders: aging.total.orders, overdueOrders: aging.overdue.orders });
     expect(out.dateBasis).toBe('today');
   });
 
   it('payout reconciliation lists Matched, Short and Over; a Short row carries the partner\'s unpaid orders', async () => {
     const rec = (await overview(owner)).body.reconciliation;
-    expect(rec.counts).toEqual({ matched: 1, short: 1, over: 1, unmatched: 0 });
-    expect(rec.rows.map((r: any) => r.reference)).toEqual(['LS-11OCT', 'KA-9OCT', 'EB-8OCT']); // newest first; 30 Sep is out
+    expect(rec.rows.map((r: any) => [r.status, r.paidIn])).toEqual([['short', '9880.00'], ['matched', '3136.00'], ['over', '2788.00']]); // newest first; 30 Sep is out
     const short = rec.rows[0];
     expect(short).toMatchObject({ partnerName: 'Logiswift 3PL', partnerKind: 'company', paidIn: '9880.00', expectedAfterFees: '10720.00', status: 'short', shortAmount: '840.00', orders: 2 });
     expect(short.unpaid.orders).toBeGreaterThan(0);
@@ -197,7 +212,6 @@ describe('GET /api/financial/overview on the NUMBERS fixture', () => {
     for (const key of ['netMargin', 'profitPerOrder']) {
       const t = tileOf(res.body, key);
       expect(t.value).toBe('n/a');
-      expect(t.available).toBe(false);
     }
     expect(res.body.reconciliation.rows).toEqual([]);
     expect(JSON.stringify(res.body)).not.toMatch(/NaN|Infinity|null.*undefined/);
@@ -205,19 +219,18 @@ describe('GET /api/financial/overview on the NUMBERS fixture', () => {
 
   it('no Meta spend in the last seven days gives n/a runway, not Infinity', async () => {
     const res = await overview(owner, 'from=2026-10-01&to=2026-10-17&asOf=2026-11-30');
-    expect(res.body.runway.days).toBeNull();
-    expect(res.body.runway.level).toBe('no_ads');
     expect(tileOf(res.body, 'cashRunway').value).toBe('n/a');
+    expect(tileOf(res.body, 'cashRunway').badge).toBeNull();
   });
 
   it('the revenue tile carries the month target and the Dashboard tag: 51% against a 55% pace is off track', async () => {
     const t = tileOf((await overview(owner)).body, 'deliveredRevenue');
-    expect(t.detail.target).toMatchObject({ value: '180000.00', scope: 'month', percent: 51.1, status: 'off_track' });
+    expect(t.detail.target).toEqual({ value: '180000.00', status: 'off_track' });
   });
 
   it('a target that is ahead of the pace is on track; a range the target does not cover has no tag', async () => {
     const onTrack = tileOf((await overview(ownerB, 'from=2026-10-01&to=2026-10-12&asOf=2026-10-12')).body, 'deliveredRevenue');
-    expect(onTrack.detail.target).toMatchObject({ value: '100.00', percent: 59, status: 'on_track' });
+    expect(onTrack.detail.target).toEqual({ value: '100.00', status: 'on_track' });
     const partial = tileOf((await overview(owner, 'from=2026-10-05&to=2026-10-17&asOf=2026-10-17')).body, 'deliveredRevenue');
     expect(partial.detail.target).toBeNull(); // does not start on the target's first day
     const none = tileOf((await overview(owner, 'from=2026-09-01&to=2026-09-30&asOf=2026-09-30')).body, 'deliveredRevenue');
@@ -228,7 +241,7 @@ describe('GET /api/financial/overview on the NUMBERS fixture', () => {
     const top = tileOf((await overview(owner)).body, 'profitPerOrder').detail.topProduct;
     // Measured on this suite's fixture: orders carry no stamped delivery fee here (the 12,200 of fees is a ledger entry, not a per-order
     // fee), so the row is price share less product cost only. With per-order fees stamped the same row is lower (lane C: 180.32).
-    expect(top).toEqual({ name: 'Magic Groove copybook set', delivered: 306, profitPerOrder: '218.64', beforeAds: true });
+    expect(top).toEqual({ name: 'Magic Groove copybook set', profitPerOrder: '218.64' });
   });
 
   it('every tooltip opens with its date basis label', async () => {
@@ -262,7 +275,6 @@ describe('a failing tile does not fail the call', () => {
     expect(tileOf(res.body, 'cashOutstanding').status).toBe('ok');
     expect(tileOf(res.body, 'cashRunway').status).toBe('ok');
     expect(res.body.reconciliation.rows).toHaveLength(3);
-    expect(res.body.unpaidByAge.total).toBeDefined();
     expect(JSON.stringify(res.body)).not.toContain('boom'); // the message does not leak the cause
   });
 });
@@ -275,7 +287,7 @@ describe('digital revenue and the Paystack fee (tenant B)', () => {
     expect(rev.detail.ofWhichDigital).toBe('59.00');
     expect(rev.detail.deliveredOrders).toBe(1);
     const margin = tileOf(body, 'netMargin');
-    expect(margin.detail.expenses.paystackFees).toBe('1.50');
+    expect(margin.detail.expenses).toEqual({ total: '1.50', paystackFees: '1.50' });
     expect(margin.detail.netProfit).toBe('57.50');
     expect(margin.value).toBe(97.5);
   });
@@ -284,13 +296,13 @@ describe('digital revenue and the Paystack fee (tenant B)', () => {
 describe('tenants and permissions', () => {
   it('tenant B sees only its own numbers, and tenant A never sees B', async () => {
     const mine = JSON.stringify((await overview(owner)).body);
-    expect(mine).not.toContain('B-ONLY-REF');
+    expect(JSON.parse(mine).reconciliation.rows.map((r: any) => r.paidIn)).not.toContain('10.00');
     const theirs = (await overview(ownerB, 'from=2026-10-01&to=2026-10-31&asOf=2026-10-31')).body;
-    expect(theirs.reconciliation.rows.map((r: any) => r.reference)).toEqual(['B-ONLY-REF']);
+    expect(theirs.reconciliation.rows.map((r: any) => r.paidIn)).toEqual(['10.00']);
     expect(tileOf(theirs, 'deliveredRevenue').value).toBe('59.00');
-    expect(theirs.unpaidByAge.total.orders).toBe(0);
+    expect(tileOf(theirs, 'cashOutstanding').detail.orders).toBe(0);
     expect(tileOf(theirs, 'cashReceived').value).toBe('10.00'); // its own payout only
-    expect(JSON.stringify(theirs)).not.toContain('LS-11OCT');
+    expect(JSON.stringify(theirs)).not.toContain('Logiswift');
   });
 
   it('needs financial view: a delivery agent gets 403', async () => {

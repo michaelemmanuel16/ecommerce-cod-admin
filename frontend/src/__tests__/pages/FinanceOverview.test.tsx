@@ -21,6 +21,7 @@ const renderPage = (url = '/finance?from=2026-10-01&to=2026-10-17') =>
   render(<MemoryRouter initialEntries={[url]}><Where /><FinanceOverview /></MemoryRouter>);
 const tile = async (label: string) => (await screen.findByText(label, { selector: '.kpi .l .lbl' })).closest('.kpi') as HTMLElement;
 const withTiles = (fn: (t: Tile[]) => Tile[]): Overview => ({ ...OVERVIEW, tiles: fn(OVERVIEW.tiles) });
+const setRevenueTarget = (target: null) => withTiles((tiles) => tiles.map((t) => (t.key === 'deliveredRevenue' && t.status === 'ok' ? { ...t, detail: { ...t.detail, target } } : t)));
 
 beforeEach(() => {
   get.mockReset();
@@ -50,7 +51,7 @@ describe('Finance Overview (M5-T34)', () => {
   });
 
   it('with no target there is no target text or tag', async () => {
-    get.mockResolvedValue(withTiles((tiles) => tiles.map((t) => (t.key === 'deliveredRevenue' && t.status === 'ok' ? { ...t, detail: { ...t.detail, target: null } } : t))));
+    get.mockResolvedValue(setRevenueTarget(null));
     renderPage();
     const rev = await tile('Delivered revenue');
     expect(rev).not.toHaveTextContent('Target');
@@ -62,6 +63,7 @@ describe('Finance Overview (M5-T34)', () => {
     renderPage();
     expect(await tile('Delivered revenue')).toHaveTextContent('Of which digital GH₵59');
     expect(await tile('Net margin')).toHaveTextContent('of which Paystack fees GH₵1.50');
+    expect(await tile('Net margin')).toHaveTextContent('Loss GH₵14,268');
   });
 
   it('never shows 26% or a delivery rate', async () => {
@@ -78,7 +80,7 @@ describe('Finance Overview (M5-T34)', () => {
   });
 
   it('shows n/a for a figure with no basis', async () => {
-    get.mockResolvedValue(withTiles((tiles) => tiles.map((t) => (t.key === 'netMargin' && t.status === 'ok' ? { ...t, value: 'n/a', available: false, tone: 'neutral' } : t))));
+    get.mockResolvedValue(withTiles((tiles) => tiles.map((t) => (t.key === 'netMargin' && t.status === 'ok' ? { ...t, value: 'n/a', badge: null } : t))));
     renderPage();
     expect(await tile('Net margin')).toHaveTextContent('n/a');
     expect(document.body.textContent).not.toMatch(/NaN/);

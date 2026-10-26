@@ -11,13 +11,20 @@ export function useFinanceOverview(range: RangeParams) {
   const load = useCallback(async (quiet: boolean) => {
     const mine = ++ticket.current;
     if (!quiet) { setLoading(true); setError(null); }
-    const [next] = await Promise.allSettled([financeOverviewService.get(range, quiet)]);
-    if (mine !== ticket.current) return;
-    if (next.status === 'fulfilled') { setData(next.value); setError(null); }
-    else setError('The overview could not load.');
+    try {
+      const next = await financeOverviewService.get(range, quiet);
+      if (mine !== ticket.current) return;
+      setData(next);
+      setError(null);
+    } catch {
+      if (mine !== ticket.current) return;
+      setError('The overview could not load.');
+    }
     setLoading(false);
   }, [range.from, range.to]);
 
   useEffect(() => { void load(false); }, [load]);
-  return { data, loading, error, refetch: () => load(true) };
+  // Stable between renders of one range, so a retry button does not re-render for nothing
+  const refetch = useCallback(() => { void load(true); }, [load]);
+  return { data, loading, error, refetch };
 }

@@ -3,7 +3,9 @@ import { Check, ChevronDown } from 'lucide-react';
 import { Button, EmptyState, Tag } from '../../../components/ui-v2';
 import type { Failed, ReconRow, Reconciliation, SettlementStatus } from '../../../services/finance-overview.service';
 import { shortDay } from '../../dashboard/format';
-import { dayRange, initials, money, plural } from './model';
+import { initials } from '../../../utils/people';
+import { plural } from '../../dashboard/format';
+import { dayRange, money } from './model';
 
 const COLS = 5;
 
@@ -55,7 +57,7 @@ function Detail({ row, currency }: { row: ReconRow; currency: string }) {
   );
 }
 
-export function ReconciliationCard({ data, currency, onRetry }: { data: Reconciliation | Failed; currency: string; onRetry: () => void }) {
+export function ReconciliationCard({ data, range, currency, onRetry }: { data: Reconciliation | Failed; range: { from: string; to: string }; currency: string; onRetry: () => void }) {
   const [open, setOpen] = useState<number | null>(null);
   const title = 'Payout reconciliation';
   const aside = 'Each payout against its order list. Expected cash = collected − fees';
@@ -72,7 +74,7 @@ export function ReconciliationCard({ data, currency, onRetry }: { data: Reconcil
     <div className="card">
       <div className="ct"><h3>{title}</h3><span>{aside}</span></div>
       {data.rows.length === 0 ? (
-        <EmptyState title="No payouts in these dates" text={`Nothing was paid in ${dayRange(data.from, data.to)}.`} />
+        <EmptyState title="No payouts in these dates" text={`Nothing was paid in ${dayRange(range.from, range.to)}.`} />
       ) : (
         <div className="tablewrap">
           <table className="dt" aria-label={title}>

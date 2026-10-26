@@ -1,88 +1,88 @@
 import type { ReactNode } from 'react';
 import { CircleDollarSign, Fuel, Hourglass, Info, Package, Percent, TriangleAlert, Wallet } from 'lucide-react';
 import { Button, Skeleton, Tag, Tile, Tooltip, type TileTone } from '../../../components/ui-v2';
-import { NOT_AVAILABLE, type OkTile, type Tile as TileData, type TileKey } from '../../../services/finance-overview.service';
-import { compactMoney } from '../../dashboard/format';
-import { isOk, money, plural, TAG_TONE, TARGET_TAG, TILE_ORDER, wholePct } from './model';
+import { NOT_AVAILABLE, type Badge, type OkTile, type Tile as TileData, type TileKey } from '../../../services/finance-overview.service';
+import { PROGRESS_TAG } from '../../dashboard/copy';
+import { compactMoney, plural } from '../../dashboard/format';
+import { money, TILE_ORDER, wholePct } from './model';
 
-const ICON: Record<TileKey, { icon: ReactNode; tone: TileTone; label: string }> = {
-  deliveredRevenue: { icon: <CircleDollarSign />, tone: 'pine', label: 'Delivered revenue' },
-  cashReceived: { icon: <Wallet />, tone: 'mint', label: 'Cash received' },
-  cashOutstanding: { icon: <Hourglass />, tone: 'gold', label: 'Cash outstanding' },
-  netMargin: { icon: <Percent />, tone: 'coral', label: 'Net margin' },
-  profitPerOrder: { icon: <Package />, tone: 'coral', label: 'Profit per delivered order' },
-  cashRunway: { icon: <Fuel />, tone: 'gold', label: 'Cash runway, in days of ads' },
+/** The icon and its tint per tile. Everything written on the tile comes from the API. */
+const ICON: Record<TileKey, { icon: ReactNode; tone: TileTone }> = {
+  deliveredRevenue: { icon: <CircleDollarSign />, tone: 'pine' },
+  cashReceived: { icon: <Wallet />, tone: 'mint' },
+  cashOutstanding: { icon: <Hourglass />, tone: 'gold' },
+  netMargin: { icon: <Percent />, tone: 'coral' },
+  profitPerOrder: { icon: <Package />, tone: 'coral' },
+  cashRunway: { icon: <Fuel />, tone: 'gold' },
 };
 
-const targetTag = (status: string) => TARGET_TAG[status as keyof typeof TARGET_TAG];
-const toneClass = (t: OkTile) => (t.tone === 'bad' ? 'neg' : undefined);
+const negative = (v: unknown) => typeof v === 'number' && v < 0;
 
 /** Label with the tooltip that carries the date basis. */
-function Label({ tile, text }: { tile: OkTile; text: string }) {
+function Label({ tile }: { tile: OkTile }) {
   return (
     <span className="lbl">
-      {text}
+      {tile.label}
       <Tooltip label={tile.tooltip}>
-        <span className="info" role="img" tabIndex={0} aria-label={`About ${text}`}><Info /></span>
+        <span className="info" role="img" tabIndex={0} aria-label={`About ${tile.label}`}><Info /></span>
       </Tooltip>
     </span>
   );
 }
 
-function parts(t: OkTile, currency: string): { value: ReactNode; footer: ReactNode; delta?: ReactNode } {
-  const d = t.detail;
-  const na = t.value === NOT_AVAILABLE;
-  const tag = (text: string) => <Tag tone={TAG_TONE[t.tone]}>{text}</Tag>;
+/** The value, the left text of the footer and an optional extra line. The tag is the tile's `badge`. */
+function parts(t: OkTile, currency: string): { value: ReactNode; text: ReactNode; delta?: ReactNode } {
   switch (t.key) {
-    case 'deliveredRevenue':
+    case 'deliveredRevenue': {
+      const d = t.detail;
+      const orders = `${plural(d.deliveredOrders, 'order')} · AOV ${money(d.averageOrderValue, currency)}`;
       return {
         value: money(t.value, currency),
-        footer: d.target
-          ? <><span>Target {compactMoney(d.target.value, currency)}</span><Tag tone={targetTag(d.target.status).tone}>{targetTag(d.target.status).label}</Tag></>
-          : <span>{plural(d.deliveredOrders, 'order')} · AOV {money(d.averageOrderValue, currency)}</span>,
-        delta: <>{d.target && <>{plural(d.deliveredOrders, 'order')} · AOV {money(d.averageOrderValue, currency)}. </>}Of which digital {money(d.ofWhichDigital, currency)}</>,
+        text: d.target ? `Target ${compactMoney(d.target.value, currency)}` : orders,
+        delta: <>{d.target && `${orders}. `}Of which digital {money(d.ofWhichDigital, currency)}</>,
       };
+    }
     case 'cashReceived':
-      return {
-        value: money(t.value, currency),
-        footer: <><span>{d.percentOfDeliveredRevenue === null ? 'No delivered revenue' : `${d.percentOfDeliveredRevenue}% of delivered revenue`}</span>{tag('Paid in')}</>,
-      };
+      return { value: money(t.value, currency), text: t.detail.percentOfDeliveredRevenue === null ? 'No delivered revenue' : `${t.detail.percentOfDeliveredRevenue}% of delivered revenue` };
     case 'cashOutstanding':
+      return { value: money(t.value, currency), text: `${plural(t.detail.orders, 'order')}, ${t.detail.overdueOrders} past days to pay` };
+    case 'netMargin': {
+      const d = t.detail;
       return {
-        value: money(t.value, currency),
-        footer: <><span>{plural(d.orders, 'order')}, {d.overdueOrders} past days to pay</span>{tag(d.overdueOrders > 0 ? 'Chase' : 'On time')}</>,
+        value: <span className={negative(t.value) ? 'neg' : undefined}>{wholePct(t.value)}</span>,
+        text: `Target ${d.target}%`,
+        delta: <>{negative(d.netProfit) ? 'Loss' : 'Profit'} {money(negative(d.netProfit) ? -Number(d.netProfit) : d.netProfit, currency)}. Expenses {money(d.expenses.total, currency)}, of which Paystack fees {money(d.expenses.paystackFees, currency)}</>,
       };
-    case 'netMargin':
+    }
+    case 'profitPerOrder': {
+      const top = t.detail.topProduct;
       return {
-        value: <span className={toneClass(t)}>{wholePct(t.value)}</span>,
-        footer: <><span>Target {d.target}%</span>{!na && tag(t.tone === 'bad' ? `Loss ${money(Math.abs(d.netProfit), currency)}` : t.tone === 'ok' ? 'On target' : 'Under target')}</>,
-        delta: <>Expenses {money(d.expenses.total, currency)}, of which Paystack fees {money(d.expenses.paystackFees, currency)}</>,
+        value: <span className={negative(t.value) ? 'neg' : undefined}>{money(t.value, currency)}</span>,
+        text: top ? `${top.name} ${money(top.profitPerOrder, currency)} before ads and rep commission` : plural(t.detail.deliveredOrders, 'delivered order'),
       };
-    case 'profitPerOrder':
+    }
+    case 'cashRunway': {
+      const d = t.detail;
       return {
-        value: <span className={toneClass(t)}>{money(t.value, currency)}</span>,
-        footer: <>
-          <span>{d.topProduct ? `${d.topProduct.name} ${money(d.topProduct.profitPerOrder, currency)} before ads and rep commission` : plural(d.deliveredOrders, 'delivered order')}</span>
-          {!na && tag(t.tone === 'bad' ? 'Loss' : 'Profit')}
-        </>,
+        value: t.value === NOT_AVAILABLE ? NOT_AVAILABLE : `${t.value} ${t.value === 1 ? 'day' : 'days'}`,
+        text: t.value === NOT_AVAILABLE ? `No Meta spend in the last ${d.adDays} days` : `${money(d.cash, currency)} cash ÷ ${money(d.adsPerDay, currency)} ads a day`,
       };
-    case 'cashRunway':
-      return {
-        value: na ? NOT_AVAILABLE : `${t.value} ${t.value === 1 ? 'day' : 'days'}`,
-        footer: na
-          ? <span>No Meta spend in the last {d.adDays} days</span>
-          : <><span>{money(d.cash, currency)} cash ÷ {money(d.adsPerDay, currency)} ads a day</span>{tag(d.level === 'critical' ? 'Critical' : d.level === 'tight' ? 'Tight' : 'OK')}</>,
-      };
+    }
   }
 }
 
+/** The tile's own badge; the revenue tile's tag is the target's Dashboard progress key. */
+function badgeOf(t: OkTile): Badge | null {
+  if (t.badge) return t.badge;
+  return t.key === 'deliveredRevenue' && t.detail.target ? PROGRESS_TAG[t.detail.target.status] : null;
+}
+
 function ErrorCard({ tile }: { tile: Extract<TileData, { status: 'error' }> }) {
-  const meta = ICON[tile.key];
   return (
     <div className="card kpi tile-error" role="alert">
-      <div className={`ic ${meta.tone}`}><TriangleAlert /></div>
+      <div className={`ic ${ICON[tile.key].tone}`}><TriangleAlert /></div>
       <div className="v num">—</div>
-      <div className="l">{meta.label}</div>
+      <div className="l">{tile.label}</div>
       <div className="s"><span>{tile.message}</span></div>
     </div>
   );
@@ -110,7 +110,7 @@ export function Tiles({ tiles, currency, onRetry }: { tiles: TileData[]; currenc
       {TILE_ORDER.map((key) => {
         const t = byKey.get(key);
         if (!t) return null;
-        if (!isOk(t)) {
+        if (t.status === 'error') {
           return (
             <div key={key} className="tilewrap">
               <ErrorCard tile={t} />
@@ -119,8 +119,18 @@ export function Tiles({ tiles, currency, onRetry }: { tiles: TileData[]; currenc
           );
         }
         const p = parts(t, currency);
-        const meta = ICON[key];
-        return <Tile key={key} icon={meta.icon} tone={meta.tone} value={p.value} label={<Label tile={t} text={meta.label} />} footer={p.footer} delta={p.delta} />;
+        const badge = badgeOf(t);
+        return (
+          <Tile
+            key={key}
+            icon={ICON[key].icon}
+            tone={ICON[key].tone}
+            value={p.value}
+            label={<Label tile={t} />}
+            footer={<><span>{p.text}</span>{badge && <Tag tone={badge.tone}>{badge.label}</Tag>}</>}
+            delta={p.delta}
+          />
+        );
       })}
     </>
   );

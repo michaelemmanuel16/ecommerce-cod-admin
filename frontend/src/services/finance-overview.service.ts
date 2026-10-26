@@ -5,24 +5,45 @@ import apiClient from './api';
  * into numbers, so money here is a number; "n/a" stays a string.
  */
 
-export type Tone = 'ok' | 'warn' | 'bad' | 'neutral';
 export const NOT_AVAILABLE = 'n/a';
 
-export interface OkTile {
-  status: 'ok';
-  key: TileKey;
-  label: string;
-  tooltip: string;
-  dateBasis: 'range' | 'today';
-  value: number | typeof NOT_AVAILABLE;
-  unit: 'money' | 'percent' | 'days';
-  available: boolean;
-  tone: Tone;
-  detail: Record<string, any>;
+/** A money field: the API client turns numeric strings under money-like keys into numbers and leaves the rest as strings. */
+export type Amount = number | string;
+
+/** The ui-v2 Tag tones. The page draws `badge` as it comes. */
+export interface Badge { label: string; tone: 'ok' | 'bad' | 'warn' | 'v' | 'n' }
+
+export interface TileDetails {
+  deliveredRevenue: {
+    deliveredOrders: number;
+    averageOrderValue: Amount;
+    ofWhichDigital: Amount;
+    /** The covering revenue target and the Dashboard progress key (PROGRESS_TAG); null when no target covers the range. */
+    target: { value: Amount; status: 'hit' | 'on_track' | 'behind' | 'off_track' | 'no_target' } | null;
+  };
+  cashReceived: { payouts: number; percentOfDeliveredRevenue: number | null };
+  cashOutstanding: { orders: number; overdueOrders: number };
+  netMargin: { target: number; netProfit: Amount; expenses: { total: Amount; paystackFees: Amount } };
+  profitPerOrder: { deliveredOrders: number; topProduct: { name: string; profitPerOrder: Amount } | null };
+  cashRunway: { cash: Amount; adsPerDay: Amount; adDays: number };
 }
+export type TileKey = keyof TileDetails;
+
+/** One tile, a union by key so each key has its own detail. */
+export type OkTile = {
+  [K in TileKey]: {
+    status: 'ok';
+    key: K;
+    label: string;
+    tooltip: string;
+    dateBasis: 'range' | 'today';
+    value: Amount;
+    badge: Badge | null;
+    detail: TileDetails[K];
+  };
+}[TileKey];
 export interface ErrorTile { status: 'error'; key: TileKey; label: string; message: string }
 export type Tile = OkTile | ErrorTile;
-export type TileKey = 'deliveredRevenue' | 'cashReceived' | 'cashOutstanding' | 'netMargin' | 'profitPerOrder' | 'cashRunway';
 
 export type SettlementStatus = 'matched' | 'short' | 'over' | 'unmatched';
 
@@ -33,42 +54,31 @@ export interface UnpaidRow {
   area: string | null;
   deliveredOn: string;
   ageDays: number;
-  orderTotal: number | null;
-  fee: number | null;
-  amount: number;
+  orderTotal: Amount | null;
+  fee: Amount | null;
+  amount: Amount;
 }
 
 export interface ReconRow {
   id: number;
   date: string;
-  reference: string;
-  partnerId: number;
   partnerName: string;
   partnerKind: 'person' | 'company' | 'ai_agent' | 'system';
-  paidIn: number;
-  expectedAfterFees: number;
+  paidIn: Amount;
+  expectedAfterFees: Amount;
   orders: number;
   status: SettlementStatus;
-  shortAmount: number;
-  overAmount: number;
-  unappliedAmount: number;
-  unpaid: { orders: number; amount: number; rows: UnpaidRow[] } | null;
+  shortAmount: Amount;
+  overAmount: Amount;
+  unpaid: { orders: number; amount: Amount; rows: UnpaidRow[] } | null;
 }
 
 export interface Failed { status: 'error'; message: string }
-
-export interface Reconciliation {
-  basis: 'expected_cash_after_fees';
-  from: string;
-  to: string;
-  counts: Record<SettlementStatus, number>;
-  rows: ReconRow[];
-}
+export interface Reconciliation { rows: ReconRow[] }
 
 export interface FinanceOverview {
   from: string;
   to: string;
-  asOf: string;
   currency: string;
   tiles: Tile[];
   reconciliation: Reconciliation | Failed;
