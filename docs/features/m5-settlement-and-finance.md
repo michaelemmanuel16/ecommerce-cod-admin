@@ -101,3 +101,25 @@ Expenses post to the ledger. Manual journal entries, ledger browse and exports h
 - In dark mode the Finance panel stays light; the page restyle is T34.
 - Console warnings on the Finance page come from the older DateRangePicker and FinancialDashboard.
 - COD-52 stays In Progress until part 2 (T24 to T27, T30).
+
+---
+
+## COD-53 (T32) and COD-54 (T38) — Fee rules screen, payout form and Rep commissions tab
+**Date:** 2026-10-26 | **Type:** feat/fix | **Branch:** feature/m5-settlement-and-finance (lane `m5/b-fee-payout-ui`, merge 278cb5d) | **Commits:** 7778851, cd34147, 8fcf3a2, 8d58819, 996c3d0
+
+### Summary
+The partner drawer has a Fees tab for delivery fee rules. One payout form pays reps and delivery agents. Finance has a Rep commissions tab. Plan tasks: M5-T32 (COD-53), M5-T38 (COD-54).
+
+### Changes
+- **Fees tab (T32):** delivered, failed and returned fee rules per partner with a start date. A second rule on the same date for the same partner and kind is refused on its row. Amounts from the API are numbers; the form turns them into strings before editing.
+- **Payout form (T38):** one modal for reps and delivery agents. It shows the owed amount, refuses an amount above owed ("Owed is GH₵N"), and records method and reference. A part payment splits the oldest open entry. Record payout is disabled with a reason (hover, focus and screen reader) for users without `payouts:create`. The close button has an accessible name; Escape closes the modal.
+- **Rep commissions tab (T38):** owed, paid and entries per rep. The table fits at 1440 and scrolls inside its card at 760.
+- **Permissions:** frontend `Resource` and `Action` types include `payouts`, `journal`, `expenses`, `post`, `void`, `edit` and `view_all`.
+
+### Verification
+- Merged tree (278cb5d): backend prisma generate, typecheck, lint and build clean; full backend suite 262 suites / 3398 tests pass. Frontend lint and build clean; vitest 152 files / 1246 tests pass.
+- Browser check (owner and viewer; light and dark; 1440 and 760): Fees save, same-date rule refused, weighted fee GH₵25, owed and paid totals, above-owed refused, GH₵20 part payment split the oldest entry, disabled Record payout reason, modal close name and Escape.
+
+### Open points
+- T37 (manual partner payout modal) waits for T12 in COD-49 (lane A).
+- COD-53 stays In Progress until T34 to T37. COD-54 stays In Progress until T40, T41, T44 and T45.
