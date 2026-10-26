@@ -121,23 +121,28 @@ describe('categories', () => {
     expect(res.body.expense.category).toBe('Office and internet');
   });
 
-  it('the migration maps every other category to Other and uses the same list as the config', async () => {
-    const sql = migrationStatements('20261026130000_m5_expense_categories').join('\n');
-    const inList = [...sql.matchAll(/NOT IN \(([^)]*)\)/g)][0][1].match(/'([^']+)'/g)!.map((x) => x.slice(1, -1));
-    expect(inList.sort()).toEqual(EXPENSE_CATEGORIES.map((c) => c.toLowerCase()).sort());
-
+  it('the migration maps each old category as the owner approved (PRD F-918) and is safe to run twice', async () => {
     const t = (await createTenant('Expense categories')).id;
     tenantIds.push(t);
-    const mk = (category: string, amount: number) =>
-      prismaBase.expense.create({ data: { tenantId: t, category, amount, description: 'old', expenseDate: new Date() } });
-    for (const [c, n] of [['COGS', 10], ['Delivery fees', 20], ['Meta ads', 30], ['Operations', 1], [' marketing ', 5], ['Salaries', 7], ['Other expenses', 2]] as const) await mk(c, n);
-    for (const stmt of migrationStatements('20261026130000_m5_expense_categories')) await prismaBase.$executeRawUnsafe(stmt);
-    const rows = await prismaBase.expense.findMany({ where: { tenantId: t }, orderBy: { id: 'asc' } });
-    expect(rows.map((r) => r.category)).toEqual(['Other', 'Other', 'Other', 'Other', 'Marketing', 'Salaries', 'Other']);
-    expect(rows.every((r) => (EXPENSE_CATEGORIES as readonly string[]).includes(r.category))).toBe(true);
-    // second run changes nothing
-    for (const stmt of migrationStatements('20261026130000_m5_expense_categories')) await prismaBase.$executeRawUnsafe(stmt);
-    expect((await prismaBase.expense.findMany({ where: { tenantId: t }, orderBy: { id: 'asc' } })).map((r) => r.category)).toEqual(rows.map((r) => r.category));
+    const seeded: Array<[string, string]> = [
+      ['COGS', 'Packaging'], ['Delivery', 'Transport'], ['Marketing', 'Marketing'], ['Operations', 'Other'],
+      ['Salaries', 'Salaries'], ['Utilities', 'Office and internet'], ['Other', 'Other'],
+      [' cogs ', 'Packaging'], ['UTILITIES', 'Office and internet'], ['marketing', 'Marketing'],
+      ['Meta ads', 'Other'], ['Delivery fees', 'Other'], ['Other expenses', 'Other'],
+      ['Photography', 'Photography'], ['office AND internet', 'Office and internet'],
+    ];
+    for (const [category] of seeded) {
+      await prismaBase.expense.create({ data: { tenantId: t, category, amount: 10, description: category, expenseDate: new Date() } });
+    }
+    const run = async () => { for (const stmt of migrationStatements('20261026130000_m5_expense_categories')) await prismaBase.$executeRawUnsafe(stmt); };
+    const read = async () => (await prismaBase.expense.findMany({ where: { tenantId: t } })).map((r) => [r.description, r.category]);
+
+    await run();
+    expect(await read()).toEqual(expect.arrayContaining(seeded.map(([old, mapped]) => [old, mapped])));
+    expect((await read()).every(([, c]) => (EXPENSE_CATEGORIES as readonly string[]).includes(c))).toBe(true);
+    const first = await read();
+    await run();
+    expect(await read()).toEqual(first);
   });
 });
 
