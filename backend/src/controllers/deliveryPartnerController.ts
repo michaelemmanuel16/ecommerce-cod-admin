@@ -11,6 +11,7 @@ import {
 import {
   createPartner, getPartner, setPartnerAvailability, updatePartner,
 } from '../services/deliveryPartnerAdminService';
+import { createFeeRule, listFeeRules } from '../services/feeRuleService';
 import { unmappedRegions } from '../services/regionService';
 import { proofSummaries } from '../services/deliveryProofService';
 
@@ -101,4 +102,14 @@ export const update = async (req: AuthRequest, res: Response): Promise<void> => 
 /** PATCH /api/delivery-partners/:id/availability */
 export const availability = async (req: AuthRequest, res: Response): Promise<void> => {
   res.json({ partner: await setPartnerAvailability(req.user!, partnerIdOf(req), req.body?.isAvailable) });
+};
+
+/** GET /api/delivery-partners/:id/fee-rules: rule history and the rule in force today per outcome (F-703). */
+export const feeRules = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.json(await listFeeRules(partnerIdOf(req)));
+};
+
+/** POST /api/delivery-partners/:id/fee-rules: one rule for one outcome, valid from a date (F-703). */
+export const addFeeRule = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.status(201).json({ rule: await createFeeRule(req.user!, partnerIdOf(req), req.body ?? {}) });
 };

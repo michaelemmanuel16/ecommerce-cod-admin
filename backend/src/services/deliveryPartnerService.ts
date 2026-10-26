@@ -16,7 +16,7 @@ import { withSoftDeleted } from '../utils/prismaExtensions';
 import { runInTenant } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 import { fullName } from '../utils/nameUtils';
-import { DAY_MS } from './kpi/dates';
+import { DAY_MS, getStoreTimeZone, localDate } from './kpi/dates';
 import { DEFAULT_SUCCESS_TARGET, coveringTarget } from './kpi/leadership';
 import { partnerRates } from './kpi/partners';
 import { closedOutcomeResult, DIGITAL, ratePercent } from './kpi/rates';
@@ -38,10 +38,16 @@ const WAITING_OVERDUE_DAYS = 2;
 
 export type FeeRuleView = Record<FeeOutcome, string | null>;
 
-/** One partner's fee rule as amounts per outcome; an outcome with no rule is null. */
-export const feeRuleView = (rules: Array<{ outcome: FeeOutcome; amount: Prisma.Decimal }>): FeeRuleView => {
+/** One partner's fee rule as amounts per outcome, the rule in force today; an outcome with no rule is null. */
+export const feeRuleView = (rules: Array<{ outcome: FeeOutcome; amount: Prisma.Decimal; validFrom: Date }>): FeeRuleView => {
   const view: FeeRuleView = { delivered: null, failed: null, returned: null };
-  for (const rule of rules) view[rule.outcome] = Money.toApi(rule.amount);
+  const today = new Date(`${localDate(new Date(), getStoreTimeZone())}T00:00:00.000Z`);
+  const latest = new Map<FeeOutcome, { amount: Prisma.Decimal; validFrom: Date }>();
+  for (const rule of rules) {
+    const held = latest.get(rule.outcome);
+    if (rule.validFrom <= today && (!held || rule.validFrom > held.validFrom)) latest.set(rule.outcome, rule);
+  }
+  for (const [outcome, rule] of latest) view[outcome] = Money.toApi(rule.amount);
   return view;
 };
 

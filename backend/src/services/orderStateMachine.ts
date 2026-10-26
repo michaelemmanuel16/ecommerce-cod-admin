@@ -8,6 +8,7 @@ import { OrderStatusChangedEvent } from '../utils/appEvents';
 import { afterCommitEffects, applyGlEffects, GlEffects } from './orderSideEffects';
 import { fulfilOrder, reverseOrder } from './stockService';
 import { recordDeliveryAttempt } from './deliveryAttemptHook';
+import { stampDeliveryFee } from './feeRuleService';
 
 /**
  * Order state machine (F-301, F-302). `transitionOrder` is the one function that writes Order.status.
@@ -271,18 +272,25 @@ function moveFields(
   return data;
 }
 
-/** Side effects of a move, in the move's transaction: stock (F-657, one call site) and GL posting. */
+/** The date an outcome happened: the delivery date, the return time, or now for a failed attempt (F-703). */
+const outcomeDate = (to: OrderStatus, fields: Prisma.OrderUncheckedUpdateManyInput): Date =>
+  ((to === 'delivered' ? fields.deliveryDate : to === 'returned' ? fields.returnedAt : undefined) as Date | undefined) ?? new Date();
+
+/** Side effects of a move, in the move's transaction: stock (F-657, one call site), the delivery fee stamp (F-703) and GL posting. */
 async function applySideEffects(
   tx: TransactionClient,
-  order: SideEffectOrder,
+  order: SideEffectOrder & { totalAmount: Prisma.Decimal },
   from: OrderStatus,
   to: OrderStatus,
   actor: TransitionActor,
   options: TransitionOptions,
   historyId: number,
+  fields: Prisma.OrderUncheckedUpdateManyInput,
 ): Promise<GlEffects> {
   if (to === 'delivered') await fulfilOrder(tx, order, actor.userId);
   else if (from === 'delivered') await reverseOrder(tx, order, actor.userId);
+  // The fee is stamped before the entries post, so the revenue read and the collection amount see it.
+  await stampDeliveryFee(tx, order, from, to, outcomeDate(to, fields));
   return applyGlEffects(tx, order, from, to, actor.userId, historyId, { postRevenueAlways: options.postRevenueAlways });
 }
 
@@ -417,7 +425,7 @@ async function move(
     });
   }
 
-  const gl = await applySideEffects(tx, order, from, to, actor, options, history.id);
+  const gl = await applySideEffects(tx, order, from, to, actor, options, history.id, fields);
   await recordDeliveryAttempt(tx, order, to, options);
 
   const statusChanged: OrderStatusChangedEvent = {
