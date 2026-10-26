@@ -13,7 +13,7 @@ import {
   emitTransactionDeposited,
   emitTransactionReconciled
 } from '../sockets/index';
-import { GL_ACCOUNTS } from '../config/glAccounts';
+import { GL_ACCOUNTS, RETIRED_EXPENSE_CODES } from '../config/glAccounts';
 import { TRANSACTION_CONFIG } from '../config/transactionConfig';
 import { GLAutomationService } from './glAutomationService';
 import { getSystemUserId } from './systemUserService';
@@ -25,6 +25,9 @@ import { EXPENSE_PAID_FROM, matchExpenseCategory, EXPENSE_CATEGORIES } from '../
 import { getStoreTimeZone, kpiWindow, localDate, parseInclusiveBound } from './kpi/dates';
 import { deliveredRevenue, revenueScope } from './kpi/revenue';
 import { PENDING_STATUSES } from './kpi/pending';
+import { OPEN_COLLECTION_STATUSES, outstandingOf } from '../utils/collectionCash';
+import agentReconciliationService, { Cover } from './agentReconciliationService';
+import { partnerNetCash } from './feeRuleService';
 
 interface DateFilters {
   startDate?: Date;
@@ -210,7 +213,8 @@ export class FinancialService {
       GL_ACCOUNTS.COGS,
       GL_ACCOUNTS.FAILED_DELIVERY_EXPENSE,
       GL_ACCOUNTS.RETURN_PROCESSING_EXPENSE,
-      GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION,
+      ...RETIRED_EXPENSE_CODES, // Aug and Sep agent commission, as booked
+      GL_ACCOUNTS.DELIVERY_FEES,
       GL_ACCOUNTS.SALES_REP_COMMISSION,
       GL_ACCOUNTS.PAYSTACK_FEES,
       GL_ACCOUNTS.OPERATING_EXPENSE
@@ -783,7 +787,8 @@ export class FinancialService {
         order: {
           select: {
             deliveryAgentId: true,
-            customerRepId: true
+            customerRepId: true,
+            deliveryFee: true
           }
         }
       }
@@ -804,15 +809,20 @@ export class FinancialService {
     }
 
     const updated = await prisma.$transaction(async (tx) => {
+      // Claim the transactions first: a parallel call for the same rows waits here, then finds none still 'collected'
       const result = await tx.transaction.updateMany({
         where: {
-          id: { in: transactions.map(t => t.id) }
+          id: { in: transactions.map(t => t.id) },
+          status: 'collected'
         },
         data: {
           status: 'deposited',
           reference: depositReference
         }
       });
+      if (result.count !== transactions.length) {
+        throw new AppError('These transactions were changed by someone else. Reload and try again.', 409);
+      }
 
       // Update corresponding orders
       const orderIds = transactions.filter(t => t.orderId).map(t => t.orderId as number);
@@ -821,40 +831,50 @@ export class FinancialService {
         data: { paymentStatus: 'deposited' }
       });
 
-      // Create GL deposit entry for non-reconciled transactions only
-      // (reconciled collections already have GL entries from the reconciliation path)
-      const reconciledCount = await tx.agentCollection.count({
-        where: {
-          orderId: { in: orderIds },
-          status: 'reconciled'
-        }
+      // The same entry a verified deposit posts (F-904): DR 1010, CR 1015, for the cash the partner kept net of its delivery fee.
+      // Only what no deposit has covered yet is posted: a collection's outstanding amount. Skipped: a collection already
+      // 'deposited' and one the old verify step posted (an agent_collection journal entry). The open collections are covered
+      // through the same claim a verified deposit uses, so a later deposit cannot match them again and the partner balance drops.
+      const collections = await tx.agentCollection.findMany({
+        where: { orderId: { in: orderIds } },
+        select: { id: true, orderId: true, agentId: true, status: true, amount: true, allocatedAmount: true },
       });
+      const oldPosted = new Set((await tx.journalEntry.findMany({
+        where: { sourceType: 'agent_collection', sourceId: { in: collections.map((c) => c.id) }, isVoided: false },
+        select: { sourceId: true },
+      })).map((e) => e.sourceId));
+      const collectionOf = new Map(collections.map((c) => [c.orderId, c]));
+      const isOpen = (c: (typeof collections)[number]) => (OPEN_COLLECTION_STATUSES as readonly string[]).includes(c.status);
+      const owed = (c: (typeof collections)[number]) => (c.status === 'deposited' || oldPosted.has(c.id) ? Money.ZERO : outstandingOf(c));
 
-      const totalTransactions = transactions.length;
-      const nonReconciledCount = totalTransactions - reconciledCount;
+      const covers: Cover[] = collections.filter((c) => isOpen(c) && owed(c).gt(0)).map((c) => ({
+        id: c.id, agentId: c.agentId, amount: Money.parse(c.amount), allocated: Money.orZero(c.allocatedAmount), take: owed(c),
+      }));
+      const { byCollection, byAgent } = await agentReconciliationService.claimCovers(tx, covers);
 
-      if (nonReconciledCount > 0) {
-        // Calculate amount for non-reconciled transactions only
-        const reconciledOrderIds = new Set(
-          (await tx.agentCollection.findMany({
-            where: { orderId: { in: orderIds }, status: 'reconciled' },
-            select: { orderId: true }
-          })).map((c) => c.orderId)
-        );
+      // The collection holds the net amount; with no collection the net is the transaction minus the fee stamped on the order
+      const depositAmount = Money.sum(
+        transactions.map((t) => {
+          const coll = t.orderId == null ? undefined : collectionOf.get(t.orderId);
+          if (!coll) return partnerNetCash(t.order ?? {}, t.amount);
+          // An open collection counts only if we won it; a reconciled one (no old posting) counts in full
+          return isOpen(coll) ? (byCollection.get(coll.id) ?? Money.ZERO) : owed(coll);
+        })
+      );
 
-        const nonReconciledAmount = Money.sum(
-          transactions
-            .filter(t => !t.orderId || !reconciledOrderIds.has(t.orderId))
-            .map(t => t.amount)
-        );
+      if (depositAmount.gt(0)) {
+        const userId = requester?.id ?? await getSystemUserId();
+        // Use the minimum transaction ID as a stable idempotency key for the batch.
+        // transactions[0].id is order-dependent; Math.min is consistent across re-calls.
+        const sourceId = Math.min(...transactions.map(t => t.id));
+        await GLAutomationService.createDepositGLEntry(tx as any, depositAmount, sourceId, userId);
+      }
 
-        if (nonReconciledAmount.gt(0)) {
-          const userId = requester?.id ?? await getSystemUserId();
-          // Use the minimum transaction ID as a stable idempotency key for the batch.
-          // transactions[0].id is order-dependent; Math.min is consistent across re-calls.
-          const sourceId = Math.min(...transactions.map(t => t.id));
-          await GLAutomationService.createDepositGLEntry(tx as any, nonReconciledAmount, sourceId, userId);
-        }
+      for (const [agentId, drop] of byAgent) {
+        await tx.agentBalance.updateMany({
+          where: { agentId },
+          data: { totalDeposited: { increment: drop }, currentBalance: { decrement: drop }, lastSettlementDate: new Date() },
+        });
       }
 
       return result;
@@ -1187,7 +1207,7 @@ export class FinancialService {
     // Revenue account has credit-normal balance
     const glRevenue = Money.sub(Money.orZero(revenueAgg._sum.creditAmount), Money.orZero(revenueAgg._sum.debitAmount));
 
-    const commissionCodes = [GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION, GL_ACCOUNTS.SALES_REP_COMMISSION];
+    const commissionCodes = [...RETIRED_EXPENSE_CODES, GL_ACCOUNTS.DELIVERY_FEES, GL_ACCOUNTS.SALES_REP_COMMISSION];
 
     const expenseAgg = await prisma.accountTransaction.groupBy({
       by: ['accountId'],
@@ -1497,7 +1517,7 @@ export class FinancialService {
         by: ['agentId'],
         where: {
           agentId: { in: agentIds },
-          status: { in: ['draft', 'verified', 'approved'] }
+          status: { in: [...OPEN_COLLECTION_STATUSES] }
         },
         _count: { id: true },
       }),
@@ -1505,7 +1525,7 @@ export class FinancialService {
         by: ['agentId'],
         where: {
           agentId: { in: agentIds },
-          status: { in: ['draft', 'verified', 'approved'] }
+          status: { in: [...OPEN_COLLECTION_STATUSES] }
         },
         _min: { collectionDate: true },
       }),

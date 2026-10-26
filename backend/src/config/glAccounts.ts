@@ -103,6 +103,12 @@ export function getAccountCode(key: keyof typeof GL_ACCOUNTS): string {
 /** Accounts kept for Aug and Sep history. They take no new postings (M5-T03); the chart seed creates them inactive. */
 export const RETIRED_GL_CODES: readonly string[] = [GL_ACCOUNTS.AR_AGENTS, GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION];
 
+/**
+ * The retired expense account (agent commission, 5040). History reads use this list (Aug and Sep P&L, the reversal of an
+ * entry booked before M5). Nothing posts to it: delivery fees go to `GL_ACCOUNTS.DELIVERY_FEES`.
+ */
+export const RETIRED_EXPENSE_CODES: readonly string[] = [GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION];
+
 type DefaultGLAccount = {
   code: string;
   name: string;

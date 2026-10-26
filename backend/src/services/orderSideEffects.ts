@@ -1,4 +1,5 @@
 import { OrderStatus } from '@prisma/client';
+import type { DeliveryFeeStamp } from './feeRuleService';
 import { TransactionClient } from '../utils/prisma';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
@@ -12,7 +13,7 @@ import { AppEvent, OrderStatusChangedEvent, emitOrderEvent } from '../utils/appE
 
 /**
  * Side effects of a status move (M1-T10), called by the state machine in the move's transaction.
- * GL: revenue on entering delivered, reversal on leaving delivered, fee per failed attempt.
+ * GL: revenue on entering delivered, reversal on leaving delivered, the delivery fee of each outcome (F-936).
  * Everything here is idempotent. Stock moves in stockService, called by the state machine (M4-T07).
  */
 
@@ -20,7 +21,7 @@ import { AppEvent, OrderStatusChangedEvent, emitOrderEvent } from '../utils/appE
 export const ORDER_EVENT_INCLUDE = {
   customer: { select: { id: true, firstName: true, lastName: true, phoneNumber: true, alternatePhone: true, email: true } },
   customerRep: { select: { id: true, firstName: true, lastName: true, email: true, role: true, commissionAmount: true } },
-  deliveryAgent: { select: { id: true, firstName: true, lastName: true, phoneNumber: true, role: true, commissionAmount: true } },
+  deliveryAgent: { select: { id: true, firstName: true, lastName: true, phoneNumber: true, role: true } },
   orderItems: { include: { product: { select: { id: true, name: true, sku: true, cogs: true } } } },
 } as const;
 
@@ -31,8 +32,10 @@ export interface GlEffects {
   revenue?: any;
   /** The order (items with products, agent, rep) as read for the revenue entry, so a caller needs no second read. */
   revenueOrder?: any;
-  /** Failed-attempt fee entry; none when the agent has no FeeRule. */
-  failedFee?: any;
+  /** Delivery fee entry (DR 5070, CR 1015) of the outcome this move reached; none when the fee is 0. */
+  deliveryFee?: any;
+  /** Reversal of the delivered fee entry, when the move leaves `delivered`. */
+  deliveryFeeReversal?: any;
 }
 
 /**
@@ -89,26 +92,35 @@ async function reverseRevenue(
   return reversal;
 }
 
-/** GL posting for one move, in the move's transaction. */
+/** GL posting for one move, in the move's transaction. `stamp` is the outcome and fee the state machine just wrote on the order. */
 export async function applyGlEffects(
   tx: TransactionClient,
-  order: { id: number; tenantId?: string | null; deliveryAgentId?: number | null },
+  order: { id: number; tenantId?: string | null },
   from: OrderStatus,
   to: OrderStatus,
   userId: number | undefined,
   historyId: number,
+  stamp: DeliveryFeeStamp | null,
   opts: { postRevenueAlways?: boolean } = {},
 ): Promise<GlEffects> {
   // Only a move that posts to the ledger needs an actor, so look it up lazily.
   const actor = async () => userId ?? await getSystemUserId();
   const effects: GlEffects = {};
-  if (from === 'delivered') effects.reversal = await reverseRevenue(tx, order.id, to, await actor());
+  if (from === 'delivered') {
+    effects.reversal = await reverseRevenue(tx, order.id, to, await actor());
+    // Same date as the revenue reversal: the return time for a return, the move time for a forced move elsewhere.
+    effects.deliveryFeeReversal = (await GLAutomationService.reverseDeliveredFee(tx as any, order, await actor(), effects.reversal?.entryDate)) ?? undefined;
+  }
   if (to === 'delivered') {
     const posted = await postRevenue(tx, order.id, await actor(), opts.postRevenueAlways);
     effects.revenue = posted?.entry;
     effects.revenueOrder = posted?.order;
   }
-  if (to === 'failed_delivery') effects.failedFee = (await GLAutomationService.createFailedAttemptEntry(tx as any, order, historyId, await actor())) ?? undefined;
+  if (stamp) {
+    effects.deliveryFee = (await GLAutomationService.createDeliveryFeeEntry(
+      tx as any, order, stamp.outcome, stamp.fee, historyId, await actor(), stamp.on,
+    )) ?? undefined;
+  }
   return effects;
 }
 

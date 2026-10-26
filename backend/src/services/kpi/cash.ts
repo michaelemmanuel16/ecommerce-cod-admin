@@ -9,6 +9,7 @@ import { runInTenant } from '../../utils/tenantContext';
 import * as Money from '../../utils/money';
 import { getCurrency } from '../../utils/currency';
 import { DAY_MS } from './dates';
+import { OPEN_COLLECTION_STATUSES } from '../../utils/collectionCash';
 import { medianRounded } from './median';
 import { kpiMeta, type KpiResult } from './types';
 
@@ -30,7 +31,7 @@ export async function cashHeldByPartners(tenantId: string): Promise<KpiResult<st
       // part-paid row stays approved) with a collectionDate older than 8 days. Differs on purpose from agingService, which
       // keeps `deposited` as outstanding until reconciled: here a deposited collection is no longer with the partner.
       prisma.agentCollection.count({
-        where: { status: { in: ['draft', 'verified', 'approved'] }, collectionDate: { lt: overdueBefore }, order: { deletedAt: null } },
+        where: { status: { in: [...OPEN_COLLECTION_STATUSES] }, collectionDate: { lt: overdueBefore }, order: { deletedAt: null } },
       }),
     ]);
     return {

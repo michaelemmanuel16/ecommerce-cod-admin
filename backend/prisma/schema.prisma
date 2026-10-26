@@ -1240,6 +1240,8 @@ model AgentDeposit {
   receiptUrl      String?       @map("receipt_url")
   rejectReason    String?       @map("reject_reason")
   settlementId    Int?          @map("settlement_id")
+  /// M5-T07: what verifying this deposit matched, FIFO: [{ collectionId, amount }]. Reject reverses exactly these.
+  allocations     Json?
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
 
@@ -1513,6 +1515,8 @@ enum JournalSourceType {
   period_close
   digital_sale
   paystack_payout
+  delivery_fee
+  commission_accrual
 }
 
 enum MessageChannel {

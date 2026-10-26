@@ -339,6 +339,7 @@ describe('FinancialService', () => {
         count: jest.fn().mockResolvedValue(0),
         findMany: jest.fn().mockResolvedValue([])
       };
+      (prismaMock as any).journalEntry = { findMany: jest.fn().mockResolvedValue([]) };
 
       const requester = { id: 1, role: 'admin' };
       const result = await financialService.markCODAsDeposited(

@@ -501,16 +501,15 @@ export const backfillDeliveryDates = async (_req: AuthRequest, res: Response): P
 
 /**
  * POST /api/financial/backfill-commissions
- * Admin-only endpoint to add missing commission lines to order_delivery journal entries.
- * Finds JEs that have revenue but no commission transactions, then adds commission
- * debit + adjusts Cash in Transit based on current agent/rep commissionAmount.
+ * Admin-only endpoint to add missing rep commission lines to order_delivery journal entries.
+ * Finds JEs that have revenue but no commission transactions, then adds the rep commission
+ * debit and payable based on the current rep commissionAmount. Delivery partners keep a delivery fee
+ * (posted per outcome to 5070, M5-T06), so no agent commission is added here.
  */
 export const backfillCommissions = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const commAccountId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION);
     const repCommAccountId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.SALES_REP_COMMISSION);
     const commPayableAccountId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.COMMISSIONS_PAYABLE);
-    const cashInTransitAccountId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT);
 
     // account_transactions.tenant_id is NOT NULL — stamp every created row with
     // the request's tenant rather than relying on the extension (which covers
@@ -521,19 +520,16 @@ export const backfillCommissions = async (_req: AuthRequest, res: Response): Pro
       return;
     }
 
-    // Find all order_delivery JEs that have NO commission transactions
+    // Find all order_delivery JEs that have NO rep commission transactions
     const journalEntries = await prisma.journalEntry.findMany({
       where: {
         sourceType: 'order_delivery',
         isVoided: false,
         transactions: {
           none: {
-            accountId: { in: [commAccountId, repCommAccountId] },
+            accountId: repCommAccountId,
           },
         },
-      },
-      include: {
-        transactions: true,
       },
     });
 
@@ -542,12 +538,11 @@ export const backfillCommissions = async (_req: AuthRequest, res: Response): Pro
       return;
     }
 
-    // Get orders with agent/rep commission info
+    // Get orders with rep commission info
     const orderIds = journalEntries.map(je => je.sourceId).filter((id): id is number => id !== null);
     const orders = await prisma.order.findMany({
       where: { id: { in: orderIds } },
       include: {
-        deliveryAgent: { select: { id: true, commissionAmount: true } },
         customerRep: { select: { id: true, commissionAmount: true } },
       },
     });
@@ -563,46 +558,14 @@ export const backfillCommissions = async (_req: AuthRequest, res: Response): Pro
         continue;
       }
 
-      const agentComm = Money.orZero(order.deliveryAgent?.commissionAmount);
       const repComm = Money.orZero(order.customerRep?.commissionAmount);
 
-      if (agentComm.equals(0) && repComm.equals(0)) {
+      if (repComm.equals(0)) {
         skipped++;
         continue;
       }
 
       await prisma.$transaction(async (tx) => {
-        // Add agent commission transaction
-        if (agentComm.greaterThan(0)) {
-          await tx.accountTransaction.create({
-            data: {
-              journalEntryId: je.id,
-              accountId: commAccountId,
-              debitAmount: agentComm,
-              creditAmount: new Decimal(0),
-              description: `Backfill: Delivery agent commission - Order #${order.id}`,
-              tenantId,
-            },
-          });
-          // Reduce Cash in Transit (agent keeps commission from collection)
-          const citTxn = je.transactions.find(t => t.accountId === cashInTransitAccountId);
-          if (citTxn) {
-            await tx.accountTransaction.update({
-              where: { id: citTxn.id },
-              data: { debitAmount: new Decimal(citTxn.debitAmount.toString()).minus(agentComm) },
-            });
-          }
-          // Update account running balances
-          await tx.account.update({
-            where: { id: commAccountId },
-            data: { currentBalance: { increment: agentComm } },
-          });
-          await tx.account.update({
-            where: { id: cashInTransitAccountId },
-            data: { currentBalance: { decrement: agentComm } },
-          });
-        }
-
         // Add rep commission transaction
         if (repComm.greaterThan(0)) {
           await tx.accountTransaction.create({
