@@ -50,6 +50,8 @@ describe('Cash flow tab (M5-T41)', () => {
     open(<CashFlowPanel />);
     expect(await screen.findByText('Expected in, 30 days')).toBeInTheDocument();
     expect(svc.cashFlow).toHaveBeenCalledWith('pace');
+    // only the scenario on screen is asked for
+    expect(svc.cashFlow).toHaveBeenCalledTimes(1);
     expect(await screen.findByRole('button', { name: "Today's pace, 48% delivery success" })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'If delivery success reaches 60%' })).toHaveAttribute('aria-pressed', 'false');
     expect(tile('Expected in, 30 days')).toHaveTextContent('GH₵3,000');

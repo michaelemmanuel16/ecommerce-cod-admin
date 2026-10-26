@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Download } from 'lucide-react';
-import { Button, Card, Skeleton, Tag } from '../../ui-v2';
+import { Button, Card, Pagination, Skeleton, Tag } from '../../ui-v2';
 import { BlockError } from '../../../pages/dashboard/blocks/Frame';
 import { financialService, AccountLedgerResponse, LedgerLine } from '../../../services/financial.service';
 import { formatCurrency, formatDate, todayYmd } from '../../../utils/format';
@@ -16,6 +16,7 @@ interface AccountLedgerProps {
     refreshKey?: number;
 }
 
+const PAGE_SIZE = 20;
 const TYPE_NAMES: Record<string, string> = { asset: 'Asset', liability: 'Liability', equity: 'Equity', revenue: 'Revenue', expense: 'Expense' };
 
 /** The ledger of one account (finance.html #ledBody): date, entry, description, debit, credit and the running balance. */
@@ -26,7 +27,7 @@ export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, account
     const [error, setError] = useState(false);
     const { dateRange } = useFinancialStore();
     const [page, setPage] = useState(1);
-    const [totalPages, setTotalPages] = useState(1);
+    const [total, setTotal] = useState(0);
     const [voiding, setVoiding] = useState<{ id: number; entryNumber: string } | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
     const [exporting, setExporting] = useState(false);
@@ -34,11 +35,6 @@ export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, account
 
     // Leaving the screen cancels a running export
     useEffect(() => () => exportAbort.current?.abort(), []);
-
-    // Another account starts again at the first page
-    useEffect(() => {
-        setPage(1);
-    }, [accountId]);
 
     useEffect(() => {
         fetchLedger();
@@ -52,11 +48,11 @@ export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, account
                 startDate,
                 endDate,
                 page,
-                limit: 20
+                limit: PAGE_SIZE
             });
             setData(res.transactions);
             setAccount(res.account);
-            setTotalPages(res.pagination.pages);
+            setTotal(res.pagination.total);
             setError(false);
         } catch (err) {
             setError(true);
@@ -143,15 +139,7 @@ export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, account
                     </tbody>
                 </table>
             </div>
-            {totalPages > 1 && (
-                <div className="ledfoot">
-                    <span>Page {page} of {totalPages}</span>
-                    <span className="sp">
-                        <Button size="mini" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>Previous</Button>
-                        <Button size="mini" disabled={page === totalPages} onClick={() => setPage((p) => p + 1)}>Next</Button>
-                    </span>
-                </div>
-            )}
+            {total > PAGE_SIZE && <Pagination page={page} pageSize={PAGE_SIZE} total={total} noun="lines" onPageChange={setPage} />}
             <VoidJournalModal
                 entry={voiding}
                 onClose={() => setVoiding(null)}

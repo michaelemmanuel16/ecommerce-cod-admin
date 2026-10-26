@@ -5,6 +5,7 @@ import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate } from '../middleware/validation';
 import {
   paginationValidation,
+  accountListValidation,
   createAccountValidation,
   updateAccountValidation,
   createJournalEntryValidation,
@@ -17,7 +18,7 @@ router.use(authenticate);
 router.use(tenantRateLimiter);
 
 // Chart of Accounts
-router.get('/accounts', requireResourcePermission('gl', 'view'), paginationValidation, validate, glController.getAllAccounts);
+router.get('/accounts', requireResourcePermission('gl', 'view'), accountListValidation, validate, glController.getAllAccounts);
 router.post('/accounts', requireResourcePermission('gl', 'create'), createAccountValidation, validate, glController.createAccount);
 router.get('/accounts/:id', requireResourcePermission('gl', 'view'), glController.getAccount);
 router.put('/accounts/:id', requireResourcePermission('gl', 'update'), updateAccountValidation, validate, glController.updateAccount);

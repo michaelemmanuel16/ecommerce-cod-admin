@@ -1,6 +1,6 @@
 // Every sentence on the profit cards that holds a figure or a name is built here from the API answer, so the words follow
 // the data and nothing is typed in. The tests feed known answers and read the sentences back.
-import type { CohortProfit, PlColumn, ProfitByProduct } from '../../../services/financeReports.service';
+import type { CohortProfit, FailedDeliveryCost, PlColumn, ProfitByProduct } from '../../../services/financeReports.service';
 import { parseMoney } from '../../../utils/money';
 import { listWords, lowerFirst, money, monthOf, pct } from './format';
 
@@ -100,3 +100,15 @@ export function plNotes(columns: PlColumn[]): string[] {
   }
   return notes;
 }
+
+/** Under "Fee kept on failed orders": who kept a fee and on how many orders. */
+export const failedFeeNote = (d: FailedDeliveryCost): string =>
+  d.partners.filter((p) => Number(p.fees) > 0).map((p) => `${p.name} ${p.failedOrders} failed or returned`).join(', ') || 'No fee was kept';
+
+/** Under "Returned units lost": how many units are missing, and where. */
+export const lostUnitsNote = (d: FailedDeliveryCost): string =>
+  d.partners.filter((p) => p.unitsLost > 0).map((p) => `${p.unitsLost} missing at ${p.name}`).join(', ') || 'No unit is missing';
+
+/** A partner with no failed fee rule: the server's hint, with the name. */
+export const failedHints = (d: FailedDeliveryCost): Array<{ key: string; text: string }> =>
+  d.partners.filter((p) => p.hint).map((p) => ({ key: String(p.partnerId ?? 'none'), text: `${p.name}: ${p.hint}` }));

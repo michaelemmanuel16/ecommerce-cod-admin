@@ -136,4 +136,12 @@ describe('GET /api/gl/accounts', () => {
       ['id', 'code', 'name', 'accountType', 'normalBalance', 'isActive', 'isSystem', 'currentBalance']
     ));
   });
+
+  it('accepts limit=200 so the screens read the whole chart in one call (V1)', async () => {
+    const id = await seededTenant('Chart api wide');
+    const admin = await mkUser(id, 'chartwide', 'admin');
+    const res = await request(app).get('/api/gl/accounts?limit=200').set('Authorization', `Bearer ${admin.token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.accounts.length).toBeGreaterThan(20);
+  });
 });

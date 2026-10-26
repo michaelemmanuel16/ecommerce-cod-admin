@@ -3,17 +3,17 @@ import { useDownload } from './useDownload';
 import { useFinanceRange } from '../profit/range';
 
 /** `ranged`: the file takes the Finance dates. The others are a snapshot of today or of the next 30 days. */
-export const ITEMS: Array<{ report: ExportReport; format: ExportFormat; label: string; note: string; ranged: boolean; excel?: boolean }> = [
-  { report: 'profit-loss', format: 'csv', label: 'Profit and loss', note: 'CSV', ranged: true },
-  { report: 'agent-aging', format: 'csv', label: 'Agent aging and collections', note: 'CSV', ranged: false },
-  { report: 'general-ledger', format: 'csv', label: 'General ledger', note: 'CSV', ranged: true },
-  { report: 'cash-flow', format: 'csv', label: 'Cash-flow forecast', note: 'CSV', ranged: false },
+export const ITEMS: Array<{ id: string; report: ExportReport; format: ExportFormat; label: string; note: string; ranged: boolean }> = [
+  { id: 'profit-loss-csv', report: 'profit-loss', format: 'csv', label: 'Profit and loss', note: 'CSV', ranged: true },
+  { id: 'agent-aging-csv', report: 'agent-aging', format: 'csv', label: 'Agent aging and collections', note: 'CSV', ranged: false },
+  { id: 'general-ledger-csv', report: 'general-ledger', format: 'csv', label: 'General ledger', note: 'CSV', ranged: true },
+  { id: 'cash-flow-csv', report: 'cash-flow', format: 'csv', label: 'Cash-flow forecast', note: 'CSV', ranged: false },
   // not in the mockup: kept because M5-T41 asks for the profit and loss as Excel
-  { report: 'profit-loss', format: 'xlsx', label: 'Profit and loss', note: 'Excel', ranged: true, excel: true },
+  { id: 'profit-loss-xlsx', report: 'profit-loss', format: 'xlsx', label: 'Profit and loss', note: 'Excel', ranged: true },
 ];
 
 export type ExportItem = (typeof ITEMS)[number];
-export const PROFIT_LOSS_CSV = ITEMS[0];
+export const PROFIT_LOSS_CSV = ITEMS.find((i) => i.id === 'profit-loss-csv')!;
 
 /** Runs one Finance export as a real file: the ranged ones take the Finance dates. Shared by the header menu and the P&L card. */
 export function useFinanceExport() {

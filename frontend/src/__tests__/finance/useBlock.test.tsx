@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { clearBlockCache, useBlock } from '../../pages/financial/profit/useBlock';
+import { clearBlockCache, refreshBlocks, useBlock } from '../../pages/financial/profit/useBlock';
 import { useAuthStore } from '../../stores/authStore';
 
 const load = vi.fn();
@@ -50,5 +50,28 @@ describe('useBlock shared cache (M5-T40 review)', () => {
     render(<Probe k="a" label="x" />);
     await screen.findByText('x:ready:a!');
     expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it('refreshBlocks forgets the cache and every block on screen asks again, once per key (M5 UI fix 1)', async () => {
+    let n = 0;
+    load.mockImplementation(async () => `v${++n}`);
+    render(<><Probe k="a" label="x" /><Probe k="a" label="y" /><Probe k="b" label="z" /></>);
+    await screen.findByText('x:ready:v1');
+    await screen.findByText('z:ready:v2');
+    act(() => refreshBlocks());
+    expect(await screen.findByText('x:ready:v3')).toBeInTheDocument();
+    expect(await screen.findByText('y:ready:v3')).toBeInTheDocument();
+    expect(await screen.findByText('z:ready:v4')).toBeInTheDocument();
+    expect(load).toHaveBeenCalledTimes(4);
+  });
+
+  it('a block that is not enabled asks for nothing (M5 UI fix 2)', async () => {
+    function Off() {
+      const b = useBlock('off', () => load('off'), false);
+      return <p>off:{b.status}</p>;
+    }
+    render(<Off />);
+    expect(await screen.findByText('off:loading')).toBeInTheDocument();
+    expect(load).not.toHaveBeenCalled();
   });
 });

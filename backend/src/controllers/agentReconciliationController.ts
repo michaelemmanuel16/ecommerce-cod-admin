@@ -70,8 +70,7 @@ export class AgentReconciliationController {
             if (endDate) where.depositDate.lte = readDateBound(endDate, 'to');
         }
 
-        const deposits = await (prisma as any).agentDeposit.findMany({
-            where,
+        const query = {
             include: {
                 agent: {
                     select: { id: true, firstName: true, lastName: true, email: true }
@@ -81,7 +80,21 @@ export class AgentReconciliationController {
                 }
             },
             orderBy: { depositDate: 'desc' }
-        });
+        };
+        const db = (prisma as any).agentDeposit;
+        // recentDecided=N: every pending row plus the N newest decided rows, so the Finance screens stay bounded (read only)
+        const recentDecided = req.query.recentDecided === undefined ? null : Number(req.query.recentDecided);
+        let deposits;
+        if (recentDecided === null) {
+            deposits = await db.findMany({ where, ...query });
+        } else {
+            const { status: _ignored, ...scope } = where;
+            const [pending, decided] = await Promise.all([
+                db.findMany({ where: { ...scope, status: 'pending' }, ...query }),
+                db.findMany({ where: { ...scope, status: { not: 'pending' } }, ...query, take: recentDecided }),
+            ]);
+            deposits = [...pending, ...decided].sort((a, b) => +new Date(b.depositDate) - +new Date(a.depositDate));
+        }
 
         res.json(deposits);
     }

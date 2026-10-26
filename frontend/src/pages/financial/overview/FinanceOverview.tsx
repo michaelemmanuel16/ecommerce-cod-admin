@@ -1,13 +1,13 @@
 import { useMemo } from 'react';
 import { financeOverviewService } from '../../../services/finance-overview.service';
-import { collectionsService, unpaidByAgeOf } from '../../../services/collections.service';
+import { unpaidByAgeOf } from '../../../services/collections.service';
 import { UnpaidByAgeCard } from '../../../components/financial/UnpaidByAgeCard';
 import { useConfigStore } from '../../../stores/configStore';
 import { BlockError } from '../../dashboard/blocks/Frame';
+import { useAging } from '../profit/blocks';
 import { useBlock } from '../profit/useBlock';
 import { useFinanceRange } from '../profit/range';
 import { ReconciliationCard } from './ReconciliationCard';
-import { asDay } from './model';
 import { TileSkeletons, Tiles } from './Tiles';
 
 /**
@@ -17,18 +17,17 @@ import { TileSkeletons, Tiles } from './Tiles';
  */
 export function FinanceOverview() {
   const range = useFinanceRange();
-  const from = asDay(range.from);
-  const to = asDay(range.to);
+  const { from, to } = range;
   const block = useBlock(`overview|${from}|${to}`, () => financeOverviewService.get({ from, to }));
   const storeCurrency = useConfigStore((s) => s.currency);
   const { data } = block;
   // The same aging request as the Agent collections tab: one call feeds both
-  const aging = useBlock('collections:aging', collectionsService.aging);
+  const aging = useAging();
   const unpaid = useMemo(() => (aging.data ? unpaidByAgeOf(aging.data) : null), [aging.data]);
   const currency = data?.currency ?? storeCurrency ?? 'GHS';
 
   return (
-    <div className={`fov${block.status === 'loading' && data ? ' busy' : ''}`} aria-busy={block.status === 'loading'}>
+    <div className={`fov vstack${block.status === 'loading' && data ? ' busy' : ''}`} aria-busy={block.status === 'loading'}>
       {block.status === 'failed' && !data ? (
         <BlockError name="The Finance overview" onRetry={block.retry} />
       ) : (

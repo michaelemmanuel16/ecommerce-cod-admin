@@ -6,7 +6,7 @@ import { collectionsService, type PartnerDeposit } from '../../../services/colle
 import { apiErrorMessage } from '../../../utils/apiError';
 import { formatCurrency, formatDate } from '../../../utils/format';
 import { isPdfUrl, isSafeReceiptUrl } from '../../../utils/expenseRules';
-import { DEPOSIT_TONE, REJECT_REASONS, depositLabel, ordersCovered, ordersText, partnerName, rejectText } from '../../../pages/financial/collections/model';
+import { DEPOSIT_TONE, REJECT_REASONS, depositLabel, ordersCovered, ordersText, partnerName, receiptName, rejectText } from '../../../pages/financial/collections/model';
 
 interface Props {
   deposit: PartnerDeposit;
@@ -51,7 +51,7 @@ export function CollectionActionModal({ deposit, cashHeld, onClose, onChanged }:
 
   const footer = pending ? (
     <>
-      <GuardedButtonV2 perm="verifyCollection" className="mfreject" disabled={busy} onClick={() => (rejecting ? void run(() => collectionsService.rejectDeposit(deposit.id, rejectText(reason, note)), `Pay-in ${deposit.referenceNumber} rejected`) : setRejecting(true))}>
+      <GuardedButtonV2 perm="verifyCollection" variant="danger" className="start" disabled={busy} onClick={() => (rejecting ? void run(() => collectionsService.rejectDeposit(deposit.id, rejectText(reason, note)), `Pay-in ${deposit.referenceNumber} rejected`) : setRejecting(true))}>
         <XCircle />{rejecting ? 'Confirm reject' : 'Reject'}
       </GuardedButtonV2>
       <Button onClick={onClose}>Close</Button>
@@ -67,8 +67,9 @@ export function CollectionActionModal({ deposit, cashHeld, onClose, onChanged }:
     <Modal
       open
       onClose={onClose}
-      title="Review collection"
-      description={`${name} · ${formatDate(deposit.depositDate, 'd MMM')} · ${formatCurrency(deposit.amount)}`}
+      title={`Review collection from ${name}`}
+      size="lg"
+      description={`${formatDate(deposit.depositDate, 'd MMM')} · ${formatCurrency(deposit.amount)}`}
       footer={footer}
     >
       <div className="revbody">
@@ -77,14 +78,17 @@ export function CollectionActionModal({ deposit, cashHeld, onClose, onChanged }:
             <div className="fl"><span className="lbl">Receipt</span></div>
             <div className="revreceipt">
               {receipt ? (
-                isPdfUrl(receipt) ? (
-                  <iframe title="Receipt PDF" src={receipt} />
-                ) : (
-                  <a href={receipt} rel="noreferrer" aria-label="Open the receipt full size"><img src={receipt} alt="Receipt" /></a>
-                )
+                <div>
+                  {isPdfUrl(receipt) ? (
+                    <iframe title="Receipt PDF" src={receipt} />
+                  ) : (
+                    <a href={receipt} rel="noreferrer" aria-label="Open the receipt full size"><img src={receipt} alt="Receipt" /></a>
+                  )}
+                  <small><a className="rcpt" href={receipt} rel="noreferrer">{receiptName(receipt)}</a></small>
+                </div>
               ) : (
                 <div>
-                  {pending ? <FileX style={{ color: 'var(--gold)' }} /> : <ImageIcon />}
+                  {pending ? <FileX className="warn" /> : <ImageIcon />}
                   <b>No receipt attached</b>
                   {pending && <small>Ask for a MoMo screenshot before you verify.</small>}
                 </div>

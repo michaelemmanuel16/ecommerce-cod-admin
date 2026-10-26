@@ -27,8 +27,8 @@ export function ExportMenu() {
       {menu.open && (
         <div className="menu" role="menu" aria-label="Export">
           {ITEMS.map((i) => (
-            <button key={`${i.report}-${i.format}`} type="button" role="menuitem" className="mi" onClick={() => run(i)}>
-              {i.excel ? <FileSpreadsheet /> : <FileText />}
+            <button key={i.id} type="button" role="menuitem" className="mi" onClick={() => run(i)}>
+              {i.format === 'xlsx' ? <FileSpreadsheet /> : <FileText />}
               <span>{i.label}<small>{i.note}</small></span>
             </button>
           ))}

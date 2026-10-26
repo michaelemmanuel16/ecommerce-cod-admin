@@ -28,7 +28,7 @@ export function MonthlyPlCard({ block }: { block: FinanceBlock<MonthlyPl> }) {
         const aside = (
           <>
             {sameDays && `${sameDays.label} is the same days last month`}
-            <Button size="mini" style={{ marginLeft: 8 }} disabled={exporter.busy} onClick={() => exporter.run(PROFIT_LOSS_CSV)}>Export CSV</Button>
+            <Button size="mini" className="cardexport" disabled={exporter.busy} onClick={() => exporter.run(PROFIT_LOSS_CSV)}>Export CSV</Button>
           </>
         );
         return (

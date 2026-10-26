@@ -4,14 +4,12 @@ import { Button, Input, Modal, Select } from '../ui-v2';
 import { GuardedButtonV2 } from '../financial/GuardedButtonV2';
 import { payoutsService, type CommissionKind, type OwedPreview, type PayoutRow } from '../../services/payouts.service';
 import { apiErrorMessage } from '../../utils/apiError';
-import { formatCurrency, formatDate, todayYmd } from '../../utils/format';
+import { currencySymbol, formatCurrency, formatDate, todayYmd } from '../../utils/format';
 import { toCents } from '../../utils/money';
 
 const KIND_LABEL: Record<CommissionKind, string> = { base: 'Commission', upsell: 'Upsell reward', reward: 'Target reward' };
 // The mockup's words (the server takes any text). Not the deposit methods of the mobile collections page: those are snake_case values.
 const PAYOUT_METHODS = ['MoMo', 'Bank transfer', 'Cash'];
-/** The currency sign of the store ("GH₵"), for the Amount label. */
-const currencySign = (): string => formatCurrency(0).replace(/[\d.,\s]/g, '');
 
 interface PayoutFormProps {
   /** The person to pay. Finance passes a rep; Staff (M6) passes any person, with no other change. */
@@ -117,6 +115,7 @@ export const PayoutForm: React.FC<PayoutFormProps> = ({ personId, personName, on
       open
       onClose={onClose}
       title={`Record payout for ${name}`}
+      size="lg"
       description={preview ? `Pending commission ${formatCurrency(preview.owed)}` : undefined}
       footer={
         <>
@@ -136,7 +135,7 @@ export const PayoutForm: React.FC<PayoutFormProps> = ({ personId, personName, on
             <form className="payfields" noValidate onSubmit={(ev) => { ev.preventDefault(); void save(); }}>
               <div className="row2">
                 <Input
-                  id="payout-amount" label={`Amount (${currencySign()})`} type="number" min="0" step="0.01" inputMode="decimal"
+                  id="payout-amount" label={`Amount (${currencySymbol()})`} type="number" min="0" step="0.01" inputMode="decimal"
                   hint={`Pending: ${formatCurrency(preview.owed)}. Pay less to part-pay; the oldest entries are paid first.`}
                   value={amountText} onChange={(e) => { setAmountEdit(e.target.value); setSaveError(null); }}
                 />
@@ -161,7 +160,7 @@ export const PayoutForm: React.FC<PayoutFormProps> = ({ personId, personName, on
                 <div className="tablewrap">
                   <table className="dt">
                     <thead>
-                      <tr><th style={{ width: 32 }}><span className="sr-only">Pay</span></th><th>Entry</th><th>Order</th><th>Earned</th><th className="r">Amount</th></tr>
+                      <tr><th className="chkcol"><span className="sr-only">Pay</span></th><th>Entry</th><th>Order</th><th>Earned</th><th className="r">Amount</th></tr>
                     </thead>
                     <tbody>
                       {preview.entries.map((e) => (

@@ -130,6 +130,23 @@ describe('M5-T13: collection status path', () => {
     expect([row.status, row.rejectReason]).toEqual(['rejected', 'Receipt is unclear']);
   });
 
+  it('recentDecided=N returns every pending pay-in plus the N newest decided ones (M5 UI fix 3)', async () => {
+    const p = await mkPartner('recent');
+    const mk = (n: number, status: 'pending' | 'verified' | 'rejected', ago: number) => prismaBase.agentDeposit.create({
+      data: { tenantId, agentId: p, amount: 10 + n, depositMethod: 'cash', depositDate: new Date(Date.now() - ago * DAY), referenceNumber: `RD${n}-${SUFFIX}`, status } as any,
+    });
+    await mk(1, 'pending', 20); await mk(2, 'pending', 19);
+    for (let i = 0; i < 4; i++) await mk(10 + i, i % 2 ? 'rejected' : 'verified', 10 - i);
+    const res = await request(app).get(`/api/agent-reconciliation/deposits?agentId=${p}&recentDecided=2`).set(auth(owner));
+    expect(res.status).toBe(200);
+    const rows = res.body as Array<{ status: string; referenceNumber: string }>;
+    expect(rows.filter((r) => r.status === 'pending')).toHaveLength(2);
+    expect(rows.filter((r) => r.status !== 'pending').map((r) => r.referenceNumber).sort()).toEqual([`RD12-${SUFFIX}`, `RD13-${SUFFIX}`]);
+    expect(rows).toHaveLength(4);
+    const plain = await request(app).get(`/api/agent-reconciliation/deposits?agentId=${p}`).set(auth(owner));
+    expect(plain.body).toHaveLength(6);
+  });
+
   it('two people verifying one deposit: the second gets "Already verified" and the balance drops once', async () => {
     const p = await mkPartner('dup');
     await setBalance(p, 300);

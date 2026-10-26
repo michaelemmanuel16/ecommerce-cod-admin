@@ -34,16 +34,19 @@ describe('Review collection modal (M5-T36, F-912)', () => {
   it('shows the receipt and the facts side by side, and says when there is no receipt', () => {
     open();
     const dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByText('Esi Badu \u00b7 21 Oct \u00b7 GH\u20b51,344')).toBeInTheDocument();
+    expect(within(dialog).getByText('Review collection from Esi Badu')).toBeInTheDocument();
+    expect(within(dialog).getByText('21 Oct \u00b7 GH\u20b51,344')).toBeInTheDocument();
     expect(within(dialog).getByText('No receipt attached')).toBeInTheDocument();
     expect(within(dialog).getByText('Amount paid')).toBeInTheDocument();
     expect(within(dialog).getByText('Orders covered')).toBeInTheDocument();
     expect(within(dialog).getByText('GH\u20b52,100')).toBeInTheDocument();
   });
 
-  it('shows a receipt image', () => {
-    open(dep({ receiptUrl: 'https://files.example/r.png' }));
-    expect(screen.getByRole('img', { name: 'Receipt' })).toHaveAttribute('src', 'https://files.example/r.png');
+  it('shows a receipt image with its file name, and the receipt opens from both', () => {
+    open(dep({ receiptUrl: 'https://files.example/r%201.png' }));
+    expect(screen.getByRole('img', { name: 'Receipt' })).toHaveAttribute('src', 'https://files.example/r%201.png');
+    expect(screen.getByRole('link', { name: 'r 1.png' })).toHaveAttribute('href', 'https://files.example/r%201.png');
+    expect(screen.getByRole('link', { name: 'Open the receipt full size' })).toHaveAttribute('href', 'https://files.example/r%201.png');
   });
 
   it('Verify and reconcile does it in one step, reloads the page figures and closes; no approve button', async () => {

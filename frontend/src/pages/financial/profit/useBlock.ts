@@ -12,6 +12,15 @@ export function clearBlockCache(): void {
   inflight.clear();
 }
 
+/** The mounted blocks, so a save can make every one of them ask again. */
+const mounted = new Set<() => void>();
+
+/** Forgets every cached answer and asks again in each block on screen. Called after a save changes the books (an expense, a payout). */
+export function refreshBlocks(): void {
+  clearBlockCache();
+  mounted.forEach((ask) => ask());
+}
+
 /** The answer for `key`: the cached one while it is fresh, the call already on its way, or a new call. `fresh` skips the first two. */
 function answer<T>(key: string, load: () => Promise<T>, fresh: boolean): { now: T } | { later: Promise<T> } {
   if (!fresh) {
@@ -39,12 +48,14 @@ export interface FinanceBlock<T> {
 /**
  * Loads `load()` when `key` changes, through a module-level cache shared by every screen: the Finance cards and the Reports
  * tab asking for the same range share one call. A late answer for an older key is dropped. `load` may change on every
- * render: only `key` decides when to ask again.
+ * render: only `key` decides when to ask again. With `enabled` false it asks nothing (the status stays 'loading').
  */
-export function useBlock<T>(key: string, load: () => Promise<T>): FinanceBlock<T> {
+export function useBlock<T>(key: string, load: () => Promise<T>, enabled = true): FinanceBlock<T> {
   const [state, setState] = useState<{ data: T | undefined; status: FinanceBlock<T>['status'] }>({ data: undefined, status: 'loading' });
   const latest = useRef(load);
   latest.current = load;
+  const latestKey = useRef(key);
+  latestKey.current = key;
   const seq = useRef(0);
 
   const run = useCallback((askKey: string, fresh: boolean) => {
@@ -62,9 +73,18 @@ export function useBlock<T>(key: string, load: () => Promise<T>): FinanceBlock<T
   }, []);
 
   useEffect(() => {
+    if (!enabled) return;
     run(key, false);
     return () => { seq.current += 1; };
-  }, [key, run]);
+  }, [key, run, enabled]);
+
+  // refreshBlocks() cleared the cache: the first block to ask makes the call, the others share it
+  useEffect(() => {
+    if (!enabled) return;
+    const ask = () => run(latestKey.current, false);
+    mounted.add(ask);
+    return () => { mounted.delete(ask); };
+  }, [run, enabled]);
 
   return { ...state, retry: () => run(key, true) };
 }

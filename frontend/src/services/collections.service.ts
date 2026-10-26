@@ -93,6 +93,9 @@ export const unpaidByAgeOf = ({ summary }: AgingReport): UnpaidByAge => ({
 const bucket = (b: AgingBucket): AgingBucket => ({ ...b, amount: parseMoney(b.amount) });
 const QUIET = { quiet: true } as const;
 
+/** How many already-decided pay-ins come with the pending ones. */
+export const RECENT_DECIDED = 10;
+
 export const collectionsService = {
   async unpaidByAge(): Promise<UnpaidByAge> {
     const { data } = await apiClient.get<UnpaidByAge>('/api/financial/unpaid-by-age', QUIET);
@@ -123,9 +126,9 @@ export const collectionsService = {
     };
   },
 
-  /** Every partner's pay-ins, newest first: the "Collections to verify" card. */
+  /** Every pending pay-in and the newest decided ones, newest first: the "Collections to verify" card and its tab count. */
   async deposits(): Promise<PartnerDeposit[]> {
-    const { data } = await apiClient.get<PartnerDeposit[]>('/api/agent-reconciliation/deposits', QUIET);
+    const { data } = await apiClient.get<PartnerDeposit[]>('/api/agent-reconciliation/deposits', { ...QUIET, params: { recentDecided: RECENT_DECIDED } });
     return data.map((d) => ({ ...d, amount: parseMoney(d.amount) }));
   },
 
@@ -153,8 +156,4 @@ export const collectionsService = {
     return data;
   },
 
-  /** Opens or closes the "negative cash held" Findings now (owner and admin). */
-  async syncCashFindings(): Promise<void> {
-    await apiClient.post('/api/financial/sync-cash-findings', {}, { quiet: true });
-  },
 };

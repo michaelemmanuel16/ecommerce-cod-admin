@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, CheckCircle2, Download, Flag, Hourglass, Wallet } from 'lucide-react';
 import { Button, Card, Tag, Tile } from '../../../components/ui-v2';
 import { financeReportsService, type CashFlowForecastReport, type Scenario } from '../../../services/financeReports.service';
-import { todayYmd } from '../../../utils/format';
+import { currencySymbol, todayYmd } from '../../../utils/format';
 import { parseMoney } from '../../../utils/money';
 import { shortDay } from '../../dashboard/format';
 import { cost, lossClass, money } from '../profit/format';
@@ -22,14 +22,12 @@ const STATUS = { safe: { tone: 'ok', text: 'Safe' }, tight: { tone: 'warn', text
  */
 export function CashFlowPanel() {
   const [scenario, setScenario] = useState<Scenario>('pace');
-  // Both answers load at once: the target one carries today's delivery success, which the first switch label names
-  const pace = useBlock('cash|pace', () => financeReportsService.cashFlow('pace'));
-  const target = useBlock('cash|target', () => financeReportsService.cashFlow('target'));
-  const block = scenario === 'pace' ? pace : target;
+  // Only the scenario on screen is asked for; every answer carries the delivery success and the target the two switch labels name
+  const block = useBlock(`cash|${scenario}`, () => financeReportsService.cashFlow(scenario));
   const download = useDownload();
   const exportCsv = () => void download.run(() => financeReportsService.exportFile('cash-flow', { format: 'csv', scenario }), 'The forecast could not be exported. Try again.');
 
-  const labels = scenarioLabels((target.data ?? pace.data)?.scenario);
+  const labels = scenarioLabels(block.data?.scenario);
 
   return (
     <div className="fin">
@@ -50,9 +48,6 @@ export function CashFlowPanel() {
     </div>
   );
 }
-
-/** The currency sign on its own (GH₵), for a card aside that says what the figures are in. */
-const currencySymbol = (): string => money(0).replace(/0$/, '');
 
 function Forecast({ r }: { r: CashFlowForecastReport }) {
   const { kpis, summary } = r;

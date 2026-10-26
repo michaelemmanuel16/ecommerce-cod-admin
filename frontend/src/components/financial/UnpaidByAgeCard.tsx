@@ -4,6 +4,7 @@ import { Button, Card, EmptyState } from '../ui-v2';
 import type { UnpaidByAge } from '../../services/collections.service';
 import { formatCurrency } from '../../utils/format';
 import { ListSkeleton } from '../../pages/deliveries/ListSkeleton';
+import { BarList } from './BarList';
 import { bucketColor, ordersText } from '../../pages/financial/collections/model';
 
 interface Props {
@@ -31,7 +32,7 @@ export function UnpaidByAgeCard({ data, failed, onRetry }: Props) {
   if (!data) {
     return (
       <Card title={title} aside={aside}>
-        <ListSkeleton label="Loading unpaid orders" rows={4} height={14} style={{ padding: '14px 20px 18px' }} />
+        <ListSkeleton label="Loading unpaid orders" rows={4} height={14} />
       </Card>
     );
   }
@@ -46,17 +47,12 @@ export function UnpaidByAgeCard({ data, failed, onRetry }: Props) {
   const top = Math.max(1, ...data.buckets.map((b) => b.amount));
   return (
     <Card title={title} aside={aside} className="agecard">
-      <div className="bars" role="list" aria-label="Unpaid delivered orders by age">
-        {data.buckets.map((b) => (
-          <div className="bar-row" role="listitem" key={b.key}>
-            <span>{b.label}<small style={{ color: 'var(--ink-3)', display: 'block' }}>{ordersText(b.orders)}</small></span>
-            <div className="track"><i style={{ width: `${(b.amount / top) * 100}%`, background: bucketColor(b.key) }} /></div>
-            <span className="val num">{formatCurrency(b.amount)}</span>
-          </div>
-        ))}
-      </div>
+      <BarList
+        label="Unpaid delivered orders by age"
+        rows={data.buckets.map((b) => ({ key: b.key, label: b.label, sub: ordersText(b.orders), value: formatCurrency(b.amount), width: (b.amount / top) * 100, color: bucketColor(b.key) }))}
+      />
       <p className="note">
-        <b className="num" style={{ color: 'var(--ink)' }}>{formatCurrency(data.total.amount)}</b> across {ordersText(data.total.orders)}, net of the delivery fee.{' '}
+        <b className="num ink">{formatCurrency(data.total.amount)}</b> across {ordersText(data.total.orders)}, net of the delivery fee.{' '}
         {data.overdue.orders > 0 ? (
           <>
             <b data-testid="overdue-count">{ordersText(data.overdue.orders)}</b> past the partner's days to pay.{' '}

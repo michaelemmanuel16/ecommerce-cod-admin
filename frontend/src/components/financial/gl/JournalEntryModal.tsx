@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
-import { Button, Input, Modal, Tag } from '../../ui-v2';
+import { Button, Input, Modal, Select, Tag } from '../../ui-v2';
 import { financialService } from '../../../services/financial.service';
 import { journalBalance } from '../../../utils/journalBalance';
 import { formatCurrency, todayYmd } from '../../../utils/format';
@@ -30,7 +30,10 @@ const emptyLines = (): TransactionLine[] => [
 ];
 
 /** New journal entry (finance.html #jeModal): date, reference and description, the lines, and a Debit / Credit total with its state. */
-export const JournalEntryModal: React.FC<JournalEntryModalProps> = ({ isOpen, onClose, onSuccess }) => {
+export const JournalEntryModal: React.FC<JournalEntryModalProps> = ({ isOpen, ...rest }) => (isOpen ? <JournalEntryDialog {...rest} /> : null);
+
+/** The body mounts only while the dialog is open, so every opening starts with an empty form. */
+const JournalEntryDialog: React.FC<Omit<JournalEntryModalProps, 'isOpen'>> = ({ onClose, onSuccess }) => {
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [description, setDescription] = useState('');
     const [entryDate, setEntryDate] = useState(todayYmd());
@@ -39,13 +42,8 @@ export const JournalEntryModal: React.FC<JournalEntryModalProps> = ({ isOpen, on
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        if (!isOpen) return;
-        setDescription('');
-        setEntryDate(todayYmd());
-        setLines(emptyLines());
-        setError(null);
         financialService.getAllGLAccounts({ isActive: true, limit: 200 }).then(data => setAccounts(data.accounts));
-    }, [isOpen]);
+    }, []);
 
     const handleLineChange = (index: number, field: keyof TransactionLine, value: string) => {
         const newLines = [...lines];
@@ -107,24 +105,22 @@ export const JournalEntryModal: React.FC<JournalEntryModalProps> = ({ isOpen, on
 
     return (
         <Modal
-            wide
-            open={isOpen}
+            size="xl"
+            open
             onClose={onClose}
             title="New journal entry"
             description="Debits and credits must be equal before you can post."
             footer={
                 <>
-                    <span className="fnote">Needs at least two lines.</span>
-                    <div className="r2">
-                        <Button onClick={onClose}>Cancel</Button>
-                        <GuardedButtonV2 type="submit" form="journal-entry-form" perm="postJournal" variant="primary" disabled={loading || !balance.canPost}>
-                            {loading ? 'Posting...' : 'Post entry'}
-                        </GuardedButtonV2>
-                    </div>
+                    <span className="mfnote">Needs at least two lines.</span>
+                    <Button onClick={onClose}>Cancel</Button>
+                    <GuardedButtonV2 type="submit" form="journal-entry-form" perm="postJournal" variant="primary" disabled={loading || !balance.canPost}>
+                        {loading ? 'Posting...' : 'Post entry'}
+                    </GuardedButtonV2>
                 </>
             }
         >
-            <form id="journal-entry-form" className="jeform fform" onSubmit={handleSubmit}>
+            <form id="journal-entry-form" className="fform" onSubmit={handleSubmit}>
                 <div className="row3">
                     <Input label="Date" type="date" required value={entryDate} onChange={e => setEntryDate(e.target.value)} />
                     <Input label="Reference" readOnly placeholder="Assigned when you post" />
@@ -136,27 +132,27 @@ export const JournalEntryModal: React.FC<JournalEntryModalProps> = ({ isOpen, on
                         <thead>
                             <tr>
                                 <th>Account</th>
-                                <th className="r" style={{ width: 150 }}>Debit</th>
-                                <th className="r" style={{ width: 150 }}>Credit</th>
-                                <th style={{ width: 44 }}><span className="sr-only">Remove</span></th>
+                                <th className="r amt">Debit</th>
+                                <th className="r amt">Credit</th>
+                                <th className="rm"><span className="sr-only">Remove</span></th>
                             </tr>
                         </thead>
                         <tbody>
                             {lines.map((line, index) => (
                                 <tr key={index}>
                                     <td>
-                                        <select className="jsel" aria-label="Account" value={line.accountId} onChange={e => handleLineChange(index, 'accountId', e.target.value)}>
+                                        <Select compact label="Account" value={line.accountId} onChange={e => handleLineChange(index, 'accountId', e.target.value)}>
                                             <option value="">Select account</option>
                                             {accounts.map(acc => (
                                                 <option key={acc.id} value={acc.id}>{acc.code} {acc.name}</option>
                                             ))}
-                                        </select>
+                                        </Select>
                                     </td>
                                     <td>
-                                        <input className="jin" type="number" min="0" step="0.01" placeholder="0.00" aria-label="Debit" value={line.debitAmount} onChange={e => handleLineChange(index, 'debitAmount', e.target.value)} />
+                                        <Input compact label="Debit" type="number" min="0" step="0.01" placeholder="0.00" value={line.debitAmount} onChange={e => handleLineChange(index, 'debitAmount', e.target.value)} />
                                     </td>
                                     <td>
-                                        <input className="jin" type="number" min="0" step="0.01" placeholder="0.00" aria-label="Credit" value={line.creditAmount} onChange={e => handleLineChange(index, 'creditAmount', e.target.value)} />
+                                        <Input compact label="Credit" type="number" min="0" step="0.01" placeholder="0.00" value={line.creditAmount} onChange={e => handleLineChange(index, 'creditAmount', e.target.value)} />
                                     </td>
                                     <td>
                                         <span className="rowact">
@@ -181,7 +177,7 @@ export const JournalEntryModal: React.FC<JournalEntryModalProps> = ({ isOpen, on
                     )}
                 </div>
 
-                {error && <p role="alert" className="jeerr">{error}</p>}
+                {error && <p role="alert" className="err">{error}</p>}
             </form>
         </Modal>
     );

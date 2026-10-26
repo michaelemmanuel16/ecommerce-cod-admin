@@ -19,6 +19,7 @@ router.get('/',
     [
         query('agentId').optional().isInt().toInt(),
         query('status').optional().isString(),
+        query('recentDecided').optional().isInt({ min: 0, max: 200 }).toInt(),
         query('startDate').optional().isISO8601().toDate(),
         query('endDate').optional().isISO8601().toDate(),
         validate

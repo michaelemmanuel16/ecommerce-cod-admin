@@ -145,13 +145,13 @@ export function Findings() {
 
   let body;
   if (!data && list.status === 'failed') body = <EmptyState title="The Findings could not load." action={<Button onClick={list.retry}>Try again</Button>} />;
-  else if (!data) body = <ListSkeleton label="Loading Findings" rows={3} height={44} style={{ padding: 20 }} />;
+  else if (!data) body = <ListSkeleton label="Loading Findings" rows={3} height={44} />;
   else if (data.findings.length > 0) body = <Table label="Findings" columns={columns} rows={data.findings} rowKey={(f) => f.id} />;
   else if (filtered) body = <EmptyState title="No Findings match" text="Change the filters to see more." action={<Button onClick={() => setSearch(new URLSearchParams())}>Clear filters</Button>} />;
   else body = <EmptyState icon={<ShieldCheck />} title="No open Findings" text="A gap shows here when a payout, count or deposit does not match the books." />;
 
   return (
-    <section className="findings">
+    <section className="findings vstack">
       <div className="head">
         <div>
           <h1>Findings</h1>

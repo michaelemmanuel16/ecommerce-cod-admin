@@ -81,7 +81,6 @@
 .v2 .countline .cl-actions{display:flex;gap:8px;margin-top:12px}
 
 /* transfer history (new, from the mockup's #m-hist) */
-.v2 .dlg.wide{width:1120px}
 .v2 .dlg .hist{margin:-18px -20px}
 .v2 .dlg .hist .tabs{padding:12px 20px;flex-wrap:wrap}
 .v2 .dlg .hist .filters{padding:0 20px 12px}

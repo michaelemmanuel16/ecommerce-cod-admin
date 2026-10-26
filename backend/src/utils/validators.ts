@@ -164,6 +164,12 @@ export const paginationValidation: ValidationChain[] = [
   query('limit').optional().isInt({ min: 1, max: 100 })
 ];
 
+/** The chart of accounts is small and the Finance screens read all of it in one call, so its list allows a larger page than other lists. */
+export const accountListValidation: ValidationChain[] = [
+  query('page').optional().isInt({ min: 1 }),
+  query('limit').optional().isInt({ min: 1, max: 500 })
+];
+
 export const productIdValidation: ValidationChain[] = [param('id').isInt({ min: 1 }).withMessage('Invalid product ID').toInt()];
 
 /** Products list and summary filters (F-600). */

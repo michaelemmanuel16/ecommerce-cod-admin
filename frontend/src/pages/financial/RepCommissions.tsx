@@ -10,12 +10,11 @@ import { toCents } from '../../utils/money';
 import { initials } from '../../utils/people';
 import { ListSkeleton } from '../deliveries/ListSkeleton';
 import { toneOf } from './collections/model';
+import { repTiles } from './repModel';
 
 const HISTORY_ROWS = 10;
-const cents = (n: number): number => n / 100;
 const repName = (r: { firstName: string; lastName: string }): string => `${r.firstName} ${r.lastName}`;
 const monthName = (ym: string): string => new Date(`${ym}-01T12:00:00`).toLocaleString('en-GB', { month: 'long' });
-const money = (v: string) => <span className="num">{formatCurrency(v)}</span>;
 
 /**
  * Rep commissions tab (F-914, M5-T38), laid out as the v2 mockup: four tiles, a table of every rep with what was earned, paid
@@ -41,30 +40,25 @@ export function RepCommissions() {
   const reps = data?.reps ?? [];
   const totals = data?.totals;
   const month = data ? monthName(data.month) : '';
-  // Average per delivered order, from the commission column and the delivered count of the same rows
-  const commissionCents = reps.reduce((n, r) => n + toCents(r.commission), 0);
-  const deliveredTotal = reps.reduce((n, r) => n + r.delivered, 0);
-  const perOrder = deliveredTotal > 0 ? cents(commissionCents) / deliveredTotal : null;
-  const rewardCents = reps.reduce((n, r) => n + toCents(r.targetReward), 0);
-  const repsPaid = reps.filter((r) => toCents(r.paidInMonth) > 0).length;
+  const { perOrder, targetRewards, repsPaid } = repTiles(reps);
   const skel = <Skeleton width={90} height={28} />;
 
   return (
-    <div className="repcom">
-      <div className="grid kpis" style={{ marginTop: 0 }} aria-busy={!data}>
+    <div className="repcom vstack">
+      <div className="grid kpis" aria-busy={!data}>
         <Tile icon={<BadgePercent />} tone="gold" value={totals ? <span data-testid="tile-owed">{formatCurrency(totals.owed)}</span> : skel} label="Commission owed"
           footer={<><span>{totals ? `${totals.repsOwed} ${totals.repsOwed === 1 ? 'rep' : 'reps'} · account 2020` : 'Account 2020'}</span>{totals && totals.repsOwed > 0 && <Tag tone="warn">To pay</Tag>}</>} />
         <Tile icon={<CheckCircle2 />} tone="mint" value={totals ? <span data-testid="tile-paid-in-month">{formatCurrency(totals.paidInMonth)}</span> : skel} label="Paid this month"
           footer={<><span>{data ? `${repsPaid} ${repsPaid === 1 ? 'rep' : 'reps'} paid in ${month}` : 'Paid this month'}</span>{repsPaid > 0 && <Tag tone="ok">Paid</Tag>}</>} />
         <Tile icon={<BadgeCheck />} tone="violet" value={data ? (perOrder === null ? '—' : formatCurrency(perOrder)) : skel} label="Per delivered confirmed order"
           footer={<><span>Average commission, before upsell reward</span><Tag tone="n">Rule</Tag></>} />
-        <Tile icon={<Gift />} tone="pine" value={data ? formatCurrency(cents(rewardCents)) : skel} label="Target rewards earned"
-          footer={<><span>Earned at month close</span><Tag tone="n">{rewardCents > 0 ? 'Earned' : 'Pending'}</Tag></>} />
+        <Tile icon={<Gift />} tone="pine" value={data ? formatCurrency(targetRewards) : skel} label="Target rewards earned"
+          footer={<><span>Earned at month close</span><Tag tone="n">{targetRewards > 0 ? 'Earned' : 'Pending'}</Tag></>} />
       </div>
 
       <Card title="Rep commissions" aside={data ? `${month} · commission per delivered confirmed order plus upsell reward` : undefined} className="comwrap">
         {!data ? (
-          <ListSkeleton label="Loading rep commissions" rows={3} height={44} style={{ padding: 20 }} />
+          <ListSkeleton label="Loading rep commissions" rows={3} height={44} />
         ) : reps.length === 0 ? (
           <EmptyState icon={<BadgePercent />} title="No reps yet" text="Sales reps and what they earn show here." />
         ) : (
@@ -81,12 +75,12 @@ export function RepCommissions() {
                   <tr key={r.id}>
                     <td><div className="who"><div className={`a ${toneOf(r.id)}`} aria-hidden="true">{initials(repName(r))}</div><div><b>{repName(r)}</b> <Tag tone="n">Human</Tag></div></div></td>
                     <td className="r num">{r.delivered.toLocaleString('en-GB')}</td>
-                    <td className="r">{money(r.commission)}</td>
-                    <td className="r">{money(r.upsellReward)}</td>
-                    <td className="r">{money(r.earned)}</td>
-                    <td className="r">{money(r.paidInMonth)}</td>
+                    <td className="r num">{formatCurrency(r.commission)}</td>
+                    <td className="r num">{formatCurrency(r.upsellReward)}</td>
+                    <td className="r num">{formatCurrency(r.earned)}</td>
+                    <td className="r num">{formatCurrency(r.paidInMonth)}</td>
                     <td className="r"><b className="num">{formatCurrency(r.owed)}</b></td>
-                    <td>{toCents(r.targetReward) > 0 ? money(r.targetReward) : <Tag tone="n">None yet</Tag>}</td>
+                    <td>{toCents(r.targetReward) > 0 ? <span className="num">{formatCurrency(r.targetReward)}</span> : <Tag tone="n">None yet</Tag>}</td>
                     <td>{r.lastPayout ? formatDate(r.lastPayout, 'd MMM') : <span className="mut">No payout yet</span>}</td>
                     <td className="r">
                       <GuardedButtonV2 perm="recordPayout" size="mini" variant="primary" aria-label={`Record payout for ${repName(r)}`} onClick={() => setPaying(r)}>Record payout</GuardedButtonV2>
@@ -113,7 +107,7 @@ function PayoutHistory({ rows, failed, onRetry }: { rows: PayoutRow[] | undefine
   if (!rows) {
     return failed
       ? <EmptyState title="The payout history could not load." action={<Button onClick={onRetry}>Try again</Button>} />
-      : <ListSkeleton label="Loading payout history" rows={2} height={36} style={{ padding: 20 }} />;
+      : <ListSkeleton label="Loading payout history" rows={2} height={36} />;
   }
   if (rows.length === 0) return <EmptyState title="No payout yet" text="A payout you record shows here." />;
   return (
@@ -127,7 +121,7 @@ function PayoutHistory({ rows, failed, onRetry }: { rows: PayoutRow[] | undefine
               <td><b>{repName(p.payee)}</b></td>
               <td>{p.method}</td>
               <td>{p.reference ?? p.notes ?? '—'}</td>
-              <td className="r">{money(p.amount)}</td>
+              <td className="r num">{formatCurrency(p.amount)}</td>
             </tr>
           ))}
         </tbody>

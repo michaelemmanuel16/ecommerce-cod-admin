@@ -113,7 +113,7 @@ export function HistoryModal({ overview, products, initialId, canMove, canExport
 
   return (
     <Modal
-      wide
+      size="wide"
       open
       onClose={onClose}
       title="Transfer history"
