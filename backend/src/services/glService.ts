@@ -16,6 +16,8 @@ interface AccountFilters {
   limit?: number;
   startDate?: string;
   endDate?: string;
+  /** Matches the code or the name (F-921). */
+  search?: string;
 }
 
 interface CreateAccountData {
@@ -224,7 +226,7 @@ export class GLService {
     const accountIds = [...new Set(data.transactions.map(txn => txn.accountId))];
     const accounts = await prisma.account.findMany({
       where: { id: { in: accountIds } },
-      select: { id: true, isActive: true, name: true }
+      select: { id: true, isActive: true, name: true, code: true }
     });
 
     const accountMap = new Map(accounts.map(a => [a.id, a]));
@@ -259,7 +261,7 @@ export class GLService {
       }
 
       if (!account.isActive) {
-        throw new AppError(`Account ${account.name} is inactive and cannot be used`, 400);
+        throw new AppError(`Account ${account.code} ${account.name} is inactive and cannot be used`, 400, 'GL_ACCOUNT_INACTIVE');
       }
     }
 
@@ -351,11 +353,17 @@ export class GLService {
    * Get all accounts with filters and pagination
    */
   async getAllAccounts(filters: AccountFilters) {
-    const { accountType, isActive, page = 1, limit = 50, startDate, endDate } = filters;
+    const { accountType, isActive, page = 1, limit = 50, startDate, endDate, search } = filters;
 
     const where: Prisma.AccountWhereInput = {};
     if (accountType) where.accountType = accountType;
     if (isActive !== undefined) where.isActive = isActive;
+    if (search?.trim()) {
+      where.OR = [
+        { code: { contains: search.trim() } },
+        { name: { contains: search.trim(), mode: 'insensitive' } }
+      ];
+    }
 
 
     const skip = (page - 1) * limit;
@@ -1136,6 +1144,27 @@ export class GLService {
   }
 
   /**
+   * Trial balance line (F-921): total debits and total credits of every ledger line, up to `endDate` when given.
+   * Every entry is balanced, so the two totals are equal. A voided entry and its reversal are both counted.
+   */
+  async getTrialBalance(filters: { endDate?: string } = {}) {
+    const where: Prisma.AccountTransactionWhereInput = {};
+    if (filters.endDate) {
+      const zone = getStoreTimeZone(getTenantId());
+      where.journalEntry = { entryDate: { lte: parseInclusiveBound(filters.endDate, 'to', zone, { snapToDay: true }) } };
+    }
+    const { _sum } = await prisma.accountTransaction.aggregate({ where, _sum: { debitAmount: true, creditAmount: true } });
+    const totalDebits = Money.orZero(_sum.debitAmount);
+    const totalCredits = Money.orZero(_sum.creditAmount);
+    return {
+      totalDebits: Money.toApi(totalDebits),
+      totalCredits: Money.toApi(totalCredits),
+      difference: Money.toApi(Money.sub(totalDebits, totalCredits)),
+      balanced: Money.sub(totalDebits, totalCredits).abs().lte(BALANCE_TOLERANCE)
+    };
+  }
+
+  /**
    * Get account ledger (transaction history)
    */
   async getAccountLedger(accountId: string, filters: AccountLedgerFilters) {
@@ -1149,7 +1178,8 @@ export class GLService {
         name: true,
         accountType: true,
         normalBalance: true,
-        currentBalance: true
+        currentBalance: true,
+        isActive: true
       }
     });
 

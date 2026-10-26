@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as financialController from '../controllers/financialController';
 import { getFinancialHealth } from '../controllers/ledgerHealthController';
+import * as financeExport from '../controllers/financeExportController';
 import { authenticate, requirePermission, requireResourcePermission, requireRole } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate } from '../middleware/validation';
@@ -18,6 +19,12 @@ router.get('/summary', requireResourcePermission('financial', 'view'), financial
 router.get('/reports', requireResourcePermission('financial', 'view'), financialController.getFinancialReports);
 router.get('/balance-sheet', requireResourcePermission('financial', 'view'), financialController.getBalanceSheet);
 router.get('/profit-loss', requireResourcePermission('financial', 'view'), financialController.getProfitLoss);
+router.get('/profit-loss/export', requireResourcePermission('financial', 'view'), financeExport.exportFinanceReport);
+
+// The four Finance exports (CSV or Excel) and the background jobs behind them (M5-T29)
+router.get('/export/:report', requireResourcePermission('financial', 'view'), financeExport.exportFinanceReport);
+router.get('/jobs/:id', requireResourcePermission('financial', 'view'), financeExport.getFinanceJobStatus);
+router.get('/jobs/:id/download', requireResourcePermission('financial', 'view'), financeExport.downloadFinanceJob);
 router.get('/profitability', requireResourcePermission('financial', 'view'), financialController.getProfitabilityAnalysis);
 router.get('/profitability/export', requireResourcePermission('financial', 'view'), financialController.exportProfitabilityAnalysis);
 router.get('/pipeline-revenue', requireResourcePermission('financial', 'view'), financialController.getPipelineRevenue);
