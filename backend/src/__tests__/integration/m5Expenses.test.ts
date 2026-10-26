@@ -171,7 +171,7 @@ describe('edit and delete keep the ledger right', () => {
     const id = created.body.expense.id;
     const first = (await prismaBase.expense.findUniqueOrThrow({ where: { id } })).journalEntryId;
 
-    const cat = await request(app).put(`/api/financial/expenses/${id}`).set(auth(owner)).send({ category: 'Software', paidFrom: 'bank', receiptUrl: '/uploads/r.pdf' });
+    const cat = await request(app).put(`/api/financial/expenses/${id}`).set(auth(owner)).send({ category: 'Software', paidFrom: 'bank', receiptUrl: '/uploads/receipt-1761500000000-123456789.pdf' });
     expect(cat.status).toBe(200);
     expect(cat.body.expense.category).toBe('Software');
     expect((await prismaBase.expense.findUniqueOrThrow({ where: { id } })).journalEntryId).toBe(first);
@@ -191,6 +191,32 @@ describe('edit and delete keep the ledger right', () => {
     expect(res.status).toBe(400);
     expect((await liveLines(id)).find((l) => l.code === '5100')!.dr).toBe('15.00');
   });
+});
+
+describe('receiptUrl check (stored XSS guard)', () => {
+  const R2 = 'https://img.example-r2.test';
+  const prev = process.env.R2_PUBLIC_URL;
+  beforeAll(() => { process.env.R2_PUBLIC_URL = R2; });
+  afterAll(() => { if (prev === undefined) delete process.env.R2_PUBLIC_URL; else process.env.R2_PUBLIC_URL = prev; });
+
+  it.each([
+    '/uploads/receipt-1761500000000-123456789.pdf',
+    `${R2}/products/t1/receipt-1761500000000-123456789.png`,
+    '',
+  ])('accepts %p', async (receiptUrl) => {
+    const res = await add({ receiptUrl, amount: 2 });
+    expect(res.status).toBe(201);
+  });
+
+  it.each(['javascript:alert(1)', 'http://evil.example/x.pdf', 'https://evil.example/x.pdf', '/uploads/../etc/passwd.pdf', `${R2}/a/../b.pdf`, '/uploads/a-1-2.html'])(
+    'rejects %p on add and on edit', async (receiptUrl) => {
+      const res = await add({ receiptUrl, amount: 2 });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('EXPENSE_RECEIPT_INVALID');
+      const ok = await add({ amount: 2 });
+      const put = await request(app).put(`/api/financial/expenses/${ok.body.expense.id}`).set(auth(owner)).send({ receiptUrl });
+      expect(put.status).toBe(400);
+    });
 });
 
 describe('system rows and permissions', () => {

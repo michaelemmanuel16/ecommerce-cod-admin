@@ -19,6 +19,7 @@ import { getSystemUserId } from './systemUserService';
 import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 import { roleScope } from '../utils/kpiRequest';
+import { isStorageUrl } from '../config/r2';
 import { EXPENSE_PAID_FROM, matchExpenseCategory, EXPENSE_CATEGORIES } from '../config/expenseCategories';
 import { getStoreTimeZone, kpiWindow, localDate, parseInclusiveBound } from './kpi/dates';
 import { deliveredRevenue, revenueScope } from './kpi/revenue';
@@ -47,6 +48,21 @@ function expenseCategoryOrThrow(input: unknown): string {
   const category = matchExpenseCategory(input);
   if (!category) throw new AppError(`Category must be one of: ${EXPENSE_CATEGORIES.join(', ')}`, 400, 'EXPENSE_CATEGORY_INVALID');
   return category;
+}
+
+const RECEIPT_EXT = /\.(jpg|jpeg|png|webp|gif|pdf)$/i;
+/** What POST /api/upload returns without R2: /uploads/<slug>-<ms>-<random>.<ext>. */
+const LOCAL_RECEIPT = /^\/uploads\/[a-z0-9_-]+-\d+-\d+\.(jpg|jpeg|png|webp|gif|pdf)$/i;
+
+/** A receipt link is empty, an upload path, or an https address on our own storage. Anything else is a 400 (stored XSS guard). */
+function receiptUrlOrThrow(input: unknown): string | null {
+  if (input === undefined || input === null || input === '') return null;
+  if (typeof input === 'string') {
+    if (LOCAL_RECEIPT.test(input)) return input;
+    // The raw text is checked: URL parsing would quietly resolve a ".." segment away.
+    if (isStorageUrl(input) && !input.includes('..') && RECEIPT_EXT.test(new URL(input).pathname)) return input;
+  }
+  throw new AppError('Receipt must be a file uploaded through the receipt upload (JPEG, PNG, WebP, GIF or PDF)', 400, 'EXPENSE_RECEIPT_INVALID');
 }
 
 /** `momo`, `bank` or `cash`; null and undefined mean "not given". */
@@ -399,6 +415,7 @@ export class FinancialService {
     }
     const category = expenseCategoryOrThrow(data.category);
     const paidFrom = paidFromOrThrow(data.paidFrom);
+    const receiptUrl = receiptUrlOrThrow(data.receiptUrl) ?? undefined;
 
     const userId = requester ? requester.id : parseInt(data.recordedBy, 10);
 
@@ -410,7 +427,7 @@ export class FinancialService {
           description: data.description,
           expenseDate: data.expenseDate,
           recordedBy: userId,
-          receiptUrl: data.receiptUrl,
+          receiptUrl,
           paidFrom,
           source: 'manual',
         },
@@ -1289,6 +1306,7 @@ export class FinancialService {
     }
     const category = data.category !== undefined ? expenseCategoryOrThrow(data.category) : undefined;
     const paidFrom = data.paidFrom !== undefined ? paidFromOrThrow(data.paidFrom) : undefined;
+    const receiptUrl = data.receiptUrl !== undefined ? receiptUrlOrThrow(data.receiptUrl) : undefined;
 
     const expense = await prisma.expense.findUnique({
       where: { id: parseInt(expenseId, 10) }
@@ -1317,7 +1335,7 @@ export class FinancialService {
           ...(data.description && { description: data.description }),
           ...(data.expenseDate && { expenseDate: data.expenseDate }),
           ...(paidFrom !== undefined && { paidFrom }),
-          ...(data.receiptUrl !== undefined && { receiptUrl: data.receiptUrl })
+          ...(receiptUrl !== undefined && { receiptUrl })
         },
         include: {
           user: {

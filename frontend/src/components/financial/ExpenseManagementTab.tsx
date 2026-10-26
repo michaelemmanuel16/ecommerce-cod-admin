@@ -224,7 +224,7 @@ export const ExpenseManagementTab: React.FC = () => {
                           : 'N/A'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        {expense.receiptUrl ? (
+                        {expense.receiptUrl && /^(https?:\/\/|\/(?!\/))/i.test(expense.receiptUrl) ? (
                           <a
                             href={expense.receiptUrl}
                             target="_blank"
