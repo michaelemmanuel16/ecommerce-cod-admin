@@ -34,7 +34,7 @@ router.get('/stats/:agentId',
     agentReconciliationController.getAgentStats
 );
 
-// Verification (Accountant only)
+// Verify and reconcile in one step (Accountant). There is no separate approve step (F-912).
 router.post('/:id/verify',
     requireRole('super_admin', 'admin', 'manager', 'accountant'),
     [
@@ -52,16 +52,6 @@ router.post('/bulk-verify',
         validate
     ],
     agentReconciliationController.bulkVerify
-);
-
-// Approval (Manager/Admin only)
-router.post('/:id/approve',
-    requireRole('super_admin', 'admin', 'manager'),
-    [
-        param('id').isInt().toInt(),
-        validate
-    ],
-    agentReconciliationController.approveCollection
 );
 
 // Balance tracking (Agent, Manager, Admin)
@@ -119,7 +109,9 @@ router.post('/deposits/:id/reject',
     requireRole('super_admin', 'accountant'),
     [
         param('id').isInt().toInt(),
-        body('notes').notEmpty().withMessage('Rejection notes are required').isLength({ min: 5 }),
+        // The reason is required (F-912). `notes` is the old name of the field.
+        body().custom((b) => typeof (b?.reason ?? b?.notes) === 'string' && (b.reason ?? b.notes).trim().length >= 5)
+            .withMessage('A reason of at least 5 characters is required to reject a deposit'),
         validate
     ],
     agentReconciliationController.rejectDeposit

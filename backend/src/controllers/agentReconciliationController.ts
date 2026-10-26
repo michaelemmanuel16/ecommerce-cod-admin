@@ -6,7 +6,7 @@ import prisma from '../utils/prisma';
 import { readDateBound } from '../utils/kpiRequest';
 import { getSocketInstance } from '../utils/socketInstance';
 import * as Money from '../utils/money';
-import { emitCollectionVerified, emitCollectionApproved, emitToTenant, emitToUser } from '../sockets/index';
+import { emitCollectionVerified, emitToTenant, emitToUser } from '../sockets/index';
 
 export class AgentReconciliationController {
     /**
@@ -153,30 +153,6 @@ export class AgentReconciliationController {
     }
 
     /**
-     * Approve a collection (Manager/Admin)
-     */
-    async approveCollection(req: Request, res: Response) {
-        const { id } = req.params;
-        const userId = (req as any).user.id;
-
-        const parsedId = parseInt(id);
-        if (isNaN(parsedId)) throw new AppError('Invalid collection ID', 400);
-
-        const result = await agentReconciliationService.approveCollection(parsedId, userId);
-
-        // Emit socket event
-        const io = getSocketInstance();
-        if (io) {
-            emitCollectionApproved(io, result);
-            // Also emit balance update
-            const balance = await agentReconciliationService.getAgentBalance(result.agentId);
-            emitToTenant(io, `agent:balance-updated`, { agentId: result.agentId, balance });
-        }
-
-        res.json(result);
-    }
-
-    /**
      * Get specific agent balance
      */
     async getAgentBalance(req: Request, res: Response) {
@@ -279,13 +255,14 @@ export class AgentReconciliationController {
      */
     async rejectDeposit(req: Request, res: Response) {
         const { id } = req.params;
-        const { notes } = req.body;
+        const reason = String(req.body.reason ?? req.body.notes ?? '').trim();
         const userId = (req as any).user.id;
 
         const parsedId = parseInt(id);
         if (isNaN(parsedId)) throw new AppError('Invalid deposit ID', 400);
+        if (reason.length < 5) throw new AppError('A reason is required to reject a deposit', 400);
 
-        const result = await agentReconciliationService.rejectDeposit(parsedId, userId, notes);
+        const result = await agentReconciliationService.rejectDeposit(parsedId, userId, reason);
 
         // Emit socket event (optional for rejection, but good for real-time status)
         const io = getSocketInstance();
