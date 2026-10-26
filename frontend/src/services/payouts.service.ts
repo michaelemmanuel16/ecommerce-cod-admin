@@ -92,6 +92,12 @@ export const payoutsService = {
     return response.data.payouts;
   },
 
+  /** The latest rep payouts of every rep, newest first: the Payout history card of the Rep commissions tab. */
+  async recentRepPayouts(limit: number): Promise<PayoutRow[]> {
+    const response = await apiClient.get('/api/payouts', { params: { kind: 'rep', limit }, skipCache: true, quiet: true });
+    return response.data.payouts;
+  },
+
   async record(body: RecordPayout): Promise<PayoutRow> {
     const response = await apiClient.post('/api/payouts', body, { quiet: true });
     return response.data.payout;

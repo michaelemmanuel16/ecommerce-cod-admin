@@ -1,43 +1,48 @@
-import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { AlertTriangle, Ban, Clock, HandCoins, Hourglass, ShieldAlert } from 'lucide-react';
-import { Button, EmptyState, Skeleton, Tile, useToast } from '../../components/ui-v2';
+import { useState } from 'react';
+import { Ban, AlarmClock, ClipboardCheck, Hourglass } from 'lucide-react';
+import { Button, EmptyState, Skeleton, Tag, Tile, useToast } from '../../components/ui-v2';
 import { AgentAgingTab } from '../../components/financial/AgentAgingTab';
-import { UnpaidByAgeCard } from '../../components/financial/UnpaidByAgeCard';
+import { CashExposureCard } from '../../components/financial/CashExposureCard';
+import { CollectionsToVerifyCard } from '../../components/financial/CollectionsToVerifyCard';
 import { CollectionActionModal } from '../../components/financial/modals/CollectionActionModal';
 import { BlockPartnerModal } from '../../components/financial/modals/BlockPartnerModal';
-import { collectionsService, unpaidByAgeOf, type AgingPartner } from '../../services/collections.service';
+import { collectionsService, type AgingPartner, type PartnerDeposit } from '../../services/collections.service';
 import { financialService } from '../../services/financial.service';
-import { usePermissions } from '../../hooks/usePermissions';
 import { useBlock } from './profit/useBlock';
 import { apiErrorMessage } from '../../utils/apiError';
 import { formatCurrency } from '../../utils/format';
 import { ListSkeleton } from '../deliveries/ListSkeleton';
 import { ordersText } from './collections/model';
 
+const pendingOf = (deposits: PartnerDeposit[]) => deposits.filter((d) => d.status === 'pending');
+
 /**
- * The Agent collections tab of Finance (F-704, F-910 to F-912, M5-T36): aging by partner with the four buckets, cash held,
- * oldest unpaid and days to pay; a review modal (verify reconciles in one step, reject needs a reason); reminder; block and unblock.
- * One aging request feeds the tiles, the card and the table.
+ * The Agent collections tab of Finance (F-704, F-910 to F-912, M5-T36), laid out as the v2 mockup: four tiles, cash exposure
+ * by partner, agent aging, and the collections to verify. One aging request feeds the tiles, the chart and the table; the
+ * pay-ins load beside it. A change in the review modal reloads both.
  */
 export function AgentCollections() {
   const say = useToast();
-  const { isAdmin } = usePermissions();
   const aging = useBlock('collections:aging', collectionsService.aging);
+  const payIns = useBlock('collections:deposits', collectionsService.deposits);
   const report = aging.data;
+  const deposits = payIns.data;
   const failed = aging.status === 'failed';
-  const reload = aging.retry;
-  const [reviewing, setReviewing] = useState<AgingPartner | null>(null);
+  const [reviewing, setReviewing] = useState<PartnerDeposit | null>(null);
   const [blocking, setBlocking] = useState<AgingPartner | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
-  const card = useMemo(() => (report ? unpaidByAgeOf(report) : null), [report]);
+
+  const reload = () => {
+    aging.retry();
+    payIns.retry();
+  };
 
   /** Runs one call for a partner (its buttons wait meanwhile), says `message` when it works and the server's sentence when it does not. */
   const act = async (p: AgingPartner, run: () => Promise<string>, fallback: string) => {
     setBusyId(p.agentId);
     try {
       say(await run());
-      reload();
+      aging.retry();
     } catch (e) {
       say(apiErrorMessage(e, fallback));
     } finally {
@@ -50,16 +55,6 @@ export function AgentCollections() {
       : `WhatsApp is not connected, so the reminder to ${p.name} was saved but not sent`), 'The reminder could not be sent.');
   const unblock = (p: AgingPartner) => act(p, async () => { await collectionsService.unblock(p.agentId); return `${p.name} unblocked`; }, 'The partner could not be unblocked.');
 
-  const checkCash = async () => {
-    try {
-      await collectionsService.syncCashFindings();
-      say('Cash held checked');
-      reload();
-    } catch (e) {
-      say(apiErrorMessage(e, 'The check did not run.'));
-    }
-  };
-
   const exportCsv = async () => {
     try {
       await financialService.downloadAgentAgingCSV();
@@ -70,32 +65,39 @@ export function AgentCollections() {
   };
 
   const s = report?.summary;
+  // "Overdue, 8 days or more" is the two oldest buckets of the aging report
+  const late = s ? s.bucketTotals.filter((b) => b.key === '8-14' || b.key === '15+') : [];
+  const lateAmount = late.reduce((sum, b) => sum + b.amount, 0);
+  const lateOrders = late.reduce((sum, b) => sum + b.orders, 0);
+  const latePartners = report ? report.partners.filter((p) => p.buckets.some((b) => (b.key === '8-14' || b.key === '15+') && b.amount > 0)) : [];
+  const toVerify = deposits ? pendingOf(deposits) : null;
+  const toVerifyAmount = (toVerify ?? []).reduce((sum, d) => sum + d.amount, 0);
+  const cashHeldOf = (agentId: number) => report?.partners.find((p) => p.agentId === agentId)?.cashHeld ?? null;
+  const skel = <Skeleton width={90} height={28} />;
+
   return (
     <div className="collections">
-      <div className="agtools top">
-        <Link className="btn" to="/finance/findings"><ShieldAlert />Findings</Link>
-        {isAdmin && <Button onClick={() => void checkCash()}>Check cash held</Button>}
-      </div>
-
       {failed && !report ? (
         <div className="card"><EmptyState title="The collections could not load." action={<Button onClick={reload}>Try again</Button>} /></div>
       ) : (
         <>
-          <div className="grid kpis k5" style={{ marginTop: 0 }} aria-busy={!report}>
-            <Tile icon={<HandCoins />} tone="pine" value={s ? s.partnersWithCash : <Skeleton width={50} height={28} />} label="Partners holding cash" footer={<span>Cash held above zero</span>} />
-            <Tile icon={<AlertTriangle />} tone="coral" value={s ? s.overduePartners : <Skeleton width={50} height={28} />} label="Overdue partners" footer={<span>Past days to pay</span>} />
-            <Tile icon={<Hourglass />} tone="gold" value={s ? formatCurrency(s.totalOutstandingAmount) : <Skeleton width={90} height={28} />} label="Unpaid delivered orders" footer={<span>{s ? `${ordersText(s.totalOrders)}, net of delivery fee` : 'Net of delivery fee'}</span>} />
-            <Tile icon={<Clock />} tone="coral" value={s ? formatCurrency(s.overdueAmount) : <Skeleton width={90} height={28} />} label="Overdue" footer={<span>{s ? `${ordersText(s.overdueOrders)} past days to pay` : 'Past days to pay'}</span>} />
-            <Tile icon={<Ban />} tone="violet" value={s ? s.blockedPartners : <Skeleton width={50} height={28} />} label="Blocked partners" footer={<span>Keep their open deliveries</span>} />
+          <div className="grid kpis" style={{ marginTop: 0 }} aria-busy={!report}>
+            <Tile icon={<Hourglass />} tone="gold" value={s ? formatCurrency(s.totalOutstandingAmount) : skel} label="Cash with agents and 3PLs"
+              footer={<><span>{s ? `${ordersText(s.totalOrders)} delivered, unpaid` : 'Delivered orders unpaid'}</span>{s && s.totalOrders > 0 && <Tag tone="warn">Chase</Tag>}</>} />
+            <Tile icon={<AlarmClock />} tone="coral" value={s ? formatCurrency(lateAmount) : skel} label="Overdue, 8 days or more"
+              footer={<><span>{s ? `${ordersText(lateOrders)}${latePartners.length === 1 ? `, all ${latePartners[0].name}` : ''}` : 'Oldest orders'}</span>{s && lateOrders > 0 && <Tag tone="bad">Overdue</Tag>}</>} />
+            <Tile icon={<ClipboardCheck />} tone="violet" value={toVerify ? toVerify.length : <Skeleton width={50} height={28} />} label="Collections to verify"
+              footer={<><span>{toVerify ? formatCurrency(toVerifyAmount) : 'Pay-ins waiting'}</span>{toVerify && toVerify.length > 0 && <Tag tone="warn">Pending</Tag>}</>} />
+            <Tile icon={<Ban />} tone="pine" value={s ? s.blockedPartners : <Skeleton width={50} height={28} />} label="Blocked from deliveries"
+              footer={<><span>Block stops new assignments</span>{s && s.blockedPartners === 0 && <Tag tone="n">None</Tag>}</>} />
           </div>
 
-          <UnpaidByAgeCard data={card} />
+          {report ? <CashExposureCard report={report} /> : <div className="card"><ListSkeleton label="Loading exposure" rows={3} height={26} style={{ padding: 20 }} /></div>}
 
           {report ? (
             <AgentAgingTab
               report={report}
               busyId={busyId}
-              onReview={setReviewing}
               onRemind={(p) => void remind(p)}
               onBlock={setBlocking}
               onUnblock={(p) => void unblock(p)}
@@ -104,11 +106,19 @@ export function AgentCollections() {
           ) : (
             <div className="card"><ListSkeleton label="Loading partners" rows={2} height={44} style={{ padding: 20 }} /></div>
           )}
+
+          {deposits ? (
+            <CollectionsToVerifyCard deposits={deposits} onReview={setReviewing} onChanged={reload} />
+          ) : payIns.status === 'failed' ? (
+            <div className="card"><EmptyState title="The collections to verify could not load." action={<Button onClick={payIns.retry}>Try again</Button>} /></div>
+          ) : (
+            <div className="card"><ListSkeleton label="Loading collections to verify" rows={2} height={44} style={{ padding: 20 }} /></div>
+          )}
         </>
       )}
 
-      {reviewing && <CollectionActionModal agentId={reviewing.agentId} agentName={reviewing.name} onClose={() => setReviewing(null)} onChanged={reload} />}
-      {blocking && <BlockPartnerModal partnerId={blocking.agentId} partnerName={blocking.name} onClose={() => setBlocking(null)} onBlocked={reload} />}
+      {reviewing && <CollectionActionModal deposit={reviewing} cashHeld={cashHeldOf(reviewing.agentId)} onClose={() => setReviewing(null)} onChanged={reload} />}
+      {blocking && <BlockPartnerModal partnerId={blocking.agentId} partnerName={blocking.name} onClose={() => setBlocking(null)} onBlocked={aging.retry} />}
     </div>
   );
 }

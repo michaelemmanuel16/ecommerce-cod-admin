@@ -14,7 +14,7 @@ vi.mock('../../services/payouts.service', () => ({
 }));
 vi.mock('react-hot-toast', () => ({ default: { success: vi.fn(), error: vi.fn() } }));
 let canCreate = true;
-vi.mock('../../hooks/usePermissions', () => ({ usePermissions: () => ({ can: (r: string, a: string) => (r === 'payouts' && a === 'create' ? canCreate : true) }) }));
+vi.mock('../../hooks/usePermissions', () => ({ usePermissions: () => ({ can: (r: string, a: string) => (r === 'payouts' && a === 'create' ? canCreate : true), user: { role: 'super_admin' } }) }));
 
 const ADWOA: OwedPreview = {
   payee: { id: 7, firstName: 'Adwoa', lastName: 'Mensah', kind: 'rep' },
@@ -35,7 +35,7 @@ const onClose = vi.fn();
 const open = () => render(<PayoutForm personId={7} onClose={onClose} onRecorded={onRecorded} />);
 const onRecorded = vi.fn();
 const save = () => screen.getByRole('button', { name: /Record payout/ });
-const amountField = () => screen.getByLabelText('Amount') as HTMLInputElement;
+const amountField = () => screen.getByLabelText(/^Amount/) as HTMLInputElement;
 
 beforeEach(() => {
   [owed, history, record, onRecorded, onClose].forEach((m) => m.mockReset());
@@ -56,7 +56,8 @@ describe('PayoutForm (M5-T38, F-913)', () => {
     expect(within(list).getByText('Commission')).toBeInTheDocument();
     expect(within(list).getByText('Upsell reward')).toBeInTheDocument();
     expect(within(list).getByText('GH₵1,424')).toBeInTheDocument();
-    expect(screen.getByText('Owed now').nextSibling).toHaveTextContent('GH₵2,034');
+    expect(screen.getByText('Record payout for Adwoa Mensah')).toBeInTheDocument();
+    expect(screen.getByText('Pending commission GH₵2,034')).toBeInTheDocument();
     expect(amountField().value).toBe('2034.00');
     expect(screen.getByText(/Posts to 2020 Commissions payable/)).toBeInTheDocument();
   });
@@ -98,11 +99,11 @@ describe('PayoutForm (M5-T38, F-913)', () => {
     await screen.findByRole('region', { name: 'Owed entries' });
     await userEvent.clear(amountField());
     await userEvent.type(amountField(), '1000');
-    await userEvent.selectOptions(screen.getByLabelText('Method'), 'Mobile Money');
-    await userEvent.type(screen.getByLabelText('Reference (optional)'), 'MOMO-1');
+    await userEvent.selectOptions(screen.getByLabelText('Method'), 'MoMo');
+    await userEvent.type(screen.getByLabelText(/^Reference/), 'MOMO-1');
     await userEvent.click(save());
     await waitFor(() => expect(record).toHaveBeenCalledTimes(1));
-    expect(record).toHaveBeenCalledWith(expect.objectContaining({ payeeId: 7, amount: '1000', method: 'Mobile Money', reference: 'MOMO-1', entryIds: [1, 2] }));
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({ payeeId: 7, amount: '1000', method: 'MoMo', reference: 'MOMO-1', entryIds: [1, 2] }));
     expect(record.mock.calls[0][0]).not.toHaveProperty('deliveryFee');
     await waitFor(() => expect(onRecorded).toHaveBeenCalled());
     expect(owed).toHaveBeenCalledTimes(2); // reloaded after the save
@@ -140,10 +141,11 @@ describe('PayoutForm (M5-T38, F-913)', () => {
     canCreate = false;
     open();
     await screen.findByRole('region', { name: 'Owed entries' });
-    expect(save()).toBeDisabled();
-    expect(screen.getAllByText('You do not have permission to record payouts.').length).toBeGreaterThan(0);
-    await userEvent.hover(save().closest('span[tabindex]')!);
-    expect(await screen.findAllByText('You do not have permission to record payouts.')).toHaveLength(2);
+    expect(save()).toHaveAttribute('aria-disabled', 'true');
+    await userEvent.click(save());
+    expect(record).not.toHaveBeenCalled();
+    await userEvent.hover(save());
+    expect((await screen.findAllByText('You do not have permission to record payouts.')).length).toBeGreaterThan(0);
   });
 
   it('the close X has a name, and Escape closes the form', async () => {

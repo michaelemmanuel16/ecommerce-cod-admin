@@ -1,21 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { History, Wallet } from 'lucide-react';
-import { Modal } from '../ui/Modal';
-import { Button } from '../ui/Button';
-import { Input } from '../ui/Input';
-import { Select } from '../ui/Select';
-import { Table, TableBody, TableCell, TableHead, TableRow } from '../ui/Table';
-import { GuardedButton } from '../financial/GuardedButton';
+import { Button, Input, Modal, Select } from '../ui-v2';
+import { GuardedButtonV2 } from '../financial/GuardedButtonV2';
 import { payoutsService, type CommissionKind, type OwedPreview, type PayoutRow } from '../../services/payouts.service';
 import { apiErrorMessage } from '../../utils/apiError';
 import { formatCurrency, formatDate, todayYmd } from '../../utils/format';
 import { toCents } from '../../utils/money';
 
 const KIND_LABEL: Record<CommissionKind, string> = { base: 'Commission', upsell: 'Upsell reward', reward: 'Target reward' };
-// The words the old payout modal wrote and the payouts already in the books hold (the server takes any text). Not the deposit
-// methods of the mobile collections page: those are snake_case values with a Check option.
-const PAYOUT_METHODS = ['Mobile Money', 'Bank Transfer', 'Cash'].map((m) => ({ value: m, label: m }));
+// The mockup's words (the server takes any text). Not the deposit methods of the mobile collections page: those are snake_case values.
+const PAYOUT_METHODS = ['MoMo', 'Bank transfer', 'Cash'];
+/** The currency sign of the store ("GH₵"), for the Amount label. */
+const currencySign = (): string => formatCurrency(0).replace(/[\d.,\s]/g, '');
 
 interface PayoutFormProps {
   /** The person to pay. Finance passes a rep; Staff (M6) passes any person, with no other change. */
@@ -48,7 +44,7 @@ export const PayoutForm: React.FC<PayoutFormProps> = ({ personId, personName, on
   const [loadError, setLoadError] = useState<string | null>(null);
   const [ticked, setTicked] = useState<Set<number>>(new Set());
   const [amountEdit, setAmountEdit] = useState<string | null>(null);
-  const [method, setMethod] = useState(PAYOUT_METHODS[0].value);
+  const [method, setMethod] = useState(PAYOUT_METHODS[0]);
   const [date, setDate] = useState(todayYmd());
   const [reference, setReference] = useState('');
   const [notes, setNotes] = useState('');
@@ -115,129 +111,98 @@ export const PayoutForm: React.FC<PayoutFormProps> = ({ personId, personName, on
   };
 
   const name = personName ?? (preview ? `${preview.payee.firstName} ${preview.payee.lastName}` : 'this person');
-  const agent = preview?.payee.kind === 'agent';
-  const tiles: Array<{ label: string; value: string }> = preview
-    ? [
-        ...(agent
-          ? [{ label: 'Target reward', value: preview.targetReward }]
-          : [
-              { label: 'Commission', value: preview.commission },
-              { label: 'Upsell reward', value: preview.upsellReward },
-              { label: 'Target reward', value: preview.targetReward },
-            ]),
-        { label: 'Earned', value: preview.earned },
-        { label: 'Already paid', value: preview.paid },
-      ]
-    : [];
 
   return (
-    <Modal isOpen onClose={onClose} title={`Record payout: ${name}`} size="xl" closeOnEscape>
-      <div className="p-6 space-y-6 text-gray-900">
+    <Modal
+      open
+      onClose={onClose}
+      title={`Record payout for ${name}`}
+      description={preview ? `Pending commission ${formatCurrency(preview.owed)}` : undefined}
+      footer={
+        <>
+          <span className="mfnote">Posts to 2020 Commissions payable.</span>
+          <Button onClick={onClose}>Cancel</Button>
+          <GuardedButtonV2 perm="recordPayout" variant="primary" disabled={!!blocked || saving} onClick={() => void save()}>Record payout</GuardedButtonV2>
+        </>
+      }
+    >
+      <div className="payform">
         {loadError ? (
-          <p role="alert" className="text-sm text-red-600">{loadError}</p>
+          <p role="alert" className="err">{loadError}</p>
         ) : !preview ? (
-          <p className="text-sm text-gray-500">Loading…</p>
+          <p className="hint">Loading…</p>
         ) : (
           <>
-            <dl className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
-              {tiles.map(({ label, value }) => (
-                <div key={label} className="rounded-lg border border-gray-200 p-3">
-                  <dt className="text-xs text-gray-500">{label}</dt>
-                  <dd className="font-semibold">{formatCurrency(value)}</dd>
-                </div>
-              ))}
-              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
-                <dt className="text-xs text-blue-700">Owed now</dt>
-                <dd className="font-semibold text-blue-900">{formatCurrency(preview.owed)}</dd>
+            <form className="payfields" noValidate onSubmit={(ev) => { ev.preventDefault(); void save(); }}>
+              <div className="row2">
+                <Input
+                  id="payout-amount" label={`Amount (${currencySign()})`} type="number" min="0" step="0.01" inputMode="decimal"
+                  hint={`Pending: ${formatCurrency(preview.owed)}. Pay less to part-pay; the oldest entries are paid first.`}
+                  value={amountText} onChange={(e) => { setAmountEdit(e.target.value); setSaveError(null); }}
+                />
+                <Select id="payout-method" label="Method" value={method} onChange={(e) => setMethod(e.target.value)}>
+                  {PAYOUT_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+                </Select>
               </div>
-            </dl>
+              <div className="row2">
+                <Input id="payout-date" label="Date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+                <Input id="payout-reference" label="Reference" optional placeholder="MoMo ref" value={reference} onChange={(e) => { setReference(e.target.value); setSaveError(null); }} />
+              </div>
+              <Input id="payout-note" label="Note" optional placeholder="Optional" value={notes} onChange={(e) => setNotes(e.target.value)} />
+            </form>
+            {blocked && <p className="warnline" data-testid="blocked-reason">{blocked}</p>}
+            {saveError && <p role="alert" className="err">{saveError}</p>}
 
-            <section aria-label="Owed entries">
-              <h4 className="text-sm font-semibold mb-2">Owed entries</h4>
+            <section aria-label="Owed entries" className="payentries">
+              <h4>Owed entries</h4>
               {preview.entries.length === 0 ? (
-                <p className="text-sm text-gray-500">Nothing is owed to {name}.</p>
+                <p className="hint">Nothing is owed to {name}.</p>
               ) : (
-                <div className="max-h-56 overflow-auto rounded-lg border border-gray-200">
-                  <Table>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell isHeader className="w-8"><span className="sr-only">Pay</span></TableCell>
-                        <TableCell isHeader>Entry</TableCell>
-                        <TableCell isHeader>Order</TableCell>
-                        <TableCell isHeader>Earned</TableCell>
-                        <TableCell isHeader className="text-right">Amount</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
+                <div className="tablewrap">
+                  <table className="dt">
+                    <thead>
+                      <tr><th style={{ width: 32 }}><span className="sr-only">Pay</span></th><th>Entry</th><th>Order</th><th>Earned</th><th className="r">Amount</th></tr>
+                    </thead>
+                    <tbody>
                       {preview.entries.map((e) => (
-                        <TableRow key={e.id}>
-                          <TableCell>
-                            <input type="checkbox" checked={ticked.has(e.id)} onChange={() => toggle(e.id)} aria-label={`Pay ${KIND_LABEL[e.kind]}${e.orderId ? ` of order ${e.orderId}` : ''}`} />
-                          </TableCell>
-                          <TableCell>{KIND_LABEL[e.kind]}</TableCell>
-                          <TableCell>{e.orderId ? `#${e.orderId}` : '—'}</TableCell>
-                          <TableCell>{e.earnedAt ? formatDate(e.earnedAt) : '—'}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(e.amount)}</TableCell>
-                        </TableRow>
+                        <tr key={e.id}>
+                          <td><input type="checkbox" checked={ticked.has(e.id)} onChange={() => toggle(e.id)} aria-label={`Pay ${KIND_LABEL[e.kind]}${e.orderId ? ` of order ${e.orderId}` : ''}`} /></td>
+                          <td>{KIND_LABEL[e.kind]}</td>
+                          <td>{e.orderId ? `#${e.orderId}` : '—'}</td>
+                          <td>{e.earnedAt ? formatDate(e.earnedAt, 'd MMM') : '—'}</td>
+                          <td className="r num">{formatCurrency(e.amount)}</td>
+                        </tr>
                       ))}
-                    </TableBody>
-                  </Table>
+                    </tbody>
+                  </table>
                 </div>
               )}
             </section>
 
-            <form className="grid grid-cols-1 md:grid-cols-2 gap-4" noValidate onSubmit={(ev) => { ev.preventDefault(); void save(); }}>
-              <Input
-                id="payout-amount" label="Amount" type="number" min="0" step="0.01" inputMode="decimal"
-                value={amountText} onChange={(e) => { setAmountEdit(e.target.value); setSaveError(null); }}
-              />
-              <Select id="payout-method" label="Method" options={PAYOUT_METHODS} value={method} onChange={(e) => setMethod(e.target.value)} />
-              <Input id="payout-date" label="Date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-              <Input id="payout-reference" label="Reference (optional)" value={reference} onChange={(e) => { setReference(e.target.value); setSaveError(null); }} />
-              <div className="md:col-span-2">
-                <Input id="payout-note" label="Note (optional)" value={notes} onChange={(e) => setNotes(e.target.value)} />
-              </div>
-              <p className="text-xs text-gray-500 md:col-span-2">Posts to 2020 Commissions payable. A part payment pays the oldest entries first.</p>
-              {blocked && <p className="text-sm text-amber-700 md:col-span-2" data-testid="blocked-reason">{blocked}</p>}
-              {saveError && <p role="alert" className="text-sm text-red-600 md:col-span-2">{saveError}</p>}
-              <div className="md:col-span-2 flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={onClose}>Close</Button>
-                <GuardedButton perm="recordPayout" type="button" onClick={() => void save()} disabled={!!blocked} isLoading={saving}>
-                  <Wallet className="w-4 h-4 mr-2" />
-                  Record payout
-                </GuardedButton>
-              </div>
-            </form>
-
-            <section aria-label="Payout history">
-              <h4 className="text-sm font-semibold mb-2 flex items-center gap-2"><History className="w-4 h-4" />Payout history</h4>
+            <section aria-label="Payout history" className="payentries">
+              <h4>Payout history</h4>
               {history.length === 0 ? (
-                <p className="text-sm text-gray-500">No payout recorded for {name} yet.</p>
+                <p className="hint">No payout recorded for {name} yet.</p>
               ) : (
-                <Table>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell isHeader>Date</TableCell>
-                      <TableCell isHeader className="text-right">Amount</TableCell>
-                      <TableCell isHeader>Method</TableCell>
-                      <TableCell isHeader>Reference</TableCell>
-                      <TableCell isHeader>Note</TableCell>
-                      <TableCell isHeader>Recorded by</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {history.map((p) => (
-                      <TableRow key={p.id}>
-                        <TableCell>{formatDate(p.payoutDate)}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(p.amount)}</TableCell>
-                        <TableCell>{p.method}</TableCell>
-                        <TableCell>{p.reference ?? '—'}</TableCell>
-                        <TableCell>{p.notes ?? '—'}</TableCell>
-                        <TableCell>{p.recordedBy ? `${p.recordedBy.firstName} ${p.recordedBy.lastName}` : '—'}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                <div className="tablewrap">
+                  <table className="dt">
+                    <thead>
+                      <tr><th>Date</th><th className="r">Amount</th><th>Method</th><th>Reference</th><th>Note</th><th>Recorded by</th></tr>
+                    </thead>
+                    <tbody>
+                      {history.map((p) => (
+                        <tr key={p.id}>
+                          <td>{formatDate(p.payoutDate, 'd MMM')}</td>
+                          <td className="r num">{formatCurrency(p.amount)}</td>
+                          <td>{p.method}</td>
+                          <td>{p.reference ?? '—'}</td>
+                          <td>{p.notes ?? '—'}</td>
+                          <td>{p.recordedBy ? `${p.recordedBy.firstName} ${p.recordedBy.lastName}` : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </section>
           </>
