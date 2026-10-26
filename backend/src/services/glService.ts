@@ -90,6 +90,7 @@ const VOID_RULES: Record<JournalSourceType, { voidableByHand: boolean; hint: str
   period_close: { voidableByHand: false, hint: 'This entry was posted by the period close. Undo it where it was created.' },
   delivery_fee: { voidableByHand: false, hint: 'This entry was posted by a delivery fee. Change the order status or the partner settlement instead.' },
   commission_accrual: { voidableByHand: false, hint: 'This entry was posted by a rep commission. Reverse the commission instead.' },
+  finding_writeoff: { voidableByHand: false, hint: 'This entry was posted by a Finding write-off. A write-off cannot be undone here.' },
   reversal: { voidableByHand: false, hint: 'This entry was posted by a reversal. A reversal cannot be voided.' },
 };
 

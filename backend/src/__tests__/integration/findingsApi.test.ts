@@ -256,6 +256,16 @@ describe('a write-off posts to the ledger (F-909)', () => {
     expect(await entriesOf(f.id)).toHaveLength(1);
   });
 
+  it('a manual void of a write-off entry is refused, and the entry stays posted', async () => {
+    const f = await mkFinding('short_pay', { amount: 15 });
+    await patch(owner.token, f.id, { status: 'written_off', explanation: 'lost' });
+    const [entry] = await entriesOf(f.id);
+    const res = await request(app).post(`/api/gl/journal-entries/${entry.id}/void`).set(bearer(owner.token)).send({ voidReason: 'Trying' });
+    expect(res.status).toBe(400);
+    expect(res.body.code ?? res.body.errorCode).toBe('GL_ENTRY_NOT_MANUAL');
+    expect((await prismaBase.journalEntry.findUniqueOrThrow({ where: { id: entry.id } })).isVoided).toBe(false);
+  });
+
   it('an explained Finding posts nothing', async () => {
     const f = await mkFinding('short_pay', { amount: 20 });
     await patch(owner.token, f.id, { status: 'explained', explanation: 'paid later' });
