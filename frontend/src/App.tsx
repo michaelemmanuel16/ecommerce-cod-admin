@@ -33,6 +33,7 @@ const CustomerDetails = lazy(() => import('./pages/CustomerDetails').then(m => (
 const Deliveries = lazy(() => import('./pages/Deliveries').then(m => ({ default: m.Deliveries })));
 const CustomerReps = lazy(() => import('./pages/CustomerReps').then(m => ({ default: m.CustomerReps })));
 const Financial = lazy(() => import('./pages/Financial').then(m => ({ default: m.Financial })));
+const Findings = lazy(() => import('./pages/financial/Findings').then(m => ({ default: m.Findings })));
 const Reports = lazy(() => import('./pages/Reports').then(m => ({ default: m.Reports })));
 const Workflows = lazy(() => import('./pages/Workflows').then(m => ({ default: m.Workflows })));
 const WorkflowWizard = lazy(() => import('./pages/WorkflowWizard').then(m => ({ default: m.WorkflowWizard })));
@@ -306,6 +307,9 @@ function App() {
             } />
             <Route path="finance" element={
               <Suspense fallback={<Loading />}><Financial /></Suspense>
+            } />
+            <Route path="finance/findings" element={
+              <Suspense fallback={<Loading />}><Findings /></Suspense>
             } />
             <Route path="reports" element={
               <Suspense fallback={<Loading />}><Reports /></Suspense>

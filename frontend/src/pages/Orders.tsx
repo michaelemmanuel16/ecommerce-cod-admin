@@ -145,7 +145,7 @@ export function Orders({ onOpen }: OrdersProps) {
               Import
             </Button>
           )}
-          <ExportMenu params={params} total={list.pagination.total} />
+          {view.tab !== 'unpaid_by_agent' && <ExportMenu params={params} total={list.pagination.total} />}
           {can('orders', 'create') && (
             <Button variant="primary" onClick={() => setFormOpen(true)}>
               <Plus />

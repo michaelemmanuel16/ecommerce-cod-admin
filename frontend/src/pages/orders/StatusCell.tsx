@@ -23,6 +23,11 @@ export function StatusCell({ row, tag }: { row: OrderListRow; tag?: ReactNode })
           {moreFlags.length > 0 && ` +${moreFlags.length}`}
         </div>
       )}
+      {row.unpaid && row.unpaid.days !== null && (
+        <div className="unpaidline">
+          Unpaid {row.unpaid.days} {row.unpaid.days === 1 ? 'day' : 'days'}{row.unpaid.daysToPay !== null && `, pays in ${row.unpaid.daysToPay}`}
+        </div>
+      )}
       {(reminder || replies > 0) && (
         <div className="chips">
           {reminder && (

@@ -167,6 +167,7 @@ export function listParams(view: ListView, limit: number, now: Date = new Date()
   const range = rangeOf(view, now);
   return {
     ...(status.length && { status }),
+    ...(view.tab === 'unpaid_by_agent' && { tab: 'unpaid_by_agent' as const }),
     ...(view.q && { search: view.q }),
     sortBy: view.sort.by,
     sortOrder: view.sort.dir,
