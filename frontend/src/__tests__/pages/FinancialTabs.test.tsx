@@ -9,6 +9,7 @@ vi.mock('../../pages/financial/FinancialDashboard', () => ({ FinancialDashboard:
 vi.mock('../../pages/financial/AgentCollections', () => ({ AgentCollections: () => <div>collections</div> }));
 vi.mock('../../pages/financial/AccountingAnalysis', () => ({ AccountingAnalysis: () => <div>accounting</div> }));
 vi.mock('../../pages/financial/RepCommissions', () => ({ RepCommissions: () => <div>rep commissions content</div> }));
+vi.mock('../../pages/financial/profit/OverviewProfitCards', () => ({ OverviewProfitCards: () => <div>overview profit cards</div> }));
 vi.mock('../../components/ui/DateRangePicker', () => ({ DateRangePicker: () => null }));
 
 beforeEach(() => {

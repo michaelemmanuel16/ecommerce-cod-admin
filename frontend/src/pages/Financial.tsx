@@ -6,6 +6,7 @@ import { FinancialDashboard } from './financial/FinancialDashboard';
 import { AgentCollections } from './financial/AgentCollections';
 import { AccountingAnalysis } from './financial/AccountingAnalysis';
 import { RepCommissions } from './financial/RepCommissions';
+import { OverviewProfitCards } from './financial/profit/OverviewProfitCards';
 import { usePermissions } from '../hooks/usePermissions';
 
 export const Financial: React.FC = () => {
@@ -20,7 +21,7 @@ export const Financial: React.FC = () => {
     {
       id: 'overview',
       label: 'Overview',
-      content: <FinancialDashboard />
+      content: <><FinancialDashboard /><div className="mt-12"><OverviewProfitCards /></div></>
     },
     {
       id: 'agent-collections',
