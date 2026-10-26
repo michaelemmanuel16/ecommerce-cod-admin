@@ -144,6 +144,14 @@ describe('AgentReconciliationService (extended branch coverage)', () => {
       expect(mockTx.agentBalance.update).not.toHaveBeenCalled();
     });
 
+    it('a verified deposit with no recorded allocations is refused with 409 and nothing is undone', async () => {
+      const { GLAutomationService } = require('../../services/glAutomationService');
+      mockTx.agentDeposit.findUnique.mockResolvedValue({ id: 1, agentId: 5, amount: 150, status: 'verified', allocations: null } as any);
+      await expect(agentReconciliationService.rejectDeposit(1, 99)).rejects.toMatchObject({ statusCode: 409, message: expect.stringContaining('verified before allocation tracking') });
+      expect(mockTx.agentDeposit.updateMany).not.toHaveBeenCalled();
+      expect(GLAutomationService.voidJournalEntry).not.toHaveBeenCalled();
+    });
+
     it('a pending deposit is rejected without touching the ledger', async () => {
       const { GLAutomationService } = require('../../services/glAutomationService');
       const deposit = { id: 1, agentId: 5, amount: 150, status: 'pending', notes: null };

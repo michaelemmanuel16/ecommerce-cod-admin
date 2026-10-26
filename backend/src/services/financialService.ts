@@ -1,7 +1,7 @@
 import { Parser } from 'json2csv';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
-import { Prisma, PaymentStatus } from '@prisma/client';
+import { Prisma, PaymentStatus, CollectionStatus } from '@prisma/client';
 import logger from '../utils/logger';
 import { checkResourceOwnership, Requester } from '../utils/authUtils';
 import { getSocketInstance } from '../utils/socketInstance';
@@ -723,15 +723,20 @@ export class FinancialService {
     }
 
     const updated = await prisma.$transaction(async (tx) => {
+      // Claim the transactions first: a parallel call for the same rows waits here, then finds none still 'collected'
       const result = await tx.transaction.updateMany({
         where: {
-          id: { in: transactions.map(t => t.id) }
+          id: { in: transactions.map(t => t.id) },
+          status: 'collected'
         },
         data: {
           status: 'deposited',
           reference: depositReference
         }
       });
+      if (result.count !== transactions.length) {
+        throw new AppError('These transactions were changed by someone else. Reload and try again.', 409);
+      }
 
       // Update corresponding orders
       const orderIds = transactions.filter(t => t.orderId).map(t => t.orderId as number);
@@ -753,16 +758,32 @@ export class FinancialService {
         where: { sourceType: 'agent_collection', sourceId: { in: collections.map((c) => c.id) }, isVoided: false },
         select: { sourceId: true },
       })).map((e) => e.sourceId));
-      const open = ['draft', 'verified', 'approved'];
+      const open: CollectionStatus[] = ['draft', 'verified', 'approved'];
       const collectionOf = new Map(collections.map((c) => [c.orderId, c]));
       const owed = (c: (typeof collections)[number]) =>
         c.status === 'deposited' || oldPosted.has(c.id) ? Money.ZERO : Money.sub(c.amount, Money.orZero(c.allocatedAmount));
+
+      // Claim each open collection with a conditional update: if a deposit verify allocated it since we read it, count is 0
+      // and it counts toward neither the GL amount nor the balance drop.
+      const claimed = new Map<number, Money.Money>();
+      const dropByAgent = new Map<number, Money.Money>();
+      for (const coll of collections.filter((c) => open.includes(c.status) && owed(c).gt(0))) {
+        const won = await tx.agentCollection.updateMany({
+          where: { id: coll.id, status: { in: open }, allocatedAmount: coll.allocatedAmount },
+          data: { status: 'deposited', allocatedAmount: coll.amount },
+        });
+        if (won.count !== 1) continue;
+        claimed.set(coll.id, owed(coll));
+        dropByAgent.set(coll.agentId, Money.add(dropByAgent.get(coll.agentId) ?? Money.ZERO, owed(coll)));
+      }
 
       // The collection holds the net amount; with no collection the net is the transaction minus the fee stamped on the order
       const depositAmount = Money.sum(
         transactions.map((t) => {
           const coll = t.orderId == null ? undefined : collectionOf.get(t.orderId);
-          return coll ? owed(coll) : Money.sub(t.amount, Money.orZero(t.order?.deliveryFee));
+          if (!coll) return Money.sub(t.amount, Money.orZero(t.order?.deliveryFee));
+          // An open collection counts only if we won it; a reconciled one (no old posting) counts in full
+          return open.includes(coll.status) ? (claimed.get(coll.id) ?? Money.ZERO) : owed(coll);
         })
       );
 
@@ -774,11 +795,6 @@ export class FinancialService {
         await GLAutomationService.createDepositGLEntry(tx as any, depositAmount, sourceId, userId);
       }
 
-      const dropByAgent = new Map<number, Money.Money>();
-      for (const coll of collections.filter((c) => open.includes(c.status) && owed(c).gt(0))) {
-        await tx.agentCollection.update({ where: { id: coll.id }, data: { status: 'deposited', allocatedAmount: coll.amount } });
-        dropByAgent.set(coll.agentId, Money.add(dropByAgent.get(coll.agentId) ?? Money.ZERO, owed(coll)));
-      }
       for (const [agentId, drop] of dropByAgent) {
         await tx.agentBalance.updateMany({
           where: { agentId },

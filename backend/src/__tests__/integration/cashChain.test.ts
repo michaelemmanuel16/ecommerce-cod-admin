@@ -5,6 +5,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll, jest } from '@jest/globals';
 import '../mocks/logger.mock';
+import { Prisma } from '@prisma/client';
 import { prismaBase } from '../../utils/prisma';
 import { runInTenant } from '../../utils/tenantContext';
 import { transitionOrder, TransitionActor } from '../../services/orderStateMachine';
@@ -245,6 +246,43 @@ describe('reject reverses only its own allocations (ledger integrity)', () => {
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     expect(await depositEntries(created.id)).toHaveLength(1);
     expect(await balance('1015')).toBe(b1015 - 200);
+  });
+});
+
+describe('a deposit verified before allocation tracking', () => {
+  it('cannot be rejected: 409, and nothing changes', async () => {
+    const partner = await mkPartner('old');
+    await sync([await deliver(partner)]);
+    const created = await deposit(partner, 200, 'REF-OLD-1');
+    await inTenant(() => agentReconciliationService.verifyDeposit(created.id, ADMIN.userId!));
+    // What production holds: verified rows with no allocations recorded
+    await prismaBase.agentDeposit.update({ where: { id: created.id }, data: { allocations: Prisma.DbNull } });
+    const [b1015, entries] = [await balance('1015'), await entryCount()];
+
+    await expect(inTenant(() => agentReconciliationService.rejectDeposit(created.id, ADMIN.userId!, 'x'))).rejects.toMatchObject({ statusCode: 409 });
+    expect((await prismaBase.agentDeposit.findUniqueOrThrow({ where: { id: created.id } })).status).toBe('verified');
+    expect(await balance('1015')).toBe(b1015);
+    expect(await entryCount()).toBe(entries);
+  });
+});
+
+describe('two parallel "mark COD deposited" calls for the same transactions', () => {
+  it('one wins, the other gets 409, 1015 is credited once and the balance drops once', async () => {
+    const partner = await mkPartner('twin');
+    await prismaBase.feeRule.create({ data: { tenantId, partnerUserId: partner, outcome: 'delivered', amount: 25, validFrom: new Date('2026-01-01') } });
+    const orders = [await deliver(partner), await deliver(partner)];
+    await sync(orders);
+    const ids = (await prismaBase.transaction.findMany({ where: { orderId: { in: orders }, type: 'cod_collection' } })).map((t) => String(t.id));
+    const b1015 = await balance('1015');
+    const requester = { id: ADMIN.userId!, role: 'super_admin' } as any;
+
+    const results = await Promise.allSettled([
+      inTenant(() => financialService.markCODAsDeposited(ids, 'DEP-TWIN-1', requester)),
+      inTenant(() => financialService.markCODAsDeposited(ids, 'DEP-TWIN-2', requester)),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(await balance('1015')).toBe(b1015 - 350);
+    expect(Number((await prismaBase.agentBalance.findUniqueOrThrow({ where: { agentId: partner } })).currentBalance)).toBe(0);
   });
 });
 

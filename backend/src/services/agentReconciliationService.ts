@@ -221,6 +221,11 @@ export class AgentReconciliationService {
                 throw new AppError(`Deposit cannot be rejected from status: ${deposit.status} `, 400);
             }
 
+            // A deposit verified before allocations were recorded cannot be reversed exactly: no newest-first guess
+            if (deposit.status === 'verified' && !Array.isArray(deposit.allocations)) {
+                throw new AppError('This deposit was verified before allocation tracking. Reconcile it by hand.', 409);
+            }
+
             const dateStr = new Date().toLocaleString();
             const formattedNotes = notes ? `${deposit.notes ? deposit.notes + '\n' : ''} [REJECTED] ${dateStr}: ${notes} ` : deposit.notes;
 
