@@ -123,3 +123,29 @@ The partner drawer has a Fees tab for delivery fee rules. One payout form pays r
 ### Open points
 - T37 (manual partner payout modal) waits for T12 in COD-49 (lane A).
 - COD-53 stays In Progress until T34 to T37. COD-54 stays In Progress until T40, T41, T44 and T45.
+
+---
+
+## COD-49 — Findings, partner payouts and settlement matching
+**Date:** 2026-10-26 | **Type:** feat/fix | **Branch:** feature/m5-settlement-and-finance (lane `m5/cod-49-findings`, merge b296cd9) | **Commits:** a007814, 06c39f5, 98ff474, 4393953, 573d79b, 88606fa, 815b2cb, 4029929, d3d16ef, 23c42e8, e6082bc, 89c3239, 0099812, 9c5edb7, 7475469, 9a4ad27, c2a68d1, b05dff0
+
+### Summary
+A delivery partner's payout is recorded once, matched to its orders, and posted to the ledger. Anything that does not match opens a Finding. Plan tasks: M5-T08, T10, T11, T12, T17.
+
+### Changes
+- **Findings (T08):** list, assign (the new assignee gets an in-app notice), explain, write-off (owner only, once) and auto-close of a cleared short_pay. Write-off entries use source type `finding_writeoff`, which cannot be voided by hand.
+- **Write-off accounts:** short_pay, cash_gap, unpaid_term and negative_cash_held post DR 5100 / CR 1015. excess_deposit and over_pay post DR 2040 / CR 5100. **This corrects PRD F-909**, which says CR 1015 or 2040 for all types; the 2040 types hold money we owe back, so they are a debit to 2040.
+- **Record partner payout (T10):** one service behind the API route and the MCP tool `partner_payout_record`. The API audit row now has the same shape as the MCP one. Migration `20261026150000` adds the tool to every Owner role and is safe to run twice.
+- **Settlement matching (T11):** matches payout lines to orders, reconciles collections, posts one deposit, trues up fees and opens Findings. Fee, true-up and write-off entries share one post-once helper.
+- **Manual payout (T12):** pays the oldest unpaid orders first; excess goes to 2040. The preview uses the same planner, so the preview and the result are the same.
+- **CSV connector (T17):** preview (writes nothing) and apply of a partner's status list through the order status service. Parsed with `csv-parse`. Dates must be zero-padded ISO. Migration `20261026160000` adds an orders index on tenant, delivery agent and external order id.
+- **Database:** `20261026140000` adds `finding_writeoff` to the GL source types.
+
+### Verification
+- Merged tree (b296cd9): backend prisma generate, typecheck, lint and build clean; full backend suite 270 suites / 3489 tests pass. Frontend lint and build clean; vitest 152 files / 1246 tests pass.
+- Lane tests: unit 111 suites / 1573 tests; integration on test_a 37 suites / 389 tests.
+- No screen changes, so no browser check. The Findings page and manual payout modal come in COD-53 (T35, T37).
+
+### Open points
+- PRD F-909 text needs the write-off correction above. Follow-up ticket.
+- Findings list page size is at most 100.
