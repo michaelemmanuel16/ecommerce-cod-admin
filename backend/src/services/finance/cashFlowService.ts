@@ -16,6 +16,7 @@ import { getTenantId, resolveTenantId } from '../../utils/tenantContext';
 import { OPEN_COLLECTION_STATUSES, outstandingOf } from '../../utils/collectionCash';
 import { DAY_MS, getStoreTimeZone, localDate, weekRange } from '../kpi/dates';
 import { deliveredRevenueByDay, revenueScope } from '../kpi/revenue';
+import { rates } from '../kpi/rates';
 
 import { DEFAULT_DAYS_TO_PAY } from '../orderPaymentTag';
 
@@ -111,6 +112,35 @@ export async function partnerPayDays(): Promise<PayDays> {
   };
 }
 
+/** The two forecast scenarios (F-928): today's pace, or delivery success at the target. The target changes only the inflow of new deliveries. */
+export const SCENARIOS = ['pace', 'target'] as const;
+export type Scenario = (typeof SCENARIOS)[number];
+
+/** Delivery success the owner aims for (NUMBERS decision A: 60%, the old 40% target is gone). */
+export const TARGET_DELIVERY_SUCCESS = 60;
+
+export interface ScenarioInfo {
+  key: Scenario;
+  /** Delivery success of the last 30 days (closed orders); null when no order closed. */
+  currentRate: number | null;
+  targetRate: number;
+  /** What the new-delivery inflow is multiplied by: target / current, and 1 for today's pace, no closed orders, or a rate already at the target. */
+  multiplier: number;
+}
+
+/** The scenario's multiplier on the new-delivery inflow. Pure. */
+export function scenarioMultiplier(key: Scenario, currentRate: number | null): number {
+  if (key !== 'target' || currentRate === null || currentRate <= 0 || currentRate >= TARGET_DELIVERY_SUCCESS) return 1;
+  return Money.roundHalfUp(Money.div(TARGET_DELIVERY_SUCCESS, currentRate), 4).toNumber();
+}
+
+/** Delivery success of the last 30 days on the KPI layer's definition, and the multiplier the scenario gives. */
+export async function forecastScenario(key: Scenario, now: Date = new Date()): Promise<ScenarioInfo> {
+  const since = new Date(now.getTime() - 30 * DAY_MS);
+  const current = (await rates(resolveTenantId(), since, now, { basis: 'delivery' })).deliverySuccessRate.value;
+  return { key, currentRate: current, targetRate: TARGET_DELIVERY_SUCCESS, multiplier: scenarioMultiplier(key, current) };
+}
+
 export interface ForecastDay {
   date: string;
   expectedCollection: Money.Money;
@@ -125,7 +155,7 @@ export interface ForecastDay {
  * Outflows: the average daily expense of the last 30 days, and supplier payables (2050) on the first day. The balance is not
  * floored at 0: a negative balance is shown.
  */
-export async function buildForecast(input: { balances: CashBalances; payDays: PayDays; now?: Date }): Promise<ForecastDay[]> {
+export async function buildForecast(input: { balances: CashBalances; payDays: PayDays; now?: Date; paceMultiplier?: number }): Promise<ForecastDay[]> {
   const { balances, payDays } = input;
   const now = input.now ?? new Date();
   const since = new Date(now.getTime() - 30 * DAY_MS);
@@ -140,7 +170,8 @@ export async function buildForecast(input: { balances: CashBalances; payDays: Pa
       select: { agentId: true, amount: true, allocatedAmount: true, collectionDate: true },
     }),
   ]);
-  const avgDailyCollection = Money.div(Money.orZero(collected._sum.amount), 30);
+  // The scenario scales only what new deliveries bring in: partner cash already held and every outflow stay as they are
+  const avgDailyCollection = Money.mul(Money.div(Money.orZero(collected._sum.amount), 30), input.paceMultiplier ?? 1);
   const avgDailyExpense = Money.div(Money.orZero(spent._sum.amount), 30);
 
   // Partner cash by arrival day (1..30). Days past the horizon are left out.
@@ -173,6 +204,54 @@ export async function buildForecast(input: { balances: CashBalances; payDays: Pa
     forecast.push({ date: date.toISOString().split('T')[0], expectedCollection: inflow, expectedExpense: outflow, projectedBalance: balance });
   }
   return forecast;
+}
+
+export interface ForecastSummary {
+  /** Cash at bank and MoMo (1010) on the first day. */
+  cashToday: string;
+  expectedIn: string;
+  expectedOut: string;
+  endDate: string;
+  endBalance: string;
+  lowest: { date: string; balance: string };
+  /** First day the balance is below 0, or null. */
+  runsOutOn: string | null;
+  /** safe; tight = the lowest point is under 7 days of expected spending (GUESS, owner sets); runs_out = the balance goes below 0. */
+  status: 'safe' | 'tight' | 'runs_out';
+}
+
+export interface ForecastWeek { from: string; to: string; moneyIn: string; moneyOut: string; net: string; cashAtEnd: string }
+
+/** Tiles and the week-by-week table of a forecast. Pure: it only adds up the days. An empty forecast gives zeros. */
+export function summarizeForecast(cashToday: Money.MoneyInput, forecast: ForecastDay[]): { summary: ForecastSummary; weeks: ForecastWeek[] } {
+  const expectedIn = Money.sum(forecast.map((d) => d.expectedCollection));
+  const expectedOut = Money.sum(forecast.map((d) => d.expectedExpense));
+  const last = forecast[forecast.length - 1];
+  const low = forecast.reduce<ForecastDay | null>((m, d) => (m === null || Money.lt(d.projectedBalance, m.projectedBalance) ? d : m), null);
+  const runsOut = forecast.find((d) => Money.lt(d.projectedBalance, 0));
+  const sevenDays = Money.mul(Money.div(expectedOut, Math.max(forecast.length, 1)), 7);
+  const lowest = low ? Money.parse(low.projectedBalance) : Money.parse(cashToday);
+  const weeks: ForecastWeek[] = [];
+  for (let i = 0; i < forecast.length; i += 7) {
+    const days = forecast.slice(i, i + 7);
+    const moneyIn = Money.sum(days.map((d) => d.expectedCollection));
+    const moneyOut = Money.sum(days.map((d) => d.expectedExpense));
+    weeks.push({
+      from: days[0].date, to: days[days.length - 1].date,
+      moneyIn: Money.toApi(moneyIn), moneyOut: Money.toApi(moneyOut), net: Money.toApi(Money.sub(moneyIn, moneyOut)),
+      cashAtEnd: Money.toApi(days[days.length - 1].projectedBalance),
+    });
+  }
+  return {
+    summary: {
+      cashToday: Money.toApi(cashToday), expectedIn: Money.toApi(expectedIn), expectedOut: Money.toApi(expectedOut),
+      endDate: last?.date ?? '', endBalance: Money.toApi(last?.projectedBalance ?? cashToday),
+      lowest: { date: low?.date ?? '', balance: Money.toApi(lowest) },
+      runsOutOn: runsOut?.date ?? null,
+      status: lowest.isNegative() ? 'runs_out' : lowest.lt(sevenDays) ? 'tight' : 'safe',
+    },
+    weeks,
+  };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

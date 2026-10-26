@@ -7,6 +7,8 @@ import { AgentCollections } from './financial/AgentCollections';
 import { AccountingAnalysis } from './financial/AccountingAnalysis';
 import { RepCommissions } from './financial/RepCommissions';
 import { OverviewProfitCards } from './financial/profit/OverviewProfitCards';
+import { CashFlowPanel } from './financial/cash/CashFlowPanel';
+import { ExportMenu } from './financial/cash/ExportMenu';
 import { usePermissions } from '../hooks/usePermissions';
 
 export const Financial: React.FC = () => {
@@ -34,24 +36,32 @@ export const Financial: React.FC = () => {
       id: 'accounting-analysis',
       label: 'Accounting & Analysis',
       content: <AccountingAnalysis />
+    },
+    {
+      id: 'cash-flow',
+      label: 'Cash-flow forecast',
+      content: <CashFlowPanel />
     }
   ];
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Financial Management</h1>
           <p className="text-sm text-gray-600 mt-1">
             Track revenue, expenses, COD collections, and agent accountability
           </p>
         </div>
-        <DateRangePicker
-          startDate={dateRange.startDate}
-          endDate={dateRange.endDate}
-          onChange={handleDateRangeChange}
-          placeholder="Select date range"
-        />
+        <div className="finhead">
+          <ExportMenu />
+          <DateRangePicker
+            startDate={dateRange.startDate}
+            endDate={dateRange.endDate}
+            onChange={handleDateRangeChange}
+            placeholder="Select date range"
+          />
+        </div>
       </div>
 
       <Tabs tabs={tabs} defaultTab="overview" persistKey="financial-tab" />

@@ -4,7 +4,8 @@ import { Response } from 'express';
 import { AuthRequest } from '../types';
 import { AppError } from '../middleware/errorHandler';
 import { getTenantId } from '../utils/tenantContext';
-import { readId } from '../utils/kpiRequest';
+import { invalidRange, readId } from '../utils/kpiRequest';
+import { SCENARIOS, type Scenario } from '../services/finance/cashFlowService';
 import { readFormat, streamExport } from '../services/exportStream';
 import {
   buildReport, countLedgerLines, exportFileName, ExportInput, ledgerOverLimit, readReport,
@@ -16,6 +17,12 @@ const dateParam = (value: unknown, label: string): string | undefined => {
   if (value === undefined || value === '') return undefined;
   if (typeof value !== 'string' || !DATE_ONLY.test(value)) throw new AppError(`${label} must be a date as YYYY-MM-DD`, 400, 'INVALID_RANGE');
   return value;
+};
+
+const readScenario = (value: unknown): Scenario | undefined => {
+  if (value === undefined) return undefined;
+  if (!(SCENARIOS as readonly unknown[]).includes(value)) throw invalidRange('scenario must be pace or target');
+  return value as Scenario;
 };
 
 /**
@@ -41,6 +48,7 @@ export const exportFinanceReport = async (req: AuthRequest, res: Response): Prom
     startDate: dateParam(req.query.startDate, 'startDate'),
     endDate: dateParam(req.query.endDate, 'endDate'),
     accountId: report === 'general-ledger' ? readId(req.query.accountId, 'accountId') : undefined,
+    scenario: report === 'cash-flow' ? readScenario(req.query.scenario) : undefined,
   };
   if (report === 'general-ledger' && await startLedgerJob(res, input, format)) return;
   const { columns, batches } = await buildReport(report, input, req.user);

@@ -236,7 +236,7 @@ export const financeReportsService = {
    */
   async exportFile(
     report: ExportReport,
-    params: { startDate?: string; endDate?: string; format: ExportFormat },
+    params: { startDate?: string; endDate?: string; format: ExportFormat; scenario?: Scenario },
     opts: { onQueued?: () => void } = {},
   ): Promise<{ blob: Blob; filename: string }> {
     const response = await apiClient.get(`/api/financial/export/${report}`, { params, responseType: 'blob', skipCache: true, quiet: true });

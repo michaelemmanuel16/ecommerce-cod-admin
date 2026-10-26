@@ -2,7 +2,7 @@
 // Shapes follow GET /api/financial/monthly-pl, /profit-loss, /balance-sheet, /profit-by-product, /cohort-profit and
 // /failed-delivery-cost. Money is an API string.
 import type {
-  BalanceSheetStatement, CohortProfit, FailedDeliveryCost, IncomeStatement, MonthlyPl, PlColumn, ProfitByProduct,
+  BalanceSheetStatement, CashFlowForecastReport, CohortProfit, FailedDeliveryCost, IncomeStatement, MonthlyPl, PlColumn, ProfitByProduct, Scenario, Trend,
 } from '../../services/financeReports.service';
 
 const col = (over: Partial<PlColumn>): PlColumn => ({
@@ -67,4 +67,41 @@ export const failedCost = (): FailedDeliveryCost => ({
     { partnerId: 4, name: 'Kasapa Express', failedOrders: 1, fees: '0.00', unitsLost: 0, lostCost: '0.00', total: '0.00', hint: 'No fee rule for this partner. The failed fee is 0.' },
   ],
   fees: '460.00', unitsLost: 5, lostCost: '150.00', total: '610.00',
+});
+
+// ── Cash flow (M5-T41) ──────────────────────────────────────────────────────────────
+
+/** 30 days from 18 Oct. Pace runs out; the target scenario stays above zero. The server computed the summary and weeks. */
+export const cashFlow = (scenario: Scenario): CashFlowForecastReport => {
+  const target = scenario === 'target';
+  const forecast = Array.from({ length: 30 }, (_, i) => {
+    const date = new Date(Date.UTC(2026, 9, 18 + i)).toISOString().slice(0, 10);
+    const balance = 41900 + (i + 1) * (target ? -150 : -1600);
+    return { date, expectedCollection: '100.00', expectedExpense: '1700.00', projectedBalance: balance.toFixed(2) };
+  });
+  return {
+    kpis: { cashInHand: '41900.00', cashInTransit: '23400.00', cashExpected: '14800.00', cashAvailableNow: '41900.00', totalCashPosition: '65300.00', totalCashPipeline: '80100.00', supplierPayables: '5000.00' },
+    payDays: { default: 7, overall: 4.5, fromHistory: true, byPartner: {} },
+    scenario: { key: scenario, currentRate: 48, targetRate: 60, multiplier: target ? 1.25 : 1 },
+    forecast,
+    summary: target
+      ? { cashToday: '41900.00', expectedIn: '62000.00', expectedOut: '51000.00', endDate: '2026-11-16', endBalance: '37400.00', lowest: { date: '2026-11-16', balance: '37400.00' }, runsOutOn: null, status: 'safe' }
+      : { cashToday: '41900.00', expectedIn: '3000.00', expectedOut: '51000.00', endDate: '2026-11-16', endBalance: '-6100.00', lowest: { date: '2026-11-16', balance: '-6100.00' }, runsOutOn: '2026-11-12', status: 'runs_out' },
+    weeks: [
+      { from: '2026-10-18', to: '2026-10-24', moneyIn: '700.00', moneyOut: '11900.00', net: '-11200.00', cashAtEnd: '30700.00' },
+      { from: '2026-10-25', to: '2026-10-31', moneyIn: '700.00', moneyOut: '11900.00', net: '-11200.00', cashAtEnd: '19500.00' },
+      { from: '2026-11-01', to: '2026-11-07', moneyIn: '700.00', moneyOut: '11900.00', net: '-11200.00', cashAtEnd: '8300.00' },
+      { from: '2026-11-08', to: '2026-11-14', moneyIn: '700.00', moneyOut: '11900.00', net: '-11200.00', cashAtEnd: '-2900.00' },
+      { from: '2026-11-15', to: '2026-11-16', moneyIn: '200.00', moneyOut: '3400.00', net: '-3200.00', cashAtEnd: '-6100.00' },
+    ],
+    agentBreakdown: [],
+  } as CashFlowForecastReport;
+};
+
+export const trend = (): Trend => ({
+  grouping: 'day',
+  reports: [
+    { date: '2026-10-15', revenue: '5400.00', expenses: '300.00', profit: '5100.00', orders: 22 },
+    { date: '2026-10-16', revenue: '4900.00', expenses: '0.00', profit: '4900.00', orders: 20 },
+  ],
 });

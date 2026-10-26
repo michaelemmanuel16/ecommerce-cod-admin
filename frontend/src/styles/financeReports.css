@@ -44,4 +44,16 @@
 @media (max-width:760px){
   .v2 .finhead .menu{right:auto;left:0;max-width:calc(100vw - 32px)}
   .v2 .fin .fchead .fcexport{margin-left:0}
+  /* the two scenario labels are long: stack them so the page never scrolls sideways */
+  .v2 .fin .fchead .seg{display:flex;flex-direction:column;width:100%}
+  .v2 .fin .fchead .seg button{text-align:left}
 }
+
+/* new: the hover card of the cash flow charts (the mockup's charts have none) */
+.v2 .charttip{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:8px 12px;display:grid;gap:2px;font-size:12.5px;color:var(--ink-2)}
+.v2 .charttip b{color:var(--ink)}
+.v2 .charttip em{font-style:normal;font-weight:700;color:var(--ink);margin-left:6px}
+.v2 .fin .trendctl{padding:10px 20px 0}
+.v2 .fin .fincard > .blockerr{padding:16px 20px}
+.v2 .insight .ico.gold{background:var(--gold-soft);color:var(--gold)}
+.v2 .fin .finding{margin:14px 20px}

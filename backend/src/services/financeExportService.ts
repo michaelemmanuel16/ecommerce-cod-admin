@@ -13,6 +13,7 @@ import * as Money from '../utils/money';
 import { ExportColumn, exportMoney } from './exportStream';
 import { getStoreTimeZone, localDate, parseInclusiveBound } from './kpi/dates';
 import financialService from './financialService';
+import type { Scenario } from './finance/cashFlowService';
 import agingService from './agingService';
 
 export const FINANCE_REPORTS = ['profit-loss', 'agent-aging', 'general-ledger', 'cash-flow'] as const;
@@ -34,6 +35,8 @@ export interface ExportRange {
 export interface ExportInput extends ExportRange {
   /** General ledger only: one account. */
   accountId?: number;
+  /** Cash-flow forecast only: the scenario on screen (pace when left out). */
+  scenario?: Scenario;
 }
 
 export interface ReportExport<T> {
@@ -119,8 +122,8 @@ const agingReport = async (): Promise<ReportExport<AgingRow>> => {
 
 interface ForecastRow { date: string; collection: Money.MoneyInput; expense: Money.MoneyInput; balance: Money.MoneyInput }
 
-const cashFlowReport = async (range: ExportRange, requester?: Requester): Promise<ReportExport<ForecastRow>> => {
-  const { forecast } = await financialService.getCashFlowReport(requester);
+const cashFlowReport = async (range: ExportRange & { scenario?: Scenario }, requester?: Requester): Promise<ReportExport<ForecastRow>> => {
+  const { forecast } = await financialService.getCashFlowReport(requester, range.scenario);
   const from = range.startDate?.slice(0, 10);
   const to = range.endDate?.slice(0, 10);
   const rows: ForecastRow[] = forecast
