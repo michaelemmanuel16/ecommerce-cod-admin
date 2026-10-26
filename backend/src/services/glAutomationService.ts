@@ -873,6 +873,92 @@ export class GLAutomationService {
   }
 
   /**
+   * Commission earned (F-914, M5-T18): DR 5050 Sales rep commission, CR 2020 Commissions payable for one
+   * `CommissionEntry`. Source is the entry (`manual` + entry id), and the external ref `commission-entry:<id>`
+   * is unique per tenant, so a repeat can never post twice (the caller also locks the entry row).
+   */
+  static async recordCommissionAccrual(
+    tx: Prisma.TransactionClient,
+    entry: { id: number; tenantId: string; orderId: number | null; amount: Decimal },
+    userId: number,
+    entryDate: Date = new Date()
+  ): Promise<JournalEntryWithTransactions> {
+    const amount = Money.parse(entry.amount);
+    const label = entry.orderId ? `Order #${entry.orderId}` : `Entry #${entry.id}`;
+    return await this.createJournalEntryWithRetry(tx, {
+      entryDate,
+      description: `Commission earned - ${label}`,
+      sourceType: JournalSourceType.manual,
+      sourceId: entry.id,
+      externalRef: `commission-entry:${entry.id}`,
+      createdBy: userId,
+      tenantId: entry.tenantId,
+      transactions: {
+        create: [
+          {
+            accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.SALES_REP_COMMISSION, tx),
+            debitAmount: amount,
+            creditAmount: Money.ZERO,
+            description: 'Sales representative commission expense',
+          },
+          {
+            accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.COMMISSIONS_PAYABLE, tx),
+            debitAmount: Money.ZERO,
+            creditAmount: amount,
+            description: 'Accrued commissions payable to sales rep',
+          },
+        ],
+      },
+    });
+  }
+
+  /**
+   * Reversal of `recordCommissionAccrual` when a returned order voids its entry: DR 2020, CR 5050 for the
+   * entry's amount (a split remainder reverses only what it still holds). External ref
+   * `commission-entry-void:<id>` makes a repeat a no-op.
+   */
+  static async reverseCommissionAccrual(
+    tx: Prisma.TransactionClient,
+    entry: { id: number; tenantId: string; orderId: number | null; amount: Decimal },
+    userId: number,
+    entryDate: Date = new Date()
+  ): Promise<JournalEntryWithTransactions> {
+    const existing = await tx.journalEntry.findFirst({
+      where: { tenantId: entry.tenantId, sourceType: JournalSourceType.reversal, externalRef: `commission-entry-void:${entry.id}` },
+      include: { transactions: { include: { account: true } } },
+    });
+    if (existing) return existing as JournalEntryWithTransactions;
+
+    const amount = Money.parse(entry.amount);
+    const label = entry.orderId ? `Order #${entry.orderId}` : `Entry #${entry.id}`;
+    return await this.createJournalEntryWithRetry(tx, {
+      entryDate,
+      description: `Commission reversal - ${label}`,
+      sourceType: JournalSourceType.reversal,
+      sourceId: entry.id,
+      externalRef: `commission-entry-void:${entry.id}`,
+      createdBy: userId,
+      tenantId: entry.tenantId,
+      transactions: {
+        create: [
+          {
+            accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.COMMISSIONS_PAYABLE, tx),
+            debitAmount: amount,
+            creditAmount: Money.ZERO,
+            description: 'Accrued commissions payable reversal',
+          },
+          {
+            accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.SALES_REP_COMMISSION, tx),
+            debitAmount: Money.ZERO,
+            creditAmount: amount,
+            description: 'Sales representative commission reversal',
+          },
+        ],
+      },
+    });
+  }
+
+  /**
    * Create GL entry for commission payout to a sales rep
    *
    * Records payment of accrued commission liability:
@@ -891,7 +977,8 @@ export class GLAutomationService {
     payoutId: number,
     repId: number,
     amount: Decimal,
-    userId: number
+    userId: number,
+    opts: { entryDate?: Date; tenantId?: string } = {}
   ): Promise<JournalEntryWithTransactions> {
     // Idempotency guard — prevent duplicate GL entries for the same payout
     const existingEntry = await tx.journalEntry.findFirst({
@@ -923,11 +1010,12 @@ export class GLAutomationService {
     ];
 
     return await this.createJournalEntryWithRetry(tx, {
-      entryDate: new Date(),
+      entryDate: opts.entryDate ?? new Date(),
       description: `Commission payout - Rep #${repId} (Payout #${payoutId})`,
       sourceType: JournalSourceType.payout,
       sourceId: payoutId,
       createdBy: userId,
+      tenantId: opts.tenantId,
       transactions: {
         create: transactions,
       },

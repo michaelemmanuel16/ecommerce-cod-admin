@@ -5,6 +5,7 @@ import logger from '../utils/logger';
 import { getSystemUserId } from './systemUserService';
 import * as Money from '../utils/money';
 import { GLAutomationService, ORDER_GL_INCLUDE } from './glAutomationService';
+import { voidOpenEntriesForOrder } from './commissionService';
 import { enqueueOrderFinancialSync } from '../queues/financialReconciliationQueue';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderUpdated, emitOrderStatusChanged, emitGLEntryCreated } from '../sockets';
@@ -12,7 +13,7 @@ import { AppEvent, OrderStatusChangedEvent, emitOrderEvent } from '../utils/appE
 
 /**
  * Side effects of a status move (M1-T10), called by the state machine in the move's transaction.
- * GL: revenue on entering delivered, reversal on leaving delivered, fee per failed attempt.
+ * GL: revenue on entering delivered, reversal on leaving delivered (and the order's open commission entries void), fee per failed attempt.
  * Everything here is idempotent. Stock moves in stockService, called by the state machine (M4-T07).
  */
 
@@ -102,7 +103,11 @@ export async function applyGlEffects(
   // Only a move that posts to the ledger needs an actor, so look it up lazily.
   const actor = async () => userId ?? await getSystemUserId();
   const effects: GlEffects = {};
-  if (from === 'delivered') effects.reversal = await reverseRevenue(tx, order.id, to, await actor());
+  if (from === 'delivered') {
+    effects.reversal = await reverseRevenue(tx, order.id, to, await actor());
+    // F-914: an order that leaves delivered voids its unpaid commission entries (M5-T18)
+    await voidOpenEntriesForOrder(tx, order.id, await actor());
+  }
   if (to === 'delivered') {
     const posted = await postRevenue(tx, order.id, await actor(), opts.postRevenueAlways);
     effects.revenue = posted?.entry;

@@ -72,6 +72,7 @@ function getDefaultPermissions() {
       settings: ['view', 'update'],
       calls: ['create', 'view', 'update', 'delete'],
       gl: ['create', 'view', 'update', 'delete'],
+      payouts: ['view', 'create'],
       audit: ['view'],
     },
     admin: {
@@ -86,6 +87,7 @@ function getDefaultPermissions() {
       settings: ['view'],
       calls: ['create', 'view', 'update', 'delete'],
       gl: ['create', 'view', 'update', 'delete'],
+      payouts: ['view', 'create'],
       audit: ['view'],
     },
     manager: {
@@ -100,6 +102,7 @@ function getDefaultPermissions() {
       settings: [],
       calls: ['view'],
       gl: ['view'],
+      payouts: ['view', 'create'],
     },
     sales_rep: {
       users: [],
@@ -113,6 +116,7 @@ function getDefaultPermissions() {
       settings: [],
       calls: ['create', 'view'],
       gl: [],
+      payouts: [],
     },
     inventory_manager: {
       users: [],
@@ -126,6 +130,7 @@ function getDefaultPermissions() {
       settings: [],
       calls: [],
       gl: [],
+      payouts: [],
     },
     delivery_agent: {
       users: [],
@@ -139,6 +144,7 @@ function getDefaultPermissions() {
       settings: [],
       calls: ['view'],
       gl: [],
+      payouts: [],
     },
     accountant: {
       users: [],
@@ -152,6 +158,7 @@ function getDefaultPermissions() {
       calls: [],
       settings: [],
       gl: ['create', 'view', 'update'],
+      payouts: ['view', 'create'],
     },
   };
 }
