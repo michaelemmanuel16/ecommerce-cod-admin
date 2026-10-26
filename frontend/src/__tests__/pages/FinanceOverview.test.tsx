@@ -46,7 +46,7 @@ describe('Finance Overview (M5-T34)', () => {
     const rev = await tile('Delivered revenue');
     expect(rev).toHaveTextContent('Target GH₵180k');
     expect(rev).toHaveTextContent('Off track');
-    expect(await tile('Profit per delivered order')).toHaveTextContent('Copybook set -GH₵57 (before rep commission)');
+    expect(await tile('Profit per delivered order')).toHaveTextContent('Magic Groove copybook set GH₵180.32 before ads and rep commission');
   });
 
   it('with no target there is no target text or tag', async () => {

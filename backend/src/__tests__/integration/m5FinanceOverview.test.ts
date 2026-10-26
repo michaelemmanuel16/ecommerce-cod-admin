@@ -224,12 +224,11 @@ describe('GET /api/financial/overview on the NUMBERS fixture', () => {
     expect(none.detail.target).toBeNull(); // no September target
   });
 
-  it('profit per order names the product with the most delivered orders, before rep commission', async () => {
+  it('profit per order names the product with the most delivered orders, before ads and rep commission', async () => {
     const top = tileOf((await overview(owner)).body, 'profitPerOrder').detail.topProduct;
-    expect(top).toMatchObject({ beforeRepCommission: true });
-    expect(top.name).toMatch(/copybook/i);
-    expect(top.delivered).toBeGreaterThan(200);
-    expect(top.profitPerOrder).toMatch(/^-?\d+\.\d{2}$/);
+    // Measured on this suite's fixture: orders carry no stamped delivery fee here (the 12,200 of fees is a ledger entry, not a per-order
+    // fee), so the row is price share less product cost only. With per-order fees stamped the same row is lower (lane C: 180.32).
+    expect(top).toEqual({ name: 'Magic Groove copybook set', delivered: 306, profitPerOrder: '218.64', beforeAds: true });
   });
 
   it('every tooltip opens with its date basis label', async () => {

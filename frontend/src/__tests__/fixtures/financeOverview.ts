@@ -13,7 +13,7 @@ export const OVERVIEW: FinanceOverview = {
     ok({ key: 'cashOutstanding', label: 'Cash outstanding', unit: 'money', value: 23400, dateBasis: 'today', tone: 'warn', detail: { orders: 94, overdueOrders: 38, overdueAmount: 17300 } }),
     ok({ key: 'netMargin', label: 'Net margin', unit: 'percent', value: -15.5, tone: 'bad',
       detail: { target: 35, netProfit: -14268, revenue: 92000, expenses: { total: 106268, paystackFees: 1.5 } } }),
-    ok({ key: 'profitPerOrder', label: 'Profit per delivered order', unit: 'money', value: -37.95, tone: 'bad', detail: { netProfit: -14268, deliveredOrders: 376, topProduct: { name: 'Copybook set', delivered: 306, profitPerOrder: -57, beforeRepCommission: true } } }),
+    ok({ key: 'profitPerOrder', label: 'Profit per delivered order', unit: 'money', value: -37.95, tone: 'bad', detail: { netProfit: -14268, deliveredOrders: 376, topProduct: { name: 'Magic Groove copybook set', delivered: 306, profitPerOrder: 180.32, beforeAds: true } } }),
     ok({ key: 'cashRunway', label: 'Cash runway', unit: 'days', value: 9, dateBasis: 'today', tone: 'warn', detail: { level: 'tight', cash: 41900, adsPerDay: 4500, adDays: 7 } }),
   ],
   reconciliation: {

@@ -62,7 +62,7 @@ function parts(t: OkTile, currency: string): { value: ReactNode; footer: ReactNo
       return {
         value: <span className={toneClass(t)}>{money(t.value, currency)}</span>,
         footer: <>
-          <span>{d.topProduct ? `${d.topProduct.name} ${money(d.topProduct.profitPerOrder, currency)} (before rep commission)` : plural(d.deliveredOrders, 'delivered order')}</span>
+          <span>{d.topProduct ? `${d.topProduct.name} ${money(d.topProduct.profitPerOrder, currency)} before ads and rep commission` : plural(d.deliveredOrders, 'delivered order')}</span>
           {!na && tag(t.tone === 'bad' ? 'Loss' : 'Profit')}
         </>,
       };

@@ -204,18 +204,18 @@ export async function financeOverview(opts: OverviewOptions) {
       const [s, r] = await Promise.all([statement(), revenue()]);
       const orders = r.deliveredOrders.value;
       const per = orders > 0 ? Money.roundHalfUp(Money.div(s.netProfit, orders), 2) : null;
-      // The product with the most delivered orders, from profit by product (before rep commission). Best effort: the tile stands without it.
+      // The product with the most delivered orders, from profit by product (product cost and fees only: ads have no product until M8, and rep commission is not split by product). Best effort: the tile stands without it.
       const topProduct = await profitByProduct(from, to).then((p) => {
         const top = [...p.products].sort((a, b) => b.delivered - a.delivered || a.productId - b.productId)[0];
         return top && top.profitPerDeliveredOrder !== null
-          ? { name: top.name, delivered: top.delivered, profitPerOrder: top.profitPerDeliveredOrder, beforeRepCommission: true as const }
+          ? { name: top.name, delivered: top.delivered, profitPerOrder: top.profitPerDeliveredOrder, beforeAds: true as const }
           : null;
       }).catch((error) => { logger.error('Finance overview: profit by product failed', { error }); return null; });
       return okTile({
         key: 'profitPerOrder', label: 'Profit per delivered order', unit: 'money', dateBasis: 'range',
         tone: per === null ? 'neutral' : per.lt(0) ? 'bad' : 'ok',
         value: per === null ? NOT_AVAILABLE : Money.toApi(per),
-        tooltip: `By delivery date. Net profit of ${span} after rep commission, divided by the orders delivered in the same dates.`,
+        tooltip: `By delivery date. Net profit of ${span} after rep commission and ads, divided by the orders delivered in the same dates. The product line under it is profit before ads and rep commission: it takes off product cost and delivery fees only, because neither is split by product yet.`,
         detail: { netProfit: s.netProfit, deliveredOrders: orders, topProduct },
       });
     }),
