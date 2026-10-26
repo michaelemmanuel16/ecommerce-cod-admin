@@ -526,6 +526,50 @@ export class GLAutomationService {
   }
 
   /**
+   * Write-off of a Finding (F-909): DR 5100 operating expense, CR `creditCode` (1015 for cash still held by a partner,
+   * 2040 for excess or unapplied cash). Keyed `finding-writeoff:<id>` with its own source type, so a repeat posts
+   * nothing and a manual journal void cannot reach it. An amount of 0 posts nothing.
+   */
+  static async createFindingWriteOffEntry(
+    tx: Prisma.TransactionClient,
+    finding: { id: number; type: string; tenantId?: string | null },
+    amount: Money.MoneyInput,
+    creditCode: typeof GL_ACCOUNTS.CASH_IN_TRANSIT | typeof GL_ACCOUNTS.UNAPPLIED_PARTNER_RECEIPTS,
+    userId: number,
+    note: string
+  ): Promise<JournalEntryWithTransactions | null> {
+    const size = Money.parse(amount);
+    if (!size.greaterThan(0)) return null;
+
+    const externalRef = `finding-writeoff:${finding.id}`;
+    const existingEntry = await tx.journalEntry.findFirst({
+      where: { sourceType: JournalSourceType.finding_writeoff, externalRef, isVoided: false },
+      include: { transactions: { include: { account: true } } }
+    });
+    if (existingEntry) return existingEntry as JournalEntryWithTransactions;
+
+    const [expenseAccountId, creditAccountId] = await Promise.all([
+      GLAccountService.getAccountIdByCode(GL_ACCOUNTS.OPERATING_EXPENSE, tx),
+      GLAccountService.getAccountIdByCode(creditCode, tx),
+    ]);
+    return await this.createJournalEntryWithRetry(tx, {
+      entryDate: new Date(),
+      description: `Write-off of finding #${finding.id} (${finding.type}): ${note}`,
+      sourceType: JournalSourceType.finding_writeoff,
+      sourceId: finding.id,
+      externalRef,
+      createdBy: userId,
+      tenantId: finding.tenantId ?? undefined,
+      transactions: {
+        create: [
+          { accountId: expenseAccountId, debitAmount: size, creditAmount: Money.ZERO, description: `Written-off ${finding.type.replace(/_/g, ' ')}` },
+          { accountId: creditAccountId, debitAmount: Money.ZERO, creditAmount: size, description: `Finding #${finding.id} written off` },
+        ],
+      },
+    });
+  }
+
+  /**
    * Reverses the order's delivered fee entry when the order leaves `delivered`, like the revenue reversal (D7):
    * the original is linked to its reversal through `reversingEntryId`, so the order has no active delivered fee
    * afterwards and a later delivery posts a fresh one. Returns null when the order has none (fee 0, or booked before M5).

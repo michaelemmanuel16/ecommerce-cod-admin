@@ -186,3 +186,58 @@ describe('closeClearedShortPays', () => {
     expect((await prismaBase.finding.findUniqueOrThrow({ where: { id: fNot.id } })).status).toBe('open');
   });
 });
+
+describe('a write-off posts to the ledger (F-909)', () => {
+  const bal = async (code: string) => Number((await prismaBase.account.findUniqueOrThrow({ where: { tenantId_code: { tenantId, code } } })).currentBalance);
+  const entriesOf = (findingId: number) => prismaBase.journalEntry.findMany({
+    where: { tenantId, sourceType: 'finding_writeoff', sourceId: findingId }, include: { transactions: { include: { account: true } } },
+  });
+  const lines = (e: Awaited<ReturnType<typeof entriesOf>>[number]) => e.transactions.map((t) => [t.account.code, Number(t.debitAmount), Number(t.creditAmount)]).sort();
+
+  it.each(['short_pay', 'cash_gap', 'unpaid_term'])('%s: DR 5100, CR 1015', async (type) => {
+    const f = await mkFinding(type, { amount: 70 });
+    const [e5100, c1015] = [await bal('5100'), await bal('1015')];
+    expect((await patch(owner.token, f.id, { status: 'written_off', explanation: 'Partner closed' })).status).toBe(200);
+    const entries = await entriesOf(f.id);
+    expect(entries).toHaveLength(1);
+    expect(lines(entries[0])).toEqual([['1015', 0, 70], ['5100', 70, 0]]);
+    expect(await bal('5100')).toBe(e5100 + 70);
+    expect(await bal('1015')).toBe(c1015 - 70);
+  });
+
+  it.each(['excess_deposit', 'over_pay'])('%s: DR 5100, CR 2040', async (type) => {
+    const f = await mkFinding(type, { amount: 30 });
+    expect((await patch(owner.token, f.id, { status: 'written_off', explanation: 'Not claimed' })).status).toBe(200);
+    const entries = await entriesOf(f.id);
+    expect(lines(entries[0])).toEqual([['2040', 0, 30], ['5100', 30, 0]]);
+  });
+
+  it('a type with no ledger amount, or an amount of 0, posts nothing', async () => {
+    const noLedger = await mkFinding('fee_rule_missing', { amount: 50 });
+    const zero = await mkFinding('short_pay', { amount: 0 });
+    const none = await mkFinding('short_pay', { amount: null });
+    for (const f of [noLedger, zero, none]) {
+      expect((await patch(owner.token, f.id, { status: 'written_off', explanation: 'x' })).status).toBe(200);
+      expect(await entriesOf(f.id)).toHaveLength(0);
+    }
+  });
+
+  it('a repeat write-off posts once, and a non-owner is denied and posts nothing', async () => {
+    const f = await mkFinding('short_pay', { amount: 20 });
+    expect((await patch(clerk.token, f.id, { status: 'written_off', explanation: 'lost' })).status).toBe(403);
+    expect(await entriesOf(f.id)).toHaveLength(0);
+    const [a, b] = await Promise.all([
+      patch(owner.token, f.id, { status: 'written_off', explanation: 'A' }),
+      patch(owner.token, f.id, { status: 'written_off', explanation: 'B' }),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([200, 409]);
+    expect(await patch(owner.token, f.id, { status: 'written_off', explanation: 'again' }).then((r) => r.status)).toBe(409);
+    expect(await entriesOf(f.id)).toHaveLength(1);
+  });
+
+  it('an explained Finding posts nothing', async () => {
+    const f = await mkFinding('short_pay', { amount: 20 });
+    await patch(owner.token, f.id, { status: 'explained', explanation: 'paid later' });
+    expect(await entriesOf(f.id)).toHaveLength(0);
+  });
+});

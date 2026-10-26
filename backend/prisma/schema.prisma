@@ -1517,6 +1517,7 @@ enum JournalSourceType {
   paystack_payout
   delivery_fee
   commission_accrual
+  finding_writeoff
 }
 
 enum MessageChannel {

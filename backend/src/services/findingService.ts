@@ -54,6 +54,16 @@ export interface FindingFilters {
   limit?: number;
 }
 
+/** Which account a written-off Finding credits (DR 5100): cash a partner still holds (1015) or excess cash held unapplied (2040). A type not here has no ledger amount: it posts nothing. */
+const WRITE_OFF_CREDIT: Partial<Record<FindingType, '1015' | '2040'>> = {
+  short_pay: '1015',
+  cash_gap: '1015',
+  unpaid_term: '1015',
+  negative_cash_held: '1015',
+  excess_deposit: '2040',
+  over_pay: '2040',
+};
+
 const findingSelect = {
   id: true, type: true, status: true, subjectType: true, subjectId: true, amount: true, note: true,
   explanation: true, assigneeId: true, resolvedById: true, resolvedAt: true, createdAt: true,
@@ -94,8 +104,9 @@ export interface FindingChange {
 
 /**
  * Assign and resolve in one PATCH (F-909). Only an open Finding changes. Explained and written off need a note;
- * a write-off is the owner's call. The status is claimed with a conditional update, so two people resolving at once
- * cannot both win. Posting the write-off to the ledger is not done here.
+ * a write-off is the owner's call and posts DR 5100 / CR 1015 or 2040 by the Finding type (WRITE_OFF_CREDIT), in the same
+ * transaction. The status is claimed with a conditional update, so two people resolving at once cannot both win and
+ * the write-off posts once.
  */
 export async function updateFinding(requester: Requester, id: number, change: FindingChange) {
   const tenantId = resolveTenantId();
@@ -109,7 +120,7 @@ export async function updateFinding(requester: Requester, id: number, change: Fi
     throw new AppError('Only the owner can write off a Finding', 403, 'OWNER_ONLY');
   }
 
-  const finding = await prisma.finding.findFirst({ where: { id }, select: { id: true, status: true, assigneeId: true } });
+  const finding = await prisma.finding.findFirst({ where: { id }, select: { id: true, type: true, status: true, assigneeId: true, amount: true, tenantId: true } });
   if (!finding) throw new AppError('Finding not found', 404);
   if (finding.status !== 'open') throw new AppError(`This Finding is already ${finding.status.replace('_', ' ')}`, 409, 'FINDING_CLOSED');
 
@@ -127,6 +138,11 @@ export async function updateFinding(requester: Requester, id: number, change: Fi
       },
     });
     if (claim.count === 0) throw new AppError('This Finding was changed by someone else. Reload and try again.', 409, 'FINDING_CHANGED');
+    const creditCode = WRITE_OFF_CREDIT[finding.type];
+    if (change.status === 'written_off' && creditCode && finding.amount) {
+      const { GLAutomationService } = await import('./glAutomationService');
+      await GLAutomationService.createFindingWriteOffEntry(tx as unknown as Prisma.TransactionClient, finding, finding.amount, creditCode, requester.id, explanation!);
+    }
     await auditService.record({
       tenantId, actorId: requester.id, actorKind: 'person', channel: 'app',
       action: 'update', resource: 'finding', resourceId: String(id),
