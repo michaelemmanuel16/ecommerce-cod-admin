@@ -11,6 +11,7 @@ import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
 import { runTool } from '../../tools/registry';
 import '../../tools';
+import { clearPermissionsCache } from '../../middleware/auth';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import { createTenant, deleteTenantRows, mkUser } from './helpers/twoTenants';
 import { toolActorContext, toolAuditRows } from './helpers/callTool';
@@ -50,11 +51,6 @@ beforeAll(async () => {
   kofiId = (await mkUser(tenantId, 'pkofi', 'delivery_agent', { kind: 'person' })).id;
   esiId = (await mkUser(tenantId, 'pesi', 'delivery_agent', { kind: 'company' })).id;
   otherPartnerId = (await mkUser(otherTenantId, 'pother', 'delivery_agent', { kind: 'person' })).id;
-  await prismaBase.systemConfig.upsert({
-    where: { tenantId },
-    update: { rolePermissions: { admin: { payouts: ['view', 'create'] } } },
-    create: { tenantId, rolePermissions: { admin: { payouts: ['view', 'create'] } } } as any,
-  });
 }, 60000);
 
 afterAll(async () => {
@@ -144,15 +140,40 @@ describe('POST /api/partner-settlements', () => {
     expect((await post(owner.token, payload('REF-D2', { partnerId: admin.id }))).status).toBe(404);
   });
 
-  it('needs the payouts permission: owner and a role that holds it pass, others get 403', async () => {
-    expect((await post(admin.token, payload('REF-E1'))).status).toBe(201);
+  it('needs the payouts permission: owner, admin, manager and finance clerk hold it by default, other roles get 403', async () => {
     const manager = await mkUser(tenantId, 'pmanager', 'manager');
     const clerk = await mkUser(tenantId, 'pclerk', 'accountant');
+    expect((await post(admin.token, payload('REF-E1'))).status).toBe(201);
+    expect((await post(manager.token, payload('REF-E1b'))).status).toBe(201);
+    expect((await post(clerk.token, payload('REF-E1c'))).status).toBe(201);
+    const rep = await mkUser(tenantId, 'prep', 'sales_rep');
+    const stock = await mkUser(tenantId, 'pstock', 'inventory_manager');
     const agent = await mkUser(tenantId, 'pagent', 'delivery_agent', { kind: 'person' });
-    for (const who of [manager, clerk, agent]) {
+    for (const who of [rep, stock, agent]) {
       expect((await post(who.token, payload('REF-E2'))).status).toBe(403);
     }
     expect((await request(app).post('/api/partner-settlements').send(payload('REF-E3'))).status).toBe(401);
+  });
+
+  it('a tenant override that removes payouts from a role denies it', async () => {
+    const other = await createTenant('Payout Override');
+    await seedTenantDefaults(other.id);
+    const adm = await mkUser(other.id, 'oadmin', 'admin');
+    const partner = (await mkUser(other.id, 'opartner', 'delivery_agent', { kind: 'person' })).id;
+    const body = { partnerId: partner, payoutDate: '2026-10-20', payoutAmount: 10, lines: [{ externalOrderRef: '1', expAmount: 10 }] };
+    try {
+      expect((await post(adm.token, { ...body, reference: 'OV-1' })).status).toBe(201);
+      await prismaBase.systemConfig.upsert({
+        where: { tenantId: other.id },
+        update: { rolePermissions: { admin: { payouts: ['view'] } } },
+        create: { tenantId: other.id, rolePermissions: { admin: { payouts: ['view'] } } } as any,
+      });
+      // permissions are cached for a short time per tenant; clear the cache the way the settings save does
+      clearPermissionsCache();
+      expect((await post(adm.token, { ...body, reference: 'OV-2' })).status).toBe(403);
+    } finally {
+      await deleteTenantRows([other.id]);
+    }
   });
 
   it('writes one audit row per call', async () => {
@@ -201,7 +222,7 @@ describe('MCP tool partner_payout_record', () => {
 
   it('is denied to a key whose role lacks the payouts permission', async () => {
     const clerk = await prismaBase.user.create({
-      data: { email: `tool-clerk+${tenantId}@codadmin.test`, password: 'x', firstName: 'Tool', lastName: 'Clerk', role: 'accountant', kind: 'ai_agent', tenantId },
+      data: { email: `tool-clerk+${tenantId}@codadmin.test`, password: 'x', firstName: 'Tool', lastName: 'Clerk', role: 'inventory_manager', kind: 'ai_agent', tenantId },
     });
     const res = await runTool('partner_payout_record', payload('REF-T5'), { tenantId, actorId: clerk.id, actorKind: 'ai_agent', roleId: null, channel: 'mcp' });
     expect(res.status).toBe('denied');

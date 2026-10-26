@@ -21,7 +21,7 @@ const SUFFIX = Date.now();
 const ADMIN: TransitionActor = { kind: 'user', userId: undefined, role: 'super_admin' };
 let tenantId: string;
 let owner: { id: number; token: string };
-let manager: { id: number; token: string };
+let stock: { id: number; token: string };
 let customerId: number;
 let refSeq = 0;
 
@@ -53,7 +53,7 @@ beforeAll(async () => {
   })).id;
   owner = await mkUser(tenantId, 'mowner', 'super_admin');
   ADMIN.userId = owner.id;
-  manager = await mkUser(tenantId, 'mmanager', 'manager');
+  stock = await mkUser(tenantId, 'mstock', 'inventory_manager');
 }, 60000);
 
 afterAll(async () => {
@@ -167,8 +167,8 @@ describe('POST /api/partner-settlements/manual', () => {
 
   it('needs the payouts permission and a partner of this tenant', async () => {
     const partner = await mkPartner('mperm');
-    expect((await manual(manager.token, { partnerId: partner, amount: 10, reference: ref('P') })).status).toBe(403);
-    expect((await manual(owner.token, { partnerId: manager.id, amount: 10, reference: ref('P') })).status).toBe(404);
+    expect((await manual(stock.token, { partnerId: partner, amount: 10, reference: ref('P') })).status).toBe(403);
+    expect((await manual(owner.token, { partnerId: stock.id, amount: 10, reference: ref('P') })).status).toBe(404);
   });
 });
 

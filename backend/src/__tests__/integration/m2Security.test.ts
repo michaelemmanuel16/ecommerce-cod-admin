@@ -62,7 +62,7 @@ const argsFor = (): Record<string, Record<string, unknown>> => ({
   analytics_weekly: {},
   analytics_monthly: {},
   financial_summary: { period: 'month' },
-  // Not on the Legacy MCP role: only the registry path calls it (the payout permission is granted to the admin role in beforeAll)
+  // Not on the Legacy MCP role: only the registry path calls it (the admin role holds payouts:create by default)
   partner_payout_record: { partnerId: pair.a.users.deliveryAgent.id, payoutDate: '2026-10-20', payoutAmount: 10, reference: 'sec-planted', lines: [{ externalOrderRef: '1', expAmount: 10 }] },
 });
 
@@ -90,8 +90,6 @@ beforeAll(async () => {
   ownerA = await superAdminToken(pair.a.id, pair.a.slug, 'owner-sec');
   // orders_update_status moves confirmed -> preparing: touches neither stock nor the ledger
   await prismaBase.order.update({ where: { id: pair.a.ids.order }, data: { status: 'confirmed' } });
-  const stored = { admin: { payouts: ['view', 'create'] } };
-  await prismaBase.systemConfig.upsert({ where: { tenantId: pair.a.id }, update: { rolePermissions: stored }, create: { tenantId: pair.a.id, rolePermissions: stored } });
 }, 60_000);
 
 afterAll(async () => {
