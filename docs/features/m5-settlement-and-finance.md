@@ -54,3 +54,26 @@ Fee rules per partner and outcome, one delivery fee posted per outcome, and one 
 - `User.deliveryRate` column and the pay-rate fields in the frontend stay; removal is a follow-up ticket.
 - `getCashFlowReport` still reads 1020; T27 fixes it.
 - `createReturnReversalEntry` still rebuilds amounts from current rates; not moved onto `flippedLines` because it would change rep commission reversals (lane B area).
+
+---
+
+## COD-51 — Commission posting and one payout service
+**Date:** 2026-10-26 | **Type:** feat/refactor | **Branch:** feature/m5-settlement-and-finance (lane `m5/cod-51-commission`, merge 5fef9db) | **Commits:** 61352d0, 5dcf6c4, aa3198d, 3961d61 (merge of COD-48), 2ea1209
+
+### Summary
+Rep commissions are booked when earned and taken back on a return. One payout record and one API pay reps and delivery agents. Plan tasks: M5-T18, T19.
+
+### Changes
+- **Posting (`commissionService`, `glAutomationService`):** an earned `CommissionEntry` posts DR 5050 / CR 2020 once (external ref `commission-entry:<id>`, row lock). A return voids the entry and posts the reversal (`commission-entry-void:<id>`). Both use source type `commission_accrual`, so a clerk cannot void them by hand. A paid entry is left alone.
+- **Return check:** `createReturnReversalEntry` takes back the rep line of the delivery entry, and the commission void takes back only its own entry. Each amount is reversed once (integration test).
+- **Backfill (`commissionBackfillService`, `npm run backfill:commission-entries`):** turns open delivered orders with unpaid commission into earned entries. It prints a count and a total before it writes, and a second run writes nothing. Dry run on the production copy: 1,061 entries, GH₵5,305.00 (418 adopted, 643 posted).
+- **Payouts (`payoutService`, `payoutRoutes`):** one service for reps (commission, upsell, target reward) and delivery agents (target reward only). It pays open entries oldest first and splits the last entry on a part payment. It posts DR 2020 / CR 1010 and stores the method, reference and recorder. It rejects an amount above owed ("Owed is GH₵N") and a second payout on the same entries ("Already paid"). The reference is unique per payee and method. There is no delivery fee line. New `payouts` permission [view, create]. The old rep payout routes are removed.
+
+### Verification
+- Backend prisma generate, typecheck, lint and build pass. Full backend suite on the lane head (merged tree is the same): 259 suites, 3317 tests pass.
+- Tests: `m5CommissionPosting` (idempotent, concurrent, return, backfill), `m5Payouts` (owed preview Adwoa 2,034 and Nana 134, above-owed, already paid, concurrent payouts, reference unique, permissions, two tenants).
+- No screen changes, so no browser check. The payout form and Rep commissions tab come in T38.
+
+### Open points
+- On a return, `createReturnReversalEntry` still uses the rep's current rate, not the amount booked at delivery. If the rate changed in between, that reversal can be off. This existed before M5. Follow-up ticket.
+- Production order: run `npm run backfill:payout-gl` before the commission backfill.
