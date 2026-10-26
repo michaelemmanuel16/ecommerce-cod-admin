@@ -24,7 +24,7 @@ async function main() {
   // 1. Get all completed payouts
   const payouts = await prisma.payout.findMany({
     where: { status: 'completed' },
-    include: { rep: { select: { id: true, firstName: true, lastName: true } } },
+    include: { payee: { select: { id: true, firstName: true, lastName: true } } },
     orderBy: { payoutDate: 'asc' },
   });
 
@@ -65,7 +65,7 @@ async function main() {
 
   console.log(`Payouts to backfill (${toBackfill.length}):`);
   toBackfill.forEach(p => {
-    const name = `${p.rep.firstName} ${p.rep.lastName}`;
+    const name = `${p.payee.firstName} ${p.payee.lastName}`;
     const date = p.payoutDate.toISOString().split('T')[0];
     console.log(`  • Payout #${p.id} — Rep: ${name} — Amount: GHS ${p.amount} — Date: ${date}`);
   });
@@ -81,7 +81,7 @@ async function main() {
         await GLAutomationService.recordCommissionPayout(
           tx as any,
           payout.id,
-          payout.repId,
+          payout.payeeId,
           new Decimal(payout.amount.toString()),
           systemUserId
         );
