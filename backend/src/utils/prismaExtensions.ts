@@ -19,6 +19,7 @@ export const TENANT_SCOPED_MODELS = new Set([
   'Target', 'Finding', 'FeeRule', 'FxRate', 'Role', 'RoleAssignment',
   'UserSession', 'PaymentConnection',
   'StockLocation', 'StockLevel', 'StockCount', 'StockCountLine', 'DeliveryPartnerProfile', 'DeliveryAttempt',
+  'PartnerSettlement', 'PartnerSettlementLine', 'CommissionEntry',
 ]);
 
 /**

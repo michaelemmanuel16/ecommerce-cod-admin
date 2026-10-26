@@ -19,6 +19,7 @@ import { auditService } from '../services/auditService';
 import { accountService } from '../services/accountService';
 import { sessionService, hashToken, requestMeta } from '../services/sessionService';
 import { slugify } from '../utils/slugify';
+import { purgeTenantRows } from '../services/platformService';
 
 export const login = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -505,42 +506,8 @@ export const deleteTenantAccount = async (req: AuthRequest, res: Response, next:
     });
     logger.warn('Account deletion', { tenantId, userId: req.user.id, tenantName: tenant?.name });
 
-    // Delete all tenant data atomically in dependency order.
-    // Uses parameterized queries (Prisma.sql) to prevent SQL injection.
-    // Tables with RESTRICT FKs to users must be cleaned before user/tenant delete.
-    await prisma.$transaction(async (tx) => {
-      // 1. Delete records that reference users via RESTRICT FKs
-      await tx.$executeRaw`DELETE FROM notifications WHERE user_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
-      await tx.$executeRaw`DELETE FROM audit_logs WHERE user_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
-      await tx.$executeRaw`DELETE FROM payouts WHERE rep_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
-      await tx.$executeRaw`DELETE FROM calls WHERE sales_rep_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
-      await tx.$executeRaw`DELETE FROM agent_deposits WHERE agent_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
-      await tx.$executeRaw`DELETE FROM agent_collections WHERE agent_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
-      await tx.$executeRaw`DELETE FROM agent_aging_buckets WHERE agent_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
-      await tx.$executeRaw`DELETE FROM agent_balances WHERE agent_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
-      await tx.$executeRaw`DELETE FROM agent_stock WHERE agent_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
-
-      // 2. NULL out user FK columns on tenant-scoped tables (these cascade from tenant delete,
-      //    but RESTRICT FKs on user columns would block the cascade)
-      await tx.$executeRaw`UPDATE orders SET created_by_id = NULL, customer_rep_id = NULL, delivery_agent_id = NULL WHERE tenant_id = ${tenantId}`;
-      await tx.$executeRaw`UPDATE deliveries SET agent_id = NULL WHERE tenant_id = ${tenantId}`;
-      await tx.$executeRaw`UPDATE inventory_shipments SET created_by_id = NULL WHERE tenant_id = ${tenantId}`;
-      await tx.$executeRaw`UPDATE inventory_transfers SET from_agent_id = NULL, to_agent_id = NULL, created_by_id = NULL WHERE tenant_id = ${tenantId}`;
-      await tx.$executeRaw`UPDATE journal_entries SET created_by = NULL, voided_by = NULL WHERE tenant_id = ${tenantId}`;
-
-      // 3. Delete remaining tenant-scoped data in dependency order
-      await tx.$executeRaw`DELETE FROM form_submissions WHERE form_id IN (SELECT id FROM checkout_forms WHERE tenant_id = ${tenantId})`;
-      await tx.$executeRaw`DELETE FROM inventory_transfers WHERE tenant_id = ${tenantId}`;
-      await tx.$executeRaw`DELETE FROM inventory_shipments WHERE tenant_id = ${tenantId}`;
-      await tx.$executeRaw`DELETE FROM account_transactions WHERE tenant_id = ${tenantId}`;
-      await tx.$executeRaw`DELETE FROM journal_entries WHERE tenant_id = ${tenantId}`;
-      await tx.$executeRaw`DELETE FROM system_config WHERE tenant_id = ${tenantId}`;
-
-      // 4. Delete tenant — CASCADE handles remaining tenant_id FKs (orders, customers, etc.)
-      //    Using raw SQL to bypass Prisma soft-delete extensions
-      await tx.$executeRaw`DELETE FROM users WHERE tenant_id = ${tenantId}`;
-      await tx.$executeRaw`DELETE FROM tenants WHERE id = ${tenantId}`;
-    });
+    // Delete all tenant data atomically (RESTRICT foreign keys to users are cleared first).
+    await prisma.$transaction((tx) => purgeTenantRows(tx, tenantId));
 
     res.json({ message: 'Account and all associated data have been permanently deleted' });
   } catch (error) {

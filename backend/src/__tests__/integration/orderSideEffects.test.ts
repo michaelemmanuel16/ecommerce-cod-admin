@@ -63,7 +63,7 @@ describe('failed-delivery fee (F-935, D6)', () => {
   });
 
   it('with a FeeRule it posts exactly one entry, a repeat posts none, and two attempts post two', async () => {
-    await prismaBase.feeRule.create({ data: { tenantId, partnerUserId: agentId, outcome: 'failed', amount: 25 } });
+    await prismaBase.feeRule.create({ data: { tenantId, partnerUserId: agentId, outcome: 'failed', amount: 25, validFrom: new Date('2026-01-01') } });
     const id = await mk('out_for_delivery');
 
     await move(id, 'failed_delivery', { failureReason: 'not_reachable' });

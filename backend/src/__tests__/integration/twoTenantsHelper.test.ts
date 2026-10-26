@@ -59,7 +59,7 @@ describe('createTwoTenants', () => {
         .toEqual(Array(8).fill(t.id));
       expect(accountTx).toHaveLength(2);
       expect(accountTx.every((x) => x.tenantId === t.id)).toBe(true);
-      expect(accounts).toBe(16);
+      expect(accounts).toBe(21);
     };
     await stamped(pair.a);
     await stamped(pair.b);

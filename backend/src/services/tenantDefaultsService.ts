@@ -1,7 +1,7 @@
 import prisma, { TransactionClient } from '../utils/prisma';
 import logger from '../utils/logger';
 import { runInTenant } from '../utils/tenantContext';
-import { DEFAULT_GL_ACCOUNTS } from '../config/glAccounts';
+import { DEFAULT_GL_ACCOUNTS, RETIRED_GL_CODES } from '../config/glAccounts';
 import { DEFAULT_ROLES } from '../config/defaultRoles';
 import { seedDefaultEmailTemplates } from './emailTemplateService';
 import { ensureSystemUser } from './systemUserService';
@@ -62,7 +62,7 @@ export async function seedTenantDefaults(tenantId: string): Promise<{ accounts: 
         data: DEFAULT_GL_ACCOUNTS.map((a) => ({
           ...a,
           description: `Default account: ${a.name}`,
-          isActive: true,
+          isActive: !RETIRED_GL_CODES.includes(a.code),
         })),
         skipDuplicates: true,
       });

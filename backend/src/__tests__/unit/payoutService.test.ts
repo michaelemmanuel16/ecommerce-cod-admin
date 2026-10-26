@@ -78,7 +78,7 @@ describe('PayoutService', () => {
     describe('getPayoutHistory', () => {
         it('should return payout history for a representative', async () => {
             const mockPayouts = [
-                { id: 1, amount: 500, repId, payoutDate: new Date(), _count: { orders: 5 } }
+                { id: 1, amount: 500, payeeId: repId, payoutDate: new Date(), _count: { orders: 5 } }
             ];
 
             (prismaMock.payout.findMany as any).mockResolvedValue(mockPayouts as any);
@@ -88,7 +88,7 @@ describe('PayoutService', () => {
             expect(result).toHaveLength(1);
             expect(result[0].amount).toBe(500);
             expect(prismaMock.payout.findMany).toHaveBeenCalledWith(expect.objectContaining({
-                where: { repId }
+                where: { payeeId: repId }
             }));
         });
     });

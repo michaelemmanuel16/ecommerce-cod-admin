@@ -357,7 +357,7 @@ export const getMyPayoutHistory = async (req: AuthRequest, res: Response, next: 
     }
 
     const payouts = await prisma.payout.findMany({
-      where: { repId: userId },
+      where: { payeeId: userId },
       include: {
         _count: {
           select: { orders: true }

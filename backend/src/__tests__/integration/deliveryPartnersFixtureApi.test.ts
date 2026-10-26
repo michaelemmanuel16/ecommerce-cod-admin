@@ -48,9 +48,9 @@ beforeAll(async () => {
   await prismaBase.deliveryPartnerProfile.create({ data: { tenantId, userId: idOf.Kasapa, isTrial: true, daysToPay: 7, baseTown: 'Cape Coast', dataSource: 'csv' } });
   await prismaBase.feeRule.createMany({
     data: [
-      { tenantId, partnerUserId: idOf.Kofi, outcome: 'delivered', amount: '25' },
-      { tenantId, partnerUserId: idOf.Kofi, outcome: 'failed', amount: '5' },
-      { tenantId, partnerUserId: idOf.Kofi, outcome: 'returned', amount: '0' },
+      { tenantId, partnerUserId: idOf.Kofi, outcome: 'delivered', amount: '25', validFrom: new Date('2026-01-01') },
+      { tenantId, partnerUserId: idOf.Kofi, outcome: 'failed', amount: '5', validFrom: new Date('2026-01-01') },
+      { tenantId, partnerUserId: idOf.Kofi, outcome: 'returned', amount: '0', validFrom: new Date('2026-01-01') },
     ],
   });
 });
