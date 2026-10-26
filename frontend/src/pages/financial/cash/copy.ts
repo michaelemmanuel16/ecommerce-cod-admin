@@ -6,10 +6,10 @@ import { money } from '../profit/format';
 
 type Report = CashFlowForecastReport;
 
-/** The two switch labels. Today's pace does not read the delivery success, so its label is the same whichever scenario is on screen. */
+/** The two switch labels: the pace names the delivery success the orders have today, when the server knows it. */
 export function scenarioLabels(s: Report['scenario'] | undefined): Record<Scenario, string> {
   return {
-    pace: "Today's pace",
+    pace: s?.currentRate != null ? `Today's pace, ${Math.round(s.currentRate)}% delivery success` : "Today's pace",
     target: s ? `If delivery success reaches ${s.targetRate}%` : 'If delivery success reaches the target',
   };
 }

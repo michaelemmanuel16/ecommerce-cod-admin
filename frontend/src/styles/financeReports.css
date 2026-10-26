@@ -17,8 +17,6 @@
 .v2 .insight .ico.mint{background:var(--mint-soft);color:var(--ok-ink)}
 /* new: the range changed and the old figures stay on screen, dimmed, until the answer arrives */
 .v2 .fin .finbusy{opacity:.6;transition:opacity .15s}
-/* new: the toolbar above the statements */
-.v2 .fin .fintools{display:flex;justify-content:flex-end;gap:8px}
 
 /* cash flow (finance.html #p-forecast) */
 .v2 .fin .fchead{display:flex;gap:12px;align-items:center;flex-wrap:wrap}

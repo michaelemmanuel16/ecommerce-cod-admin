@@ -2,7 +2,7 @@
 // Shapes follow GET /api/financial/monthly-pl, /profit-loss, /balance-sheet, /profit-by-product, /cohort-profit and
 // /failed-delivery-cost. Money is an API string.
 import type {
-  BalanceSheetStatement, CashFlowForecastReport, CohortProfit, FailedDeliveryCost, IncomeStatement, MonthlyPl, PlColumn, ProfitByProduct, Scenario, Trend,
+  BalanceSheetStatement, CashFlowForecastReport, CohortProfit, FailedDeliveryCost, IncomeStatement, MonthlyPl, PlColumn, ProfitByProduct, ProfitTrend, Scenario, Trend,
 } from '../../services/financeReports.service';
 
 const col = (over: Partial<PlColumn>): PlColumn => ({
@@ -50,6 +50,22 @@ export const profitByProduct = (): ProfitByProduct => ({
   notMatchedToProductRow: { revenue: '0.00', productCost: '0.00', fees: '0.00' },
   metaSpendWithNoProduct: '76200.00', repCommission: '2768.00', otherExpenses: '3100.00',
   netProfit: '-14268.00', netMarginPct: -15.5, targetNetMargin: 35, profitPerDeliveredOrder: '-37.95', costMissingProducts: 1,
+});
+
+/** Profit by product, Aug to Oct: the copybook set loses money in October, the add-ons earn, Dictamni is small. */
+export const profitTrend = (): ProfitTrend => ({
+  months: [
+    { key: '2026-08', label: 'Aug', from: '2026-08-01', to: '2026-08-31' },
+    { key: '2026-09', label: 'Sep', from: '2026-09-01', to: '2026-09-30' },
+    { key: '2026-10', label: 'Oct', from: '2026-10-01', to: '2026-10-17' },
+  ],
+  products: [
+    { productId: 1, name: 'Magic Groove copybook set', revenue: '300000.00', profits: ['12600.00', '13100.00', '-17300.00'] },
+    { productId: 2, name: 'Refill pens', revenue: '20000.00', profits: ['4000.00', '4200.00', '4900.00'] },
+    { productId: 5, name: 'Dictamni cream', revenue: '9000.00', profits: ['3800.00', '3700.00', '-900.00'] },
+    { productId: 3, name: 'Pencil grip trainer', revenue: '8000.00', profits: ['2800.00', '3000.00', '2100.00'] },
+    { productId: 4, name: "Smart Parent's Home Study Guide", revenue: '7000.00', profits: ['3000.00', '3200.00', '3200.00'] },
+  ],
 });
 
 export const cohortProfit = (): CohortProfit => ({

@@ -109,6 +109,12 @@ export interface ProfitByProduct {
   costMissingProducts: number;
 }
 
+/** Profit of each product for the last months, the current one to date (the chart on Profit by product). */
+export interface ProfitTrend {
+  months: Array<{ key: string; label: string; from: string; to: string }>;
+  products: Array<{ productId: number; name: string; revenue: Money; profits: Array<Money | null> }>;
+}
+
 export type CohortProfit =
   | { from: string; to: string; available: false; message: string }
   | {
@@ -204,6 +210,7 @@ export const financeReportsService = {
   },
 
   profitByProduct: (from: string, to: string) => get<ProfitByProduct>('/api/financial/profit-by-product', { from, to }),
+  profitTrend: (months = 3) => get<ProfitTrend>('/api/financial/profit-by-product/trend', { months: String(months) }),
   cohortProfit: (from: string, to: string) => get<CohortProfit>('/api/financial/cohort-profit', { from, to }),
   failedDeliveryCost: (from: string, to: string) => get<FailedDeliveryCost>('/api/financial/failed-delivery-cost', { from, to }),
   cashFlow: (scenario: Scenario) => get<CashFlowForecastReport>('/api/financial/cash-flow', { scenario }),

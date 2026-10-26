@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, Banknote, CheckCircle2, Download, Flag, HandCoins, Hourglass, Truck, Wallet } from 'lucide-react';
+import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, CheckCircle2, Download, Flag, Hourglass, Wallet } from 'lucide-react';
 import { Button, Card, Tag, Tile } from '../../../components/ui-v2';
 import { financeReportsService, type CashFlowForecastReport, type Scenario } from '../../../services/financeReports.service';
+import { todayYmd } from '../../../utils/format';
 import { parseMoney } from '../../../utils/money';
 import { shortDay } from '../../dashboard/format';
 import { cost, lossClass, money } from '../profit/format';
@@ -9,7 +10,6 @@ import { Part } from '../profit/Part';
 import { useBlock } from '../profit/useBlock';
 import { assumptions, cashFinding, scenarioLabels } from './copy';
 import { ForecastChart } from './charts';
-import { TrendCard } from './TrendCard';
 import { useDownload } from './useDownload';
 
 const FINDING = { bad: { cls: 'coral', Icon: AlertTriangle }, warn: { cls: 'gold', Icon: Hourglass }, ok: { cls: 'mint', Icon: CheckCircle2 } } as const;
@@ -18,15 +18,18 @@ const STATUS = { safe: { tone: 'ok', text: 'Safe' }, tight: { tone: 'warn', text
 /**
  * The cash flow tab (F-928, F-929, M5-T41). Each unit of money sits in one bucket: cash at bank and MoMo (1010) and cash with
  * partners (1015) add up to the cash total; what orders out for delivery will bring is shown apart as expected, never added.
- * The scenario switch asks the server again; the figures, the chart, the weeks and the words all come from its answer.
+ * The scenario switch shows the server answer of that scenario; the figures, the chart, the weeks and the words all come from its answer.
  */
 export function CashFlowPanel() {
   const [scenario, setScenario] = useState<Scenario>('pace');
-  const block = useBlock(`cash|${scenario}`, () => financeReportsService.cashFlow(scenario));
+  // Both answers load at once: the target one carries today's delivery success, which the first switch label names
+  const pace = useBlock('cash|pace', () => financeReportsService.cashFlow('pace'));
+  const target = useBlock('cash|target', () => financeReportsService.cashFlow('target'));
+  const block = scenario === 'pace' ? pace : target;
   const download = useDownload();
   const exportCsv = () => void download.run(() => financeReportsService.exportFile('cash-flow', { format: 'csv', scenario }), 'The forecast could not be exported. Try again.');
 
-  const labels = scenarioLabels(block.data?.scenario);
+  const labels = scenarioLabels((target.data ?? pace.data)?.scenario);
 
   return (
     <div className="fin">
@@ -44,11 +47,12 @@ export function CashFlowPanel() {
       <Part name="Cash flow" block={block} height={420}>
         {(r) => <Forecast r={r} />}
       </Part>
-
-      <TrendCard />
     </div>
   );
 }
+
+/** The currency sign on its own (GH₵), for a card aside that says what the figures are in. */
+const currencySymbol = (): string => money(0).replace(/0$/, '');
 
 function Forecast({ r }: { r: CashFlowForecastReport }) {
   const { kpis, summary } = r;
@@ -59,13 +63,7 @@ function Forecast({ r }: { r: CashFlowForecastReport }) {
   return (
     <div className="fin">
       <div className="grid kpis">
-        <Tile icon={<Wallet />} tone="pine" value={money(kpis.cashInHand)} label="Cash at bank and MoMo" footer={<><span>Account 1010</span><Tag>Cash</Tag></>} />
-        <Tile icon={<HandCoins />} tone="gold" value={money(kpis.cashInTransit)} label="Cash with delivery partners" footer={<><span>Account 1015, after their fees</span><Tag>Cash</Tag></>} />
-        <Tile icon={<Banknote />} tone="mint" value={money(kpis.totalCashPosition)} label="Cash in total" footer={<span>Bank and MoMo plus partners</span>} />
-        <Tile icon={<Truck />} tone="violet" value={money(kpis.cashExpected)} label="Expected, out for delivery" footer={<><span>Not cash until delivered and paid</span><Tag tone="warn">Expected</Tag></>} />
-      </div>
-
-      <div className="grid kpis three">
+        <Tile icon={<Wallet />} tone="pine" value={money(kpis.cashInHand)} label="Cash at bank and MoMo today" footer={<><span>{shortDay(todayYmd())}</span><Tag>Start</Tag></>} />
         <Tile icon={<ArrowDownToLine />} tone="mint" value={money(summary.expectedIn)} label="Expected in, 30 days" footer={<><span>Partner payouts and new deliveries</span><Tag>Forecast</Tag></>} />
         <Tile icon={<ArrowUpFromLine />} tone="coral" value={money(summary.expectedOut)} label="Expected out, 30 days" footer={<><span>Expenses and supplier payables</span><Tag>Forecast</Tag></>} />
         <Tile
@@ -81,7 +79,7 @@ function Forecast({ r }: { r: CashFlowForecastReport }) {
           <div className="lgrow"><span><i style={{ background: 'var(--pine)' }} />Cash balance</span><span><i className="dash" />Zero</span></div>
           <ForecastChart points={points} summary={`Forecast cash balance for 30 days, ending ${money(summary.endBalance)}`} />
         </Card>
-        <Card title="What the forecast says" aside="From the server">
+        <Card title="What the forecast says">
           <div className="insight finding">
             <div className="h">
               <div className={`ico ${cls}`}><Icon /></div>
@@ -95,7 +93,7 @@ function Forecast({ r }: { r: CashFlowForecastReport }) {
         </Card>
       </div>
 
-      <Card title="Week by week" aside="In the store currency" className="fincard">
+      <Card title="Week by week" aside={currencySymbol()} className="fincard">
         <div className="tablewrap">
           <table className="dt" aria-label="Week by week">
             <thead>

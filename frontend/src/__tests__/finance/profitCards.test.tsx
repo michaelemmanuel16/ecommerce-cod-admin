@@ -8,16 +8,16 @@ import { clearBlockCache } from '../../pages/financial/profit/useBlock';
 import { useConfigStore } from '../../stores/configStore';
 import { useFinancialStore } from '../../stores/financialStore';
 import {
-  AUG_SEP_NOTE, balanceSheet, cohortProfit, failedCost, incomeStatement, monthlyPl, profitByProduct,
+  AUG_SEP_NOTE, balanceSheet, cohortProfit, failedCost, incomeStatement, monthlyPl, profitByProduct, profitTrend,
 } from '../fixtures/financeProfit';
 
 const svc = {
-  monthlyPl: vi.fn(), incomeStatement: vi.fn(), balanceSheet: vi.fn(), profitByProduct: vi.fn(), cohortProfit: vi.fn(), failedDeliveryCost: vi.fn(),
+  monthlyPl: vi.fn(), incomeStatement: vi.fn(), balanceSheet: vi.fn(), profitByProduct: vi.fn(), profitTrend: vi.fn(), cohortProfit: vi.fn(), failedDeliveryCost: vi.fn(),
 };
 vi.mock('../../services/financeReports.service', () => ({
   financeReportsService: {
     monthlyPl: (...a: unknown[]) => svc.monthlyPl(...a), incomeStatement: (...a: unknown[]) => svc.incomeStatement(...a),
-    balanceSheet: (...a: unknown[]) => svc.balanceSheet(...a), profitByProduct: (...a: unknown[]) => svc.profitByProduct(...a),
+    balanceSheet: (...a: unknown[]) => svc.balanceSheet(...a), profitByProduct: (...a: unknown[]) => svc.profitByProduct(...a), profitTrend: (...a: unknown[]) => svc.profitTrend(...a),
     cohortProfit: (...a: unknown[]) => svc.cohortProfit(...a), failedDeliveryCost: (...a: unknown[]) => svc.failedDeliveryCost(...a),
   },
 }));
@@ -39,6 +39,7 @@ beforeEach(() => {
   svc.incomeStatement.mockResolvedValue(incomeStatement());
   svc.balanceSheet.mockResolvedValue(balanceSheet());
   svc.profitByProduct.mockResolvedValue(profitByProduct());
+  svc.profitTrend.mockResolvedValue(profitTrend());
   svc.cohortProfit.mockResolvedValue(cohortProfit());
   svc.failedDeliveryCost.mockResolvedValue(failedCost());
 });
@@ -131,11 +132,14 @@ describe('Finance statements (M5-T40)', () => {
     expect(await screen.findByText(/by GH₵120\./)).toBeInTheDocument();
   });
 
-  it('Export PDF opens the print dialog, as the old statements tab did', async () => {
+  it('each statement card has its own Export button, and it opens the print dialog (Save as PDF), as the old statements tab did', async () => {
     const print = vi.spyOn(window, 'print').mockImplementation(() => {});
     render(<StatementsPanel />);
-    await userEvent.click(screen.getByRole('button', { name: 'Export PDF' }));
-    expect(print).toHaveBeenCalledTimes(1);
+    await screen.findByRole('table', { name: 'Income statement' });
+    expect(screen.queryByRole('button', { name: 'Export PDF' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Export income statement' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Export balance sheet' }));
+    expect(print).toHaveBeenCalledTimes(2);
     print.mockRestore();
   });
 });
@@ -157,6 +161,22 @@ describe('Finance profit by product (M5-T40)', () => {
     render(<ProductProfitPanel />);
     expect(await screen.findByText('October ends with a loss of GH₵14,268')).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Meta spend of GH₵76,200'));
+  });
+
+  it('the last 3 months chart names the three biggest products and groups the rest', async () => {
+    render(<ProductProfitPanel />);
+    expect(await screen.findByText('Profit by product, last 3 months')).toBeInTheDocument();
+    expect(svc.profitTrend).toHaveBeenCalledWith(3);
+    expect(screen.getByRole('img', { name: 'Profit by product, Aug to Oct' })).toBeInTheDocument();
+    const legend = document.querySelector('.proftrend .lgrow') as HTMLElement;
+    expect(within(legend).getAllByText(/./).map((e) => e.textContent)).toEqual(['Magic Groove copybook set', 'Refill pens', 'Dictamni cream', 'Other products']);
+  });
+
+  it('a failed trend shows its own error and the table still loads', async () => {
+    svc.profitTrend.mockRejectedValueOnce(new Error('boom'));
+    render(<ProductProfitPanel />);
+    expect(await screen.findByText('Profit by product trend did not load')).toBeInTheDocument();
+    expect(await screen.findByRole('table', { name: 'Profit by product' })).toBeInTheDocument();
   });
 
   it('an empty range says nothing was delivered, with no NaN', async () => {

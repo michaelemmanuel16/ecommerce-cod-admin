@@ -9,3 +9,4 @@ export const useBalanceSheet = (asOf: string) => useBlock(`balance|${asOf}`, () 
 export const useProfitByProduct = (from: string, to: string) => useBlock(`profit|${from}|${to}`, () => financeReportsService.profitByProduct(from, to));
 export const useCohortProfit = (from: string, to: string) => useBlock(`cohort|${from}|${to}`, () => financeReportsService.cohortProfit(from, to));
 export const useFailedCost = (from: string, to: string) => useBlock(`failed|${from}|${to}`, () => financeReportsService.failedDeliveryCost(from, to));
+export const useProfitTrend = () => useBlock('profit-trend|3', () => financeReportsService.profitTrend(3));

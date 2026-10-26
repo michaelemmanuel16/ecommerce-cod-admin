@@ -25,6 +25,7 @@ router.get('/overview', requireResourcePermission('financial', 'view'), financeR
 // Monthly P&L, profit by product, order cohort and cost of failed deliveries (M5-T25, M5-T26)
 router.get('/monthly-pl', requireResourcePermission('financial', 'view'), financeReports.getMonthlyPl);
 router.get('/profit-by-product', requireResourcePermission('financial', 'view'), financeReports.getProfitByProduct);
+router.get('/profit-by-product/trend', requireResourcePermission('financial', 'view'), financeReports.getProfitTrendByProduct);
 router.get('/cohort-profit', requireResourcePermission('financial', 'view'), financeReports.getCohortProfit);
 router.get('/failed-delivery-cost', requireResourcePermission('financial', 'view'), financeReports.getFailedDeliveryCost);
 router.get('/profit-loss/export', requireResourcePermission('financial', 'view'), financeExport.exportFinanceReport);
