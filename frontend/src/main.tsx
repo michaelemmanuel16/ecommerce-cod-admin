@@ -18,6 +18,7 @@ import './styles/reports.css';
 import './styles/checkoutForms.css';
 import './styles/orderDrawer.css';
 import './styles/settings.css';
+import './styles/collections.css';
 
 if (import.meta.env.VITE_SENTRY_DSN) {
   Sentry.init({

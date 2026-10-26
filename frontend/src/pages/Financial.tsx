@@ -7,8 +7,11 @@ import { AgentCollections } from './financial/AgentCollections';
 import { AccountingAnalysis } from './financial/AccountingAnalysis';
 import { RepCommissions } from './financial/RepCommissions';
 import { usePermissions } from '../hooks/usePermissions';
+import { useV2Page } from '../components/shell/useV2Page';
 
 export const Financial: React.FC = () => {
+  // v2 tokens, so the page follows the light and dark theme (the Agent collections tab is v2)
+  useV2Page();
   const { dateRange, setDateRange } = useFinancialStore();
   const { can } = usePermissions();
 
@@ -38,12 +41,10 @@ export const Financial: React.FC = () => {
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
+      <div className="head">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Financial Management</h1>
-          <p className="text-sm text-gray-600 mt-1">
-            Track revenue, expenses, COD collections, and agent accountability
-          </p>
+          <h1>Financial Management</h1>
+          <p>Track revenue, expenses, COD collections, and agent accountability</p>
         </div>
         <DateRangePicker
           startDate={dateRange.startDate}
@@ -53,7 +54,7 @@ export const Financial: React.FC = () => {
         />
       </div>
 
-      <Tabs tabs={tabs} defaultTab="overview" persistKey="financial-tab" />
+      <Tabs tabs={tabs} defaultTab="overview" persistKey="financial-tab" compact />
     </div>
   );
 };

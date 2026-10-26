@@ -8,6 +8,9 @@ import { OPEN_COLLECTION_STATUSES } from '../utils/collectionCash';
 import { DAY_MS, getStoreTimeZone, localDate, shiftYmd, startOfDay, utcDateOfYmd } from './kpi/dates';
 import { openFindingOnce } from './findingService';
 import { resolveDaysToPay } from './orderPaymentTag';
+import { getCurrency } from '../utils/currency';
+import { AppError } from '../middleware/errorHandler';
+import whatsappService from './whatsappService';
 
 /** The four age buckets (F-910): days since delivery. A delivery of today is 0 days, so it falls in the first. */
 export const AGE_BUCKETS = [
@@ -242,6 +245,29 @@ export class AgingService {
       },
       partners: partners.map(({ _overdue, _unpaid, _cash, ...row }) => row),
     };
+  }
+
+  /**
+   * "Send reminder" on the collections screen (F-911): a WhatsApp text to the partner with what it still holds and how much is
+   * past its days to pay. `sent` is false when the WhatsApp connection is off: the text is still saved in the message log.
+   */
+  async remindPartner(agentId: number): Promise<{ sent: boolean; unpaidOrders: number; overdueOrders: number }> {
+    const [partner, { unpaid }, currency] = await Promise.all([
+      prisma.user.findFirst({ where: { id: agentId, role: 'delivery_agent' }, select: { id: true, firstName: true, phoneNumber: true } }),
+      this.loadAging(),
+      getCurrency(),
+    ]);
+    if (!partner) throw new AppError('Delivery partner not found', 404);
+    const mine = summarize(unpaid.filter((o) => o.agentId === agentId));
+    if (mine.total.orders === 0) throw new AppError('This partner has no unpaid orders to remind about', 409, 'NOTHING_UNPAID');
+    if (!partner.phoneNumber) throw new AppError(`${partner.firstName} has no phone number saved`, 400, 'NO_PHONE');
+
+    const daysToPay = (await this.daysToPayOf())(agentId);
+    const orders = `${mine.total.orders} delivered ${mine.total.orders === 1 ? 'order' : 'orders'}`;
+    const late = mine.overdue.orders > 0 ? ` ${mine.overdue.orders} of them ${mine.overdue.orders === 1 ? 'is' : 'are'} past your ${daysToPay}-day payment term.` : '';
+    const body = `Hello ${partner.firstName}, you still hold ${Money.format(mine.total.amount, currency)} from ${orders}.${late} Please send the payment and reply with the reference. Thank you.`;
+    const result = await whatsappService.sendText({ to: partner.phoneNumber, body });
+    return { sent: Boolean(result.providerMessageId), unpaidOrders: mine.total.orders, overdueOrders: mine.overdue.orders };
   }
 
   /** Partners with orders past their days to pay (the daily notification job). */
