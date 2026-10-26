@@ -200,3 +200,29 @@ The finance reports now read the ledger. Plan tasks: M5-T25 (monthly P&L, income
 ### Open points
 - T24 and T30 are still to do; COD-52 stays In Progress.
 - Follow-ups: one revenue definition per order; align `DEFAULT_DAYS_TO_PAY` in `cashFlowService` with the lane A resolver after the lane A merge.
+
+---
+
+## COD-50 — Collections and aging (T13, T14, T15)
+**Date:** 2026-10-26 | **Type:** feat | **Branch:** feature/m5-settlement-and-finance (lane `m5/cod-50-collections-aging`, merge 7dd949f) | **Commits:** 42a72b1, 2197c20, 1ce3198, 887e313, 7f96886, 3f7e0a6, plus the tile label fix
+
+### Summary
+Agent collections are verified in one step, aging is computed live per tenant, and the overdue rule uses each partner's days to pay. Plan tasks: M5-T13 (verify and reject), M5-T14 (aging), M5-T15 (Unpaid by agent filter).
+
+### Changes
+- **Verify (T13):** verify reconciles the collection in one step. Reject needs a reason. There is no approve route. A balance guard stops verifying more than the cash the partner holds; a refused verify opens a Finding of type `verify_exceeds_cash_held`. Bulk verify is one claim and takes at most 50.
+- **Aging (T14):** live per tenant, with buckets 0–3, 4–7, 8–14 and 15+ days, net of the delivery fee. Per partner: cash held, oldest unpaid, days to pay. No cache table.
+- **Days to pay:** one resolver, `resolveDaysToPay` in `orderPaymentTag.ts`: the partner profile, then the store setting, then 7. Cash flow uses the same default.
+- **Overdue (T15):** `agingService.overdueFilter()` and `countOverdue()` feed the Unpaid by agent filter, the dashboard count and the card, so they agree. The Orders tab screen comes in T35.
+- **Screens:** tiles read "Overdue" and "Not yet due"; the overdue settlements tile says "Past days to pay".
+- **API:** `POST /api/financial/sync-cash-findings` (was `/refresh-aging`).
+- **Database:** migration `20261026170000_m5_collections_aging` drops the unread `agent_aging_buckets` table and adds the Finding type `verify_exceeds_cash_held`.
+
+### Verification
+- Lane: unit 1562 pass; integration 15 suites / 276 tests on test_a.
+- Merged tree (7dd949f): backend generate, typecheck, lint, build clean; full backend suite passes after one test fix (the fixture now gives each partner a profile, so the partner list test updates Kasapa's profile instead of creating it); frontend lint, build clean; vitest 153 files / 1257 tests pass.
+- Browser check (owner, light, 1440): Agent Collections tiles and table agree with the data (Kofi, days to pay 2: GH₵224 overdue + GH₵448 not yet due = GH₵672; all three orders 1–3 days old in 0–3). Dark mode and 760 px: see the progress log.
+
+### Open points
+- The aging table still shows three columns (8+ joins 8–14 and 15+); the four-bucket view comes with the T36 screen.
+- PRD F-309 says 8 days; align to 7. Follow-up ticket.
