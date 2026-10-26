@@ -114,6 +114,12 @@ export function isNonZero(v: MoneyInput | null | undefined): boolean {
   return !orZero(v).isZero();
 }
 
+/** part / whole as a percentage number rounded half up to `dp` decimals; null when whole is 0 (a page shows "n/a"). */
+export function percentOrNull(part: MoneyInput, whole: MoneyInput, dp = 1): number | null {
+  if (!isNonZero(whole)) return null;
+  return roundHalfUp(mul(div(part, whole), 100), dp).toNumber();
+}
+
 /** a / b as a percentage number. Zero when b is not positive. */
 export function percent(a: MoneyInput, b: MoneyInput): number {
   return gt(b, 0) ? mul(div(a, b), 100).toNumber() : 0;

@@ -26,7 +26,7 @@ jest.mock('../../services/kpi/revenue', () => ({
 import { prismaMock } from '../mocks/prisma.mock';
 import { useTestTenant, TEST_TENANT_ID } from '../mocks/tenant.mock';
 import { revenueResult } from '../mocks/kpiResults';
-import { deliveredRevenue } from '../../services/kpi/revenue';
+import { deliveredRevenue, deliveredRevenueByDay } from '../../services/kpi/revenue';
 import { FinancialService } from '../../services/financialService';
 import { GLAutomationService } from '../../services/glAutomationService';
 import { AppError } from '../../middleware/errorHandler';
@@ -391,8 +391,10 @@ describe('FinancialService', () => {
         }
       ];
 
-      prismaMock.order.findMany.mockResolvedValue(mockOrders as any);
-      prismaMock.expense.findMany.mockResolvedValue(mockExpenses as any);
+      void mockOrders;
+      // M5-T27: revenue comes from the KPI by delivery date, not from updatedAt
+      (deliveredRevenueByDay as jest.Mock).mockResolvedValue([{ date: '2024-01-01', revenue: '300.00', deliveredOrders: 2 }] as never);
+      prismaMock.expense.groupBy.mockResolvedValue(mockExpenses.map((e) => ({ expenseDate: e.expenseDate, _sum: { amount: e.amount } })) as any);
 
       const reports = await financialService.getFinancialReports({
         period: 'daily',
@@ -400,8 +402,8 @@ describe('FinancialService', () => {
         endDate: new Date('2024-01-31')
       });
 
-      expect(reports).toBeDefined();
-      const jan1Report = reports.find((r) => r.date === '2024-01-01');
+      expect(reports.grouping).toBe('day');
+      const jan1Report = reports.rows.find((r) => r.date === '2024-01-01');
       expect(Money.toApi(jan1Report!.revenue)).toBe('300.00');
       expect(Money.toApi(jan1Report!.expenses)).toBe('50.00');
       expect(Money.toApi(jan1Report!.profit)).toBe('250.00');
@@ -423,8 +425,9 @@ describe('FinancialService', () => {
         }
       ];
 
-      prismaMock.order.findMany.mockResolvedValue(mockOrders as any);
-      prismaMock.expense.findMany.mockResolvedValue(mockExpenses as any);
+      void mockOrders;
+      (deliveredRevenueByDay as jest.Mock).mockResolvedValue([{ date: '2024-01-15', revenue: '100.00', deliveredOrders: 1 }] as never);
+      prismaMock.expense.groupBy.mockResolvedValue(mockExpenses.map((e) => ({ expenseDate: e.expenseDate, _sum: { amount: e.amount } })) as any);
 
       const reports = await financialService.getFinancialReports({
         period: 'monthly',
@@ -432,7 +435,8 @@ describe('FinancialService', () => {
         endDate: new Date('2024-12-31')
       });
 
-      const jan2024 = reports.find((r) => r.date === '2024-01');
+      expect(reports.grouping).toBe('month');
+      const jan2024 = reports.rows.find((r) => r.date === '2024-01');
       expect(Money.toApi(jan2024!.revenue)).toBe('100.00');
       expect(Money.toApi(jan2024!.expenses)).toBe('30.00');
       expect(Money.toApi(jan2024!.profit)).toBe('70.00');
@@ -468,15 +472,18 @@ describe('FinancialService', () => {
       expect(Money.toApi(breakdown[0].totalAmount)).toBe('100.00');
     });
 
-    it('sums 0.1 x 1000 in a daily financial report to "100.00"', async () => {
-      const mockExpenses = Array.from({ length: 1000 }, () => ({ expenseDate: new Date('2024-01-01T10:00:00Z'), amount: 0.1 }));
-      prismaMock.expense.findMany.mockResolvedValue(mockExpenses as any);
-      prismaMock.order.findMany.mockResolvedValue([] as any);
+    it('adds the database sums of one day exactly: "100.00"', async () => {
+      // The database sums each expense date (0.1 x 500 each); the report adds the two sums of the same store day
+      prismaMock.expense.groupBy.mockResolvedValue([
+        { expenseDate: new Date('2024-01-01T10:00:00Z'), _sum: { amount: new Prisma.Decimal('50') } },
+        { expenseDate: new Date('2024-01-01T14:00:00Z'), _sum: { amount: new Prisma.Decimal('50') } },
+      ] as any);
+      (deliveredRevenueByDay as jest.Mock).mockResolvedValue([] as never);
 
       const reports = await financialService.getFinancialReports({ startDate: new Date('2024-01-01'), endDate: new Date('2024-01-31') }, 'daily');
 
-      expect(Money.toApi(reports[0].expenses)).toBe('100.00');
-      expect(Money.toApi(reports[0].profit)).toBe('-100.00');
+      expect(Money.toApi(reports.rows[0].expenses)).toBe('100.00');
+      expect(Money.toApi(reports.rows[0].profit)).toBe('-100.00');
     });
   });
 

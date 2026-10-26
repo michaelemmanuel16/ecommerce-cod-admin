@@ -92,13 +92,13 @@ export const getCODCollections = async (req: AuthRequest, res: Response): Promis
 export const getFinancialReports = async (req: AuthRequest, res: Response): Promise<void> => {
   const { period = 'daily', startDate, endDate } = req.query;
 
-  const reports = await financialService.getFinancialReports({
+  const trend = await financialService.getFinancialReports({
     period: period as string,
     startDate: readDateBound(startDate, 'from'),
     endDate: readDateBound(endDate, 'to', { snapToDay: true })
   });
 
-  res.json({ reports });
+  res.json({ reports: trend.rows, grouping: trend.grouping });
 };
 
 export const getPipelineRevenue = async (req: AuthRequest, res: Response): Promise<void> => {

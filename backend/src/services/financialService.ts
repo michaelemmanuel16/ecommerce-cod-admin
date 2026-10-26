@@ -28,6 +28,8 @@ import { PENDING_STATUSES } from './kpi/pending';
 import { OPEN_COLLECTION_STATUSES, outstandingOf } from '../utils/collectionCash';
 import agentReconciliationService, { Cover } from './agentReconciliationService';
 import { partnerNetCash } from './feeRuleService';
+import { buildForecast, cashBalances, cashBuckets, DEFAULT_DAYS_TO_PAY, expectedFromOutForDelivery, partnerPayDays, revenueExpenseTrend } from './finance/cashFlowService';
+import { balanceSheetOf, incomeStatementOf, ledgerAccounts, type IncomeStatement } from './finance/statementsService';
 
 interface DateFilters {
   startDate?: Date;
@@ -112,13 +114,6 @@ function assertExpenseEditable(expense: { source: string }) {
   }
 }
 
-interface CashFlowForecast {
-  date: string;
-  expectedCollection: Money.Money;
-  expectedExpense: Money.Money;
-  projectedBalance: Money.Money;
-}
-
 interface AgentHolding {
   agent: {
     id: number;
@@ -152,25 +147,6 @@ interface FinancialStatementAccount {
   balance: Money.Money;
 }
 
-interface BalanceSheetData {
-  asOfDate: Date;
-  assets: {
-    accounts: FinancialStatementAccount[];
-    total: Money.Money;
-  };
-  liabilities: {
-    accounts: FinancialStatementAccount[];
-    total: Money.Money;
-  };
-  equity: {
-    accounts: FinancialStatementAccount[];
-    retainedEarnings: Money.Money;
-    total: Money.Money;
-  };
-  totalLiabilitiesAndEquity: Money.Money;
-  isBalanced: boolean;
-}
-
 interface ProfitLossData {
   startDate: Date;
   endDate: Date;
@@ -190,11 +166,10 @@ interface ProfitLossData {
   grossMarginPercentage: number;
   netIncome: Money.Money;
   netMarginPercentage: number;
+  statement: IncomeStatement;
 }
 
 export class FinancialService {
-  private forecastCache = new Map<string, { data: CashFlowForecast[]; timestamp: number }>();
-  private readonly FORECAST_CACHE_DURATION_MS = 60 * 60 * 1000; // 1 hour
 
   /**
    * Get financial summary. Revenue is the KPI delivered revenue (delivery-date basis, physical plus paid digital,
@@ -478,8 +453,6 @@ export class FinancialService {
       return { ...rest, journalEntryId: entry.id, recordedBy: user || null };
     }, TRANSACTION_CONFIG);
 
-    // Invalidate forecast cache since expense data changed
-    this.forecastCache.clear();
 
     logger.info('Expense recorded', {
       expenseId: expense.id,
@@ -884,8 +857,6 @@ export class FinancialService {
       return result;
     }, TRANSACTION_CONFIG);
 
-    // Invalidate forecast cache since deposit data changed
-    this.forecastCache.clear();
 
     logger.info('COD marked as deposited', {
       transactionIds,
@@ -911,102 +882,12 @@ export class FinancialService {
   async getFinancialReports(filters: { period?: string; startDate?: Date; endDate?: Date }, requester?: Requester) {
     const { period = 'daily', startDate, endDate } = filters;
 
-    const start = startDate || new Date();
-    const end = endDate || new Date();
-
-    const orderWhere: Prisma.OrderWhereInput = {
-      status: 'delivered',
-      updatedAt: {
-        gte: start,
-        lte: end
-      },
-      deletedAt: null,
-    };
-
-    // Role-based filtering for financial reports
-    if (requester && requester.role === 'sales_rep') {
-      orderWhere.customerRepId = requester.id;
-    } else if (requester && requester.role === 'delivery_agent') {
-      orderWhere.deliveryAgentId = requester.id;
-    }
-
-    const transactionWhere: Prisma.TransactionWhereInput = {
-      createdAt: {
-        gte: start,
-        lte: end
-      },
-      order: {
-        deletedAt: null
-      }
-    };
-    if (requester && requester.role === 'delivery_agent') {
-      transactionWhere.order = { deliveryAgentId: requester.id };
-    }
-
-    const expenseWhere: Prisma.ExpenseWhereInput = {
-      expenseDate: {
-        gte: start,
-        lte: end
-      },
-    };
-    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
-      expenseWhere.recordedBy = requester.id;
-    }
-
-
-    const [expenses] = await Promise.all([
-      prisma.expense.findMany({
-        where: expenseWhere
-      })
-    ]);
-
-    // Group by period
-    const groupedData: Record<string, { revenue: Money.Money; expenses: Money.Money; orders: number }> = {};
-
-    // Fetch delivered orders for the same period to get Accrual Revenue trends
-    const deliveredOrders = await prisma.order.findMany({
-      where: orderWhere,
-      select: {
-        totalAmount: true,
-        updatedAt: true
-      }
+    // Revenue by delivery date (F-929); a range over 366 days groups by week. Expenses by expense date.
+    const expenseRecordedBy = requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager'
+      ? requester.id : undefined;
+    return revenueExpenseTrend({
+      start: startDate || new Date(), end: endDate || new Date(), period, role: requester, expenseRecordedBy,
     });
-    (deliveredOrders || []).forEach((order) => {
-      const key =
-        period === 'daily'
-          ? order.updatedAt.toISOString().split('T')[0]
-          : `${order.updatedAt.getFullYear()}-${String(order.updatedAt.getMonth() + 1).padStart(2, '0')}`;
-
-      if (!groupedData[key]) {
-        groupedData[key] = { revenue: Money.ZERO, expenses: Money.ZERO, orders: 0 };
-      }
-
-      groupedData[key].revenue = Money.add(groupedData[key].revenue, order.totalAmount);
-      groupedData[key].orders += 1;
-    });
-
-    expenses.forEach((e) => {
-      const key =
-        period === 'daily'
-          ? e.expenseDate.toISOString().split('T')[0]
-          : `${e.expenseDate.getFullYear()}-${String(e.expenseDate.getMonth() + 1).padStart(2, '0')}`;
-
-      if (!groupedData[key]) {
-        groupedData[key] = { revenue: Money.ZERO, expenses: Money.ZERO, orders: 0 };
-      }
-
-      groupedData[key].expenses = Money.add(groupedData[key].expenses, e.amount);
-    });
-
-    const reports = Object.entries(groupedData).map(([date, data]) => ({
-      date,
-      revenue: data.revenue,
-      expenses: data.expenses,
-      profit: Money.sub(data.revenue, data.expenses),
-      orders: data.orders
-    })).sort((a, b) => a.date.localeCompare(b.date));
-
-    return reports;
   }
 
   /**
@@ -1384,8 +1265,6 @@ export class FinancialService {
       return { ...rest, journalEntryId, recordedBy: user || null };
     }, TRANSACTION_CONFIG);
 
-    // Invalidate forecast cache since expense data changed
-    this.forecastCache.clear();
 
     logger.info('Expense updated', {
       expenseId,
@@ -1429,8 +1308,6 @@ export class FinancialService {
       });
     }, TRANSACTION_CONFIG);
 
-    // Invalidate forecast cache since expense data changed
-    this.forecastCache.clear();
 
     logger.info('Expense deleted', {
       expenseId,
@@ -1567,126 +1444,28 @@ export class FinancialService {
    * Get Cash Flow Report
    */
   async getCashFlowReport(requester?: Requester) {
-    // 1. Get current cash position KPIs from GL
-    const tenantId = resolveTenantId();
-    const [cashInHand, , arAgents] = await Promise.all([
-      prisma.account.findUnique({ where: { tenantId_code: { tenantId, code: GL_ACCOUNTS.CASH_IN_HAND } } }),
-      prisma.account.findUnique({ where: { tenantId_code: { tenantId, code: GL_ACCOUNTS.CASH_IN_TRANSIT } } }),
-      prisma.account.findUnique({ where: { tenantId_code: { tenantId, code: GL_ACCOUNTS.AR_AGENTS } } }),
+    // Balances, expected cash, pay days and the partners' holdings are independent: read them together, once each.
+    const [balances, expected, payDays, agentBreakdown] = await Promise.all([
+      cashBalances(), expectedFromOutForDelivery(), partnerPayDays(), this.getAgentCashHoldings(requester),
     ]);
-
-    // 2. Calculate operational figures from actual order status
-    const [cashInTransitData, cashExpectedData] = await Promise.all([
-      prisma.order.aggregate({
-        where: {
-          status: 'delivered',
-          paymentStatus: { notIn: ['reconciled', 'deposited'] },
-          deletedAt: null,
-            },
-        _sum: { totalAmount: true }
-      }),
-      prisma.order.aggregate({
-        where: {
-          status: 'out_for_delivery',
-          deletedAt: null,
-          codAmount: { not: null },
-            },
-        _sum: { totalAmount: true }
-      })
-    ]);
-
-    const kpis = {
-      cashInHand: Money.orZero(cashInHand?.currentBalance),
-      cashInTransit: Money.orZero(cashInTransitData._sum.totalAmount),
-      outstandingReceivables: Money.orZero(arAgents?.currentBalance),
-      cashExpected: Money.orZero(cashExpectedData._sum.totalAmount),
-    };
-
-    const cashAvailableNow = Money.add(kpis.cashInHand, kpis.outstandingReceivables);
-    const totalCashPosition = Money.sum([kpis.cashInHand, kpis.cashInTransit, kpis.outstandingReceivables, kpis.cashExpected]);
-    const totalCashPipeline = Money.sum([cashAvailableNow, kpis.cashInTransit, kpis.cashExpected]);
-
-    // 3. 30-day Forecast
-    const forecast = await this.generateCashFlowForecast();
-
-    // 4. Agent Breakdown (Pending collections)
-    const agentBreakdown = await this.getAgentCashHoldings(requester);
+    const forecast = await buildForecast({ balances, payDays });
+    // Cash buckets (F-928): 1010 and 1015 from the ledger; expected from out-for-delivery orders apart, never added to cash.
+    const buckets = cashBuckets({ cash1010: balances.cash1010, cash1015: balances.cash1015, expected });
 
     return {
-      kpis: { ...kpis, cashAvailableNow, totalCashPosition, totalCashPipeline },
+      kpis: {
+        cashInHand: buckets.cashAtBank,
+        cashInTransit: buckets.cashWithPartners,
+        cashExpected: buckets.expectedFromOutForDelivery,
+        cashAvailableNow: buckets.cashAvailableNow,
+        totalCashPosition: buckets.totalCashPosition,
+        totalCashPipeline: buckets.totalCashPipeline,
+        supplierPayables: balances.payables2050,
+      },
+      payDays: { default: DEFAULT_DAYS_TO_PAY, overall: payDays.overall, fromHistory: payDays.fromHistory, byPartner: Object.fromEntries(payDays.byPartner) },
       forecast,
       agentBreakdown
     };
-  }
-
-  /**
-   * Generate 30-day Cash Flow Forecast
-   * Uses historical data (last 30 days) to project future flows
-   */
-  async generateCashFlowForecast() {
-    const tenantId = getTenantId();
-    const cacheKey = tenantId ?? '__system__';
-    const cached = this.forecastCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < this.FORECAST_CACHE_DURATION_MS) {
-      return cached.data;
-    }
-
-    // Calculate historical averages (last 30 days)
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    const [historicalCollections, historicalExpenses] = await Promise.all([
-      prisma.transaction.aggregate({
-        where: {
-          type: 'cod_collection',
-          status: { in: ['collected', 'deposited', 'reconciled'] },
-          createdAt: { gte: thirtyDaysAgo },
-          order: {
-            deletedAt: null
-          },
-            },
-        _sum: { amount: true }
-      }),
-      prisma.expense.aggregate({
-        where: {
-          expenseDate: { gte: thirtyDaysAgo },
-            },
-        _sum: { amount: true }
-      })
-    ]);
-
-    const avgDailyCollection = Money.div(Money.orZero(historicalCollections._sum.amount), 30);
-    const avgDailyExpense = Money.div(Money.orZero(historicalExpenses._sum.amount), 30);
-
-    // Start with current liquidity (Cash in Hand + Bank if existed)
-    // For this implementation, we'll use Total Cash Position as starting balance
-    const accountTenantId = resolveTenantId(tenantId);
-    const [cashInHand, cashInTransit] = await Promise.all([
-      prisma.account.findUnique({ where: { tenantId_code: { tenantId: accountTenantId, code: GL_ACCOUNTS.CASH_IN_HAND } } }),
-      prisma.account.findUnique({ where: { tenantId_code: { tenantId: accountTenantId, code: GL_ACCOUNTS.CASH_IN_TRANSIT } } }),
-    ]);
-
-    let runningBalance = Money.add(Money.orZero(cashInHand?.currentBalance), Money.orZero(cashInTransit?.currentBalance));
-
-    const forecast: CashFlowForecast[] = [];
-    const today = new Date();
-
-    for (let i = 1; i <= 30; i++) {
-      const forecastDate = new Date(today);
-      forecastDate.setDate(today.getDate() + i);
-
-      runningBalance = Money.add(runningBalance, Money.sub(avgDailyCollection, avgDailyExpense));
-
-      forecast.push({
-        date: forecastDate.toISOString().split('T')[0],
-        expectedCollection: avgDailyCollection,
-        expectedExpense: avgDailyExpense,
-        projectedBalance: runningBalance.lt(0) ? Money.ZERO : runningBalance
-      });
-    }
-
-    this.forecastCache.set(cacheKey, { data: forecast, timestamp: Date.now() });
-    return forecast;
   }
 
   /**
@@ -1699,7 +1478,6 @@ export class FinancialService {
     const csvData = [
       { Section: 'KPIs', Label: 'Cash in Hand', Value: Money.toApi(report.kpis.cashInHand) },
       { Section: 'KPIs', Label: 'Cash in Transit', Value: Money.toApi(report.kpis.cashInTransit) },
-      { Section: 'KPIs', Label: 'Outstanding Receivables', Value: Money.toApi(report.kpis.outstandingReceivables) },
       { Section: 'KPIs', Label: 'Cash Expected', Value: Money.toApi(report.kpis.cashExpected) },
       { Section: 'KPIs', Label: 'Total Cash Position', Value: Money.toApi(report.kpis.totalCashPosition) },
       { Section: '---', Label: '---', Value: '---' },
@@ -1716,7 +1494,8 @@ export class FinancialService {
   }
 
   /**
-   * Get Balance Sheet as of a specific date
+   * Get Balance Sheet as of a specific date. The old fields stay; `statement` holds the F-922 lines. Both come from one
+   * ledger read (statementsService.ledgerAccounts), so they agree, retired accounts included.
    */
   async getBalanceSheet(asOfDateValue?: string | Date) {
     // The whole store day is included: a date-only value or any instant moves to the last millisecond of its store day.
@@ -1725,39 +1504,7 @@ export class FinancialService {
       asOfDateValue instanceof Date ? asOfDateValue.toISOString() : asOfDateValue || new Date().toISOString(),
       'to', zone, { snapToDay: true });
 
-    // Query all active accounts
-    const accounts = await prisma.account.findMany({
-      where: { isActive: true },
-      select: {
-        id: true,
-        code: true,
-        name: true,
-        accountType: true,
-        normalBalance: true
-      }
-    });
-
-    // Use Prisma groupBy to aggregate transactions for all accounts at once
-    const aggregations = await prisma.accountTransaction.groupBy({
-      by: ['accountId'],
-      where: {
-        journalEntry: { isVoided: false, entryDate: { lte: asOfDate } },
-        },
-      _sum: {
-        debitAmount: true,
-        creditAmount: true
-      }
-    });
-
-    // Create a map for quick lookup
-    const aggregationMap = new Map<number, { debit: Money.Money; credit: Money.Money }>();
-    aggregations.forEach(agg => {
-      aggregationMap.set(agg.accountId, {
-        debit: Money.orZero(agg._sum.debitAmount),
-        credit: Money.orZero(agg._sum.creditAmount)
-      });
-    });
-
+    const rows = await ledgerAccounts({ to: asOfDate });
     const categories: Record<string, { accounts: FinancialStatementAccount[]; total: Money.Money }> = {
       asset: { accounts: [], total: Money.ZERO },
       liability: { accounts: [], total: Money.ZERO },
@@ -1765,35 +1512,17 @@ export class FinancialService {
       revenue: { accounts: [], total: Money.ZERO },
       expense: { accounts: [], total: Money.ZERO }
     };
+    for (const a of rows) {
+      // An inactive account is listed only while it still carries a balance
+      if (!a.isActive && !Money.isNonZero(a.balance)) continue;
+      categories[a.type].accounts.push({ id: a.id, code: a.code, name: a.name, balance: a.balance });
+      categories[a.type].total = Money.add(categories[a.type].total, a.balance);
+    }
 
-    // Process accounts using pre-calculated aggregations
-    accounts.forEach(account => {
-      const agg = aggregationMap.get(account.id) || { debit: Money.ZERO, credit: Money.ZERO };
-
-      const balance = account.normalBalance === 'debit'
-        ? Money.sub(agg.debit, agg.credit)
-        : Money.sub(agg.credit, agg.debit);
-
-      const financialAccount = {
-        id: account.id,
-        code: account.code,
-        name: account.name,
-        balance
-      };
-
-      if (categories[account.accountType]) {
-        categories[account.accountType].accounts.push(financialAccount);
-        categories[account.accountType].total = Money.add(categories[account.accountType].total, balance);
-      }
-    });
-
-    // Calculate Retained Earnings: Total Revenue - Total Expense (all time up to asOfDate)
+    // Retained earnings: total revenue less total expense, all time up to asOfDate
     const retainedEarnings = Money.sub(categories.revenue.total, categories.expense.total);
-
-    // Equity: System Equity Accounts + Retained Earnings
     const totalEquity = Money.add(categories.equity.total, retainedEarnings);
     const totalLiabilitiesAndEquity = Money.add(categories.liability.total, totalEquity);
-    const totalAssets = categories.asset.total;
 
     return {
       asOfDate,
@@ -1805,12 +1534,14 @@ export class FinancialService {
         total: totalEquity
       },
       totalLiabilitiesAndEquity,
-      isBalanced: Money.sub(totalAssets, totalLiabilitiesAndEquity).abs().lt('0.01')
-    } as BalanceSheetData;
+      isBalanced: Money.sub(categories.asset.total, totalLiabilitiesAndEquity).abs().lt('0.01'),
+      statement: balanceSheetOf(rows, localDate(asOfDate, zone)),
+    };
   }
 
   /**
-   * Get Profit and Loss Statement for a specific period
+   * Get Profit and Loss Statement for a specific period. The old fields stay; `statement` holds the F-922 income statement.
+   * Both come from one ledger read.
    */
   async getProfitLoss(startDateValue: string | Date, endDateValue: string | Date) {
     // Store-zone days: the start is the start of its store day, the end the last millisecond of its store day.
@@ -1819,40 +1550,7 @@ export class FinancialService {
     const startDate = parseInclusiveBound(asString(startDateValue), 'from', zone);
     const endDate = parseInclusiveBound(asString(endDateValue), 'to', zone, { snapToDay: true });
 
-    // Query all revenue and expense accounts
-    const accounts = await prisma.account.findMany({
-      where: {
-        isActive: true,
-        accountType: { in: ['revenue', 'expense'] }
-      },
-      select: {
-        id: true,
-        code: true,
-        name: true,
-        accountType: true,
-        normalBalance: true
-      }
-    });
-
-    const aggregations = await prisma.accountTransaction.groupBy({
-      by: ['accountId'],
-      where: {
-        journalEntry: { isVoided: false, entryDate: { gte: startDate, lte: endDate } },
-        },
-      _sum: {
-        debitAmount: true,
-        creditAmount: true
-      }
-    });
-
-    const aggregationMap = new Map<number, { debit: Money.Money; credit: Money.Money }>();
-    aggregations.forEach(agg => {
-      aggregationMap.set(agg.accountId, {
-        debit: Money.orZero(agg._sum.debitAmount),
-        credit: Money.orZero(agg._sum.creditAmount)
-      });
-    });
-
+    const rows = await ledgerAccounts({ from: startDate, to: endDate });
     const result: ProfitLossData = {
       startDate,
       endDate,
@@ -1862,36 +1560,19 @@ export class FinancialService {
       grossProfit: Money.ZERO,
       grossMarginPercentage: 0,
       netIncome: Money.ZERO,
-      netMarginPercentage: 0
+      netMarginPercentage: 0,
+      statement: incomeStatementOf(rows, localDate(startDate, zone), localDate(endDate, zone)),
     };
 
-    accounts.forEach(account => {
-      const agg = aggregationMap.get(account.id) || { debit: Money.ZERO, credit: Money.ZERO };
-
-      const balance = account.normalBalance === 'debit'
-        ? Money.sub(agg.debit, agg.credit)
-        : Money.sub(agg.credit, agg.debit);
-
-      const financialAccount = {
-        id: account.id,
-        code: account.code,
-        name: account.name,
-        balance
-      };
-
-      if (account.accountType === 'revenue') {
-        result.revenue.accounts.push(financialAccount);
-        result.revenue.total = Money.add(result.revenue.total, balance);
-      } else if (account.accountType === 'expense') {
-        if (account.code === GL_ACCOUNTS.COGS) {
-          result.cogs.accounts.push(financialAccount);
-          result.cogs.total = Money.add(result.cogs.total, balance);
-        } else {
-          result.expenses.accounts.push(financialAccount);
-          result.expenses.total = Money.add(result.expenses.total, balance);
-        }
-      }
-    });
+    for (const a of rows) {
+      if (a.type !== 'revenue' && a.type !== 'expense') continue;
+      // An inactive account is listed only while it still carries a balance
+      if (!a.isActive && !Money.isNonZero(a.balance)) continue;
+      const line = { id: a.id, code: a.code, name: a.name, balance: a.balance };
+      const bucket = a.type === 'revenue' ? result.revenue : a.code === GL_ACCOUNTS.COGS ? result.cogs : result.expenses;
+      bucket.accounts.push(line);
+      bucket.total = Money.add(bucket.total, a.balance);
+    }
 
     result.grossProfit = Money.sub(result.revenue.total, result.cogs.total);
     result.grossMarginPercentage = Money.percent(result.grossProfit, result.revenue.total);
