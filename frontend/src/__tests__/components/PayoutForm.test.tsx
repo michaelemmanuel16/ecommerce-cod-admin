@@ -31,13 +31,14 @@ const PAST: PayoutRow = {
 };
 
 const refuse = (message: string, status = 400) => Object.assign(new axios.AxiosError('refused'), { response: { status, data: { error: message } } });
-const open = () => render(<PayoutForm personId={7} onClose={vi.fn()} onRecorded={onRecorded} />);
+const onClose = vi.fn();
+const open = () => render(<PayoutForm personId={7} onClose={onClose} onRecorded={onRecorded} />);
 const onRecorded = vi.fn();
 const save = () => screen.getByRole('button', { name: /Record payout/ });
 const amountField = () => screen.getByLabelText('Amount') as HTMLInputElement;
 
 beforeEach(() => {
-  [owed, history, record, onRecorded].forEach((m) => m.mockReset());
+  [owed, history, record, onRecorded, onClose].forEach((m) => m.mockReset());
   canCreate = true;
   useConfigStore.setState({ currency: 'GHS' });
   owed.mockResolvedValue(ADWOA);
@@ -140,8 +141,18 @@ describe('PayoutForm (M5-T38, F-913)', () => {
     open();
     await screen.findByRole('region', { name: 'Owed entries' });
     expect(save()).toBeDisabled();
-    await userEvent.hover(save().parentElement!);
-    expect(await screen.findByText('You need the payouts permission to record a payout')).toBeInTheDocument();
+    expect(screen.getAllByText('You do not have permission to record payouts.').length).toBeGreaterThan(0);
+    await userEvent.hover(save().closest('span[tabindex]')!);
+    expect(await screen.findAllByText('You do not have permission to record payouts.')).toHaveLength(2);
+  });
+
+  it('the close X has a name, and Escape closes the form', async () => {
+    open();
+    await screen.findByRole('region', { name: 'Owed entries' });
+    await userEvent.click(screen.getAllByRole('button', { name: 'Close' })[0]);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledTimes(2);
   });
 
   it('shows why the details did not load', async () => {

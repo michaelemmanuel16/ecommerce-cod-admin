@@ -38,14 +38,17 @@ describe('Rep commissions tab (M5-T38, F-914)', () => {
     const table = await screen.findByRole('region', { name: 'Rep commissions' });
     const adwoa = within(table).getByText('Adwoa Mensah').closest('tr')!;
     expect(within(adwoa).getByText('GH₵2,034')).toBeInTheDocument();
-    expect(within(adwoa).getAllByRole('cell')[7]).toHaveTextContent('GH₵600'); // Paid in month
+    expect(within(adwoa).getAllByRole('cell')[4]).toHaveTextContent('GH₵600'); // Paid in month
     expect(within(adwoa).getByText('253')).toBeInTheDocument();
     const nana = within(table).getByText('Nana Boateng').closest('tr')!;
-    expect(within(nana).getAllByRole('cell')[8]).toHaveTextContent('GH₵134'); // the Owed column
+    expect(within(nana).getAllByRole('cell')[5]).toHaveTextContent('GH₵134'); // the Owed column
     expect(within(nana).getByText('—')).toBeInTheDocument(); // no payout yet
     expect(screen.getByTestId('tile-owed')).toHaveTextContent('GH₵2,168');
     expect(screen.getByTestId('tile-paid-in-month')).toHaveTextContent('GH₵600');
     expect(screen.getByRole('columnheader', { name: 'Paid in month' })).toBeInTheDocument();
+    // Eight columns fit a 1440 px panel: the breakdown is in the payout form, not the table
+    expect(screen.queryByRole('columnheader', { name: 'Upsell reward' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('columnheader')).toHaveLength(8);
   });
 
   it('asks for the current month to start, and for another month or the inactive reps when the user changes them', async () => {
@@ -71,8 +74,10 @@ describe('Rep commissions tab (M5-T38, F-914)', () => {
     render(<RepCommissions />);
     const button = await screen.findByRole('button', { name: 'Record payout for Adwoa Mensah' });
     expect(button).toBeDisabled();
-    await userEvent.hover(button.parentElement!);
-    expect(await screen.findAllByText('You need the payouts permission to record a payout')).not.toHaveLength(0);
+    // The reason is on screen for screen readers and shows as a tooltip on hover and focus
+    expect(screen.getAllByText('You do not have permission to record payouts.').length).toBeGreaterThan(0);
+    await userEvent.hover(button.closest('span[tabindex]')!);
+    expect(await screen.findAllByText('You do not have permission to record payouts.')).toHaveLength(3); // two screen-reader lines (one per rep) and the tooltip
   });
 
   it('shows why the list did not load', async () => {

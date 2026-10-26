@@ -30,7 +30,8 @@ interface Row {
 /** The form starts from the rule in force: its amount and basis, dated today (a new rule closes the old one on its date). */
 const startRows = (data: FeeRulesResponse): Record<FeeOutcome, Row> =>
   Object.fromEntries(
-    FEE_OUTCOMES.map((o) => [o, { amount: data.current[o]?.amount ?? '', basis: data.current[o]?.basis ?? 'flat', validFrom: todayYmd() }]),
+    // The API client turns money strings into numbers (utils/money normalizeMoney), so the input value is made a string here, once
+    FEE_OUTCOMES.map((o) => [o, { amount: String(data.current[o]?.amount ?? ''), basis: data.current[o]?.basis ?? 'flat', validFrom: todayYmd() }]),
   ) as Record<FeeOutcome, Row>;
 
 /**
@@ -136,7 +137,7 @@ export function FeeRules({ partnerId, canEdit, onSaved }: FeeRulesProps) {
           })}
         </div>
         <div className="dfoot">
-          {canEdit ? saveButton : <Tooltip label={`Only the owner and admins change ${DELIVERY_FEE.toLowerCase()}s`}><span>{saveButton}</span></Tooltip>}
+          {canEdit ? saveButton : <Tooltip label={`You do not have permission to change ${DELIVERY_FEE.toLowerCase()}s.`}><span>{saveButton}</span></Tooltip>}
         </div>
       </section>
 
@@ -154,7 +155,7 @@ export function FeeRules({ partnerId, canEdit, onSaved }: FeeRulesProps) {
       <section>
         <h4>History of {DELIVERY_FEE.toLowerCase()} rules</h4>
         {data.rules.length === 0 ? (
-          <p className="mut">No {DELIVERY_FEE.toLowerCase()} saved yet. Orders of this partner carry a {DELIVERY_FEE.toLowerCase()} of {formatCurrency(0)} until one is saved.</p>
+          <p className="mut">No {DELIVERY_FEE.toLowerCase()} saved yet. New orders of this partner carry a {DELIVERY_FEE.toLowerCase()} of {formatCurrency(0)} until one is saved.</p>
         ) : (
           <div className="dfr-hist" role="region" aria-label={`History of ${DELIVERY_FEE.toLowerCase()} rules`} tabIndex={0}>
             <table>

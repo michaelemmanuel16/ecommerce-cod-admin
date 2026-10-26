@@ -6,8 +6,7 @@ import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
 import { Table, TableBody, TableCell, TableHead, TableRow } from '../ui/Table';
-import { Tooltip } from '../ui/Tooltip';
-import { usePermissions } from '../../hooks/usePermissions';
+import { GuardedButton } from '../financial/GuardedButton';
 import { payoutsService, type CommissionKind, type OwedPreview, type PayoutRow } from '../../services/payouts.service';
 import { apiErrorMessage } from '../../utils/apiError';
 import { formatCurrency, formatDate, todayYmd } from '../../utils/format';
@@ -44,9 +43,6 @@ function blockedReason(preview: OwedPreview, ticked: Set<number>, tickedCents: n
  * refusal from the server ("Owed is GH₵2,034", "Already paid") shows in the form. History of the person's payouts is below.
  */
 export const PayoutForm: React.FC<PayoutFormProps> = ({ personId, personName, onClose, onRecorded }) => {
-  const { can } = usePermissions();
-  const canCreate = can('payouts', 'create');
-
   const [preview, setPreview] = useState<OwedPreview | null>(null);
   const [history, setHistory] = useState<PayoutRow[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -133,15 +129,9 @@ export const PayoutForm: React.FC<PayoutFormProps> = ({ personId, personName, on
         { label: 'Already paid', value: preview.paid },
       ]
     : [];
-  const saveButton = (
-    <Button type="button" onClick={() => void save()} disabled={!canCreate || !!blocked} isLoading={saving}>
-      <Wallet className="w-4 h-4 mr-2" />
-      Record payout
-    </Button>
-  );
 
   return (
-    <Modal isOpen onClose={onClose} title={`Record payout: ${name}`} size="xl">
+    <Modal isOpen onClose={onClose} title={`Record payout: ${name}`} size="xl" closeOnEscape>
       <div className="p-6 space-y-6 text-gray-900">
         {loadError ? (
           <p role="alert" className="text-sm text-red-600">{loadError}</p>
@@ -212,7 +202,10 @@ export const PayoutForm: React.FC<PayoutFormProps> = ({ personId, personName, on
               {saveError && <p role="alert" className="text-sm text-red-600 md:col-span-2">{saveError}</p>}
               <div className="md:col-span-2 flex justify-end gap-2">
                 <Button type="button" variant="outline" onClick={onClose}>Close</Button>
-                {canCreate ? saveButton : <Tooltip content="You need the payouts permission to record a payout">{saveButton}</Tooltip>}
+                <GuardedButton perm="recordPayout" type="button" onClick={() => void save()} disabled={!!blocked} isLoading={saving}>
+                  <Wallet className="w-4 h-4 mr-2" />
+                  Record payout
+                </GuardedButton>
               </div>
             </form>
 

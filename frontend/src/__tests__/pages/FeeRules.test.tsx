@@ -34,6 +34,32 @@ beforeEach(() => {
 });
 
 describe('FeeRules (M5-T32, F-703)', () => {
+  it('renders saved rules whose amounts arrive as numbers (the API client turns money strings into numbers) and runs a save', async () => {
+    // What GET /fee-rules gives the page after normalizeMoney: amount is a number, not "25.00"
+    const asNumbers = (amount: number, id: number, outcome: FeeOutcome) => ({ ...rule(id, outcome, ''), amount: amount as unknown as string });
+    feeRules.mockResolvedValue({
+      rules: [asNumbers(25, 1, 'delivered'), asNumbers(5, 2, 'failed')],
+      current: { delivered: asNumbers(25, 1, 'delivered'), failed: asNumbers(5, 2, 'failed'), returned: null },
+      weightedFee: 25 as unknown as string, deliveredOrders: 3,
+    });
+    addFeeRules.mockResolvedValue({
+      rules: [asNumbers(3, 5, 'returned'), asNumbers(25, 1, 'delivered'), asNumbers(5, 2, 'failed')],
+      current: { delivered: asNumbers(25, 1, 'delivered'), failed: asNumbers(5, 2, 'failed'), returned: asNumbers(3, 5, 'returned') },
+      weightedFee: 25 as unknown as string, deliveredOrders: 3,
+    });
+    open();
+    expect(await screen.findByLabelText('Delivered delivery fee')).toHaveValue(25);
+    expect(screen.getByLabelText('Failed delivery fee')).toHaveValue(5);
+    await userEvent.type(screen.getByLabelText('Returned delivery fee'), '3');
+    await userEvent.click(screen.getByRole('button', { name: 'Save delivery fees' }));
+    await waitFor(() => expect(addFeeRules).toHaveBeenCalledWith(2, [expect.objectContaining({ outcome: 'returned', amount: '3' })]));
+    // After the save the rows are built from the answer (numbers again) and the screen still renders and can be edited
+    expect(await screen.findByText(/Now GH₵3 since/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Returned delivery fee')).toHaveValue(3);
+    await userEvent.type(screen.getByLabelText('Failed delivery fee'), '0');
+    expect(screen.getByLabelText('Failed delivery fee')).toHaveValue(50);
+  });
+
   it('the owner sets Kofi to 25 delivered and 5 failed: one request with both, and both show as saved', async () => {
     const saved: FeeRulesResponse = {
       rules: [rule(1, 'delivered', '25.00', '2026-10-26'), rule(2, 'failed', '5.00', '2026-10-26')],
@@ -142,7 +168,7 @@ describe('FeeRules (M5-T32, F-703)', () => {
     open(false);
     expect(await screen.findByLabelText('Delivered delivery fee')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Save delivery fees' })).toBeDisabled();
-    expect(screen.getByText('Only the owner and admins change delivery fees')).toBeInTheDocument();
+    expect(screen.getByText('You do not have permission to change delivery fees.')).toBeInTheDocument();
   });
 
   it('refuses a negative amount before sending', async () => {

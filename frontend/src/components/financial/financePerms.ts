@@ -9,6 +9,7 @@ export const FINANCE_PERMS = {
   editExpense: { resource: 'expenses', action: 'edit', reason: 'You do not have permission to edit expenses.' },
   deleteExpense: { resource: 'expenses', action: 'delete', reason: 'You do not have permission to delete expenses.' },
   postJournal: { resource: 'journal', action: 'post', reason: 'You do not have permission to post journal entries.' },
+  recordPayout: { resource: 'payouts', action: 'create', reason: 'You do not have permission to record payouts.' },
   voidJournal: { resource: 'journal', action: 'void', reason: 'You do not have permission to void journal entries.' },
 } as const satisfies Record<string, { resource: Resource; action: Action; reason: string }>;
 
