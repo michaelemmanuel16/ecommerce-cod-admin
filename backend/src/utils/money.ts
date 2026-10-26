@@ -119,10 +119,15 @@ export function percent(a: MoneyInput, b: MoneyInput): number {
   return gt(b, 0) ? mul(div(a, b), 100).toNumber() : 0;
 }
 
-/** "GHS 1,234.50": 2 decimals and thousands separators, no float conversion. */
-export function format(a: MoneyInput, currency: string): string {
+/**
+ * "GHS 1,234.50": 2 decimals and thousands separators, no float conversion.
+ * `symbol` replaces the "GHS " prefix ("GH₵"); `wholeIfZero` drops the decimals of a whole amount ("GH₵2,034").
+ */
+export function format(a: MoneyInput, currency: string, opts: { symbol?: string; wholeIfZero?: boolean } = {}): string {
   const [whole, decimals] = toApi(a).split('.');
-  return `${currency} ${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${decimals}`;
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const prefix = opts.symbol ?? `${currency} `;
+  return opts.wholeIfZero && /^0+$/.test(decimals) ? `${prefix}${grouped}` : `${prefix}${grouped}.${decimals}`;
 }
 
 /**
