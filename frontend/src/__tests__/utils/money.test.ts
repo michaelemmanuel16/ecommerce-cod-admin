@@ -35,6 +35,12 @@ describe('normalizeMoney', () => {
     expect(data.orders[0].id).toBe('7');
     expect(data.summary).toEqual({ profit: 0, totalRevenue: 12, code: '1000', bucket_0_1: 5, depositPaid: 20, codPending: 3.5, customerId: '9' });
   });
+  it('converts the per-order amount of a payout preview', () => {
+    const data = { orders: [{ orderId: 101, applied: '200.00', clearsOrder: true }], unappliedAmount: '50.00' };
+    normalizeMoney(data);
+    expect(data.orders[0]).toEqual({ orderId: 101, applied: 200, clearsOrder: true });
+    expect(data.unappliedAmount).toBe(50);
+  });
   it('tolerates null and primitives', () => {
     expect(normalizeMoney(null)).toBeNull();
     expect(normalizeMoney('249.00')).toBe('249.00');
