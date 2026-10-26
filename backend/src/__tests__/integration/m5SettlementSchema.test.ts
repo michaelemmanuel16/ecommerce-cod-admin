@@ -58,4 +58,25 @@ describe('M5 settlement schema', () => {
     expect(closed.status).toBe('written_off');
     expect(closed.explanation).toBe('test');
   });
+
+  it('an expense defaults to source manual and takes paidFrom and a journal entry link', async () => {
+    const { a } = pair;
+    const expense = await prismaBase.expense.create({
+      data: { tenantId: a.id, category: 'Other', amount: '10', description: 'm5 test', expenseDate: new Date('2026-10-01'), paidFrom: 'momo' },
+    });
+    expect(expense.source).toBe('manual');
+    expect(expense.paidFrom).toBe('momo');
+    const linked = await prismaBase.expense.update({ where: { id: expense.id }, data: { journalEntryId: a.ids.journalEntry } });
+    expect(linked.journalEntryId).toBe(a.ids.journalEntry);
+    await prismaBase.expense.delete({ where: { id: expense.id } });
+  });
+
+  it('system config keeps period notes', async () => {
+    const { a } = pair;
+    const notes = { '2026-08': 'Booked with the older cost per set.' };
+    const config = await prismaBase.systemConfig.upsert({
+      where: { tenantId: a.id }, create: { tenantId: a.id, periodNotes: notes }, update: { periodNotes: notes },
+    });
+    expect(config.periodNotes).toEqual(notes);
+  });
 });
