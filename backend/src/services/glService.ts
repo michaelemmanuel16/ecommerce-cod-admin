@@ -67,24 +67,28 @@ interface AccountLedgerFilters {
   limit?: number;
 }
 
-/** Source types the journal void route may reverse. paystack_payout stays because voiding it frees its reference (F-934). */
-const VOIDABLE_BY_HAND: JournalSourceType[] = [JournalSourceType.manual, JournalSourceType.paystack_payout];
-
-const SOURCE_OWNER: Partial<Record<JournalSourceType, string>> = {
-  expense: 'an expense', payout: 'a payout', agent_deposit: 'a deposit', agent_collection: 'a collection',
-  order_delivery: 'an order', failed_delivery: 'an order', order_return: 'an order', order_failed_delivery: 'an order',
-  inventory_purchase: 'a shipment', inventory_claim: 'a shipment', digital_sale: 'a digital order',
-  period_close: 'the period close', reversal: 'a reversal',
-};
-const SOURCE_UNDO: Partial<Record<JournalSourceType, string>> = {
-  expense: 'Edit or delete the expense instead.',
-  payout: 'Reverse the payout instead.',
-  agent_deposit: 'Reject the deposit instead.',
-  agent_collection: 'Change the collection instead.',
-  order_delivery: 'Change the order status instead.', failed_delivery: 'Change the order status instead.',
-  order_return: 'Change the order status instead.', order_failed_delivery: 'Change the order status instead.',
-  inventory_purchase: 'Change the shipment instead.', inventory_claim: 'Change the shipment instead.',
-  reversal: 'A reversal cannot be voided.',
+/**
+ * What the journal void route does with an entry of each source type. Only a hand-made entry (and a Paystack
+ * payout, whose reference this frees for a corrected payout) is undone here; an automatic posting is reversed by
+ * the service that owns its source record, or the ledger and the record would disagree. Exhaustive on purpose:
+ * a new JournalSourceType value does not compile until it is listed.
+ */
+const VOID_RULES: Record<JournalSourceType, { voidableByHand: boolean; hint: string }> = {
+  manual: { voidableByHand: true, hint: '' },
+  paystack_payout: { voidableByHand: true, hint: '' },
+  expense: { voidableByHand: false, hint: 'This entry was posted by an expense. Edit or delete the expense instead.' },
+  payout: { voidableByHand: false, hint: 'This entry was posted by a payout. Reverse the payout instead.' },
+  agent_deposit: { voidableByHand: false, hint: 'This entry was posted by a deposit. Reject the deposit instead.' },
+  agent_collection: { voidableByHand: false, hint: 'This entry was posted by a collection. Change the collection instead.' },
+  order_delivery: { voidableByHand: false, hint: 'This entry was posted by an order. Change the order status instead.' },
+  failed_delivery: { voidableByHand: false, hint: 'This entry was posted by an order. Change the order status instead.' },
+  order_return: { voidableByHand: false, hint: 'This entry was posted by an order. Change the order status instead.' },
+  order_failed_delivery: { voidableByHand: false, hint: 'This entry was posted by an order. Change the order status instead.' },
+  inventory_purchase: { voidableByHand: false, hint: 'This entry was posted by a shipment. Change the shipment instead.' },
+  inventory_claim: { voidableByHand: false, hint: 'This entry was posted by a shipment. Change the shipment instead.' },
+  digital_sale: { voidableByHand: false, hint: 'This entry was posted by a digital order. Undo it where it was created.' },
+  period_close: { voidableByHand: false, hint: 'This entry was posted by the period close. Undo it where it was created.' },
+  reversal: { voidableByHand: false, hint: 'This entry was posted by a reversal. A reversal cannot be voided.' },
 };
 
 export class GLService {
@@ -1030,16 +1034,8 @@ export class GLService {
         throw new AppError('Journal entry is already voided', 400);
       }
 
-      // Only a hand-made entry (and a Paystack payout, whose reference this frees for a corrected payout) is undone
-      // here. An automatic posting is reversed by the service that owns its source record, or the ledger and the
-      // record would disagree (an expense with no entry).
-      if (!VOIDABLE_BY_HAND.includes(entry.sourceType)) {
-        throw new AppError(
-          `This entry was posted by ${SOURCE_OWNER[entry.sourceType] ?? 'the system'}. ${SOURCE_UNDO[entry.sourceType] ?? 'Undo it where it was created.'}`,
-          400,
-          'GL_ENTRY_NOT_MANUAL'
-        );
-      }
+      const rule = VOID_RULES[entry.sourceType];
+      if (!rule.voidableByHand) throw new AppError(rule.hint, 400, 'GL_ENTRY_NOT_MANUAL');
 
       // The reversing entry inherits the tenant of the entry being reversed —
       // both parent and children must be stamped (the extension only covers
@@ -1050,8 +1046,25 @@ export class GLService {
         throw new AppError('Cannot void a journal entry that has no tenant.', 400);
       }
 
-      // Create reversing entry with swapped debits/credits
+      // Reversing lines with swapped debits/credits. Each line's running balance is computed first, as in createJournalEntry.
       const reversingEntryNumber = await this.generateEntryNumber(tx as Prisma.TransactionClient);
+      const reversingLines = [];
+      for (const t of entry.transactions) {
+        const runningBalance = await this.updateAccountBalance(
+          t.accountId,
+          t.creditAmount, // Swapped
+          t.debitAmount,  // Swapped
+          tx as Prisma.TransactionClient
+        );
+        reversingLines.push({
+          accountId: t.accountId,
+          debitAmount: t.creditAmount,
+          creditAmount: t.debitAmount,
+          runningBalance,
+          description: `Reversal of ${entry.entryNumber}`,
+          tenantId
+        });
+      }
       const reversingEntry = await tx.journalEntry.create({
         data: {
           tenantId,
@@ -1061,32 +1074,9 @@ export class GLService {
           sourceType: JournalSourceType.reversal,
           sourceId: entry.id,
           createdBy: requester?.id || 0,
-                    transactions: {
-            create: entry.transactions.map(t => ({
-              accountId: t.accountId,
-              debitAmount: t.creditAmount,  // Swapped
-              creditAmount: t.debitAmount,   // Swapped
-              description: `Reversal of ${entry.entryNumber}`,
-              tenantId
-            }))
-          }
-        },
-        include: {
-          transactions: true
+          transactions: { create: reversingLines }
         }
       });
-
-      // Update balances for reversal
-      for (const txn of reversingEntry.transactions) {
-        const runningBalance = await this.updateAccountBalance(
-          txn.accountId,
-          txn.debitAmount,
-          txn.creditAmount,
-          tx as Prisma.TransactionClient
-        );
-        // The ledger shows this balance next to the line (F-921)
-        await tx.accountTransaction.update({ where: { id: txn.id }, data: { runningBalance } });
-      }
 
       // Mark original as voided
       const voided = await tx.journalEntry.update({

@@ -18,6 +18,14 @@ import agingService from './agingService';
 export const FINANCE_REPORTS = ['profit-loss', 'agent-aging', 'general-ledger', 'cash-flow'] as const;
 export type FinanceReport = (typeof FINANCE_REPORTS)[number];
 
+/** File name stem of each report. */
+const REPORT_FILE_STEM: Record<FinanceReport, string> = {
+  'profit-loss': 'profit-and-loss',
+  'agent-aging': 'agent-aging',
+  'general-ledger': 'general-ledger',
+  'cash-flow': 'cash-flow-forecast',
+};
+
 export interface ExportRange {
   startDate?: string;
   endDate?: string;
@@ -45,15 +53,9 @@ export function readReport(value: unknown): FinanceReport {
 /** File name without extension. It carries the range, or today's date for a report that is a snapshot. */
 export function exportFileName(report: FinanceReport, range: ExportRange): string {
   const today = localDate(new Date(), getStoreTimeZone(getTenantId()));
-  const names: Record<FinanceReport, string> = {
-    'profit-loss': 'profit-and-loss',
-    'agent-aging': 'agent-aging',
-    'general-ledger': 'general-ledger',
-    'cash-flow': 'cash-flow-forecast',
-  };
   const from = range.startDate ?? (report === 'general-ledger' ? 'start' : today);
   const to = range.endDate ?? today;
-  return `${names[report]}_${from.slice(0, 10)}_to_${to.slice(0, 10)}`;
+  return `${REPORT_FILE_STEM[report]}_${from.slice(0, 10)}_to_${to.slice(0, 10)}`;
 }
 
 async function* once<T>(rows: T[]): AsyncGenerator<T[]> {
@@ -156,15 +158,23 @@ export function ledgerWhere(input: ExportInput): Prisma.AccountTransactionWhereI
 
 export const countLedgerLines = (input: ExportInput): Promise<number> => prisma.accountTransaction.count({ where: ledgerWhere(input) });
 
-/** Ledger lines by entry date then id, in batches that follow the last id, so memory stays flat. */
+/** True when the ledger has more lines than the job limit. One probe row, not a count of every line. */
+export async function ledgerOverLimit(input: ExportInput): Promise<boolean> {
+  const probe = await prisma.accountTransaction.findMany({ where: ledgerWhere(input), select: { id: true }, orderBy: { id: 'asc' }, skip: ledgerJobLines(), take: 1 });
+  return probe.length > 0;
+}
+
+/** Ledger lines by (entry date, id), in batches that continue after the last line seen (keyset paging), so memory stays flat. */
 async function* ledgerBatches(input: ExportInput): AsyncGenerator<LedgerLine[]> {
-  const where = ledgerWhere(input);
-  let cursor: number | undefined;
+  const base = ledgerWhere(input);
+  let last: { date: Date; id: number } | undefined;
   for (;;) {
+    const after: Prisma.AccountTransactionWhereInput[] = last
+      ? [{ OR: [{ journalEntry: { entryDate: { gt: last.date } } }, { journalEntry: { entryDate: last.date }, id: { gt: last.id } }] }]
+      : [];
     const batch: LedgerLine[] = await prisma.accountTransaction.findMany({
-      where,
+      where: { AND: [base, ...after] },
       take: LEDGER_BATCH,
-      ...(cursor !== undefined && { cursor: { id: cursor }, skip: 1 }),
       orderBy: [{ journalEntry: { entryDate: 'asc' } }, { id: 'asc' }],
       include: {
         account: { select: { code: true, name: true } },
@@ -174,7 +184,8 @@ async function* ledgerBatches(input: ExportInput): AsyncGenerator<LedgerLine[]> 
     if (batch.length === 0) return;
     yield batch;
     if (batch.length < LEDGER_BATCH) return;
-    cursor = batch[batch.length - 1].id;
+    const tail = batch[batch.length - 1];
+    last = { date: tail.journalEntry.entryDate, id: tail.id };
   }
 }
 

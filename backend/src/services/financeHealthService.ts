@@ -27,6 +27,7 @@ type Found = { count: number; sample: Array<string | number> };
 /** Results shared by several rules, read once per run. */
 interface HealthContext {
   balances: ReturnType<typeof GLAccountService.verifyAllAccountBalances>;
+  ledger: ReturnType<typeof getLedgerHealth>;
 }
 interface HealthCheck {
   rule: string;
@@ -41,15 +42,26 @@ export const HEALTH_CHECKS: HealthCheck[] = [
     rule: 'unbalanced_entries',
     label: 'Journal entries where debits differ from credits',
     run: async () => {
-      const rows = await prisma.$queryRaw<Array<{ entry_number: string }>>(Prisma.sql`
+      const tenantId = resolveTenantId();
+      const tolerance = BALANCE_TOLERANCE.toString();
+      // One grouped query; the count is a subquery so only SAMPLE_SIZE entry numbers come back.
+      const [{ n }] = await prisma.$queryRaw<Array<{ n: number }>>(Prisma.sql`
+        SELECT COUNT(*)::int AS n FROM (
+          SELECT 1 FROM account_transactions t
+          WHERE t.tenant_id = ${tenantId}
+          GROUP BY t.journal_entry_id
+          HAVING ABS(SUM(t.debit_amount) - SUM(t.credit_amount)) > ${tolerance}::numeric
+        ) bad`);
+      const sample = await prisma.$queryRaw<Array<{ entry_number: string }>>(Prisma.sql`
         SELECT j.entry_number
         FROM journal_entries j
         JOIN account_transactions t ON t.journal_entry_id = j.id
-        WHERE j.tenant_id = ${resolveTenantId()}
+        WHERE j.tenant_id = ${tenantId}
         GROUP BY j.id, j.entry_number
-        HAVING ABS(SUM(t.debit_amount) - SUM(t.credit_amount)) > ${BALANCE_TOLERANCE.toString()}::numeric
-        ORDER BY j.id`);
-      return found(rows.length, rows.map((r) => r.entry_number));
+        HAVING ABS(SUM(t.debit_amount) - SUM(t.credit_amount)) > ${tolerance}::numeric
+        ORDER BY j.id
+        LIMIT ${SAMPLE_SIZE}`);
+      return found(n, sample.map((r) => r.entry_number));
     },
   },
   {
@@ -64,12 +76,12 @@ export const HEALTH_CHECKS: HealthCheck[] = [
     rule: 'expense_without_entry',
     label: 'Manual expenses with no live ledger entry',
     run: async () => {
-      const rows = await prisma.expense.findMany({
-        where: { source: 'manual', OR: [{ journalEntryId: null }, { journalEntry: { isVoided: true } }] },
-        select: { id: true },
-        orderBy: { id: 'asc' },
-      });
-      return found(rows.length, rows.map((r) => r.id));
+      const where = { source: 'manual' as const, OR: [{ journalEntryId: null }, { journalEntry: { isVoided: true } }] };
+      const [count, rows] = await Promise.all([
+        prisma.expense.count({ where }),
+        prisma.expense.findMany({ where, select: { id: true }, orderBy: { id: 'asc' }, take: SAMPLE_SIZE }),
+      ]);
+      return found(count, rows.map((r) => r.id));
     },
   },
   {
@@ -95,8 +107,8 @@ export const HEALTH_CHECKS: HealthCheck[] = [
   {
     rule: 'open_ledger_gap_days',
     label: 'Days where delivered revenue and the ledger differ (open ledger_gap Findings)',
-    run: async () => {
-      const { openGaps } = await getLedgerHealth();
+    run: async (ctx) => {
+      const { openGaps } = await ctx.ledger;
       return found(openGaps.length, openGaps.map((g) => g.day));
     },
   },
@@ -122,11 +134,11 @@ export interface FinanceHealthReport {
 
 /** Run every rule for the current tenant. A rule that throws is reported as a failure with count -1, never hidden. */
 export async function runFinanceHealth(): Promise<FinanceHealthReport> {
-  const ctx: HealthContext = { balances: GLAccountService.verifyAllAccountBalances() };
+  const ctx: HealthContext = { balances: GLAccountService.verifyAllAccountBalances(), ledger: getLedgerHealth() };
   const [balanceReport, journalCount, ledgerCheck, checks] = await Promise.all([
     ctx.balances,
     prisma.journalEntry.count({ where: { createdAt: { gte: addDays(new Date(), -1) } } }),
-    getLedgerHealth(),
+    ctx.ledger,
     Promise.all(HEALTH_CHECKS.map(async (c): Promise<HealthCheckResult> => {
       try {
         const { count, sample } = await c.run(ctx);

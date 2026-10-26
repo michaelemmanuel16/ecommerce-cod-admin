@@ -30,7 +30,7 @@ import { deliveredRevenue } from '../../services/kpi/revenue';
 import { FinancialService } from '../../services/financialService';
 import { GLAutomationService } from '../../services/glAutomationService';
 import { AppError } from '../../middleware/errorHandler';
-import { PaymentStatus } from '@prisma/client';
+import { PaymentStatus, Prisma } from '@prisma/client';
 import * as Money from '../../utils/money';
 
 describe('FinancialService', () => {
@@ -438,42 +438,32 @@ describe('FinancialService', () => {
   });
 
   describe('getExpenseBreakdown', () => {
-    it('should group expenses by category', async () => {
-      const mockExpenses = [
-        { category: 'Delivery', amount: 200 },
-        { category: 'Delivery', amount: 800 },
-        { category: 'Marketing', amount: 500 },
-        { category: 'Operations', amount: 800 }
-      ];
-
-      prismaMock.expense.findMany.mockResolvedValue(mockExpenses as any);
+    it('groups expenses by category in the database, largest first', async () => {
+      prismaMock.expense.groupBy.mockResolvedValue([
+        { category: 'Transport', _sum: { amount: 1000 }, _count: { _all: 2 } },
+        { category: 'Marketing', _sum: { amount: 500 }, _count: { _all: 1 } },
+        { category: 'Other', _sum: { amount: 800 }, _count: { _all: 1 } },
+      ] as any);
 
       const breakdown = await financialService.getExpenseBreakdown({
         startDate: new Date('2024-01-01'),
         endDate: new Date('2024-01-31')
       });
 
-      expect(breakdown).toHaveLength(3);
-      expect(Money.toApi(breakdown.find(b => b.category === 'Delivery')!.totalAmount)).toBe('1000.00');
-      expect(Money.toApi(breakdown.find(b => b.category === 'Marketing')!.totalAmount)).toBe('500.00');
-      expect(Money.toApi(breakdown.find(b => b.category === 'Operations')!.totalAmount)).toBe('800.00');
-
-      // Should be sorted by amount (descending)
-      expect(Money.toApi(breakdown[0].totalAmount)).toBe('1000.00');
-      expect(Money.toApi(breakdown[1].totalAmount)).toBe('800.00');
+      expect(breakdown.map((b) => [b.category, Money.toApi(b.totalAmount), b.count])).toEqual([
+        ['Transport', '1000.00', 2], ['Other', '800.00', 1], ['Marketing', '500.00', 1]
+      ]);
+      expect((prismaMock.expense.groupBy.mock.calls[0][0] as any).by).toEqual(['category']);
     });
   });
 
   describe('expense totals use exact money arithmetic (F-932)', () => {
-    it('sums 0.1 x 1000 in an expense total to "100.00"', async () => {
-      // 0.1 summed 1000 times as a float is 99.9999999999986
-      const mockExpenses = Array.from({ length: 1000 }, () => ({ category: 'Delivery', amount: 0.1 }));
-      prismaMock.expense.findMany.mockResolvedValue(mockExpenses as any);
+    it('keeps a database sum of 0.1 x 1000 exact: "100.00"', async () => {
+      prismaMock.expense.groupBy.mockResolvedValue([{ category: 'Other', _sum: { amount: new Prisma.Decimal('100') }, _count: { _all: 1000 } }] as any);
 
       const breakdown = await financialService.getExpenseBreakdown({});
 
       expect(Money.toApi(breakdown[0].totalAmount)).toBe('100.00');
-      expect(mockExpenses.reduce((sum, e) => sum + e.amount, 0)).not.toBe(100);
     });
 
     it('sums 0.1 x 1000 in a daily financial report to "100.00"', async () => {

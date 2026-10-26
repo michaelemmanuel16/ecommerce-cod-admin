@@ -7,7 +7,7 @@ import { getTenantId } from '../utils/tenantContext';
 import { readId } from '../utils/kpiRequest';
 import { readFormat, streamExport } from '../services/exportStream';
 import {
-  buildReport, countLedgerLines, exportFileName, ExportInput, ledgerJobLines, readReport,
+  buildReport, countLedgerLines, exportFileName, ExportInput, ledgerOverLimit, readReport,
 } from '../services/financeExportService';
 import { enqueueFinanceJob, exportFolder, getFinanceJob } from '../queues/financeJobQueue';
 
@@ -22,10 +22,10 @@ const dateParam = (value: unknown, label: string): string | undefined => {
  * Start a background ledger export and answer 202 with the job id. Used when the ledger is over the line limit.
  * Exported for the per-account ledger export in glController.
  */
-export async function startLedgerJob(req: AuthRequest, res: Response, input: ExportInput, format: 'csv' | 'xlsx'): Promise<boolean> {
+export async function startLedgerJob(res: Response, input: ExportInput, format: 'csv' | 'xlsx'): Promise<boolean> {
+  if (!(await ledgerOverLimit(input))) return false;
   const lines = await countLedgerLines(input);
-  if (lines <= ledgerJobLines()) return false;
-  const jobId = await enqueueFinanceJob('ledger-export', { tenantId: getTenantId()!, userId: req.user!.id, format, input });
+  const jobId = await enqueueFinanceJob('ledger-export', { tenantId: getTenantId()!, format, input });
   res.status(202).json({ jobId, status: 'queued', lines, statusUrl: `/api/financial/jobs/${jobId}` });
   return true;
 }
@@ -42,7 +42,7 @@ export const exportFinanceReport = async (req: AuthRequest, res: Response): Prom
     endDate: dateParam(req.query.endDate, 'endDate'),
     accountId: report === 'general-ledger' ? readId(req.query.accountId, 'accountId') : undefined,
   };
-  if (report === 'general-ledger' && await startLedgerJob(req, res, input, format)) return;
+  if (report === 'general-ledger' && await startLedgerJob(res, input, format)) return;
   const { columns, batches } = await buildReport(report, input, req.user);
   await streamExport(res, { format, filename: exportFileName(report, input), columns, batches });
 };

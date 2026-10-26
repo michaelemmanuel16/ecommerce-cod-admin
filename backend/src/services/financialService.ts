@@ -3,7 +3,8 @@ import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma, PaymentStatus } from '@prisma/client';
 import logger from '../utils/logger';
-import { checkResourceOwnership, isManagerUp, Requester } from '../utils/authUtils';
+import { checkResourceOwnership, Requester } from '../utils/authUtils';
+import { hasPermission } from '../middleware/auth';
 import { getSocketInstance } from '../utils/socketInstance';
 import {
   emitExpenseCreated,
@@ -50,9 +51,10 @@ function expenseCategoryOrThrow(input: unknown): string {
   return category;
 }
 
-const RECEIPT_EXT = /\.(jpg|jpeg|png|webp|gif|pdf)$/i;
+const RECEIPT_EXTENSIONS = 'jpg|jpeg|png|webp|gif|pdf';
+const RECEIPT_EXT = new RegExp(`\\.(${RECEIPT_EXTENSIONS})$`, 'i');
 /** What POST /api/upload returns without R2: /uploads/<slug>-<ms>-<random>.<ext>. */
-const LOCAL_RECEIPT = /^\/uploads\/[a-z0-9_-]+-\d+-\d+\.(jpg|jpeg|png|webp|gif|pdf)$/i;
+const LOCAL_RECEIPT = new RegExp(`^/uploads/[a-z0-9_-]+-\\d+-\\d+\\.(${RECEIPT_EXTENSIONS})$`, 'i');
 
 /** A receipt link is empty, an upload path, or an https address on our own storage. Anything else is a 400 (stored XSS guard). */
 function receiptUrlOrThrow(input: unknown): string | null {
@@ -81,9 +83,20 @@ function closedMonthNotice(...dates: Date[]): string | null {
   return dates.some((d) => localDate(d, zone).slice(0, 7) < thisMonth) ? CLOSED_MONTH_NOTICE : null;
 }
 
-/** Only the finance roles and the owner side see every expense row; others (a delivery agent) see the rows they recorded. */
-const seesAllExpenses = (requester?: Requester) =>
-  !requester || isManagerUp(requester) || requester.role === 'accountant';
+/**
+ * The rows of expenses a requester may read and change: every row for a role that holds `expenses:view_all`
+ * (the tenant's role matrix decides), the rows they recorded for anyone else. No requester means an internal call.
+ */
+async function expenseRowScope(requester?: Requester): Promise<Prisma.ExpenseWhereInput> {
+  if (!requester || await hasPermission(requester, 'expenses', 'view_all')) return {};
+  return { recordedBy: requester.id };
+}
+
+/** True when the requester may change this row: a view_all role, or the person who recorded it. */
+async function ownsExpense(requester: Requester | undefined, expense: { recordedBy: number | null }): Promise<boolean> {
+  const scope = await expenseRowScope(requester);
+  return scope.recordedBy === undefined || scope.recordedBy === expense.recordedBy;
+}
 
 /** Rows posted by the system (Meta pull, delivery fee, AI) cannot be edited or deleted by hand (F-917). */
 function assertExpenseEditable(expense: { source: string }) {
@@ -497,9 +510,7 @@ export class FinancialService {
       ];
     }
 
-    if (!seesAllExpenses(requester)) {
-      where.recordedBy = requester!.id;
-    }
+    Object.assign(where, await expenseRowScope(requester));
 
     const skip = (page - 1) * limit;
 
@@ -985,32 +996,12 @@ export class FinancialService {
 
 
 
-    if (!seesAllExpenses(requester)) {
-      where.recordedBy = requester!.id;
-    }
+    Object.assign(where, await expenseRowScope(requester));
 
-    const breakdown = await prisma.expense.findMany({
-      where
-    }) || [];
+    const groups = await prisma.expense.groupBy({ by: ['category'], where, _sum: { amount: true }, _count: { _all: true } });
 
-    const normalizedBreakdown: Record<string, { totalAmount: Money.Money; count: number }> = {};
-
-    breakdown.forEach((item) => {
-      const category = matchExpenseCategory(item.category)
-        ?? item.category.trim().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ');
-      if (!normalizedBreakdown[category]) {
-        normalizedBreakdown[category] = { totalAmount: Money.ZERO, count: 0 };
-      }
-      normalizedBreakdown[category].totalAmount = Money.add(normalizedBreakdown[category].totalAmount, item.amount);
-      normalizedBreakdown[category].count += 1;
-    });
-
-    return Object.entries(normalizedBreakdown)
-      .map(([category, stats]) => ({
-        category,
-        totalAmount: stats.totalAmount,
-        count: stats.count
-      }))
+    return groups
+      .map((g) => ({ category: g.category, totalAmount: Money.orZero(g._sum.amount), count: g._count._all }))
       .sort((a, b) => Money.compare(b.totalAmount, a.totalAmount));
   }
 
@@ -1317,15 +1308,12 @@ export class FinancialService {
     }
     assertExpenseEditable(expense);
 
-    // Role-based ownership check for updating expense
-    if (!checkResourceOwnership(requester!, expense, 'expense')) {
+    if (!(await ownsExpense(requester, expense))) {
       throw new AppError('You do not have permission to update this expense', 403);
     }
 
     const numericId = parseInt(expenseId, 10);
     const actorId = requester?.id ?? await getSystemUserId();
-    const amountChanged = newAmount !== undefined && !newAmount.eq(expense.amount);
-    const dateChanged = data.expenseDate !== undefined && data.expenseDate.getTime() !== expense.expenseDate.getTime();
     const updated = await prisma.$transaction(async (tx) => {
       const result = await tx.expense.update({
         where: { id: numericId },
@@ -1348,7 +1336,8 @@ export class FinancialService {
       });
 
       let journalEntryId = result.journalEntryId;
-      if (amountChanged || dateChanged) {
+      if ((newAmount !== undefined && !newAmount.eq(expense.amount))
+        || (data.expenseDate !== undefined && data.expenseDate.getTime() !== expense.expenseDate.getTime())) {
         // Void the old entry, then post the new one with the new amount and date
         await GLAutomationService.voidJournalEntry(tx as any, 'expense', numericId, actorId);
         const entry = await GLAutomationService.createExpenseGLEntry(
@@ -1399,8 +1388,7 @@ export class FinancialService {
     }
     assertExpenseEditable(expense);
 
-    // Role-based ownership check for deleting expense
-    if (!checkResourceOwnership(requester!, expense, 'expense')) {
+    if (!(await ownsExpense(requester, expense))) {
       throw new AppError('You do not have permission to delete this expense', 403);
     }
 

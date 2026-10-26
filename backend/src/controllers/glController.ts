@@ -210,7 +210,7 @@ export const exportAccountLedger = async (req: AuthRequest, res: Response): Prom
     const { startDate, endDate } = req.query;
 
     // Over the line limit this becomes a background job (F-921); it used to stop at 50,000 lines without saying so.
-    if (Number.isInteger(Number(id)) && await startLedgerJob(req, res, { accountId: Number(id), startDate: startDate as string | undefined, endDate: endDate as string | undefined }, 'csv')) return;
+    if (Number.isInteger(Number(id)) && await startLedgerJob(res, { accountId: Number(id), startDate: startDate as string | undefined, endDate: endDate as string | undefined }, 'csv')) return;
 
     const { csv, filename } = await glService.exportAccountLedgerToCSV(id, {
       startDate: startDate as string | undefined,

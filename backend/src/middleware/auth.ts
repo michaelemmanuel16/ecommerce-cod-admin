@@ -73,7 +73,7 @@ function getDefaultPermissions() {
       calls: ['create', 'view', 'update', 'delete'],
       gl: ['create', 'view', 'update', 'delete'],
       journal: ['post', 'void'],
-      expenses: ['edit', 'delete'],
+      expenses: ['view_all', 'edit', 'delete'],
       audit: ['view'],
     },
     admin: {
@@ -88,7 +88,7 @@ function getDefaultPermissions() {
       settings: ['view'],
       calls: ['create', 'view', 'update', 'delete'],
       gl: ['create', 'view', 'update', 'delete'],
-      expenses: ['edit', 'delete'],
+      expenses: ['view_all', 'edit', 'delete'],
       audit: ['view'],
     },
     manager: {
@@ -102,7 +102,7 @@ function getDefaultPermissions() {
       workflows: ['view', 'execute'],
       settings: [],
       calls: ['view'],
-      gl: ['view'],
+      gl: ['view'],      expenses: ['view_all'],
     },
     sales_rep: {
       users: [],
@@ -156,7 +156,7 @@ function getDefaultPermissions() {
       settings: [],
       gl: ['create', 'view', 'update'],
       journal: ['post', 'void'],
-      expenses: ['edit', 'delete'],
+      expenses: ['view_all', 'edit', 'delete'],
     },
   };
 }

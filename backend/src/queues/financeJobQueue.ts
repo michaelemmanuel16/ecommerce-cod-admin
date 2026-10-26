@@ -17,7 +17,6 @@ import { runFinanceHealth } from '../services/financeHealthService';
 export type FinanceJobName = 'ledger-export' | 'health-check';
 export interface FinanceJobData {
   tenantId: string;
-  userId: number;
   format?: ExportFormat;
   input?: ExportInput;
 }
@@ -36,11 +35,15 @@ const FILE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 export const exportFolder = (tenantId: string) => path.join(EXPORT_DIR, tenantId);
 
-async function removeOldFiles(dir: string) {
-  for (const f of await fs.promises.readdir(dir).catch(() => [] as string[])) {
-    const file = path.join(dir, f);
-    const stat = await fs.promises.stat(file).catch(() => null);
-    if (stat && Date.now() - stat.mtimeMs > FILE_MAX_AGE_MS) await fs.promises.rm(file, { force: true });
+/** Remove export files older than a day from every tenant folder. */
+async function removeOldFiles() {
+  for (const tenantDir of await fs.promises.readdir(EXPORT_DIR).catch(() => [] as string[])) {
+    const dir = path.join(EXPORT_DIR, tenantDir);
+    for (const f of await fs.promises.readdir(dir).catch(() => [] as string[])) {
+      const file = path.join(dir, f);
+      const stat = await fs.promises.stat(file).catch(() => null);
+      if (stat && Date.now() - stat.mtimeMs > FILE_MAX_AGE_MS) await fs.promises.rm(file, { force: true });
+    }
   }
 }
 
@@ -49,9 +52,9 @@ async function writeLedgerFile(jobId: string, data: FinanceJobData) {
   const format = data.format ?? 'csv';
   const dir = exportFolder(data.tenantId);
   await fs.promises.mkdir(dir, { recursive: true });
-  await removeOldFiles(dir);
+  await removeOldFiles();
   const file = path.join(dir, `${jobId}.${format}`);
-  const filename = `${exportFileName('general-ledger', data.input ?? {})}.${format}`;
+  const stem = exportFileName('general-ledger', data.input ?? {});
 
   const out = fs.createWriteStream(file);
   const finished = new Promise<void>((resolve, reject) => {
@@ -63,9 +66,9 @@ async function writeLedgerFile(jobId: string, data: FinanceJobData) {
   const { columns, batches } = await buildReport('general-ledger', data.input ?? {});
   let rows = 0;
   async function* counted() { for await (const b of batches) { rows += b.length; yield b; } }
-  await streamExport(sink, { format, filename: filename.replace(/\.(csv|xlsx)$/, ''), columns, batches: counted() });
+  await streamExport(sink, { format, filename: stem, columns, batches: counted() });
   await finished;
-  return { filename, file, rows };
+  return { filename: `${stem}.${format}`, file, rows };
 }
 
 type Processor = (job: { id: string | number; data: FinanceJobData }) => Promise<any>;
