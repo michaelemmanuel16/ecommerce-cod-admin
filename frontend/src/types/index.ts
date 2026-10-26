@@ -3,8 +3,8 @@ export interface UserPreferences {
   onboardingCompletedAt?: string;
 }
 
-export type Resource = 'users' | 'orders' | 'customers' | 'products' | 'financial' | 'payouts' | 'analytics' | 'workflows' | 'settings';
-export type Action = 'create' | 'view' | 'update' | 'delete' | 'bulk_import' | 'assign' | 'update_stock' | 'execute' | 'export';
+export type Resource = 'users' | 'orders' | 'customers' | 'products' | 'financial' | 'payouts' | 'analytics' | 'workflows' | 'settings' | 'gl' | 'journal' | 'expenses';
+export type Action = 'create' | 'view' | 'update' | 'delete' | 'bulk_import' | 'assign' | 'update_stock' | 'execute' | 'export' | 'post' | 'void' | 'edit' | 'view_all';
 
 export type Permissions = Record<string, string[]> | string[];
 

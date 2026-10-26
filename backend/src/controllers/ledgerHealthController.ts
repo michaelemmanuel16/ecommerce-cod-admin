@@ -1,42 +1,30 @@
 import { Response } from 'express';
 import { AuthRequest } from '../types';
-import { GLAccountService } from '../services/glAccountService';
-import { getLedgerHealth } from '../services/ledgerCheckService';
-import prisma from '../utils/prisma';
+import { enqueueFinanceJob, getFinanceJob } from '../queues/financeJobQueue';
+import { getTenantId } from '../utils/tenantContext';
 import logger from '../utils/logger';
-import { addDays } from '../services/kpi/dates';
+
+/** How long the request waits for the check before it answers with a job id (F-931). Read on each call so a test can shorten it. */
+const waitMs = () => Number(process.env.FINANCE_HEALTH_INLINE_MS) || 30_000;
+const POLL_MS = 100;
 
 /**
  * GET /api/financial/health
- * GL balance integrity and journal activity (as before), plus the last order-versus-ledger run and its open gaps (M1-T28).
+ * Every finance rule with its count, the failures, GL balance integrity and the last order-versus-ledger run
+ * (M1-T28, M5-T29). The check runs once, as a finance job. The request waits up to 30 seconds for it: a finished
+ * check is the 200 answer; otherwise the answer is 202 with the job id, read at GET /api/financial/jobs/:id.
  */
 export const getFinancialHealth = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const twentyFourHoursAgo = addDays(new Date(), -1);
-
-    const [balanceReport, journalCount, ledgerCheck] = await Promise.all([
-      GLAccountService.verifyAllAccountBalances(),
-      prisma.journalEntry.count({ where: { createdAt: { gte: twentyFourHoursAgo } } }),
-      getLedgerHealth(),
-    ]);
-
-    res.json({
-      balanceIntegrity: {
-        totalAccounts: balanceReport.totalAccounts,
-        unbalancedCount: balanceReport.unbalanced.length,
-        maxDifference: balanceReport.maxDifference.toFixed(4),
-        isHealthy: balanceReport.unbalanced.length === 0,
-        unbalanced: balanceReport.unbalanced.map(u => ({
-          accountId: u.accountId,
-          code: u.code,
-          difference: u.difference.toFixed(4)
-        }))
-      },
-      journalActivity: {
-        last24Hours: journalCount
-      },
-      ledgerCheck,
-    });
+    const jobId = await enqueueFinanceJob('health-check', { tenantId: getTenantId()! });
+    const deadline = Date.now() + waitMs();
+    do {
+      const job = await getFinanceJob(jobId);
+      if (job?.status === 'done') { res.json(job.result); return; }
+      if (job?.status === 'failed') throw new Error(job.error ?? 'Health check job failed');
+      await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+    } while (Date.now() < deadline);
+    res.status(202).json({ jobId, status: 'queued', statusUrl: `/api/financial/jobs/${jobId}` });
   } catch (error) {
     logger.error('Failed to fetch financial health', { error });
     res.status(500).json({ message: 'Failed to fetch financial health' });

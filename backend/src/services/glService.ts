@@ -16,6 +16,8 @@ interface AccountFilters {
   limit?: number;
   startDate?: string;
   endDate?: string;
+  /** Matches the code or the name (F-921). */
+  search?: string;
 }
 
 interface CreateAccountData {
@@ -64,6 +66,42 @@ interface AccountLedgerFilters {
   page?: number;
   limit?: number;
 }
+
+/**
+ * What the journal void route does with an entry of each source type. Only a hand-made entry (and a Paystack
+ * payout, whose reference this frees for a corrected payout) is undone here; an automatic posting is reversed by
+ * the service that owns its source record, or the ledger and the record would disagree. Exhaustive on purpose:
+ * a new JournalSourceType value does not compile until it is listed.
+ */
+const VOID_RULES: Record<JournalSourceType, { voidableByHand: boolean; hint: string }> = {
+  manual: { voidableByHand: true, hint: '' },
+  paystack_payout: { voidableByHand: true, hint: '' },
+  expense: { voidableByHand: false, hint: 'This entry was posted by an expense. Edit or delete the expense instead.' },
+  payout: { voidableByHand: false, hint: 'This entry was posted by a payout. Reverse the payout instead.' },
+  agent_deposit: { voidableByHand: false, hint: 'This entry was posted by a deposit. Reject the deposit instead.' },
+  agent_collection: { voidableByHand: false, hint: 'This entry was posted by a collection. Change the collection instead.' },
+  order_delivery: { voidableByHand: false, hint: 'This entry was posted by an order. Change the order status instead.' },
+  failed_delivery: { voidableByHand: false, hint: 'This entry was posted by an order. Change the order status instead.' },
+  order_return: { voidableByHand: false, hint: 'This entry was posted by an order. Change the order status instead.' },
+  order_failed_delivery: { voidableByHand: false, hint: 'This entry was posted by an order. Change the order status instead.' },
+  inventory_purchase: { voidableByHand: false, hint: 'This entry was posted by a shipment. Change the shipment instead.' },
+  inventory_claim: { voidableByHand: false, hint: 'This entry was posted by a shipment. Change the shipment instead.' },
+  digital_sale: { voidableByHand: false, hint: 'This entry was posted by a digital order. Undo it where it was created.' },
+  period_close: { voidableByHand: false, hint: 'This entry was posted by the period close. Undo it where it was created.' },
+  delivery_fee: { voidableByHand: false, hint: 'This entry was posted by a delivery fee. Change the order status or the partner settlement instead.' },
+  commission_accrual: { voidableByHand: false, hint: 'This entry was posted by a rep commission. Reverse the commission instead.' },
+  reversal: { voidableByHand: false, hint: 'This entry was posted by a reversal. A reversal cannot be voided.' },
+};
+
+/** True when the journal void route may reverse an entry of this source type. The screens read this, so they never keep their own list. */
+export const isVoidableByHand = (sourceType: JournalSourceType): boolean => VOID_RULES[sourceType].voidableByHand;
+
+/** Sets `voidableByHand` on a journal entry row for a screen, from the void rules. */
+const withVoidRule = <T extends { sourceType: JournalSourceType }>(entry: T) =>
+  Object.assign(entry, { voidableByHand: isVoidableByHand(entry.sourceType) });
+
+/** The ledger's order: newest entry date first, then newest line. Back-dated entries sit by their date, not their posting time. */
+const LEDGER_ORDER: Prisma.AccountTransactionOrderByWithRelationInput[] = [{ journalEntry: { entryDate: 'desc' } }, { id: 'desc' }];
 
 export class GLService {
   /**
@@ -224,7 +262,7 @@ export class GLService {
     const accountIds = [...new Set(data.transactions.map(txn => txn.accountId))];
     const accounts = await prisma.account.findMany({
       where: { id: { in: accountIds } },
-      select: { id: true, isActive: true, name: true }
+      select: { id: true, isActive: true, name: true, code: true }
     });
 
     const accountMap = new Map(accounts.map(a => [a.id, a]));
@@ -259,7 +297,7 @@ export class GLService {
       }
 
       if (!account.isActive) {
-        throw new AppError(`Account ${account.name} is inactive and cannot be used`, 400);
+        throw new AppError(`Account ${account.code} ${account.name} is inactive and cannot be used`, 400, 'GL_ACCOUNT_INACTIVE');
       }
     }
 
@@ -351,11 +389,17 @@ export class GLService {
    * Get all accounts with filters and pagination
    */
   async getAllAccounts(filters: AccountFilters) {
-    const { accountType, isActive, page = 1, limit = 50, startDate, endDate } = filters;
+    const { accountType, isActive, page = 1, limit = 50, startDate, endDate, search } = filters;
 
     const where: Prisma.AccountWhereInput = {};
     if (accountType) where.accountType = accountType;
     if (isActive !== undefined) where.isActive = isActive;
+    if (search?.trim()) {
+      where.OR = [
+        { code: { contains: search.trim() } },
+        { name: { contains: search.trim(), mode: 'insensitive' } }
+      ];
+    }
 
 
     const skip = (page - 1) * limit;
@@ -917,7 +961,7 @@ export class GLService {
     ]);
 
     return {
-      entries,
+      entries: entries.map(withVoidRule),
       pagination: {
         page,
         limit,
@@ -979,7 +1023,7 @@ export class GLService {
       throw new AppError('Journal entry not found', 404);
     }
 
-    return entry;
+    return withVoidRule(entry);
   }
 
   /**
@@ -1002,6 +1046,9 @@ export class GLService {
         throw new AppError('Journal entry is already voided', 400);
       }
 
+      const rule = VOID_RULES[entry.sourceType];
+      if (!rule.voidableByHand) throw new AppError(rule.hint, 400, 'GL_ENTRY_NOT_MANUAL');
+
       // The reversing entry inherits the tenant of the entry being reversed —
       // both parent and children must be stamped (the extension only covers
       // the top-level create). account_transactions.tenant_id is NOT NULL, so a
@@ -1011,8 +1058,25 @@ export class GLService {
         throw new AppError('Cannot void a journal entry that has no tenant.', 400);
       }
 
-      // Create reversing entry with swapped debits/credits
+      // Reversing lines with swapped debits/credits. Each line's running balance is computed first, as in createJournalEntry.
       const reversingEntryNumber = await this.generateEntryNumber(tx as Prisma.TransactionClient);
+      const reversingLines = [];
+      for (const t of entry.transactions) {
+        const runningBalance = await this.updateAccountBalance(
+          t.accountId,
+          t.creditAmount, // Swapped
+          t.debitAmount,  // Swapped
+          tx as Prisma.TransactionClient
+        );
+        reversingLines.push({
+          accountId: t.accountId,
+          debitAmount: t.creditAmount,
+          creditAmount: t.debitAmount,
+          runningBalance,
+          description: `Reversal of ${entry.entryNumber}`,
+          tenantId
+        });
+      }
       const reversingEntry = await tx.journalEntry.create({
         data: {
           tenantId,
@@ -1022,30 +1086,9 @@ export class GLService {
           sourceType: JournalSourceType.reversal,
           sourceId: entry.id,
           createdBy: requester?.id || 0,
-                    transactions: {
-            create: entry.transactions.map(t => ({
-              accountId: t.accountId,
-              debitAmount: t.creditAmount,  // Swapped
-              creditAmount: t.debitAmount,   // Swapped
-              description: `Reversal of ${entry.entryNumber}`,
-              tenantId
-            }))
-          }
-        },
-        include: {
-          transactions: true
+          transactions: { create: reversingLines }
         }
       });
-
-      // Update balances for reversal
-      for (const txn of reversingEntry.transactions) {
-        await this.updateAccountBalance(
-          txn.accountId,
-          txn.debitAmount,
-          txn.creditAmount,
-          tx as Prisma.TransactionClient
-        );
-      }
 
       // Mark original as voided
       const voided = await tx.journalEntry.update({
@@ -1136,6 +1179,27 @@ export class GLService {
   }
 
   /**
+   * Trial balance line (F-921): total debits and total credits of every ledger line, up to `endDate` when given.
+   * Every entry is balanced, so the two totals are equal. A voided entry and its reversal are both counted.
+   */
+  async getTrialBalance(filters: { endDate?: string } = {}) {
+    const where: Prisma.AccountTransactionWhereInput = {};
+    if (filters.endDate) {
+      const zone = getStoreTimeZone(getTenantId());
+      where.journalEntry = { entryDate: { lte: parseInclusiveBound(filters.endDate, 'to', zone, { snapToDay: true }) } };
+    }
+    const { _sum } = await prisma.accountTransaction.aggregate({ where, _sum: { debitAmount: true, creditAmount: true } });
+    const totalDebits = Money.orZero(_sum.debitAmount);
+    const totalCredits = Money.orZero(_sum.creditAmount);
+    return {
+      totalDebits: Money.toApi(totalDebits),
+      totalCredits: Money.toApi(totalCredits),
+      difference: Money.toApi(Money.sub(totalDebits, totalCredits)),
+      balanced: Money.sub(totalDebits, totalCredits).abs().lte(BALANCE_TOLERANCE)
+    };
+  }
+
+  /**
    * Get account ledger (transaction history)
    */
   async getAccountLedger(accountId: string, filters: AccountLedgerFilters) {
@@ -1149,7 +1213,8 @@ export class GLService {
         name: true,
         accountType: true,
         normalBalance: true,
-        currentBalance: true
+        currentBalance: true,
+        isActive: true
       }
     });
 
@@ -1174,7 +1239,7 @@ export class GLService {
 
     const skip = (page - 1) * limit;
 
-    const [transactions, total] = await Promise.all([
+    const [rows, total] = await Promise.all([
       prisma.accountTransaction.findMany({
         where,
         skip,
@@ -1191,14 +1256,15 @@ export class GLService {
             }
           }
         },
-        orderBy: { createdAt: 'desc' }
+        orderBy: LEDGER_ORDER
       }),
       prisma.accountTransaction.count({ where })
     ]);
+    const transactions = await this.withRunningBalance(account, rows);
 
     return {
       account,
-      transactions,
+      transactions: transactions.map((t) => Object.assign(t, { journalEntry: withVoidRule(t.journalEntry) })),
       pagination: {
         page,
         limit,
@@ -1206,6 +1272,37 @@ export class GLService {
         pages: Math.ceil(total / limit)
       }
     };
+  }
+
+  /**
+   * Running balance of each ledger line, in entry-date order (the ledger's own order). `rows` are newest first, as
+   * LEDGER_ORDER returns them. The balance before the oldest row is every earlier line (by entry date, then id)
+   * summed, ignoring the screen's date filter; the rows then add up from there. The stored `running_balance` is the
+   * balance at posting time, which is wrong for a back-dated entry, so it is not used.
+   */
+  private async withRunningBalance<T extends { id: number; debitAmount: Prisma.Decimal; creditAmount: Prisma.Decimal; journalEntry: { entryDate: Date } }>(
+    account: { id: number; normalBalance: NormalBalance },
+    rows: T[]
+  ): Promise<Array<T & { runningBalance: Prisma.Decimal }>> {
+    if (rows.length === 0) return [];
+    const oldest = rows[rows.length - 1];
+    const before = await prisma.accountTransaction.aggregate({
+      where: {
+        accountId: account.id,
+        OR: [
+          { journalEntry: { entryDate: { lt: oldest.journalEntry.entryDate } } },
+          { journalEntry: { entryDate: oldest.journalEntry.entryDate }, id: { lt: oldest.id } }
+        ]
+      },
+      _sum: { debitAmount: true, creditAmount: true }
+    });
+    const signed = (debit: Money.MoneyInput, credit: Money.MoneyInput) =>
+      account.normalBalance === NormalBalance.debit ? Money.sub(debit, credit) : Money.sub(credit, debit);
+    let balance = signed(Money.orZero(before?._sum?.debitAmount), Money.orZero(before?._sum?.creditAmount));
+    return [...rows].reverse().map((row) => {
+      balance = Money.add(balance, signed(row.debitAmount, row.creditAmount));
+      return { ...row, runningBalance: balance };
+    }).reverse();
   }
 
   /**
@@ -1295,7 +1392,7 @@ export class GLService {
     // Get account info first
     const account = await prisma.account.findUnique({
       where: { id },
-      select: { code: true }
+      select: { code: true, normalBalance: true }
     });
 
     if (!account) {
@@ -1334,13 +1431,14 @@ export class GLService {
             }
           }
         },
-        orderBy: { createdAt: 'desc' }
+        orderBy: LEDGER_ORDER
       }) as any[];
 
       if (chunk.length === 0) {
         hasMore = false;
       } else {
-        const mappedChunk = chunk.map((t) => ({
+        const withBalance = await this.withRunningBalance({ id, normalBalance: account.normalBalance }, chunk);
+        const mappedChunk = withBalance.map((t) => ({
           Date: t.journalEntry.entryDate.toISOString().split('T')[0],
           EntryNumber: t.journalEntry.entryNumber,
           Description: t.description || t.journalEntry.description,
