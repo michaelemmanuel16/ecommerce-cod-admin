@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { Card, Skeleton, Tag } from '../../ui-v2';
 import { BlockError } from '../../../pages/dashboard/blocks/Frame';
+import { useBlock } from '../../../pages/financial/profit/useBlock';
 import { financialService } from '../../../services/financial.service';
 import { formatCurrency } from '../../../utils/format';
 import { useFinancialStore } from '../../../stores/financialStore';
@@ -25,37 +26,19 @@ const GROUPS: Array<[string, string]> = [['asset', 'Assets'], ['liability', 'Lia
 
 /** The chart of accounts card: live codes and balances grouped by type, the trial balance line, and a pick that opens the ledger. */
 export const AccountsList: React.FC<AccountsListProps> = ({ selectedId, onSelectAccount, refreshKey = 0 }) => {
-    const [accounts, setAccounts] = useState<Account[] | null>(null);
-    const [failed, setFailed] = useState(false);
-    const [trial, setTrial] = useState<{ totalDebits: string; totalCredits: string; balanced: boolean } | null>(null);
     const { dateRange } = useFinancialStore();
-
-    const load = useCallback(async () => {
-        try {
-            const data = await financialService.getAllGLAccounts({ limit: 200 });
-            setAccounts(data.accounts);
-            setFailed(false);
-        } catch (err) {
-            console.error(err);
-            setFailed(true);
-        }
-    }, []);
-
-    useEffect(() => {
-        void load();
-    }, [load, refreshKey]);
+    // Both answers are cached, so coming back to General ledger does not ask again; a posted entry (refreshKey) does
+    const chart = useBlock(`gl:accounts|${refreshKey}`, () => financialService.getAllGLAccounts({ limit: 200 }));
+    const trialBalance = useBlock(`gl:trial|${dateRange.endDate ?? ''}|${refreshKey}`, () => financialService.getTrialBalance({ endDate: dateRange.endDate }));
+    const accounts: Account[] | undefined = chart.data?.accounts;
+    const trial = trialBalance.status === 'failed' ? undefined : trialBalance.data;
 
     // The first account opens its ledger, so the ledger card is never empty
     useEffect(() => {
         if (selectedId === null && accounts && accounts.length > 0) onSelectAccount(accounts[0]);
     }, [accounts, selectedId, onSelectAccount]);
 
-    // Trial balance line: total debits equal total credits
-    useEffect(() => {
-        financialService.getTrialBalance({ endDate: dateRange.endDate }).then(setTrial).catch(() => setTrial(null));
-    }, [dateRange.endDate, refreshKey]);
-
-    if (failed && !accounts) return <BlockError name="Chart of accounts" onRetry={() => void load()} />;
+    if (chart.status === 'failed' && !accounts) return <BlockError name="Chart of accounts" onRetry={chart.retry} />;
     if (!accounts) {
         return <div aria-busy="true" aria-label="Loading Chart of accounts"><Skeleton height={420} className="skelcard" /></div>;
     }

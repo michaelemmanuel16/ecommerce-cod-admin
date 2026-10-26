@@ -265,9 +265,9 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
           gap: 0.5rem;
           padding: 0.5rem 0.75rem;
           font-size: 0.875rem;
-          border: 1px solid #d1d5db;
+          border: 1px solid var(--dp-line-strong, #d1d5db);
           border-radius: 0.5rem;
-          background-color: white;
+          background-color: var(--dp-surface, white);
           transition: all 0.2s;
           cursor: pointer;
           width: 100%;
@@ -275,13 +275,24 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
         }
 
         .date-range-trigger:hover {
-          background-color: #f9fafb;
+          background-color: var(--dp-hover, #f9fafb);
         }
 
-        .date-range-trigger:focus {
-          outline: none;
-          ring: 2px;
-          ring-color: #3b82f6;
+        .date-range-trigger:focus-within {
+          border-color: var(--dp-accent, #3b82f6);
+        }
+
+        .date-range-trigger-main {
+          display: flex;
+          flex: 1;
+          min-width: 0;
+          padding: 0;
+          border: 0;
+          background: none;
+          font: inherit;
+          color: inherit;
+          text-align: left;
+          cursor: pointer;
         }
 
         .date-range-trigger-content {
@@ -293,14 +304,14 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
         }
 
         .date-range-trigger-text {
-          color: #111827;
+          color: var(--dp-ink, #111827);
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
         }
 
         .date-range-trigger-placeholder {
-          color: #6b7280;
+          color: var(--dp-mute, #6b7280);
         }
 
         .date-range-clear-btn {
@@ -310,7 +321,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
         }
 
         .date-range-clear-btn:hover {
-          background-color: #e5e7eb;
+          background-color: var(--dp-hover-strong, #e5e7eb);
         }
 
         .date-range-backdrop {
@@ -323,8 +334,8 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
           position: absolute;
           top: calc(100% + 0.5rem);
           right: 0;
-          background-color: white;
-          border: 1px solid #e5e7eb;
+          background-color: var(--dp-surface, white);
+          border: 1px solid var(--dp-line, #e5e7eb);
           border-radius: 0.75rem;
           box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
           z-index: 50;
@@ -336,8 +347,8 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
         .date-range-presets {
           width: 130px;
           padding: 0.375rem;
-          border-right: 1px solid #e5e7eb;
-          background-color: #ffffff;
+          border-right: 1px solid var(--dp-line, #e5e7eb);
+          background-color: var(--dp-surface, #ffffff);
         }
 
         .date-range-preset-btn {
@@ -345,7 +356,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
           text-align: left;
           padding: 0.5rem 0.75rem;
           font-size: 0.8125rem;
-          color: #374151;
+          color: var(--dp-ink-2, #374151);
           background-color: transparent;
           border: none;
           border-radius: 0.375rem;
@@ -355,12 +366,12 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
         }
 
         .date-range-preset-btn:hover {
-          background-color: #f3f4f6;
+          background-color: var(--dp-hover, #f3f4f6);
         }
 
         .date-range-preset-btn.active {
-          background-color: #eff6ff;
-          color: #2563eb;
+          background-color: var(--dp-active-bg, #eff6ff);
+          color: var(--dp-accent, #2563eb);
           font-weight: 500;
         }
 
@@ -402,11 +413,11 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
         }
 
         .calendar-nav-button:hover {
-          background-color: #f3f4f6;
+          background-color: var(--dp-hover, #f3f4f6);
         }
 
         .calendar-nav-button svg {
-          fill: #374151;
+          fill: var(--dp-ink-2, #374151);
         }
 
         .calendar-selects {
@@ -420,11 +431,11 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
         .calendar-year-select {
           font-size: 0.875rem;
           font-weight: 600;
-          color: #111827;
-          border: 1px solid #d1d5db;
+          color: var(--dp-ink, #111827);
+          border: 1px solid var(--dp-line-strong, #d1d5db);
           border-radius: 0.25rem;
           padding: 0.25rem 0.5rem;
-          background-color: white;
+          background-color: var(--dp-surface, white);
           cursor: pointer;
         }
 
@@ -453,11 +464,11 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
         }
 
         .calendar-reset-button:hover {
-          background-color: #f3f4f6;
+          background-color: var(--dp-hover, #f3f4f6);
         }
 
         .calendar-reset-button svg {
-          fill: #6b7280;
+          fill: var(--dp-mute, #6b7280);
         }
 
         .calendar-weekdays {
@@ -469,7 +480,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
         .calendar-week-header {
           font-size: 0.75rem;
           font-weight: 500;
-          color: #9ca3af;
+          color: var(--dp-faint, #9ca3af);
           text-align: center;
           padding: 0.375rem;
           text-transform: uppercase;
@@ -478,7 +489,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
         .calendar-weekday {
           font-size: 0.75rem;
           font-weight: 500;
-          color: #6b7280;
+          color: var(--dp-mute, #6b7280);
           text-align: center;
           padding: 0.375rem;
           text-transform: capitalize;
@@ -492,7 +503,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
 
         .calendar-week-number {
           font-size: 0.75rem;
-          color: #9ca3af;
+          color: var(--dp-faint, #9ca3af);
           text-align: center;
           padding: 0.5rem 0.125rem;
           display: flex;
@@ -507,7 +518,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
           align-items: center;
           justify-content: center;
           font-size: 0.75rem;
-          color: #374151;
+          color: var(--dp-ink-2, #374151);
           cursor: pointer;
           border-radius: 0.25rem;
           transition: all 0.2s;
@@ -515,24 +526,24 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
         }
 
         .calendar-day:hover {
-          background-color: #f3f4f6;
+          background-color: var(--dp-hover, #f3f4f6);
         }
 
         .calendar-day.is-start-date,
         .calendar-day.is-end-date {
-          background-color: #4a5568;
-          color: white;
+          background-color: var(--dp-sel, #4a5568);
+          color: var(--dp-on-sel, white);
           font-weight: 500;
         }
 
         .calendar-day.is-in-range {
-          background-color: #e5e7eb;
-          color: #374151;
+          background-color: var(--dp-range, #e5e7eb);
+          color: var(--dp-ink-2, #374151);
         }
 
         .calendar-day.is-today {
           font-weight: 600;
-          color: #2563eb;
+          color: var(--dp-accent, #2563eb);
         }
 
         .calendar-day-empty {
@@ -547,7 +558,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
           justify-content: flex-end;
           gap: 0.5rem;
           padding-top: 0.75rem;
-          border-top: 1px solid #e5e7eb;
+          border-top: 1px solid var(--dp-line, #e5e7eb);
           margin-top: 0.75rem;
         }
 
@@ -563,51 +574,52 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
         }
 
         .date-range-cancel-btn {
-          background-color: #e5e7eb;
-          color: #374151;
+          background-color: var(--dp-hover-strong, #e5e7eb);
+          color: var(--dp-ink-2, #374151);
         }
 
         .date-range-cancel-btn:hover {
-          background-color: #d1d5db;
+          background-color: var(--dp-line-strong, #d1d5db);
         }
 
         .date-range-apply-btn {
-          background-color: #4a5568;
-          color: white;
+          background-color: var(--dp-sel, #4a5568);
+          color: var(--dp-on-sel, white);
         }
 
         .date-range-apply-btn:hover {
-          background-color: #374151;
+          background-color: var(--dp-ink-2, #374151);
         }
 
         .date-range-apply-btn:disabled {
-          background-color: #d1d5db;
-          color: #9ca3af;
+          background-color: var(--dp-line-strong, #d1d5db);
+          color: var(--dp-faint, #9ca3af);
           cursor: not-allowed;
         }
       `}</style>
 
-      {/* Trigger Button */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="date-range-trigger"
-      >
-        <div className="date-range-trigger-content">
-          <Calendar className="w-4 h-4 text-gray-500" />
-          <span className={tempRange.from ? 'date-range-trigger-text' : 'date-range-trigger-placeholder'}>
-            {formatDisplayDate()}
-          </span>
-        </div>
+      {/* Trigger: the clear button sits beside the opener, never inside it (a button in a button is not valid HTML) */}
+      <div className="date-range-trigger">
+        <button type="button" onClick={() => setIsOpen(!isOpen)} className="date-range-trigger-main">
+          <div className="date-range-trigger-content">
+            <Calendar className="w-4 h-4 text-gray-500" />
+            <span className={tempRange.from ? 'date-range-trigger-text' : 'date-range-trigger-placeholder'}>
+              {formatDisplayDate()}
+            </span>
+          </div>
+        </button>
         {tempRange.from && (
           <button
+            type="button"
             onClick={handleClear}
             className="date-range-clear-btn"
             title="Clear dates"
+            aria-label="Clear dates"
           >
             <X className="w-4 h-4 text-gray-500" />
           </button>
         )}
-      </button>
+      </div>
 
       {/* Calendar Popover */}
       {isOpen && (

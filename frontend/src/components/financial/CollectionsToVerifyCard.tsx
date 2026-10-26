@@ -2,14 +2,11 @@ import { useState } from 'react';
 import { CheckCheck, Paperclip } from 'lucide-react';
 import { Button, Card, EmptyState, Tag, useToast } from '../ui-v2';
 import { GuardedButtonV2 } from './GuardedButtonV2';
-import { collectionsService, type PartnerDeposit } from '../../services/collections.service';
+import { collectionsService, RECENT_DECIDED, type PartnerDeposit } from '../../services/collections.service';
 import { apiErrorMessage } from '../../utils/apiError';
 import { formatCurrency, formatDate } from '../../utils/format';
 import { isSafeReceiptUrl } from '../../utils/expenseRules';
-import { DEPOSIT_TONE, depositLabel, ordersCovered, partnerName, receiptKind } from '../../pages/financial/collections/model';
-
-/** How many already-decided pay-ins show under the pending ones. */
-const RECENT = 10;
+import { DEPOSIT_TONE, depositLabel, ordersCovered, partnerName, pendingOf, receiptKind } from '../../pages/financial/collections/model';
 
 interface Props {
   deposits: PartnerDeposit[];
@@ -27,8 +24,8 @@ export function CollectionsToVerifyCard({ deposits, onReview, onChanged }: Props
   const say = useToast();
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [busy, setBusy] = useState(false);
-  const pending = deposits.filter((d) => d.status === 'pending');
-  const rows = [...pending, ...deposits.filter((d) => d.status !== 'pending').slice(0, RECENT)];
+  const pending = pendingOf(deposits);
+  const rows = [...pending, ...deposits.filter((d) => d.status !== 'pending').slice(0, RECENT_DECIDED)];
   const allTicked = pending.length > 0 && pending.every((d) => selected.has(d.id));
   const toggle = (ids: number[], on: boolean) => setSelected((s) => { const n = new Set(s); ids.forEach((id) => (on ? n.add(id) : n.delete(id))); return n; });
 
@@ -53,7 +50,7 @@ export function CollectionsToVerifyCard({ deposits, onReview, onChanged }: Props
   return (
     <Card title="Collections to verify" aside="Money a partner says they paid in" className="verifywrap">
       <div className="agtools">
-        <b className="mut" style={{ fontWeight: 600 }}>{selected.size > 0 ? `${selected.size} selected` : 'Select collections to reconcile in bulk'}</b>
+        <b className="mut">{selected.size > 0 ? `${selected.size} selected` : 'Select collections to reconcile in bulk'}</b>
         <GuardedButtonV2 perm="verifyCollection" variant="primary" disabled={selected.size === 0 || busy} onClick={() => void reconcile()}>
           <CheckCheck />Reconcile selected
         </GuardedButtonV2>
@@ -65,7 +62,7 @@ export function CollectionsToVerifyCard({ deposits, onReview, onChanged }: Props
           <table className="dt" aria-label="Collections to verify">
             <thead>
               <tr>
-                <th style={{ width: 36 }}><input type="checkbox" aria-label="Select all pending" checked={allTicked} disabled={pending.length === 0} onChange={(e) => toggle(pending.map((d) => d.id), e.target.checked)} /></th>
+                <th className="chkcol"><input type="checkbox" aria-label="Select all pending" checked={allTicked} disabled={pending.length === 0} onChange={(e) => toggle(pending.map((d) => d.id), e.target.checked)} /></th>
                 <th>Date</th><th>From</th><th className="r">Orders</th><th className="r">Amount</th><th>Receipt</th><th>Status</th><th className="r">Action</th>
               </tr>
             </thead>

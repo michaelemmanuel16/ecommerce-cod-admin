@@ -2,8 +2,6 @@
    (M5-T40, T41, T44). Rules come from the style block of docs/mockups/v2/finance.html (.dt .tot .cohort .note .bars .ch .lgrow
    .menu), with the `.v2` scope added. Colours come from tokens.css only. Rules with no mockup counterpart are marked "new". */
 
-.v2 .fin > * + *{margin-top:16px}
-.v2 .fin > .kpis{margin-top:0}
 .v2 .fin .grid.two{align-items:start}
 .v2 .fin .two.even{grid-template-columns:1fr 1fr}
 .v2 .fin .ct{flex-wrap:wrap;gap:4px 12px}
@@ -12,6 +10,10 @@
 .v2 .fin .dt .ink3{color:var(--ink-3)}
 .v2 .fin .dt tr.tot td{background:var(--hover);font-weight:700}
 .v2 .fin .note{padding-top:12px}
+.v2 .finance .note .ink{color:var(--ink)}
+/* the small actions in a card title row: Export on a statement, Export CSV on a ledger */
+.v2 .fin .ct .ctact{display:inline-flex;align-items:center;gap:8px}
+.v2 .fin .ct .cardexport{margin-left:8px;color:var(--ink)}
 .v2 .fin .finnote{padding-top:12px}
 .v2 .neg{color:var(--coral)}
 .v2 .insight .ico.mint{background:var(--mint-soft);color:var(--ok-ink)}
@@ -25,24 +27,32 @@
 .v2 .fin .assume{padding:0 20px 18px;color:var(--ink-2);font-size:13px}
 .v2 .fin .assume b{color:var(--ink)}
 .v2 .fin .insight.card .act{padding-left:40px}
-.v2 .fin .trendhead{display:flex;align-items:center;gap:12px}
-.v2 .fin .trendhead .psel{margin-left:auto}
 
-/* the tab bar sits right under the header (finance.html .pgtabs margin: 0 0 16px) */
-.v2 .finance .tabs.pgtabs{margin:0 0 16px}
+/* the header: title and subtitle at the left, the buttons and the date range at the right (finance.html .head .hd-actions); the
+   title shrinks and wraps before the buttons drop under it */
+.v2 .finance > .head > div:first-child{flex:1 1 320px;min-width:0}
+.v2 .finhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.v2 .finhead .date-range-trigger{width:auto}
+/* the date range follows the v2 tokens, light and dark (the picker reads --dp-* and keeps its own colours elsewhere) */
+.v2 .finhead .date-range-picker-container{
+  --dp-surface:var(--card);--dp-line:var(--line);--dp-line-strong:var(--line);--dp-ink:var(--ink);--dp-ink-2:var(--ink-2);
+  --dp-mute:var(--ink-3);--dp-faint:var(--ink-3);--dp-hover:var(--hover);--dp-hover-strong:var(--hover);
+  --dp-sel:var(--pine);--dp-on-sel:var(--on-pine);--dp-range:var(--pine-soft);--dp-accent:var(--pine);--dp-active-bg:var(--pine-soft);
+}
 
-/* export menu in the Finance header (finance.html .menuwrap .menu) */
-.v2 .finhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.v2 .finhead .menu{min-width:260px}
-.v2 .finhead .menu button small{display:block;margin-left:0;color:var(--ink-3)}
-.v2 .finhead .menu a{display:flex;align-items:center;gap:8px;width:100%;padding:7px 10px;border-radius:8px;font-weight:500;color:var(--ink);text-decoration:none}
-.v2 .finhead .menu a:hover{background:var(--hover)}
-.v2 .finhead .menu a svg.lucide{width:15px;height:15px;color:var(--ink-3);flex:none}
+/* export menu in the Finance header (finance.html .menuwrap .menu .mi): 250px, right-aligned under the button */
+.v2 .finhead .menu{min-width:250px}
+.v2 .finhead .menu .mi{display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;border-radius:9px;font-weight:600;color:var(--ink);text-decoration:none;text-align:left}
+.v2 .finhead .menu .mi:hover{background:var(--hover)}
+.v2 .finhead .menu .mi small{display:block;margin-left:0;color:var(--ink-3);font-weight:500;font-size:12px}
+.v2 .finhead .menu .mi svg.lucide{width:18px;height:18px;color:var(--ink-3);flex:none}
+.v2 .finhead .menu hr{border:0;border-top:1px solid var(--line);margin:6px 0}
 
 @media (max-width:1100px){
   .v2 .fin .two.even{grid-template-columns:1fr}
 }
 @media (max-width:760px){
+  .v2 .finhead{justify-content:flex-start}
   .v2 .finhead .menu{right:auto;left:0;max-width:calc(100vw - 32px)}
   .v2 .fin .fchead .fcexport{margin-left:0}
   /* the two scenario labels are long: stack them so the page never scrolls sideways */
@@ -54,7 +64,6 @@
 .v2 .charttip{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:8px 12px;display:grid;gap:2px;font-size:12.5px;color:var(--ink-2)}
 .v2 .charttip b{color:var(--ink)}
 .v2 .charttip em{font-style:normal;font-weight:700;color:var(--ink);margin-left:6px}
-.v2 .fin .trendctl{padding:10px 20px 0}
 .v2 .fin .fincard > .blockerr{padding:16px 20px}
 .v2 .insight .ico.gold{background:var(--gold-soft);color:var(--gold)}
 .v2 .fin .finding{margin:14px 20px}

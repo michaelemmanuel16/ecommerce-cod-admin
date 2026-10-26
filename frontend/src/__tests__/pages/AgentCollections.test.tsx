@@ -65,6 +65,8 @@ describe('Agent collections tab (M5-T36)', () => {
     await waitFor(() => expect(screen.getByText('GH₵500')).toBeInTheDocument()); // two pay-ins to verify, 300 + 200
     expect(screen.getByText('Cash exposure by partner')).toBeInTheDocument();
     expect(screen.getByRole('cell', { name: 'All partners' })).toBeInTheDocument();
+    // the total row names the oldest unpaid order across the partners (M5 UI fix V9)
+    expect(screen.getByRole('row', { name: /All partners/ })).toHaveTextContent('18 days');
     expect(screen.queryByRole('link', { name: /Findings/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Check cash held' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Review Kofi Appiah$/ })).not.toBeInTheDocument(); // Review is on the pay-ins, not the aging row
@@ -91,7 +93,7 @@ describe('Agent collections tab (M5-T36)', () => {
     open();
     await userEvent.click(await screen.findByRole('button', { name: 'Review Kofi Appiah 21 Oct' }));
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByText('Review collection')).toBeInTheDocument();
+    expect(within(dialog).getByText('Review collection from Kofi Appiah')).toBeInTheDocument();
     expect(within(dialog).getByText('Cash the partner holds')).toBeInTheDocument();
     expect(within(dialog).getByText('GH₵672')).toBeInTheDocument(); // Kofi's cash held, from the aging report
   });

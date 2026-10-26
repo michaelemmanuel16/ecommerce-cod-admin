@@ -4,6 +4,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, within, waitFor } from '../utils/test-utils';
+import { clearBlockCache } from '../../pages/financial/profit/useBlock';
 
 vi.mock('../../hooks/usePermissions', () => ({ usePermissions: () => ({ can: () => true, user: { role: 'super_admin' } }) }));
 
@@ -49,6 +50,7 @@ const line = (id: number, entry: string, debit: number, credit: number, balance:
 
 beforeEach(() => {
   vi.clearAllMocks();
+  clearBlockCache();
   svc.getAllGLAccounts.mockResolvedValue({ accounts: ACCOUNTS, pagination: { pages: 1, total: 4 } });
   svc.getTrialBalance.mockResolvedValue({ totalDebits: '120000.00', totalCredits: '120000.00', difference: '0.00', balanced: true });
   svc.getAccountLedger.mockResolvedValue({
@@ -92,6 +94,43 @@ describe('Accounting tab', () => {
     await waitFor(() => expect(svc.getAccountLedger).toHaveBeenCalledWith(4, expect.anything()));
   });
 
+  it('one pick makes one ledger request, and coming back to General ledger does not ask for the chart again (M5 UI fix 7)', async () => {
+    render(<AccountingAnalysis />);
+    fireEvent.click(await screen.findByRole('button', { name: /5080 Meta ad spend/ }));
+    await waitFor(() => expect(svc.getAccountLedger).toHaveBeenCalledWith(4, expect.anything()));
+    await screen.findByRole('table', { name: 'Account ledger' });
+    expect(svc.getAccountLedger.mock.calls.filter((c) => c[0] === 4)).toHaveLength(1);
+    expect(svc.getAccountLedger.mock.calls[0][1]).toEqual(expect.objectContaining({ page: 1 }));
+
+    const group = screen.getByRole('group', { name: 'Accounting section' });
+    fireEvent.click(within(group).getByRole('button', { name: 'Statements' }));
+    fireEvent.click(within(group).getByRole('button', { name: 'General ledger' }));
+    await screen.findByTestId('trial-balance');
+    expect(svc.getAllGLAccounts).toHaveBeenCalledTimes(1);
+    expect(svc.getTrialBalance).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks for the whole chart in one request, within what the endpoint allows (M5 UI fix V1)', async () => {
+    render(<AccountingAnalysis />);
+    await screen.findByText('Assets');
+    expect(svc.getAllGLAccounts).toHaveBeenCalledWith(expect.objectContaining({ limit: 200 }));
+  });
+
+  it('the journal entry dialog starts empty each time it opens, with the compact account and amount fields (M5 UI fix 16)', async () => {
+    render(<AccountingAnalysis />);
+    fireEvent.click(screen.getByRole('button', { name: /New journal entry/ }));
+    let dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveClass('xl');
+    expect(within(dialog).getAllByLabelText('Account')[0]).toHaveClass('psel');
+    expect(within(dialog).getAllByLabelText('Debit')[0]).toHaveClass('tcell');
+    fireEvent.change(within(dialog).getByLabelText('Description'), { target: { value: 'Logiswift payout' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /New journal entry/ }));
+    dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByLabelText('Description')).toHaveValue('');
+  });
+
   it('New journal entry opens the modal with Reference, Empty and Post entry', async () => {
     render(<AccountingAnalysis />);
     fireEvent.click(screen.getByRole('button', { name: /New journal entry/ }));
@@ -122,6 +161,13 @@ describe('Expenses section', () => {
     expect(bars[0].querySelector('.track i')).toHaveStyle({ width: '100%' });
     expect(screen.getByText('By category').closest('.card')).toHaveTextContent('800');
     expect(screen.getByTestId('expense-total')).toHaveTextContent('2 expenses · Total');
+  });
+
+  it('writes the card title range as days even when the store holds an end-of-day instant (M5 UI fix V2)', () => {
+    storeState.dateRange = { startDate: '2026-10-01', endDate: '2026-10-17T12:00:00.000Z' } as typeof storeState.dateRange;
+    render(<ExpenseManagementTab />);
+    expect(screen.getByText('Expenses', { selector: 'h3' }).closest('.ct')).toHaveTextContent('1–17 Oct 2026');
+    storeState.dateRange = {};
   });
 
   it('a bar filters the list by its category, and again clears it', () => {

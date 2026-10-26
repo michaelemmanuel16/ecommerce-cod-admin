@@ -36,7 +36,7 @@ const planFor = (amount: number): ManualPayoutPreview => {
 const onClose = vi.fn();
 const onRecorded = vi.fn();
 const modal = () => render(<ToastProvider><PartnerPayoutModal partnerId={2} partnerName="Logiswift" onClose={onClose} onRecorded={onRecorded} /></ToastProvider>);
-const type = async (label: string, text: string) => userEvent.type(screen.getByLabelText(label), text);
+const type = async (label: string | RegExp, text: string) => userEvent.type(screen.getByLabelText(label), text);
 const saveButton = () => screen.getByRole('button', { name: 'Record payout' });
 const refuse = (message: string, status = 409) => Object.assign(new axios.AxiosError('refused'), { response: { status, data: { error: message } } });
 
@@ -49,9 +49,15 @@ beforeEach(() => {
 });
 
 describe('PartnerPayoutModal (M5-T37, F-908)', () => {
+  it('labels the amount with the currency sign, shows a 0.00 placeholder and keeps its note in the footer', () => {
+    modal();
+    expect(screen.getByLabelText('Amount (GH₵)')).toHaveAttribute('placeholder', '0.00');
+    expect(document.querySelector('.mf .mfnote')).toHaveTextContent('Any gap against the order list opens a finding.');
+  });
+
   it('shows the unapplied warning before save when the amount is above the unpaid total', async () => {
     modal();
-    await type('Amount', '350');
+    await type(/^Amount/, '350');
     expect(await screen.findByTestId('unapplied-warning')).toHaveTextContent('GH₵50 will be held as unapplied');
     expect(previewManual).toHaveBeenLastCalledWith(2, '350.00');
     expect(recordManual).not.toHaveBeenCalled();
@@ -59,7 +65,7 @@ describe('PartnerPayoutModal (M5-T37, F-908)', () => {
 
   it('shows no warning for an amount at or below the unpaid total, and lists the orders it pays', async () => {
     modal();
-    await type('Amount', '300');
+    await type(/^Amount/, '300');
     const plan = await screen.findByRole('region', { name: 'Orders this payout pays' });
     expect(plan).toHaveTextContent('#101');
     expect(plan).toHaveTextContent('#102');
@@ -68,7 +74,7 @@ describe('PartnerPayoutModal (M5-T37, F-908)', () => {
 
   it('asks for the preview once after typing stops', async () => {
     modal();
-    await type('Amount', '150');
+    await type(/^Amount/, '150');
     await screen.findByRole('region', { name: 'Orders this payout pays' });
     expect(previewManual).toHaveBeenCalledTimes(1);
     expect(previewManual).toHaveBeenCalledWith(2, '150.00');
@@ -76,7 +82,7 @@ describe('PartnerPayoutModal (M5-T37, F-908)', () => {
 
   it('saves with partner, amount, date and reference, then reloads the page data and closes', async () => {
     modal();
-    await type('Amount', '300');
+    await type(/^Amount/, '300');
     await type('Reference or receipt', 'MM-1');
     await waitFor(() => expect(saveButton()).toBeEnabled());
     await userEvent.click(saveButton());
@@ -90,7 +96,7 @@ describe('PartnerPayoutModal (M5-T37, F-908)', () => {
 
   it('blocks save without a reference', async () => {
     modal();
-    await type('Amount', '100');
+    await type(/^Amount/, '100');
     expect(saveButton()).toBeDisabled();
     expect(screen.getByTestId('blocked-reason')).toHaveTextContent('Enter the reference or receipt number');
   });
@@ -98,7 +104,7 @@ describe('PartnerPayoutModal (M5-T37, F-908)', () => {
   it('shows a server refusal in the modal and stays open', async () => {
     recordManual.mockRejectedValue(refuse('This reference was used on 2026-10-20'));
     modal();
-    await type('Amount', '100');
+    await type(/^Amount/, '100');
     await type('Reference or receipt', 'MM-1');
     await userEvent.click(saveButton());
     expect(await screen.findByRole('alert')).toHaveTextContent('This reference was used on 2026-10-20');

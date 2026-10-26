@@ -3,7 +3,7 @@ import { Card } from '../../../components/ui-v2';
 import type { ProfitTrend } from '../../../services/financeReports.service';
 import { parseMoney } from '../../../utils/money';
 import { compactNumber } from '../../dashboard/format';
-import { AXIS } from '../../reports/charts';
+import { AXIS, ChartTip } from '../../reports/charts';
 import { money } from './format';
 import { Part } from './Part';
 import type { FinanceBlock } from './useBlock';
@@ -27,12 +27,7 @@ interface TipProps { active?: boolean; payload?: Array<{ payload: Record<string,
 function Tip({ active, payload, series }: TipProps) {
   if (!active || !payload?.length) return null;
   const row = payload[0].payload;
-  return (
-    <div className="charttip">
-      <b>{row.label}</b>
-      {series.map((s) => <span key={s.name}>{s.name} <em className="num">{money(row[s.name] as number)}</em></span>)}
-    </div>
-  );
+  return <ChartTip title={row.label} rows={series.map((s) => [s.name, money(row[s.name] as number)])} />;
 }
 
 /** Profit by product, last 3 months (finance.html #chTrend): grouped bars per month, profit before other expenses. */

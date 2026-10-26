@@ -35,10 +35,7 @@
 .v2 .deliveries .stack > * + *{margin-top:16px}
 .v2 .reasonfig{display:flex;gap:22px;padding:12px 20px 0;color:var(--ink-3);font-size:13px}
 .v2 .reasonfig b{color:var(--ink);font-size:15px;margin-left:4px}
-/* new: a bar row that is a link to Orders */
-.v2 .bars a.bar-row{color:inherit;border-radius:10px;margin:-6px -8px;padding:6px 8px}
-.v2 .bars a.bar-row:hover{background:var(--hover)}
-.v2 .bars a.bar-row:focus-visible{outline:2px solid var(--pine);outline-offset:2px}
+/* a bar row that is a link to Orders: the shared .bar-row link rule is in components.css */
 .v2 .bars .outlink{grid-template-columns:170px 1fr 56px}
 .v2 .bars .outlink .who{gap:8px;min-width:0}
 .v2 .bars .outlink .who .a{width:26px;height:26px;font-size:11px}
@@ -115,4 +112,3 @@
 .v2 .dlg .ppay-plan .mut,.v2 .dlg .ppay-gap{color:var(--ink-3);font-size:13px}
 .v2 .dlg .ppay-gap{margin-top:12px}
 .v2 .dlg .ppay-warn{margin:8px 0;font-size:13.5px;font-weight:700;color:var(--warn-ink)}
-.v2 .dlg .err{margin-top:12px;font-size:12.5px;color:var(--coral)}

@@ -2,7 +2,7 @@
 // Shapes follow GET /api/financial/monthly-pl, /profit-loss, /balance-sheet, /profit-by-product, /cohort-profit and
 // /failed-delivery-cost. Money is an API string.
 import type {
-  BalanceSheetStatement, CashFlowForecastReport, CohortProfit, FailedDeliveryCost, IncomeStatement, MonthlyPl, PlColumn, ProfitByProduct, ProfitTrend, Scenario, Trend,
+  BalanceSheetStatement, CashFlowForecastReport, CohortProfit, FailedDeliveryCost, IncomeStatement, MonthlyPl, PlColumn, ProfitByProduct, ProfitTrend, Scenario,
 } from '../../services/financeReports.service';
 
 const col = (over: Partial<PlColumn>): PlColumn => ({
@@ -98,7 +98,7 @@ export const cashFlow = (scenario: Scenario): CashFlowForecastReport => {
   return {
     kpis: { cashInHand: '41900.00', cashInTransit: '23400.00', cashExpected: '14800.00', cashAvailableNow: '41900.00', totalCashPosition: '65300.00', totalCashPipeline: '80100.00', supplierPayables: '5000.00' },
     payDays: { default: 7, overall: 4.5, fromHistory: true, byPartner: {} },
-    scenario: { key: scenario, currentRate: target ? 48 : null, targetRate: 60, multiplier: target ? 1.25 : 1 },
+    scenario: { key: scenario, currentRate: 48, targetRate: 60, multiplier: target ? 1.25 : 1 },
     forecast,
     summary: target
       ? { cashToday: '41900.00', expectedIn: '62000.00', expectedOut: '51000.00', endDate: '2026-11-16', endBalance: '37400.00', lowest: { date: '2026-11-16', balance: '37400.00' }, runsOutOn: null, tightDays: 7, status: 'safe' }
@@ -114,10 +114,3 @@ export const cashFlow = (scenario: Scenario): CashFlowForecastReport => {
   } as CashFlowForecastReport;
 };
 
-export const trend = (): Trend => ({
-  grouping: 'day',
-  reports: [
-    { date: '2026-10-15', revenue: '5400.00', expenses: '300.00', profit: '5100.00', orders: 22 },
-    { date: '2026-10-16', revenue: '4900.00', expenses: '0.00', profit: '4900.00', orders: 20 },
-  ],
-});

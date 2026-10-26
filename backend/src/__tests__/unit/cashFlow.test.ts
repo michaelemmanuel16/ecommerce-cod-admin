@@ -66,7 +66,7 @@ describe('FinancialService Cash Flow Report', () => {
             expect(Money.toApi(report.kpis.supplierPayables)).toBe('0.00');
             expect('outstandingReceivables' in report.kpis).toBe(false);
             expect(report.forecast).toHaveLength(30);
-            expect(report.scenario).toEqual({ key: 'pace', currentRate: null, targetRate: 60, multiplier: 1 });
+            expect(report.scenario).toEqual({ key: 'pace', currentRate: 48, targetRate: 60, multiplier: 1 });
             expect(report.summary.cashToday).toBe('1000.00'); // 1010 only
             expect(report.agentBreakdown).toHaveLength(1);
             expect(prismaMock.account.findMany).toHaveBeenCalledTimes(1); // one read for all balances

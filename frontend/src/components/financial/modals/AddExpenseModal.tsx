@@ -79,7 +79,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({ isOpen, onClos
       description="Money you spent that is not ad spend or a delivery fee."
       footer={
         <>
-          <span className="ink3" style={{ fontSize: 12.5, marginRight: 'auto' }}>Posts to account 5100 Operating Expenses.</span>
+          <span className="mfnote">Posts to account 5100 Operating Expenses.</span>
           <Button onClick={onClose} disabled={isSubmitting}>Cancel</Button>
           <Button type="submit" form="expense-form" variant="primary" disabled={isSubmitting || receipt.uploading}>
             {isSubmitting ? 'Saving...' : 'Save expense'}
@@ -91,7 +91,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({ isOpen, onClos
         <div>
           <Input id="expense-date" label="Date" type="date" value={formData.expenseDate}
             onChange={(e) => setFormData({ ...formData, expenseDate: e.target.value })} required />
-          {closedMonth && <p role="status" className="hint" style={{ color: 'var(--warn-ink)' }}>{rules!.closedNotice}</p>}
+          {closedMonth && <p role="status" className="hint warn">{rules!.closedNotice}</p>}
         </div>
         <Input id="expense-amount" label="Amount" type="number" step="0.01" min="0.01" value={formData.amount} placeholder="0.00"
           onChange={(e) => setFormData({ ...formData, amount: e.target.value })} required />
@@ -110,20 +110,26 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({ isOpen, onClos
 
         <div className="fl span2">
           <label>Receipt <span className="opt">(optional)</span></label>
-          <label className="btn" style={{ cursor: 'pointer', fontWeight: 600 }}>
-            <Paperclip />
-            {receipt.uploading ? 'Uploading...' : receipt.url ? 'Replace receipt' : 'Attach receipt'}
-            <input type="file" aria-label="Attach receipt" className="sr-only" accept={rules?.receipt.mimeTypes.join(',')}
-              disabled={receipt.uploading} onChange={(e) => { receipt.pick(e.target.files?.[0]); e.target.value = ''; }} />
-          </label>
-          {rules && <p className="hint">{receiptLimitText(rules.receipt)}</p>}
-          {receipt.url && !receipt.error && (
-            <p className="hint">
-              {receipt.name ?? 'Receipt attached'}{' '}
-              {isSafeReceiptUrl(receipt.url) && <span>(saved)</span>}{' '}
-              <button type="button" className="mini" onClick={receipt.remove}>Remove</button>
-            </p>
-          )}
+          <div className="revreceipt sm">
+            <div>
+              <Paperclip />
+              {receipt.url && !receipt.error && (
+                <b>
+                  {receipt.name ?? 'Receipt attached'}{' '}
+                  {isSafeReceiptUrl(receipt.url) && <span>(saved)</span>}
+                </b>
+              )}
+              {rules && <small>{receiptLimitText(rules.receipt)}</small>}
+              <p>
+                <label className="btn file">
+                  {receipt.uploading ? 'Uploading...' : receipt.url ? 'Replace receipt' : 'Attach receipt'}
+                  <input type="file" aria-label="Attach receipt" className="sr-only" accept={rules?.receipt.mimeTypes.join(',')}
+                    disabled={receipt.uploading} onChange={(e) => { receipt.pick(e.target.files?.[0]); e.target.value = ''; }} />
+                </label>
+                {receipt.url && !receipt.error && <> <button type="button" className="mini" onClick={receipt.remove}>Remove</button></>}
+              </p>
+            </div>
+          </div>
           {receipt.error && (
             <p role="alert" className="err">
               {receipt.error}{' '}

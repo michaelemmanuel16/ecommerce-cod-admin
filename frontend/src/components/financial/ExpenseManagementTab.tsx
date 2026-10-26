@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { Pencil, Paperclip, Plus, Search, Trash2, Lock } from 'lucide-react';
 import { useFinancialStore } from '../../stores/financialStore';
-import { Button, Card, ConfirmDialog, Skeleton, Tag } from '../ui-v2';
+import { Button, Card, ConfirmDialog, Pagination, Skeleton, Tag } from '../ui-v2';
+import { BarList } from './BarList';
 import { AddExpenseModal } from './modals/AddExpenseModal';
 import { ReceiptViewerModal } from './modals/ReceiptViewerModal';
 import { GuardedButtonV2 } from './GuardedButtonV2';
@@ -67,7 +68,6 @@ export const ExpenseManagementTab: React.FC = () => {
       total: rows.reduce((sum, r) => sum + r.amount, 0),
     };
   }, [expenseBreakdown]);
-  const totalPages = pagination.expenses?.pages ?? 1;
   const count = pagination.expenses?.total ?? expenses.length;
 
   const confirmDelete = async () => {
@@ -104,6 +104,9 @@ export const ExpenseManagementTab: React.FC = () => {
             {categoryFilter && (
               <Button className="on" onClick={() => { setCategoryFilter(''); setPage(1); }}>{categoryFilter} · Clear</Button>
             )}
+            <GuardedButtonV2 perm="addExpense" className="addexp" onClick={() => { setEditingExpense(null); setIsAddModalOpen(true); }}>
+              <Plus />Add expense
+            </GuardedButtonV2>
           </div>
           <div className="tablewrap">
             <table className="dt" aria-label="Expenses">
@@ -158,41 +161,26 @@ export const ExpenseManagementTab: React.FC = () => {
               </tbody>
             </table>
           </div>
-          <div className="expfoot">
-            <GuardedButtonV2 perm="addExpense" onClick={() => { setEditingExpense(null); setIsAddModalOpen(true); }}>
-              <Plus />Add expense
-            </GuardedButtonV2>
-            {totalPages > 1 && (
-              <>
-                <Button size="mini" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</Button>
-                <span className="ink3">Page {page} of {totalPages}</span>
-                <Button size="mini" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Next</Button>
-              </>
-            )}
-            <span className="tot" data-testid="expense-total">
-              {categoryFilter ? `${categoryFilter}, ` : ''}{count} expense{count === 1 ? '' : 's'} · Total <b className="num">{formatCurrency(expensesTotal)}</b>
-            </span>
-          </div>
+          {count > PAGE_SIZE && <Pagination page={page} pageSize={PAGE_SIZE} total={count} noun="expenses" onPageChange={setPage} />}
+          <p className="note" data-testid="expense-total">
+            {categoryFilter ? `${categoryFilter}, ` : ''}{count} expense{count === 1 ? '' : 's'} · Total <b className="num ink">{formatCurrency(expensesTotal)}</b>
+          </p>
         </Card>
 
         <Card title="By category" aside={formatCurrency(bars.total)}>
-          <div className="bars">
-            {bars.rows.length === 0 && <p className="ink3">No expenses in these dates.</p>}
-            {bars.rows.map((r, i) => (
-              <button
-                key={r.category}
-                type="button"
-                className={`bar-row${r.category === categoryFilter ? ' on' : ''}`}
-                style={{ gridTemplateColumns: '150px 1fr 80px' }}
-                aria-pressed={r.category === categoryFilter}
-                onClick={() => { setCategoryFilter(categoryFilter === r.category ? '' : r.category); setPage(1); }}
-              >
-                <span>{r.category}</span>
-                <div className="track"><i style={{ width: `${r.width}%`, background: CATEGORY_COLORS[i % CATEGORY_COLORS.length] }} /></div>
-                <span className="val num">{formatCurrency(r.amount)}</span>
-              </button>
-            ))}
-          </div>
+          {bars.rows.length === 0 ? (
+            <p className="note">No expenses in these dates.</p>
+          ) : (
+            <BarList
+              wide
+              label="Expenses by category"
+              rows={bars.rows.map((r, i) => ({
+                key: r.category, label: r.category, value: formatCurrency(r.amount), width: r.width, color: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
+                on: r.category === categoryFilter,
+                onClick: () => { setCategoryFilter(categoryFilter === r.category ? '' : r.category); setPage(1); },
+              }))}
+            />
+          )}
         </Card>
       </div>
 

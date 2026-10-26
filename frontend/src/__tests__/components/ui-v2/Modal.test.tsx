@@ -64,4 +64,16 @@ describe('ui-v2 Modal', () => {
     await user.click(document.querySelector('.mveil') as HTMLElement);
     expect(onClose).toHaveBeenCalledTimes(2);
   });
+  it('opens with focus on the first field of the body, not on the Close button (M5 UI fix V16)', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    await user.click(screen.getByText('Open it'));
+    expect(screen.getByLabelText('File name')).toHaveFocus();
+  });
+  it('takes a size: md is the plain dialog, the others add their class', () => {
+    const { rerender } = render(<Modal open onClose={() => {}} title="T"><p>x</p></Modal>);
+    expect(screen.getByRole('dialog').className).toBe('dlg');
+    rerender(<Modal open onClose={() => {}} title="T" size="xl"><p>x</p></Modal>);
+    expect(screen.getByRole('dialog')).toHaveClass('dlg', 'xl');
+  });
 });

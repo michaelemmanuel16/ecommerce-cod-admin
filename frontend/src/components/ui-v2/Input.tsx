@@ -3,6 +3,8 @@ import clsx from 'clsx';
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label: string;
+  /** A bare input for a table cell: no field wrapper, the label becomes the aria-label (like Select `compact`). */
+  compact?: boolean;
   /** Shows "(optional)" after the label. */
   optional?: boolean;
   hint?: string;
@@ -11,10 +13,11 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 }
 
 /** .fl field: label, input, hint or error. */
-export function Input({ label, optional, hint, error, id, className, ...rest }: InputProps) {
+export function Input({ label, compact, optional, hint, error, id, className, ...rest }: InputProps) {
   const auto = useId();
   const fieldId = id ?? auto;
   const noteId = `${fieldId}-note`;
+  if (compact) return <input id={fieldId} aria-label={label} className={clsx('tcell', className)} {...rest} />;
   return (
     <div className={clsx('fl', className)}>
       <label htmlFor={fieldId}>

@@ -14,7 +14,8 @@ export const GeneralLedgerTab: React.FC<GeneralLedgerTabProps> = ({ refreshKey =
     return (
         <div className="grid glgrid">
             <AccountsList selectedId={selected?.id ?? null} onSelectAccount={setSelected} refreshKey={refreshKey} />
-            {selected && <AccountLedger accountId={selected.id} accountType={selected.accountType} refreshKey={refreshKey} />}
+            {/* keyed by account: a pick starts a fresh ledger on page 1, so it makes one request */}
+            {selected && <AccountLedger key={selected.id} accountId={selected.id} accountType={selected.accountType} refreshKey={refreshKey} />}
         </div>
     );
 };

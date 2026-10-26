@@ -145,17 +145,17 @@ export function presetOf(range: { from: string; to: string }, now: Date = new Da
   }) ?? 'custom';
 }
 
-/** "in October", "today", "from 1 Oct to 17 Oct": the end of the page sub-line. */
-export function rangePhrase(range: { from: string; to: string }, now: Date = new Date()): string {
+/** "in October", "today", "from 1 Oct to 17 Oct": the end of the page sub-line. `lead` 'for' gives "for October" and "for the last 7 days". */
+export function rangePhrase(range: { from: string; to: string }, now: Date = new Date(), lead: 'in' | 'for' = 'in'): string {
   const preset = presetOf(range, now);
   const month = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleString('en-GB', { month: 'long', timeZone: 'UTC' });
   const day = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
   switch (preset) {
     case 'today': return 'today';
     case 'yesterday': return 'yesterday';
-    case 'last7': return 'in the last 7 days';
+    case 'last7': return `${lead} the last 7 days`;
     case 'month':
-    case 'lastMonth': return `in ${month(range.from)}`;
+    case 'lastMonth': return `${lead} ${month(range.from)}`;
     default: return range.from === range.to ? `on ${day(range.from)}` : `from ${day(range.from)} to ${day(range.to)}`;
   }
 }

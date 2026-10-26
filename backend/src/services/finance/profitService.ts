@@ -8,11 +8,12 @@
 import prisma from '../../utils/prisma';
 import * as Money from '../../utils/money';
 import { GL_ACCOUNTS } from '../../config/glAccounts';
-import { daysInMonth, getStoreTimeZone, localDate, parseBound, parseYmd } from '../kpi/dates';
+import type { Prisma } from '@prisma/client';
+import { getStoreTimeZone, localDate, parseBound } from '../kpi/dates';
 import { getTenantId, resolveTenantId } from '../../utils/tenantContext';
 import { rates } from '../kpi/rates';
 import { resolveFee } from '../feeRuleService';
-import { incomeStatementOver, MONTH_NAMES, monthsBefore, TARGET_NET_MARGIN, ymdOf } from './statementsService';
+import { incomeStatementOver, monthWindows, TARGET_NET_MARGIN } from './statementsService';
 
 const COST_MISSING = 'Cost missing';
 
@@ -92,32 +93,31 @@ export interface ProfitByProduct {
   costMissingProducts: number;
 }
 
-export async function profitByProduct(from: Date, to: Date): Promise<ProfitByProduct> {
-  const tenantId = resolveTenantId();
-  const zone = getStoreTimeZone(getTenantId());
-  const [orders, statement, paystackLines] = await Promise.all([
-    prisma.order.findMany({
-      where: deliveredWhere(from, to),
-      select: {
-        id: true, status: true, totalAmount: true, deliveryFee: true, landedCostTotal: true,
-        orderItems: { select: { productId: true, quantity: true, totalPrice: true, product: { select: { sku: true, name: true, cogs: true, productType: true } } } },
-      },
-    }),
-    incomeStatementOver(from, to),
-    // Paystack fee of each digital order: the 5060 debit of its digital_sale entry.
-    prisma.accountTransaction.findMany({
-      where: { tenantId, account: { code: GL_ACCOUNTS.PAYSTACK_FEES }, journalEntry: { isVoided: false, sourceType: 'digital_sale', entryDate: { gte: from, lt: to } } },
-      select: { debitAmount: true, creditAmount: true, journalEntry: { select: { sourceId: true } } },
-    }),
-  ]);
-  const paystackByOrder = new Map<number, Money.Money>();
-  for (const l of paystackLines) {
-    const id = l.journalEntry.sourceId as number;
-    paystackByOrder.set(id, Money.add(paystackByOrder.get(id) ?? Money.ZERO, Money.sub(l.debitAmount, l.creditAmount)));
-  }
+const PRODUCT_ORDER_SELECT = {
+  id: true, status: true, totalAmount: true, deliveryFee: true, landedCostTotal: true, deliveryDate: true, updatedAt: true,
+  orderItems: { select: { productId: true, quantity: true, totalPrice: true, product: { select: { sku: true, name: true, cogs: true, productType: true } } } },
+} satisfies Prisma.OrderSelect;
+type ProductOrder = Prisma.OrderGetPayload<{ select: typeof PRODUCT_ORDER_SELECT }>;
 
-  type Acc = { orders: Set<number>; units: number; revenue: Money.Money; cost: Money.Money; fees: Money.Money; product: { sku: string; name: string; cogs: Money.MoneyInput | null; productType: string } };
-  const acc = new Map<number, Acc>();
+/** Paystack fee of each digital order in [from, to): the 5060 debit of its digital_sale entry. */
+async function paystackFeesByOrder(from: Date, to: Date): Promise<Map<number, Money.Money>> {
+  const lines = await prisma.accountTransaction.findMany({
+    where: { tenantId: resolveTenantId(), account: { code: GL_ACCOUNTS.PAYSTACK_FEES }, journalEntry: { isVoided: false, sourceType: 'digital_sale', entryDate: { gte: from, lt: to } } },
+    select: { debitAmount: true, creditAmount: true, journalEntry: { select: { sourceId: true } } },
+  });
+  const byOrder = new Map<number, Money.Money>();
+  for (const l of lines) {
+    const id = l.journalEntry.sourceId as number;
+    byOrder.set(id, Money.add(byOrder.get(id) ?? Money.ZERO, Money.sub(l.debitAmount, l.creditAmount)));
+  }
+  return byOrder;
+}
+
+type ProductAcc = { orders: Set<number>; units: number; revenue: Money.Money; cost: Money.Money; fees: Money.Money; product: { sku: string; name: string; cogs: Money.MoneyInput | null; productType: string } };
+
+/** Splits each order's revenue, cost and fee over its items and adds them up per product. */
+function allocateToProducts(orders: ProductOrder[], paystackByOrder: Map<number, Money.Money>): Map<number, ProductAcc> {
+  const acc = new Map<number, ProductAcc>();
   for (const order of orders) {
     // A free bundled digital item (price 0) is not a sale of its own: it adds no revenue, cost or count.
     const items = order.orderItems.filter((i) => !(Money.orZero(i.totalPrice).isZero() && i.product.productType === 'digital'));
@@ -138,8 +138,12 @@ export async function profitByProduct(from: Date, to: Date): Promise<ProfitByPro
       a.fees = Money.add(a.fees, feeShares[k]);
     });
   }
+  return acc;
+}
 
-  const rows: ProductProfitRow[] = [...acc.entries()].map(([productId, a]) => {
+/** The table rows of the per-product sums, biggest revenue first. */
+function productRows(acc: Map<number, ProductAcc>): ProductProfitRow[] {
+  return [...acc.entries()].map(([productId, a]) => {
     const costMissing = a.product.productType !== 'digital' && !Money.isNonZero(a.product.cogs);
     const delivered = a.orders.size;
     const profit = costMissing ? null : Money.sub(a.revenue, Money.add(a.cost, a.fees));
@@ -156,12 +160,23 @@ export async function profitByProduct(from: Date, to: Date): Promise<ProfitByPro
       profitPerDeliveredOrder: profit && delivered > 0 ? Money.toApi(Money.roundHalfUp(Money.div(profit, delivered), 2)) : null,
     };
   }).sort((x, y) => Money.compare(y.revenue, x.revenue) || x.productId - y.productId);
+}
+
+export async function profitByProduct(from: Date, to: Date): Promise<ProfitByProduct> {
+  const zone = getStoreTimeZone(getTenantId());
+  const [orders, statement, paystackByOrder] = await Promise.all([
+    prisma.order.findMany({ where: deliveredWhere(from, to), select: PRODUCT_ORDER_SELECT }),
+    incomeStatementOver(from, to),
+    paystackFeesByOrder(from, to),
+  ]);
+  const acc = allocateToProducts(orders, paystackByOrder);
+  const rows = productRows(acc);
 
   // The totals are the ledger's. A row is built from orders, so the two can differ (returns, other currencies, fees on
   // failed orders): the difference is shown as its own line instead of being hidden.
   const ledgerFees = Money.add(statement.deliveryFees, statement.paystackFees);
   const accs = [...acc.values()];
-  const rowSum = (pick: (a: Acc) => Money.Money) => Money.sum(accs.map(pick));
+  const rowSum = (pick: (a: ProductAcc) => Money.Money) => Money.sum(accs.map(pick));
   const delivered = orders.length;
   return {
     from: localDate(from, zone), to: localDate(new Date(to.getTime() - 1), zone),
@@ -191,21 +206,27 @@ export interface ProfitTrend {
 
 /**
  * Profit by product for the last `months` calendar months, the current one to date (the Finance chart "Profit by product,
- * last 3 months"). Each month is one `profitByProduct` answer, so the figures equal the table for the same dates.
+ * last 3 months"). One read of the delivered orders over the whole span, split by delivery month in memory, so the figures
+ * equal the table for the same dates.
  */
 export async function profitTrendByProduct(opts: { months?: number; asOf?: string } = {}): Promise<ProfitTrend> {
   const zone = getStoreTimeZone(getTenantId());
-  const { year, month, day } = parseYmd(opts.asOf ?? localDate(new Date(), zone));
   const count = Math.min(Math.max(Math.trunc(opts.months ?? 3), 1), 12);
-  const months = Array.from({ length: count }, (_, i) => {
-    const m = monthsBefore(year, month, count - 1 - i);
-    const last = i === count - 1 ? day : daysInMonth(m.year, m.month);
-    return { key: `${m.year}-${String(m.month).padStart(2, '0')}`, label: MONTH_NAMES[m.month - 1], from: ymdOf(m.year, m.month, 1), to: ymdOf(m.year, m.month, last) };
-  });
-  const answers = await Promise.all(months.map((m) => profitByProduct(parseBound(m.from, 'from', zone), parseBound(m.to, 'to', zone))));
+  const months = monthWindows(count, opts.asOf ?? localDate(new Date(), zone));
+  const from = parseBound(months[0].from, 'from', zone);
+  const to = parseBound(months[count - 1].to, 'to', zone);
+  const [orders, paystackByOrder] = await Promise.all([
+    prisma.order.findMany({ where: deliveredWhere(from, to), select: PRODUCT_ORDER_SELECT }),
+    paystackFeesByOrder(from, to),
+  ]);
+  // The month an order counts in is its delivery day (deliveredWhere falls back to the last update when none is stamped)
+  const monthIndex = new Map(months.map((m, i) => [m.key, i]));
+  const perMonth: ProductOrder[][] = months.map(() => []);
+  for (const o of orders) perMonth[monthIndex.get(localDate(o.deliveryDate ?? o.updatedAt, zone).slice(0, 7)) ?? -1]?.push(o);
+
   const byProduct = new Map<number, { name: string; revenue: Money.Money; profits: Array<string | null> }>();
-  answers.forEach((answer, i) => {
-    for (const row of answer.products) {
+  perMonth.forEach((monthOrders, i) => {
+    for (const row of productRows(allocateToProducts(monthOrders, paystackByOrder))) {
       let p = byProduct.get(row.productId);
       if (!p) byProduct.set(row.productId, (p = { name: row.name, revenue: Money.ZERO, profits: months.map(() => Money.toApi(Money.ZERO)) }));
       p.revenue = Money.add(p.revenue, row.revenue);

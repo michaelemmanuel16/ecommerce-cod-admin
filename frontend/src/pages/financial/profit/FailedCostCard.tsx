@@ -1,6 +1,7 @@
 import { Card, EmptyState } from '../../../components/ui-v2';
 import type { FailedDeliveryCost } from '../../../services/financeReports.service';
 import { rangeLabel } from '../../reports/format';
+import { failedFeeNote, failedHints, lostUnitsNote } from './copy';
 import { money, monthOf } from './format';
 import { Part } from './Part';
 import type { FinanceBlock } from './useBlock';
@@ -9,11 +10,7 @@ import type { FinanceBlock } from './useBlock';
 export function FailedCostCard({ block }: { block: FinanceBlock<FailedDeliveryCost> }) {
   return (
     <Part name="Cost of failed deliveries" block={block} height={260}>
-      {(d) => {
-        const feePartners = d.partners.filter((p) => Number(p.fees) > 0);
-        const lostPartners = d.partners.filter((p) => p.unitsLost > 0);
-        const hints = d.partners.filter((p) => p.hint);
-        return (
+      {(d) => (
         <Card title="Cost of failed deliveries" aside={`${monthOf(d.to)} · ${rangeLabel(d.from, d.to)}`} className="fincard">
           {d.partners.length === 0 ? (
             <EmptyState title="No failed or returned orders" text="Nothing failed or came back in these dates." />
@@ -25,16 +22,13 @@ export function FailedCostCard({ block }: { block: FinanceBlock<FailedDeliveryCo
                     <tr>
                       <td>
                         Fee kept on failed orders
-                        <small>{feePartners.map((p) => `${p.name} ${p.failedOrders} failed or returned`).join(', ') || 'No fee was kept'}</small>
-                        {hints.map((p) => <small key={p.partnerId ?? 'none'}>{p.name}: {p.hint}</small>)}
+                        <small>{failedFeeNote(d)}</small>
+                        {failedHints(d).map((h) => <small key={h.key}>{h.text}</small>)}
                       </td>
                       <td className="r num">{money(d.fees)}</td>
                     </tr>
                     <tr>
-                      <td>
-                        Returned units lost
-                        <small>{lostPartners.map((p) => `${p.unitsLost} missing at ${p.name}`).join(', ') || 'No unit is missing'}</small>
-                      </td>
+                      <td>Returned units lost<small>{lostUnitsNote(d)}</small></td>
                       <td className="r num">{money(d.lostCost)}</td>
                     </tr>
                     <tr className="tot">
@@ -48,8 +42,7 @@ export function FailedCostCard({ block }: { block: FinanceBlock<FailedDeliveryCo
             </>
           )}
         </Card>
-        );
-      }}
+      )}
     </Part>
   );
 }

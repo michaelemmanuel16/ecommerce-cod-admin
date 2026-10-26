@@ -189,9 +189,6 @@ export interface CashFlowForecastReport {
   weeks: Array<{ from: string; to: string; moneyIn: Money; moneyOut: Money; net: Money; cashAtEnd: Money }>;
 }
 
-export interface TrendRow { date: string; revenue: Money; expenses: Money; profit: Money; orders: number }
-export interface Trend { reports: TrendRow[]; grouping: 'day' | 'week' | 'month' }
-
 export type ExportReport = 'profit-loss' | 'agent-aging' | 'general-ledger' | 'cash-flow';
 export type ExportFormat = 'csv' | 'xlsx';
 
@@ -214,7 +211,6 @@ export const financeReportsService = {
   cohortProfit: (from: string, to: string) => get<CohortProfit>('/api/financial/cohort-profit', { from, to }),
   failedDeliveryCost: (from: string, to: string) => get<FailedDeliveryCost>('/api/financial/failed-delivery-cost', { from, to }),
   cashFlow: (scenario: Scenario) => get<CashFlowForecastReport>('/api/financial/cash-flow', { scenario }),
-  trend: (from: string, to: string) => get<Trend>('/api/financial/reports', { period: 'daily', startDate: from, endDate: to }),
 
   /**
    * One Finance export as a real file (F-930). A ledger over the line limit answers 202 with a job id: this waits for the

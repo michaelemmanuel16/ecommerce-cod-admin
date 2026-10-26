@@ -120,7 +120,7 @@ export type Scenario = (typeof SCENARIOS)[number];
 
 export interface ScenarioInfo {
   key: Scenario;
-  /** Delivery success of the last 30 days (closed orders). Null for today's pace (not read) and when no order closed. */
+  /** Delivery success of the last 30 days (closed orders), for both scenarios so the pace label can name it. Null when no order closed. */
   currentRate: number | null;
   /** The store's delivery success target (successTargetPct). */
   targetRate: number;
@@ -141,11 +141,10 @@ export function scenarioMultiplier(key: Scenario, currentRate: number | null, ta
   return Money.roundHalfUp(Money.div(targetRate, currentRate), 4).toNumber();
 }
 
-/** The scenario with the store's target and, for the target scenario only, the delivery success of the last 30 days (KPI layer). */
+/** The scenario with the store's target and the delivery success of the last 30 days (KPI layer). Only the target scenario scales the inflow. */
 export async function forecastScenario(key: Scenario, now: Date = new Date()): Promise<ScenarioInfo> {
   const tenantId = resolveTenantId();
   const targetRate = await successTargetPct(tenantId, now);
-  if (key !== 'target') return { key, currentRate: null, targetRate, multiplier: 1 };
   const since = new Date(now.getTime() - 30 * DAY_MS);
   const current = (await rates(tenantId, since, now, { basis: 'delivery' })).deliverySuccessRate.value;
   return { key, currentRate: current, targetRate, multiplier: scenarioMultiplier(key, current, targetRate) };

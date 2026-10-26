@@ -174,10 +174,10 @@ describe('F-928 scenario switch, tiles and week by week (M5-T41)', () => {
     await deleteTenantRows([c]);
   });
 
-  it('today\'s pace is the default and does not run the rates query', async () => {
+  it('today\'s pace is the default; it names the current rate but does not scale the inflow', async () => {
     const res = await scenario('');
     expect(res.status).toBe(200);
-    expect(res.body.scenario).toEqual({ key: 'pace', currentRate: null, targetRate: 60, multiplier: 1 }); // pace does not read the rate
+    expect(res.body.scenario).toEqual({ key: 'pace', currentRate: 30, targetRate: 60, multiplier: 1 }); // the pace label names the rate
     expect(res.body.forecast[10].expectedCollection).toBe('100.00'); // new deliveries, after the 7 day pay time
     expect((await scenario('?scenario=pace')).body.forecast[10].expectedCollection).toBe('100.00');
   });

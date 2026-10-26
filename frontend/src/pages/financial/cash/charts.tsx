@@ -2,7 +2,7 @@
 // screen reader, tokens for colour, and a hover tooltip that reads the row back.
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { compactNumber, shortDay } from '../../dashboard/format';
-import { AXIS } from '../../reports/charts';
+import { AXIS, ChartTip } from '../../reports/charts';
 import { money } from '../profit/format';
 
 interface ForecastPoint { date: string; balance: number }
@@ -43,10 +43,5 @@ interface HoverProps {
 function Hover({ active, payload, rows }: HoverProps) {
   if (!active || !payload?.length) return null;
   const p = payload[0].payload;
-  return (
-    <div className="charttip">
-      <b>{shortDay(p.date)}</b>
-      {rows(p).map(([label, value]) => <span key={label}>{label} <em className="num">{value}</em></span>)}
-    </div>
-  );
+  return <ChartTip title={shortDay(p.date)} rows={rows(p)} />;
 }

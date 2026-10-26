@@ -30,6 +30,8 @@ export function AgentAgingTab({ report, busyId, onRemind, onBlock, onUnblock, on
   const rows = useMemo(() => (overdueOnly ? report.partners.filter((p) => p.overdueOrders > 0) : report.partners), [report.partners, overdueOnly]);
   const { summary } = report;
   const cashTotal = report.partners.reduce((sum, p) => sum + p.cashHeld, 0);
+  // the oldest unpaid order across all partners
+  const oldest = report.partners.reduce<number | null>((max, p) => (p.oldestUnpaidDays === null ? max : Math.max(max ?? 0, p.oldestUnpaidDays)), null);
   const bucketTotal = (i: number) => formatCurrency(summary.bucketTotals[i]?.amount ?? 0);
 
   const columns: Column<AgingPartner>[] = [
@@ -53,7 +55,7 @@ export function AgentAgingTab({ report, busyId, onRemind, onBlock, onUnblock, on
       header: 'Cash held',
       right: true,
       total: <b className="num">{formatCurrency(cashTotal)}</b>,
-      render: (p) => <b className="num" style={p.negativeCashHeld ? { color: 'var(--coral)' } : undefined}>{formatCurrency(p.cashHeld)}</b>,
+      render: (p) => <b className={p.negativeCashHeld ? 'num neg' : 'num'}>{formatCurrency(p.cashHeld)}</b>,
     },
     ...(['0-3', '4-7', '8-14', '15+'] as const).map((key, i): Column<AgingPartner> => ({
       key: `b${key}`,
@@ -62,12 +64,13 @@ export function AgentAgingTab({ report, busyId, onRemind, onBlock, onUnblock, on
       total: <span className="num">{bucketTotal(i)}</span>,
       render: (p) => {
         const amount = p.buckets.find((b) => b.key === key)?.amount ?? 0;
-        return amount > 0 && isLateBucket(key) ? <span className="num" style={{ color: 'var(--coral)' }}>{formatCurrency(amount)}</span> : money(amount);
+        return amount > 0 && isLateBucket(key) ? <span className="num neg">{formatCurrency(amount)}</span> : money(amount);
       },
     })),
     {
       key: 'oldest',
       header: 'Oldest',
+      total: oldest === null ? undefined : <Tag tone="n">{daysText(oldest)}</Tag>,
       render: (p) => (p.oldestUnpaidDays === null ? <span className="mut">None</span> : <Tag tone={isLateOldest(p.oldestUnpaidDays, p.daysToPay) ? 'bad' : 'n'}>{daysText(p.oldestUnpaidDays)}</Tag>),
     },
     { key: 'dtp', header: 'Days to pay', right: true, render: (p) => <span className="num">{daysText(p.daysToPay)}</span> },

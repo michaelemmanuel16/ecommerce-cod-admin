@@ -1,4 +1,4 @@
-import type { BucketKey } from '../../../services/collections.service';
+import type { AgingBucket, BucketKey, PartnerDeposit } from '../../../services/collections.service';
 import type { TagTone } from '../../../components/ui-v2';
 import { AVATAR_TONES } from '../../../utils/people';
 import { plural } from '../../dashboard/format';
@@ -7,8 +7,12 @@ export const daysText = (n: number): string => plural(n, 'day');
 export const ordersText = (n: number): string => `${n.toLocaleString('en-GB')} ${n === 1 ? 'order' : 'orders'}`;
 
 /** The buckets that count as late: 8 days and older are coral in the card bars and in the partner table. */
-const LATE_BUCKETS: readonly BucketKey[] = ['8-14', '15+'];
-export const isLateBucket = (key: BucketKey): boolean => LATE_BUCKETS.includes(key);
+const LATE_KEYS: readonly BucketKey[] = ['8-14', '15+'];
+export const isLateBucket = (key: BucketKey): boolean => LATE_KEYS.includes(key);
+
+/** What the 8 days and older buckets of a bucket list hold: a partner's `buckets` or the summary's `bucketTotals`. */
+export const lateOf = (buckets: AgingBucket[]): { amount: number; orders: number } =>
+  buckets.filter((b) => isLateBucket(b.key)).reduce((t, b) => ({ amount: t.amount + b.amount, orders: t.orders + b.orders }), { amount: 0, orders: 0 });
 
 /** Bar colour per age bucket, as the mockup: fresh is mint, then gold, the late ones coral. */
 export const bucketColor = (key: BucketKey): string => (isLateBucket(key) ? 'var(--coral)' : key === '4-7' ? 'var(--gold)' : 'var(--mint)');
@@ -17,6 +21,9 @@ export const toneOf = (id: number): (typeof AVATAR_TONES)[number] => AVATAR_TONE
 
 /** Oldest unpaid order older than the partner's days to pay. */
 export const isLateOldest = (oldest: number | null, daysToPay: number): boolean => oldest !== null && oldest > daysToPay;
+
+/** The pay-ins that still wait to be verified. */
+export const pendingOf = (deposits: PartnerDeposit[]): PartnerDeposit[] => deposits.filter((d) => d.status === 'pending');
 
 export const DEPOSIT_TONE: Record<'pending' | 'verified' | 'rejected', TagTone> = { pending: 'warn', verified: 'ok', rejected: 'bad' };
 export const depositLabel = (status: string): string => status.charAt(0).toUpperCase() + status.slice(1);
@@ -39,6 +46,9 @@ export const ordersCovered = (allocations: Array<{ collectionId: number }> | nul
 
 /** The file type shown beside the paperclip: "PDF", "JPG". */
 export const receiptKind = (url: string): string => (url.split('?')[0].split('.').pop() ?? 'FILE').slice(0, 4).toUpperCase();
+
+/** The file name of a receipt, from the end of its address. */
+export const receiptName = (url: string): string => decodeURIComponent(url.split('?')[0].split('/').pop() ?? '') || 'Receipt';
 
 /** Who paid a pay-in in: the name the server sent, or the partner's number when it sent none. */
 export const partnerName = (d: { agentId: number; agent?: { firstName: string; lastName: string } }): string =>

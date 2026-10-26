@@ -256,6 +256,19 @@ export function monthsBefore(year: number, month: number, n: number) {
   return { year: Math.floor(index / 12), month: (index % 12) + 1 };
 }
 
+/**
+ * The `count` calendar months that end with the month of `today` (YYYY-MM-DD), oldest first. The last one stops at `today`,
+ * the others are whole months.
+ */
+export function monthWindows(count: number, today: string): Array<{ key: string; label: string; from: string; to: string }> {
+  const { year, month, day } = parseYmd(today);
+  return Array.from({ length: count }, (_, i) => {
+    const m = monthsBefore(year, month, count - 1 - i);
+    const last = i === count - 1 ? day : daysInMonth(m.year, m.month);
+    return { key: `${m.year}-${String(m.month).padStart(2, '0')}`, label: MONTH_NAMES[m.month - 1], from: ymdOf(m.year, m.month, 1), to: ymdOf(m.year, m.month, last) };
+  });
+}
+
 async function periodNotes(): Promise<Record<string, string>> {
   const config = await prisma.systemConfig.findFirst({ where: { tenantId: resolveTenantId() }, select: { periodNotes: true } });
   const stored = config?.periodNotes;
@@ -322,11 +335,10 @@ export async function monthlyPl(opts: { months?: number; compare?: 'to-date' | '
 
   type Spec = { key: string; label: string; kind: PlColumnKind; from: string; to: string };
   const specs: Spec[] = [];
-  for (let n = months; n >= 1; n--) {
-    const m = monthsBefore(year, month, n);
-    const to = ymdOf(m.year, m.month, daysInMonth(m.year, m.month));
-    if (firstDay === null || to < firstDay) continue;
-    specs.push({ key: `${m.year}-${String(m.month).padStart(2, '0')}`, label: MONTH_NAMES[m.month - 1], kind: 'month', from: ymdOf(m.year, m.month, 1), to });
+  // the whole months before the current one: every window but the last (the current month)
+  for (const w of monthWindows(months + 1, today).slice(0, -1)) {
+    if (firstDay === null || w.to < firstDay) continue;
+    specs.push({ ...w, kind: 'month' });
   }
   if (compare === 'to-date') {
     const prev = monthsBefore(year, month, 1);

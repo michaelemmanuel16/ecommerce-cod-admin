@@ -1,10 +1,21 @@
 // The charts of docs/mockups/v2/reports.html, drawn with recharts like the Dashboard chart. Every chart sits in a
 // role="img" box whose label tells a screen reader what the picture shows.
+import type { ReactNode } from 'react';
 import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, Pie, PieChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import { compactNumber } from '../dashboard/format';
 import { dayTick } from './format';
 
 export const AXIS = { fill: 'var(--ink-3)', fontSize: 11, fontFamily: 'Plus Jakarta Sans' } as const;
+
+/** The hover card of a Finance chart: a title and one line per series (label, value). Recharts passes `active` and `payload` to the caller. */
+export function ChartTip({ title, rows }: { title: ReactNode; rows: Array<[ReactNode, ReactNode]> }) {
+  return (
+    <div className="charttip">
+      <b>{title}</b>
+      {rows.map(([label, value], i) => <span key={i}>{label} <em className="num">{value}</em></span>)}
+    </div>
+  );
+}
 /** About nine labels along the x axis whatever the range (the mockup's `every`). */
 // shared with the cash flow charts
 // eslint-disable-next-line react-refresh/only-export-components

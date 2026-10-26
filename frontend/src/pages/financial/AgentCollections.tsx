@@ -8,13 +8,11 @@ import { CollectionActionModal } from '../../components/financial/modals/Collect
 import { BlockPartnerModal } from '../../components/financial/modals/BlockPartnerModal';
 import { collectionsService, type AgingPartner, type PartnerDeposit } from '../../services/collections.service';
 import { financialService } from '../../services/financial.service';
-import { useBlock } from './profit/useBlock';
+import { useAging, useDeposits } from './profit/blocks';
 import { apiErrorMessage } from '../../utils/apiError';
 import { formatCurrency } from '../../utils/format';
 import { ListSkeleton } from '../deliveries/ListSkeleton';
-import { ordersText } from './collections/model';
-
-const pendingOf = (deposits: PartnerDeposit[]) => deposits.filter((d) => d.status === 'pending');
+import { lateOf, ordersText, pendingOf } from './collections/model';
 
 /**
  * The Agent collections tab of Finance (F-704, F-910 to F-912, M5-T36), laid out as the v2 mockup: four tiles, cash exposure
@@ -23,8 +21,8 @@ const pendingOf = (deposits: PartnerDeposit[]) => deposits.filter((d) => d.statu
  */
 export function AgentCollections() {
   const say = useToast();
-  const aging = useBlock('collections:aging', collectionsService.aging);
-  const payIns = useBlock('collections:deposits', collectionsService.deposits);
+  const aging = useAging();
+  const payIns = useDeposits();
   const report = aging.data;
   const deposits = payIns.data;
   const failed = aging.status === 'failed';
@@ -66,22 +64,20 @@ export function AgentCollections() {
 
   const s = report?.summary;
   // "Overdue, 8 days or more" is the two oldest buckets of the aging report
-  const late = s ? s.bucketTotals.filter((b) => b.key === '8-14' || b.key === '15+') : [];
-  const lateAmount = late.reduce((sum, b) => sum + b.amount, 0);
-  const lateOrders = late.reduce((sum, b) => sum + b.orders, 0);
-  const latePartners = report ? report.partners.filter((p) => p.buckets.some((b) => (b.key === '8-14' || b.key === '15+') && b.amount > 0)) : [];
+  const { amount: lateAmount, orders: lateOrders } = lateOf(s?.bucketTotals ?? []);
+  const latePartners = report ? report.partners.filter((p) => lateOf(p.buckets).amount > 0) : [];
   const toVerify = deposits ? pendingOf(deposits) : null;
   const toVerifyAmount = (toVerify ?? []).reduce((sum, d) => sum + d.amount, 0);
   const cashHeldOf = (agentId: number) => report?.partners.find((p) => p.agentId === agentId)?.cashHeld ?? null;
   const skel = <Skeleton width={90} height={28} />;
 
   return (
-    <div className="collections">
+    <div className="collections vstack">
       {failed && !report ? (
         <div className="card"><EmptyState title="The collections could not load." action={<Button onClick={reload}>Try again</Button>} /></div>
       ) : (
         <>
-          <div className="grid kpis" style={{ marginTop: 0 }} aria-busy={!report}>
+          <div className="grid kpis" aria-busy={!report}>
             <Tile icon={<Hourglass />} tone="gold" value={s ? formatCurrency(s.totalOutstandingAmount) : skel} label="Cash with agents and 3PLs"
               footer={<><span>{s ? `${ordersText(s.totalOrders)} delivered, unpaid` : 'Delivered orders unpaid'}</span>{s && s.totalOrders > 0 && <Tag tone="warn">Chase</Tag>}</>} />
             <Tile icon={<AlarmClock />} tone="coral" value={s ? formatCurrency(lateAmount) : skel} label="Overdue, 8 days or more"
@@ -92,7 +88,7 @@ export function AgentCollections() {
               footer={<><span>Block stops new assignments</span>{s && s.blockedPartners === 0 && <Tag tone="n">None</Tag>}</>} />
           </div>
 
-          {report ? <CashExposureCard report={report} /> : <div className="card"><ListSkeleton label="Loading exposure" rows={3} height={26} style={{ padding: 20 }} /></div>}
+          {report ? <CashExposureCard report={report} /> : <div className="card"><ListSkeleton label="Loading exposure" rows={3} height={26} /></div>}
 
           {report ? (
             <AgentAgingTab
@@ -104,7 +100,7 @@ export function AgentCollections() {
               onExport={() => void exportCsv()}
             />
           ) : (
-            <div className="card"><ListSkeleton label="Loading partners" rows={2} height={44} style={{ padding: 20 }} /></div>
+            <div className="card"><ListSkeleton label="Loading partners" rows={2} height={44} /></div>
           )}
 
           {deposits ? (
@@ -112,7 +108,7 @@ export function AgentCollections() {
           ) : payIns.status === 'failed' ? (
             <div className="card"><EmptyState title="The collections to verify could not load." action={<Button onClick={payIns.retry}>Try again</Button>} /></div>
           ) : (
-            <div className="card"><ListSkeleton label="Loading collections to verify" rows={2} height={44} style={{ padding: 20 }} /></div>
+            <div className="card"><ListSkeleton label="Loading collections to verify" rows={2} height={44} /></div>
           )}
         </>
       )}
