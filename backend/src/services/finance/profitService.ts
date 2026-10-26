@@ -16,7 +16,10 @@ import { incomeStatementOver } from './statementsService';
 
 const COST_MISSING = 'Cost missing';
 
-/** Orders counted as delivered in a range: the revenue window of the KPI (delivery date, else last update for old rows). */
+/**
+ * Product rows use delivered orders plus paid digital orders at face value (no returns, no currency conversion). The totals
+ * come from the ledger, and the difference shows in `notMatchedToProductRow`. One shared revenue definition per order is a follow-up.
+ */
 function deliveredWhere(from: Date, to: Date) {
   return {
     tenantId: resolveTenantId(),
