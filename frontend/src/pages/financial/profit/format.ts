@@ -38,3 +38,6 @@ export const lossClass = (v: Money | null | undefined): string | undefined => (i
 
 /** ["Aug", "Sep", "1-17 Sep"] -> "Aug, Sep and 1-17 Sep". */
 export const listWords = (items: string[]): string => (items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`);
+
+/** "Projected at 34% yield" -> "projected at 34% yield". */
+export const lowerFirst = (s: string): string => s.charAt(0).toLowerCase() + s.slice(1);

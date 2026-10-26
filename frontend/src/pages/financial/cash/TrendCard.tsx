@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { format, subDays } from 'date-fns';
-import { Button, Card, EmptyState, Select, Skeleton } from '../../../components/ui-v2';
+import { Card, EmptyState, Select, Skeleton } from '../../../components/ui-v2';
+import { BlockError } from '../../dashboard/blocks/Frame';
 import { financeReportsService } from '../../../services/financeReports.service';
 import { todayYmd } from '../../../utils/format';
 import { rangeLabel } from '../../reports/format';
@@ -30,18 +31,15 @@ export function TrendCard() {
     <Card
       title={`Revenue and expenses per ${trend && trend.grouping !== 'day' ? trend.grouping : 'day'}`}
       aside={rangeLabel(from, to)}
-      className={`fincard${block.loading && trend ? ' finbusy' : ''}`}
+      className={`fincard${block.status === 'loading' && trend ? ' finbusy' : ''}`}
     >
       <div className="trendctl">
         <Select compact label="Range" value={range} onChange={(e) => setRange(e.target.value as typeof range)}>
           {RANGES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
         </Select>
       </div>
-      {block.failed ? (
-        <div className="blockerr" role="alert">
-          <div><b>Revenue and expenses did not load</b><p>Something went wrong on our side.</p></div>
-          <Button size="mini" onClick={block.retry}>Retry</Button>
-        </div>
+      {block.status === 'failed' ? (
+        <BlockError bare name="Revenue and expenses" onRetry={block.retry} />
       ) : !trend ? (
         <div aria-busy="true" aria-label="Loading revenue and expenses"><Skeleton height={260} className="skelcard" /></div>
       ) : trend.reports.length === 0 ? (

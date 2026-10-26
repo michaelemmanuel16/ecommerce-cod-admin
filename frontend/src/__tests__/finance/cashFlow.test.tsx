@@ -7,6 +7,7 @@ import { CashFlowPanel } from '../../pages/financial/cash/CashFlowPanel';
 import { ExportMenu } from '../../pages/financial/cash/ExportMenu';
 import { useConfigStore } from '../../stores/configStore';
 import { useFinancialStore } from '../../stores/financialStore';
+import { clearBlockCache } from '../../pages/financial/profit/useBlock';
 import { cashFlow, trend } from '../fixtures/financeProfit';
 
 const svc = { cashFlow: vi.fn(), trend: vi.fn(), exportFile: vi.fn() };
@@ -16,13 +17,15 @@ vi.mock('../../services/financeReports.service', () => ({
   },
 }));
 const saveBlob = vi.fn();
-vi.mock('../../pages/orders/importText', () => ({ saveBlob: (...a: unknown[]) => saveBlob(...a), apiMessage: async (_e: unknown, fallback: string) => fallback }));
+vi.mock('../../utils/downloadBlob', () => ({ downloadBlob: (...a: unknown[]) => saveBlob(...a) }));
+vi.mock('../../pages/orders/importText', () => ({ apiMessage: async (_e: unknown, fallback: string) => fallback }));
 
 const open = (ui: JSX.Element) => render(<ToastProvider><MemoryRouter>{ui}</MemoryRouter></ToastProvider>);
 const tile = (label: string) => screen.getByText(label).closest('.kpi') as HTMLElement;
 const dayGap = (from: string, to: string) => Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000);
 
 beforeEach(() => {
+  clearBlockCache();
   Object.values(svc).forEach((m) => m.mockReset());
   saveBlob.mockReset();
   useConfigStore.setState({ currency: 'GHS' });
@@ -48,11 +51,11 @@ describe('Cash flow tab (M5-T41)', () => {
     expect(within(tile('Expected, out for delivery')).getByText('Expected')).toBeInTheDocument();
   });
 
-  it('starts at today\'s pace with the delivery success it stands on, and shows the 30 day tiles and the finding', async () => {
+  it('starts at today\'s pace, and shows the 30 day tiles and the finding', async () => {
     open(<CashFlowPanel />);
     expect(await screen.findByText('Expected in, 30 days')).toBeInTheDocument();
     expect(svc.cashFlow).toHaveBeenCalledWith('pace');
-    expect(screen.getByRole('button', { name: "Today's pace, 48% delivery success" })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: "Today's pace" })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'If delivery success reaches 60%' })).toHaveAttribute('aria-pressed', 'false');
     expect(tile('Expected in, 30 days')).toHaveTextContent('GH₵3,000');
     expect(tile('Expected out, 30 days')).toHaveTextContent('GH₵51,000');
@@ -62,6 +65,13 @@ describe('Cash flow tab (M5-T41)', () => {
     expect(screen.getByText("Cash runs out around 12 Nov at today's pace")).toBeInTheDocument();
     expect(screen.getByText('New deliveries are paid after 4.5 days on average, from partner payout history.')).toBeInTheDocument();
     expect(screen.getByText('Supplier payables of GH₵5,000 go out on the first day.')).toBeInTheDocument();
+  });
+
+  it('a tight low point says how many days of spending the server counts as tight', async () => {
+    svc.cashFlow.mockResolvedValue({ ...cashFlow('pace'), summary: { ...cashFlow('pace').summary, status: 'tight', runsOutOn: null, tightDays: 5, lowest: { date: '2026-11-03', balance: '900.00' } } });
+    open(<CashFlowPanel />);
+    expect(await screen.findByText('Cash gets tight around 3 Nov')).toBeInTheDocument();
+    expect(screen.getByText(/That is under 5 days of expected spending\./)).toBeInTheDocument();
   });
 
   it('the scenario switch asks the server for the target, and every figure and sentence follows its answer', async () => {
@@ -77,8 +87,10 @@ describe('Cash flow tab (M5-T41)', () => {
     // outflows do not change with the scenario, and the money buckets are the same
     expect(tile('Expected out, 30 days')).toHaveTextContent('GH₵51,000');
     expect(tile('Cash at bank and MoMo')).toHaveTextContent('GH₵41,900');
-    await userEvent.click(screen.getByRole('button', { name: "Today's pace, 48% delivery success" }));
-    await waitFor(() => expect(svc.cashFlow).toHaveBeenLastCalledWith('pace'));
+    await userEvent.click(screen.getByRole('button', { name: "Today's pace" }));
+    // pace was answered a moment ago: the switch back reuses it and shows its figures without asking again
+    await waitFor(() => expect(tile('Expected in, 30 days')).toHaveTextContent('GH₵3,000'));
+    expect(svc.cashFlow).toHaveBeenCalledTimes(2);
   });
 
   it('lists the weeks, with a negative net and cash at the end as the server sent them', async () => {

@@ -1,21 +1,13 @@
 import { Card } from '../../../components/ui-v2';
-import type { CohortProfit, ProfitByProduct } from '../../../services/financeReports.service';
+import type { CohortProfit } from '../../../services/financeReports.service';
 import { rangeLabel } from '../../reports/format';
-import { twoWays } from './copy';
-import { cost, lossClass, money, monthOf, pct } from './format';
+import { cohortLine } from './copy';
+import { cost, lossClass, lowerFirst, money, monthOf, pct } from './format';
 import { Part } from './Part';
-import type { Block } from './useBlock';
-
-const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
-
-interface CohortCardProps {
-  cohort: Block<CohortProfit>;
-  /** The by-delivery-date answer for the same range: the card says in one line how the two numbers differ (F-925). */
-  profit: Block<ProfitByProduct>;
-}
+import type { FinanceBlock } from './useBlock';
 
 /** The order cohort card (F-925, M5-T26): projected profit of the orders placed in the range, at the yield of the closed cohorts. */
-export function CohortCard({ cohort, profit }: CohortCardProps) {
+export function CohortCard({ cohort }: { cohort: FinanceBlock<CohortProfit> }) {
   return (
     <Part name="Order cohort" block={cohort} height={300}>
       {(c) => {
@@ -27,7 +19,6 @@ export function CohortCard({ cohort, profit }: CohortCardProps) {
             </Card>
           );
         }
-        const line = profit.data ? twoWays(profit.data, c).line : null;
         return (
           <Card title={`${month} order cohort`} aside={`Orders placed ${rangeLabel(c.from, c.to)}, ${lowerFirst(c.yieldLabel)}`} className="fincard">
             <div className="tablewrap">
@@ -46,7 +37,7 @@ export function CohortCard({ cohort, profit }: CohortCardProps) {
                 </tbody>
               </table>
             </div>
-            {line && <p className="note">{line}</p>}
+            <p className="note">{cohortLine(c)}</p>
           </Card>
         );
       }}

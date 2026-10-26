@@ -11,6 +11,7 @@ import { OverviewProfitCards } from '../../pages/financial/profit/OverviewProfit
 import { ProductProfitPanel } from '../../pages/financial/profit/ProductProfitPanel';
 import { StatementsPanel } from '../../pages/financial/profit/StatementsPanel';
 import { ProductsTab } from '../../pages/reports/ProductsTab';
+import { clearBlockCache } from '../../pages/financial/profit/useBlock';
 import { useAuthStore } from '../../stores/authStore';
 import { useConfigStore } from '../../stores/configStore';
 import { useFinancialStore } from '../../stores/financialStore';
@@ -38,6 +39,7 @@ const tableText = (name: string) => {
 const tile = (label: string) => screen.getByText(label).closest('.kpi') as HTMLElement;
 
 beforeEach(() => {
+  clearBlockCache();
   Object.values(svc).forEach((m) => m.mockReset());
   get.mockReset();
   useConfigStore.setState({ currency: 'GHS', loaded: true });
@@ -108,15 +110,14 @@ describe('contract: Reports and Finance print the same numbers for the same rang
     expect(onFinance.length).toBeGreaterThan(5);
   });
 
-  it('both screens ask the API for the same range', async () => {
+  it('both screens ask for the same range, so the second one reuses the first answer (one call)', async () => {
     const finance = render(<ProductProfitPanel />);
     await screen.findByRole('table', { name: 'Profit by product' });
-    const onFinance = svc.profitByProduct.mock.calls.at(-1);
+    expect(svc.profitByProduct).toHaveBeenCalledWith(RANGE.from, RANGE.to);
     finance.unmount();
-    svc.profitByProduct.mockClear();
     render(<ProductsTab range={RANGE} />);
     await screen.findByRole('table', { name: 'Profit by product' });
-    expect(svc.profitByProduct.mock.calls.at(-1)).toEqual(onFinance);
+    expect(svc.profitByProduct).toHaveBeenCalledTimes(1);
   });
 
   it('the net result, the cohort figure and the income statement agree across the two screens', async () => {

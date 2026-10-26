@@ -49,7 +49,7 @@ export const profitByProduct = (): ProfitByProduct => ({
   totals: { delivered: 376, revenue: '92000.00', productCost: '12000.00', fees: '12200.00', metaAds: '0.00' },
   notMatchedToProductRow: { revenue: '0.00', productCost: '0.00', fees: '0.00' },
   metaSpendWithNoProduct: '76200.00', repCommission: '2768.00', otherExpenses: '3100.00',
-  netProfit: '-14268.00', netMarginPct: -15.5, profitPerDeliveredOrder: '-37.95', costMissingProducts: 1,
+  netProfit: '-14268.00', netMarginPct: -15.5, targetNetMargin: 35, profitPerDeliveredOrder: '-37.95', costMissingProducts: 1,
 });
 
 export const cohortProfit = (): CohortProfit => ({
@@ -82,11 +82,11 @@ export const cashFlow = (scenario: Scenario): CashFlowForecastReport => {
   return {
     kpis: { cashInHand: '41900.00', cashInTransit: '23400.00', cashExpected: '14800.00', cashAvailableNow: '41900.00', totalCashPosition: '65300.00', totalCashPipeline: '80100.00', supplierPayables: '5000.00' },
     payDays: { default: 7, overall: 4.5, fromHistory: true, byPartner: {} },
-    scenario: { key: scenario, currentRate: 48, targetRate: 60, multiplier: target ? 1.25 : 1 },
+    scenario: { key: scenario, currentRate: target ? 48 : null, targetRate: 60, multiplier: target ? 1.25 : 1 },
     forecast,
     summary: target
-      ? { cashToday: '41900.00', expectedIn: '62000.00', expectedOut: '51000.00', endDate: '2026-11-16', endBalance: '37400.00', lowest: { date: '2026-11-16', balance: '37400.00' }, runsOutOn: null, status: 'safe' }
-      : { cashToday: '41900.00', expectedIn: '3000.00', expectedOut: '51000.00', endDate: '2026-11-16', endBalance: '-6100.00', lowest: { date: '2026-11-16', balance: '-6100.00' }, runsOutOn: '2026-11-12', status: 'runs_out' },
+      ? { cashToday: '41900.00', expectedIn: '62000.00', expectedOut: '51000.00', endDate: '2026-11-16', endBalance: '37400.00', lowest: { date: '2026-11-16', balance: '37400.00' }, runsOutOn: null, tightDays: 7, status: 'safe' }
+      : { cashToday: '41900.00', expectedIn: '3000.00', expectedOut: '51000.00', endDate: '2026-11-16', endBalance: '-6100.00', lowest: { date: '2026-11-16', balance: '-6100.00' }, runsOutOn: '2026-11-12', tightDays: 7, status: 'runs_out' },
     weeks: [
       { from: '2026-10-18', to: '2026-10-24', moneyIn: '700.00', moneyOut: '11900.00', net: '-11200.00', cashAtEnd: '30700.00' },
       { from: '2026-10-25', to: '2026-10-31', moneyIn: '700.00', moneyOut: '11900.00', net: '-11200.00', cashAtEnd: '19500.00' },

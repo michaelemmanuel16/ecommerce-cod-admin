@@ -104,6 +104,7 @@ export interface ProfitByProduct {
   otherExpenses: Money;
   netProfit: Money;
   netMarginPct: number | null;
+  targetNetMargin: number;
   profitPerDeliveredOrder: Money | null;
   costMissingProducts: number;
 }
@@ -176,6 +177,7 @@ export interface CashFlowForecastReport {
     endBalance: Money;
     lowest: { date: string; balance: Money };
     runsOutOn: string | null;
+    tightDays: number;
     status: 'safe' | 'tight' | 'runs_out';
   };
   weeks: Array<{ from: string; to: string; moneyIn: Money; moneyOut: Money; net: Money; cashAtEnd: Money }>;
@@ -187,48 +189,25 @@ export interface Trend { reports: TrendRow[]; grouping: 'day' | 'week' | 'month'
 export type ExportReport = 'profit-loss' | 'agent-aging' | 'general-ledger' | 'cash-flow';
 export type ExportFormat = 'csv' | 'xlsx';
 
-const quiet = { quiet: true } as const; // each card shows its own error with Retry, so no second toast
+/** A GET whose card shows its own error (so no toast). The answers are cached by useBlock, so the 5 second request cache stays. */
+const get = async <T>(url: string, params?: Record<string, string>): Promise<T> => (await apiClient.get<T>(url, { params, quiet: true })).data;
 
 export const financeReportsService = {
-  async monthlyPl(): Promise<MonthlyPl> {
-    const { data } = await apiClient.get<MonthlyPl>('/api/financial/monthly-pl', { ...quiet, skipCache: true });
-    return data;
-  },
+  monthlyPl: () => get<MonthlyPl>('/api/financial/monthly-pl'),
 
   async incomeStatement(from: string, to: string): Promise<IncomeStatement> {
-    const { data } = await apiClient.get<{ statement: IncomeStatement }>('/api/financial/profit-loss', { params: { startDate: from, endDate: to }, ...quiet, skipCache: true });
-    return data.statement;
+    return (await get<{ statement: IncomeStatement }>('/api/financial/profit-loss', { startDate: from, endDate: to })).statement;
   },
 
   async balanceSheet(asOf: string): Promise<BalanceSheetStatement> {
-    const { data } = await apiClient.get<{ statement: BalanceSheetStatement }>('/api/financial/balance-sheet', { params: { asOfDate: asOf }, ...quiet, skipCache: true });
-    return data.statement;
+    return (await get<{ statement: BalanceSheetStatement }>('/api/financial/balance-sheet', { asOfDate: asOf })).statement;
   },
 
-  async profitByProduct(from: string, to: string): Promise<ProfitByProduct> {
-    const { data } = await apiClient.get<ProfitByProduct>('/api/financial/profit-by-product', { params: { from, to }, ...quiet, skipCache: true });
-    return data;
-  },
-
-  async cohortProfit(from: string, to: string): Promise<CohortProfit> {
-    const { data } = await apiClient.get<CohortProfit>('/api/financial/cohort-profit', { params: { from, to }, ...quiet, skipCache: true });
-    return data;
-  },
-
-  async failedDeliveryCost(from: string, to: string): Promise<FailedDeliveryCost> {
-    const { data } = await apiClient.get<FailedDeliveryCost>('/api/financial/failed-delivery-cost', { params: { from, to }, ...quiet, skipCache: true });
-    return data;
-  },
-
-  async cashFlow(scenario: Scenario): Promise<CashFlowForecastReport> {
-    const { data } = await apiClient.get<CashFlowForecastReport>('/api/financial/cash-flow', { params: { scenario }, ...quiet, skipCache: true });
-    return data;
-  },
-
-  async trend(from: string, to: string): Promise<Trend> {
-    const { data } = await apiClient.get<Trend>('/api/financial/reports', { params: { period: 'daily', startDate: from, endDate: to }, ...quiet, skipCache: true });
-    return data;
-  },
+  profitByProduct: (from: string, to: string) => get<ProfitByProduct>('/api/financial/profit-by-product', { from, to }),
+  cohortProfit: (from: string, to: string) => get<CohortProfit>('/api/financial/cohort-profit', { from, to }),
+  failedDeliveryCost: (from: string, to: string) => get<FailedDeliveryCost>('/api/financial/failed-delivery-cost', { from, to }),
+  cashFlow: (scenario: Scenario) => get<CashFlowForecastReport>('/api/financial/cash-flow', { scenario }),
+  trend: (from: string, to: string) => get<Trend>('/api/financial/reports', { period: 'daily', startDate: from, endDate: to }),
 
   /**
    * One Finance export as a real file (F-930). A ledger over the line limit answers 202 with a job id: this waits for the

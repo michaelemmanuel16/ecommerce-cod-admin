@@ -6,10 +6,10 @@ import { money } from '../profit/format';
 
 type Report = CashFlowForecastReport;
 
-/** The two switch labels. The rate is the server's delivery success of the last 30 days. */
+/** The two switch labels. Today's pace does not read the delivery success, so its label is the same whichever scenario is on screen. */
 export function scenarioLabels(s: Report['scenario'] | undefined): Record<Scenario, string> {
   return {
-    pace: s?.currentRate != null ? `Today's pace, ${Math.round(s.currentRate)}% delivery success` : "Today's pace",
+    pace: "Today's pace",
     target: s ? `If delivery success reaches ${s.targetRate}%` : 'If delivery success reaches the target',
   };
 }
@@ -25,7 +25,7 @@ export function cashFinding(r: Report): Finding {
     return { tone: 'bad', title: `Cash runs out around ${shortDay(summary.runsOutOn)} ${when}`, body: `${low} Expected spending is more than what comes in.` };
   }
   if (summary.status === 'tight') {
-    return { tone: 'warn', title: `Cash gets tight around ${shortDay(summary.lowest.date)}`, body: `${low} That is under 7 days of expected spending.` };
+    return { tone: 'warn', title: `Cash gets tight around ${shortDay(summary.lowest.date)}`, body: `${low} That is under ${summary.tightDays} days of expected spending.` };
   }
   return { tone: 'ok', title: `Cash stays above ${money(summary.lowest.balance)} ${scenario.key === 'target' ? `at ${scenario.targetRate}% delivery success` : when}`, body: low };
 }

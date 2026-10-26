@@ -3,10 +3,10 @@ import type { FailedDeliveryCost } from '../../../services/financeReports.servic
 import { rangeLabel } from '../../reports/format';
 import { money, monthOf } from './format';
 import { Part } from './Part';
-import type { Block } from './useBlock';
+import type { FinanceBlock } from './useBlock';
 
 /** The cost of failed deliveries (F-926, M5-T26): fees partners kept on failed and returned orders, plus returned units that never came back. */
-export function FailedCostCard({ block }: { block: Block<FailedDeliveryCost> }) {
+export function FailedCostCard({ block }: { block: FinanceBlock<FailedDeliveryCost> }) {
   return (
     <Part name="Cost of failed deliveries" block={block} height={260}>
       {(d) => (

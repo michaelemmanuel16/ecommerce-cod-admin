@@ -1,30 +1,24 @@
 import { CircleDollarSign, Megaphone, Percent, Receipt } from 'lucide-react';
-import { Button, Skeleton, Tag, Tile } from '../../../components/ui-v2';
+import { Skeleton, Tag, Tile } from '../../../components/ui-v2';
+import { BlockError } from '../../dashboard/blocks/Frame';
 import type { ProfitByProduct } from '../../../services/financeReports.service';
 import { perOrderNote } from './copy';
 import { isLoss, money, monthOf, pct } from './format';
-import type { Block } from './useBlock';
+import type { FinanceBlock } from './useBlock';
 
 /**
  * The four tiles of "Products and profit" (F-1055): net result, delivered revenue, Meta ad spend, profit per delivered order.
  * One component for Finance and for Reports, so the two screens cannot drift apart.
  */
-export function ProfitTiles({ block }: { block: Block<ProfitByProduct> }) {
+export function ProfitTiles({ block }: { block: FinanceBlock<ProfitByProduct> }) {
   const p = block.data;
-  if (block.failed) {
-    return (
-      <div className="card blockerr" role="alert">
-        <div><b>Profit figures did not load</b><p>Something went wrong on our side.</p></div>
-        <Button size="mini" onClick={block.retry}>Retry</Button>
-      </div>
-    );
-  }
+  if (block.status === 'failed') return <BlockError name="Profit figures" onRetry={block.retry} />;
   if (!p) return <div className="grid kpis" aria-busy="true" aria-label="Loading profit figures">{[0, 1, 2, 3].map((i) => <Skeleton key={i} height={132} className="skelcard" />)}</div>;
   const loss = isLoss(p.netProfit);
   const perOrderLoss = isLoss(p.profitPerDeliveredOrder);
   const note = perOrderNote(p);
   return (
-    <div className={`grid kpis${block.loading ? ' finbusy' : ''}`}>
+    <div className={`grid kpis${block.status === 'loading' ? ' finbusy' : ''}`}>
       <Tile
         icon={<Percent />} tone={loss ? 'coral' : 'mint'}
         value={<span className={loss ? 'neg' : undefined}>{money(p.netProfit)}</span>}

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useConfigStore } from '../../stores/configStore';
-import { perOrderNote, plNotes, profitHeadline, twoWays } from '../../pages/financial/profit/copy';
+import { cohortLine, perOrderNote, plNotes, profitHeadline, twoWays } from '../../pages/financial/profit/copy';
 import { cost, marginTone, money, pct } from '../../pages/financial/profit/format';
 import { cohortProfit, monthlyPl, profitByProduct } from '../fixtures/financeProfit';
 
@@ -62,7 +62,7 @@ describe('profit card words are built from the answer (M5-T40)', () => {
     const t = twoWays(profitByProduct(), cohortProfit());
     expect(t.byDelivery).toEqual({ label: 'By delivery date, what has landed so far', value: '-GH₵14,268 (-16%)', detail: '376 delivered, -GH₵37.95 on each' });
     expect(t.byCohort).toEqual({ label: 'By order cohort, projected at 34% yield', value: 'GH₵9,900 (8%)', detail: '491 delivered, GH₵20.16 on each, before other expenses' });
-    expect(t.line).toBe('By delivery date: -GH₵14,268. By order cohort: GH₵9,900.');
+    expect(cohortLine(cohortProfit() as never)).toBe('By delivery date: -GH₵14,268. By order cohort: GH₵9,900.');
     expect(t.note).toContain('at the 34% yield: GH₵120,300 revenue, GH₵14,700 product cost, GH₵15,900 fees and GH₵76,200 ads.');
   });
 
@@ -70,7 +70,6 @@ describe('profit card words are built from the answer (M5-T40)', () => {
     const t = twoWays(profitByProduct(), { from: '2026-10-01', to: '2026-10-17', available: false, message: 'Not enough closed orders' });
     expect(t.byCohort.value).toBe('Not enough closed orders');
     expect(t.note).toBe('');
-    expect(t.line).toBe('By delivery date: -GH₵14,268. By order cohort: Not enough closed orders.');
   });
 
   it('the notes under the monthly table name August and September and why commission is not split out', () => {

@@ -2,7 +2,7 @@
 // the data and nothing is typed in. The tests feed known answers and read the sentences back.
 import type { CohortProfit, PlColumn, ProfitByProduct } from '../../../services/financeReports.service';
 import { parseMoney } from '../../../utils/money';
-import { listWords, money, monthOf, pct } from './format';
+import { listWords, lowerFirst, money, monthOf, pct } from './format';
 
 export interface Headline { title: string; body: string; tone: 'bad' | 'ok' }
 
@@ -45,15 +45,16 @@ export function perOrderNote(p: ProfitByProduct): string | null {
   return top ? `${top.name} ${money(top.profitPerDeliveredOrder)} before ads` : null;
 }
 
-const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
-
 export interface TwoWays {
   byDelivery: { label: string; value: string; detail: string };
   byCohort: { label: string; value: string; detail: string };
   /** The sentence that says why the two differ. Empty while the cohort has no number. */
   note: string;
-  /** "By delivery date: -GH₵14,268. By order cohort: GH₵9,900." for the Finance card. */
-  line: string;
+}
+
+/** "By delivery date: -GH₵14,268. By order cohort: GH₵9,900." The cohort answer carries both numbers (F-925). */
+export function cohortLine(c: Extract<CohortProfit, { available: true }>): string {
+  return `By delivery date: ${money(c.byDeliveryDate)}. By order cohort: ${money(c.profitBeforeOtherExpenses)}.`;
 }
 
 /** "Two ways to read October" (F-925, F-1055): the net result by delivery date and the projected result by order cohort. */
@@ -71,7 +72,6 @@ export function twoWays(p: ProfitByProduct, c: CohortProfit): TwoWays {
       byDelivery,
       byCohort: { label: 'By order cohort', value: c.message, detail: 'The yield is projected from orders that have closed.' },
       note: '',
-      line: `By delivery date: ${money(p.netProfit)}. By order cohort: ${c.message}.`,
     };
   }
   return {
@@ -84,7 +84,6 @@ export function twoWays(p: ProfitByProduct, c: CohortProfit): TwoWays {
         : `${c.projectedDelivered} delivered, ${money(c.profitPerDeliveredOrder)} on each, before other expenses`,
     },
     note: `The first view counts all the ad spend against only the orders delivered so far. The second counts every order placed in ${month} at the ${c.yieldPct}% yield: ${money(c.revenue)} revenue, ${money(c.productCost)} product cost, ${money(c.fees)} fees and ${money(c.metaAds)} ads.`,
-    line: `By delivery date: ${money(p.netProfit)}. By order cohort: ${money(c.profitBeforeOtherExpenses)}.`,
   };
 }
 

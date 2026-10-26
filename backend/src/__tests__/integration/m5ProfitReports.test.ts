@@ -95,6 +95,7 @@ describe('F-924 profit by product', () => {
     expect(res.body.notMatchedToProductRow).toEqual({ revenue: '0.00', productCost: '0.00', fees: '0.00' }); // rows add up to the ledger
     expect(res.body.netProfit).toBe('-14268.00');
     expect(res.body.netMarginPct).toBe(-15.5);
+    expect(res.body.targetNetMargin).toBe(35);
     expect(res.body.profitPerDeliveredOrder).toBe('-37.95');
     expect(Math.round(Number(res.body.profitPerDeliveredOrder))).toBe(-38);
   });

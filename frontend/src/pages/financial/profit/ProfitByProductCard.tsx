@@ -6,10 +6,10 @@ import { rangeLabel } from '../../reports/format';
 import { profitHeadline } from './copy';
 import { cost, lossClass, marginTone, money, monthOf, pct } from './format';
 import { Part } from './Part';
-import type { Block } from './useBlock';
+import type { FinanceBlock } from './useBlock';
 
 /** The one finding above the table, written from the answer (see copy.ts). */
-export function ProfitInsightCard({ block }: { block: Block<ProfitByProduct> }) {
+export function ProfitInsightCard({ block }: { block: FinanceBlock<ProfitByProduct> }) {
   return (
     <Part name="Profit finding" block={block} height={120}>
       {(p) => {
@@ -36,7 +36,7 @@ export function ProfitInsightCard({ block }: { block: Block<ProfitByProduct> }) 
  * Profit by product (F-924, M5-T26): one row per product, then the lines that are not split by product, then the net result.
  * Every cell is the server's figure. A product with no cost says "Cost missing" and has no profit.
  */
-export function ProfitByProductCard({ block }: { block: Block<ProfitByProduct> }) {
+export function ProfitByProductCard({ block }: { block: FinanceBlock<ProfitByProduct> }) {
   return (
     <Part name="Profit by product" block={block} height={420}>
       {(p) => {
@@ -104,7 +104,7 @@ export function ProfitByProductCard({ block }: { block: Block<ProfitByProduct> }
                       <td className="r num">{money(p.totals.fees)}</td>
                       <td className="r num">{money(p.metaSpendWithNoProduct)}</td>
                       <td className={`r num ${lossClass(p.netProfit) ?? ''}`}>{money(p.netProfit)}</td>
-                      <td className="r"><Tag tone={marginTone(p.netMarginPct, 35)}>{pct(p.netMarginPct)}</Tag></td>
+                      <td className="r"><Tag tone={marginTone(p.netMarginPct, p.targetNetMargin)}>{pct(p.netMarginPct)}</Tag></td>
                     </tr>
                   </tbody>
                 </table>

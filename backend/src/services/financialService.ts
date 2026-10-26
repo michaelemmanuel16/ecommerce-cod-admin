@@ -28,7 +28,7 @@ import { PENDING_STATUSES } from './kpi/pending';
 import { OPEN_COLLECTION_STATUSES, outstandingOf } from '../utils/collectionCash';
 import agentReconciliationService, { Cover } from './agentReconciliationService';
 import { partnerNetCash } from './feeRuleService';
-import { buildForecast, cashBalances, cashBuckets, DEFAULT_DAYS_TO_PAY, expectedFromOutForDelivery, forecastScenario, partnerPayDays, revenueExpenseTrend, summarizeForecast, type Scenario } from './finance/cashFlowService';
+import { cashBuckets, DEFAULT_DAYS_TO_PAY, expectedFromOutForDelivery, getCashForecast, revenueExpenseTrend, summarizeForecast, type Scenario } from './finance/cashFlowService';
 import { balanceSheetOf, incomeStatementOf, ledgerAccounts, type IncomeStatement } from './finance/statementsService';
 
 interface DateFilters {
@@ -1445,10 +1445,9 @@ export class FinancialService {
    */
   async getCashFlowReport(requester?: Requester, scenarioKey: Scenario = 'pace') {
     // Balances, expected cash, pay days and the partners' holdings are independent: read them together, once each.
-    const [balances, expected, payDays, agentBreakdown, scenario] = await Promise.all([
-      cashBalances(), expectedFromOutForDelivery(), partnerPayDays(), this.getAgentCashHoldings(requester), forecastScenario(scenarioKey),
+    const [{ balances, payDays, scenario, forecast }, expected, agentBreakdown] = await Promise.all([
+      getCashForecast(scenarioKey), expectedFromOutForDelivery(), this.getAgentCashHoldings(requester),
     ]);
-    const forecast = await buildForecast({ balances, payDays, paceMultiplier: scenario.multiplier });
     const { summary, weeks } = summarizeForecast(balances.cash1010, forecast);
     // Cash buckets (F-928): 1010 and 1015 from the ledger; expected from out-for-delivery orders apart, never added to cash.
     const buckets = cashBuckets({ cash1010: balances.cash1010, cash1015: balances.cash1015, expected });

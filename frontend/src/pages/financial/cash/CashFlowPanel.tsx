@@ -1,9 +1,8 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, Banknote, CheckCircle2, Download, Flag, HandCoins, Hourglass, Truck, Wallet } from 'lucide-react';
-import { Button, Card, Tag, Tile, useToast } from '../../../components/ui-v2';
+import { Button, Card, Tag, Tile } from '../../../components/ui-v2';
 import { financeReportsService, type CashFlowForecastReport, type Scenario } from '../../../services/financeReports.service';
 import { parseMoney } from '../../../utils/money';
-import { apiMessage, saveBlob } from '../../orders/importText';
 import { shortDay } from '../../dashboard/format';
 import { cost, lossClass, money } from '../profit/format';
 import { Part } from '../profit/Part';
@@ -11,7 +10,9 @@ import { useBlock } from '../profit/useBlock';
 import { assumptions, cashFinding, scenarioLabels } from './copy';
 import { ForecastChart } from './charts';
 import { TrendCard } from './TrendCard';
+import { useDownload } from './useDownload';
 
+const FINDING = { bad: { cls: 'coral', Icon: AlertTriangle }, warn: { cls: 'gold', Icon: Hourglass }, ok: { cls: 'mint', Icon: CheckCircle2 } } as const;
 const STATUS = { safe: { tone: 'ok', text: 'Safe' }, tight: { tone: 'warn', text: 'Tight' }, runs_out: { tone: 'bad', text: 'Runs out' } } as const;
 
 /**
@@ -22,21 +23,8 @@ const STATUS = { safe: { tone: 'ok', text: 'Safe' }, tight: { tone: 'warn', text
 export function CashFlowPanel() {
   const [scenario, setScenario] = useState<Scenario>('pace');
   const block = useBlock(`cash|${scenario}`, () => financeReportsService.cashFlow(scenario));
-  const say = useToast();
-  const [exporting, setExporting] = useState(false);
-
-  const exportCsv = async () => {
-    setExporting(true);
-    try {
-      const { blob, filename } = await financeReportsService.exportFile('cash-flow', { format: 'csv', scenario });
-      saveBlob(blob, filename);
-      say(`Downloaded ${filename}`);
-    } catch (err) {
-      say(await apiMessage(err, 'The forecast could not be exported. Try again.'));
-    } finally {
-      setExporting(false);
-    }
-  };
+  const download = useDownload();
+  const exportCsv = () => void download.run(() => financeReportsService.exportFile('cash-flow', { format: 'csv', scenario }), 'The forecast could not be exported. Try again.');
 
   const labels = scenarioLabels(block.data?.scenario);
 
@@ -50,7 +38,7 @@ export function CashFlowPanel() {
             </button>
           ))}
         </div>
-        <Button className="fcexport" onClick={() => void exportCsv()} disabled={exporting}><Download />Export CSV</Button>
+        <Button className="fcexport" onClick={exportCsv} disabled={download.busy}><Download />Export CSV</Button>
       </div>
 
       <Part name="Cash flow" block={block} height={420}>
@@ -66,7 +54,8 @@ function Forecast({ r }: { r: CashFlowForecastReport }) {
   const { kpis, summary } = r;
   const status = STATUS[summary.status];
   const finding = cashFinding(r);
-  const points = r.forecast.map((d) => ({ date: d.date, balance: parseMoney(d.projectedBalance) }));
+  const points = useMemo(() => r.forecast.map((d) => ({ date: d.date, balance: parseMoney(d.projectedBalance) })), [r.forecast]);
+  const { cls, Icon } = FINDING[finding.tone];
   return (
     <div className="fin">
       <div className="grid kpis">
@@ -95,7 +84,7 @@ function Forecast({ r }: { r: CashFlowForecastReport }) {
         <Card title="What the forecast says" aside="From the server">
           <div className="insight finding">
             <div className="h">
-              <div className={`ico ${finding.tone === 'bad' ? 'coral' : finding.tone === 'warn' ? 'gold' : 'mint'}`}>{finding.tone === 'bad' ? <AlertTriangle /> : finding.tone === 'warn' ? <Hourglass /> : <CheckCircle2 />}</div>
+              <div className={`ico ${cls}`}><Icon /></div>
               <div><b>{finding.title}</b><p>{finding.body}</p></div>
             </div>
           </div>

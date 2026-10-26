@@ -5,7 +5,7 @@ import { parseMoney } from '../../../utils/money';
 import { plNotes } from './copy';
 import { lossClass, marginTone, money, pct } from './format';
 import { Part } from './Part';
-import type { Block } from './useBlock';
+import type { FinanceBlock } from './useBlock';
 
 const anyColumn = (columns: PlColumn[], pick: (c: PlColumn) => unknown): boolean => columns.some((c) => parseMoney(pick(c) as string) !== 0);
 
@@ -16,7 +16,7 @@ function rateText(c: PlColumn): string | null {
 }
 
 /** Monthly profit and loss (F-923, M5-T25): months and the same days of last month next to this month to date. */
-export function MonthlyPlCard({ block }: { block: Block<MonthlyPl> }) {
+export function MonthlyPlCard({ block }: { block: FinanceBlock<MonthlyPl> }) {
   return (
     <Part name="Monthly profit and loss" block={block} height={360}>
       {(pl) => {

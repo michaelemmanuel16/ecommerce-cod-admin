@@ -6,10 +6,10 @@ import { rangeLabel } from '../../reports/format';
 import { shortDay } from '../../dashboard/format';
 import { cost, lossClass, money, pct } from './format';
 import { Part } from './Part';
-import type { Block } from './useBlock';
+import type { FinanceBlock } from './useBlock';
 
 /** Income statement (F-922, M5-T25): delivered revenue down to the net result, from the ledger by entry date. */
-export function IncomeStatementCard({ block }: { block: Block<IncomeStatement> }) {
+export function IncomeStatementCard({ block }: { block: FinanceBlock<IncomeStatement> }) {
   return (
     <Part name="Income statement" block={block} height={380}>
       {(s) => (
@@ -37,7 +37,7 @@ export function IncomeStatementCard({ block }: { block: Block<IncomeStatement> }
 }
 
 /** Balance sheet (F-922, M5-T25): assets against liabilities and equity, with owner's equity (3010) and the result to date. */
-export function BalanceSheetCard({ block }: { block: Block<BalanceSheetStatement> }) {
+export function BalanceSheetCard({ block }: { block: FinanceBlock<BalanceSheetStatement> }) {
   return (
     <Part name="Balance sheet" block={block} height={380}>
       {(b) => (

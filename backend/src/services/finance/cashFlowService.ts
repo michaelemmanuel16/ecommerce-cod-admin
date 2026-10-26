@@ -17,6 +17,8 @@ import { OPEN_COLLECTION_STATUSES, outstandingOf } from '../../utils/collectionC
 import { DAY_MS, getStoreTimeZone, localDate, weekRange } from '../kpi/dates';
 import { deliveredRevenueByDay, revenueScope } from '../kpi/revenue';
 import { rates } from '../kpi/rates';
+import { successTargetPct } from '../kpi/successTarget';
+import { invalidRange } from '../../utils/kpiRequest';
 
 import { DEFAULT_DAYS_TO_PAY } from '../orderPaymentTag';
 
@@ -116,29 +118,37 @@ export async function partnerPayDays(): Promise<PayDays> {
 export const SCENARIOS = ['pace', 'target'] as const;
 export type Scenario = (typeof SCENARIOS)[number];
 
-/** Delivery success the owner aims for (NUMBERS decision A: 60%, the old 40% target is gone). */
-export const TARGET_DELIVERY_SUCCESS = 60;
-
 export interface ScenarioInfo {
   key: Scenario;
-  /** Delivery success of the last 30 days (closed orders); null when no order closed. */
+  /** Delivery success of the last 30 days (closed orders). Null for today's pace (not read) and when no order closed. */
   currentRate: number | null;
+  /** The store's delivery success target (successTargetPct). */
   targetRate: number;
   /** What the new-delivery inflow is multiplied by: target / current, and 1 for today's pace, no closed orders, or a rate already at the target. */
   multiplier: number;
 }
 
-/** The scenario's multiplier on the new-delivery inflow. Pure. */
-export function scenarioMultiplier(key: Scenario, currentRate: number | null): number {
-  if (key !== 'target' || currentRate === null || currentRate <= 0 || currentRate >= TARGET_DELIVERY_SUCCESS) return 1;
-  return Money.roundHalfUp(Money.div(TARGET_DELIVERY_SUCCESS, currentRate), 4).toNumber();
+/** The scenario from a query value; a value that is not one of SCENARIOS is a 400. Left out means today's pace. */
+export function parseScenario(value: unknown): Scenario {
+  if (value === undefined) return 'pace';
+  if (!(SCENARIOS as readonly unknown[]).includes(value)) throw invalidRange('scenario must be pace or target');
+  return value as Scenario;
 }
 
-/** Delivery success of the last 30 days on the KPI layer's definition, and the multiplier the scenario gives. */
+/** The scenario's multiplier on the new-delivery inflow. Pure. */
+export function scenarioMultiplier(key: Scenario, currentRate: number | null, targetRate: number): number {
+  if (key !== 'target' || currentRate === null || currentRate <= 0 || currentRate >= targetRate) return 1;
+  return Money.roundHalfUp(Money.div(targetRate, currentRate), 4).toNumber();
+}
+
+/** The scenario with the store's target and, for the target scenario only, the delivery success of the last 30 days (KPI layer). */
 export async function forecastScenario(key: Scenario, now: Date = new Date()): Promise<ScenarioInfo> {
+  const tenantId = resolveTenantId();
+  const targetRate = await successTargetPct(tenantId, now);
+  if (key !== 'target') return { key, currentRate: null, targetRate, multiplier: 1 };
   const since = new Date(now.getTime() - 30 * DAY_MS);
-  const current = (await rates(resolveTenantId(), since, now, { basis: 'delivery' })).deliverySuccessRate.value;
-  return { key, currentRate: current, targetRate: TARGET_DELIVERY_SUCCESS, multiplier: scenarioMultiplier(key, current) };
+  const current = (await rates(tenantId, since, now, { basis: 'delivery' })).deliverySuccessRate.value;
+  return { key, currentRate: current, targetRate, multiplier: scenarioMultiplier(key, current, targetRate) };
 }
 
 export interface ForecastDay {
@@ -206,6 +216,13 @@ export async function buildForecast(input: { balances: CashBalances; payDays: Pa
   return forecast;
 }
 
+/** Balances, pay days, the scenario and the 30 day forecast: what the report and the CSV export both stand on. */
+export async function getCashForecast(scenarioKey: Scenario = 'pace') {
+  const [balances, payDays, scenario] = await Promise.all([cashBalances(), partnerPayDays(), forecastScenario(scenarioKey)]);
+  const forecast = await buildForecast({ balances, payDays, paceMultiplier: scenario.multiplier });
+  return { balances, payDays, scenario, forecast };
+}
+
 export interface ForecastSummary {
   /** Cash at bank and MoMo (1010) on the first day. */
   cashToday: string;
@@ -216,9 +233,14 @@ export interface ForecastSummary {
   lowest: { date: string; balance: string };
   /** First day the balance is below 0, or null. */
   runsOutOn: string | null;
-  /** safe; tight = the lowest point is under 7 days of expected spending (GUESS, owner sets); runs_out = the balance goes below 0. */
+  /** Days of expected spending under which the lowest point counts as tight (GUESS, owner sets). The page words it from this. */
+  tightDays: number;
+  /** safe; tight = the lowest point is under `tightDays` days of expected spending; runs_out = the balance goes below 0. */
   status: 'safe' | 'tight' | 'runs_out';
 }
+
+/** Days of spending a low point must cover to count as safe. */
+export const TIGHT_DAYS = 7;
 
 export interface ForecastWeek { from: string; to: string; moneyIn: string; moneyOut: string; net: string; cashAtEnd: string }
 
@@ -229,7 +251,7 @@ export function summarizeForecast(cashToday: Money.MoneyInput, forecast: Forecas
   const last = forecast[forecast.length - 1];
   const low = forecast.reduce<ForecastDay | null>((m, d) => (m === null || Money.lt(d.projectedBalance, m.projectedBalance) ? d : m), null);
   const runsOut = forecast.find((d) => Money.lt(d.projectedBalance, 0));
-  const sevenDays = Money.mul(Money.div(expectedOut, Math.max(forecast.length, 1)), 7);
+  const tightBelow = Money.mul(Money.div(expectedOut, Math.max(forecast.length, 1)), TIGHT_DAYS);
   const lowest = low ? Money.parse(low.projectedBalance) : Money.parse(cashToday);
   const weeks: ForecastWeek[] = [];
   for (let i = 0; i < forecast.length; i += 7) {
@@ -248,7 +270,8 @@ export function summarizeForecast(cashToday: Money.MoneyInput, forecast: Forecas
       endDate: last?.date ?? '', endBalance: Money.toApi(last?.projectedBalance ?? cashToday),
       lowest: { date: low?.date ?? '', balance: Money.toApi(lowest) },
       runsOutOn: runsOut?.date ?? null,
-      status: lowest.isNegative() ? 'runs_out' : lowest.lt(sevenDays) ? 'tight' : 'safe',
+      tightDays: TIGHT_DAYS,
+      status: lowest.isNegative() ? 'runs_out' : lowest.lt(tightBelow) ? 'tight' : 'safe',
     },
     weeks,
   };

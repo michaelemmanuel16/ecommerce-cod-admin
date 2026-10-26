@@ -17,8 +17,8 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { getTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 import { addRowsWithMoney } from '../utils/xlsxMoney';
-import { invalidRange, readDateBound } from '../utils/kpiRequest';
-import { SCENARIOS, type Scenario } from '../services/finance/cashFlowService';
+import { readDateBound } from '../utils/kpiRequest';
+import { parseScenario } from '../services/finance/cashFlowService';
 import { AppError } from '../middleware/errorHandler';
 import { recordPaystackPayout } from '../services/paystackPayoutService';
 import { EXPENSE_CATEGORIES, EXPENSE_PAID_FROM } from '../config/expenseCategories';
@@ -283,9 +283,7 @@ export const reconcileTransaction = async (req: AuthRequest, res: Response): Pro
 
 /** GET /api/financial/cash-flow?scenario=pace|target (M5-T41, F-928) */
 export const getCashFlowReport = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { scenario } = req.query;
-  if (scenario !== undefined && !(SCENARIOS as readonly unknown[]).includes(scenario)) throw invalidRange('scenario must be pace or target');
-  const report = await financialService.getCashFlowReport(req.user, scenario as Scenario | undefined);
+  const report = await financialService.getCashFlowReport(req.user, parseScenario(req.query.scenario));
   res.json(report);
 };
 

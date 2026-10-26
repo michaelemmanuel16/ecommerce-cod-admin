@@ -3,13 +3,10 @@
 import { Area, AreaChart, Bar, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { Trend } from '../../../services/financeReports.service';
 import { parseMoney } from '../../../utils/money';
-import { shortDay } from '../../dashboard/format';
-import { compactNumber } from '../../dashboard/format';
+import { compactNumber, shortDay } from '../../dashboard/format';
 import { dayTick } from '../../reports/format';
+import { AXIS, every } from '../../reports/charts';
 import { money } from '../profit/format';
-
-const AXIS = { fill: 'var(--ink-3)', fontSize: 11, fontFamily: 'Plus Jakarta Sans' } as const;
-const every = (n: number) => Math.max(0, Math.ceil(n / 9) - 1);
 
 interface ForecastPoint { date: string; balance: number }
 

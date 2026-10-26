@@ -1,24 +1,18 @@
-import { Button, Card, Skeleton } from '../../../components/ui-v2';
+import { Card, Skeleton } from '../../../components/ui-v2';
+import { BlockError } from '../../dashboard/blocks/Frame';
 import type { CohortProfit, ProfitByProduct } from '../../../services/financeReports.service';
 import { rangeLabel } from '../../reports/format';
 import { twoWays } from './copy';
 import { isLoss, monthOf } from './format';
 import { Part } from './Part';
-import type { Block } from './useBlock';
+import type { FinanceBlock } from './useBlock';
 
 /** "Two ways to read October" (F-925, F-1055): the result by delivery date next to the projected result of the orders placed. */
-export function TwoWaysCard({ profit, cohort }: { profit: Block<ProfitByProduct>; cohort: Block<CohortProfit> }) {
+export function TwoWaysCard({ profit, cohort }: { profit: FinanceBlock<ProfitByProduct>; cohort: FinanceBlock<CohortProfit> }) {
   return (
     <Part name="Two ways to read the month" block={profit} height={170}>
       {(p) => {
-        if (cohort.failed) {
-          return (
-            <div className="card blockerr" role="alert">
-              <div><b>The order cohort did not load</b><p>Something went wrong on our side.</p></div>
-              <Button size="mini" onClick={cohort.retry}>Retry</Button>
-            </div>
-          );
-        }
+        if (cohort.status === 'failed') return <BlockError name="The order cohort" onRetry={cohort.retry} />;
         if (!cohort.data) return <div aria-busy="true" aria-label="Loading the order cohort"><Skeleton height={170} className="skelcard" /></div>;
         const t = twoWays(p, cohort.data);
         return (

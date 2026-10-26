@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { OverviewProfitCards } from '../../pages/financial/profit/OverviewProfitCards';
 import { ProductProfitPanel } from '../../pages/financial/profit/ProductProfitPanel';
 import { StatementsPanel } from '../../pages/financial/profit/StatementsPanel';
+import { clearBlockCache } from '../../pages/financial/profit/useBlock';
 import { useConfigStore } from '../../stores/configStore';
 import { useFinancialStore } from '../../stores/financialStore';
 import {
@@ -30,6 +31,7 @@ const rowOf = (table: HTMLElement, label: string) => {
 };
 
 beforeEach(() => {
+  clearBlockCache();
   Object.values(svc).forEach((m) => m.mockReset());
   useConfigStore.setState({ currency: 'GHS' });
   useFinancialStore.setState({ dateRange: { startDate: '2026-10-01', endDate: '2026-10-17' } });
@@ -47,7 +49,7 @@ describe('Finance Overview profit cards (M5-T40)', () => {
     await screen.findByRole('table', { name: 'Monthly profit and loss' });
     expect(svc.cohortProfit).toHaveBeenCalledWith('2026-10-01', '2026-10-17');
     expect(svc.failedDeliveryCost).toHaveBeenCalledWith('2026-10-01', '2026-10-17');
-    expect(svc.profitByProduct).toHaveBeenCalledWith('2026-10-01', '2026-10-17');
+    expect(svc.profitByProduct).not.toHaveBeenCalled(); // the cohort answer carries the by-delivery-date number itself
   });
 
   it('monthly P&L shows the fixture columns, the August and September note, and commission as "Not split out"', async () => {
