@@ -759,6 +759,7 @@ export class GLAutomationService {
    * @param amount - Expense amount
    * @param description - Expense description
    * @param userId - ID of user recording the expense
+   * @param entryDate - Date of the entry (the expense date); defaults to now
    * @returns Created journal entry
    */
   static async createExpenseGLEntry(
@@ -766,7 +767,8 @@ export class GLAutomationService {
     expenseId: number,
     amount: Money.MoneyInput,
     description: string,
-    userId: number
+    userId: number,
+    entryDate: Date = new Date()
   ): Promise<JournalEntryWithTransactions> {
     // Idempotency guard — prevent duplicate GL entries for the same expense
     const existingEntry = await tx.journalEntry.findFirst({
@@ -800,7 +802,7 @@ export class GLAutomationService {
     ];
 
     return await this.createJournalEntryWithRetry(tx, {
-      entryDate: new Date(),
+      entryDate,
       description: `Expense - ${description}`,
       sourceType: JournalSourceType.expense,
       sourceId: expenseId,

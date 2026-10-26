@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 import { cn } from '../../utils/cn';
+
+// Open modals that asked for Escape, newest last. Only the top one closes, so a modal opened from a modal closes first.
+const escapeStack: symbol[] = [];
 
 interface ModalProps {
   isOpen: boolean;
@@ -8,6 +11,8 @@ interface ModalProps {
   title?: string;
   children: React.ReactNode;
   size?: 'sm' | 'md' | 'lg' | 'xl';
+  /** Escape closes the modal. Off by default, so a screen opts in. Works while an input has focus. */
+  closeOnEscape?: boolean;
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -16,7 +21,25 @@ export const Modal: React.FC<ModalProps> = ({
   title,
   children,
   size = 'md',
+  closeOnEscape = false,
 }) => {
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    if (!isOpen || !closeOnEscape) return;
+    const id = Symbol('modal');
+    escapeStack.push(id);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && escapeStack[escapeStack.length - 1] === id) onCloseRef.current();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      escapeStack.splice(escapeStack.indexOf(id), 1);
+    };
+  }, [isOpen, closeOnEscape]);
+
   if (!isOpen) return null;
 
   const sizes = {

@@ -73,6 +73,8 @@ function getDefaultPermissions() {
       calls: ['create', 'view', 'update', 'delete'],
       gl: ['create', 'view', 'update', 'delete'],
       payouts: ['view', 'create'],
+      journal: ['post', 'void'],
+      expenses: ['view_all', 'edit', 'delete'],
       audit: ['view'],
     },
     admin: {
@@ -88,6 +90,7 @@ function getDefaultPermissions() {
       calls: ['create', 'view', 'update', 'delete'],
       gl: ['create', 'view', 'update', 'delete'],
       payouts: ['view', 'create'],
+      expenses: ['view_all', 'edit', 'delete'],
       audit: ['view'],
     },
     manager: {
@@ -103,6 +106,7 @@ function getDefaultPermissions() {
       calls: ['view'],
       gl: ['view'],
       payouts: ['view', 'create'],
+      expenses: ['view_all'],
     },
     sales_rep: {
       users: [],
@@ -159,6 +163,8 @@ function getDefaultPermissions() {
       settings: [],
       gl: ['create', 'view', 'update'],
       payouts: ['view', 'create'],
+      journal: ['post', 'void'],
+      expenses: ['view_all', 'edit', 'delete'],
     },
   };
 }

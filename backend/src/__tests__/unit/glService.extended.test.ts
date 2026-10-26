@@ -25,7 +25,7 @@ const mockEntry = {
   id: 1,
   entryNumber: 'JE-001',
   description: 'Test entry',
-  sourceType: 'order',
+  sourceType: 'manual',
   sourceId: '1',
   isVoided: false,
   entryDate: new Date(),
@@ -67,6 +67,7 @@ describe('GLService (extended branch coverage)', () => {
     it('returns entries without any filters', async () => {
       const result = await glService.getJournalEntries({});
       expect(result.entries).toHaveLength(1);
+      expect(result.entries[0].voidableByHand).toBe(true);
       expect(result.pagination.total).toBe(1);
     });
 

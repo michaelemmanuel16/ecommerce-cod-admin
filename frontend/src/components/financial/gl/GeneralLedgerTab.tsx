@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AccountsList } from './AccountsList';
 import { AccountLedger } from './AccountLedger';
 import { JournalEntryModal } from './JournalEntryModal';
+import { GuardedButton } from '../GuardedButton';
 
 export const GeneralLedgerTab: React.FC = () => {
     const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
@@ -19,7 +20,8 @@ export const GeneralLedgerTab: React.FC = () => {
                         View full audit trails and perform manual accounting adjustments.
                     </p>
                 </div>
-                <button
+                <GuardedButton
+                    perm="postJournal"
                     onClick={() => setIsJournalModalOpen(true)}
                     className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
                 >
@@ -27,7 +29,7 @@ export const GeneralLedgerTab: React.FC = () => {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="12 4v16m8-8H4" />
                     </svg>
                     Record Journal Entry
-                </button>
+                </GuardedButton>
             </div>
 
             {!selectedAccountId ? (
