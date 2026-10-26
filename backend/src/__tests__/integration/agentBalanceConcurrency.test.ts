@@ -30,6 +30,8 @@ describe('Agent Balance Concurrency Integration Test', () => {
             { id: parseInt(GL_ACCOUNTS.AR_AGENTS), code: GL_ACCOUNTS.AR_AGENTS, name: 'Agent AR', accountType: AccountType.asset, normalBalance: NormalBalance.debit },
             { id: parseInt(GL_ACCOUNTS.CASH_IN_HAND), code: GL_ACCOUNTS.CASH_IN_HAND, name: 'Cash in Hand', accountType: AccountType.asset, normalBalance: NormalBalance.debit },
             { id: parseInt(GL_ACCOUNTS.CASH_IN_TRANSIT), code: GL_ACCOUNTS.CASH_IN_TRANSIT, name: 'Cash in Transit', accountType: AccountType.asset, normalBalance: NormalBalance.debit },
+            // A deposit with no open collection behind it (the balance here is set by hand) goes to 2040
+            { id: parseInt(GL_ACCOUNTS.UNAPPLIED_PARTNER_RECEIPTS), code: GL_ACCOUNTS.UNAPPLIED_PARTNER_RECEIPTS, name: 'Unapplied Partner Receipts', accountType: AccountType.liability, normalBalance: NormalBalance.credit },
         ];
         for (const a of accounts) {
             await prisma.account.upsert({

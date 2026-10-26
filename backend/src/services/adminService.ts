@@ -459,7 +459,6 @@ export const adminService = {
         commissionAmount: true,
         vehicleType: true,
         vehicleId: true,
-        deliveryRate: true,
         totalEarnings: true,
         location: true,
         createdAt: true,
@@ -500,7 +499,6 @@ export const adminService = {
           lastLogin: true,
           country: true,
           commissionAmount: true,
-          deliveryRate: true,
           totalEarnings: true,
           createdAt: true,
         } as any,
@@ -530,7 +528,6 @@ export const adminService = {
     phoneNumber?: string;
     role: UserRole;
     commissionAmount?: number;
-    deliveryRate?: number;
     /** A delivery partner company is `company` (M4-T19). Default: person. */
     kind?: UserKind;
     vehicleType?: string;
@@ -552,8 +549,6 @@ export const adminService = {
 
     const hashedPassword = await bcrypt.hash(data.password, 10);
 
-    const commission = data.commissionAmount !== undefined ? data.commissionAmount : data.deliveryRate;
-
     const user = await (data.tx ?? prisma).user.create({
       data: {
         email: data.email,
@@ -562,8 +557,7 @@ export const adminService = {
         phoneNumber: data.phoneNumber,
         role: data.role,
         password: hashedPassword,
-        commissionAmount: commission || 0,
-        deliveryRate: commission || 0,
+        commissionAmount: data.commissionAmount || 0,
         ...(data.kind && { kind: data.kind }),
         ...(data.vehicleType && { vehicleType: data.vehicleType }),
         ...(data.vehicleId && { vehicleId: data.vehicleId }),
@@ -594,7 +588,6 @@ export const adminService = {
     role?: UserRole;
     isActive?: boolean;
     commissionAmount?: number;
-    deliveryRate?: number;
   }) {
     await this.checkAdminPrivilege(requester, 'admin');
 
@@ -628,6 +621,8 @@ export const adminService = {
     }
 
     const updateData: any = { ...data };
+    // A delivery partner has no pay rate any more (F-915): a client that still sends deliveryRate is ignored.
+    delete updateData.deliveryRate;
 
     // If name is provided, split it into firstName and lastName
     if (data.name !== undefined) {
@@ -635,15 +630,6 @@ export const adminService = {
       updateData.firstName = nameParts[0] || 'Unknown';
       updateData.lastName = nameParts.slice(1).join(' ') || '';
       delete updateData.name;
-    }
-
-    // Synchronize commissionAmount and deliveryRate
-    if (data.commissionAmount !== undefined) {
-      updateData.commissionAmount = data.commissionAmount;
-      updateData.deliveryRate = data.commissionAmount;
-    } else if (data.deliveryRate !== undefined) {
-      updateData.commissionAmount = data.deliveryRate;
-      updateData.deliveryRate = data.deliveryRate;
     }
 
     const updatedUser = await prisma.user.update({

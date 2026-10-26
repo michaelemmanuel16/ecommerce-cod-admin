@@ -28,3 +28,29 @@ Schema for settlements, commission entries and findings, the M5 chart of account
 - 1020 and 5040 are inactive now; deposit and agent-commission postings move to 1015 and 5070 in COD-48 (M5-T06, T07). M5 ships as one milestone PR, so develop never has the gap.
 - COD-179 (backlog, existing bug on develop): the tenant purge sets `journal_entries.created_by` to NULL, which is NOT NULL, so deleting a tenant with journal entries fails and rolls back.
 - Plain `@@index([tenantId])` indexes stay (repo convention, M0 schema diff).
+
+---
+
+## COD-48 — Fee rules, delivery fee posting and the cash chain fix
+**Date:** 2026-10-26 | **Type:** feat/fix | **Branch:** feature/m5-settlement-and-finance (lane `m5/cod-48-fees`, merge 6ee9df6) | **Commits:** 3ce81cf, 0662880, a81e5df, 3c825ca, c7bae39, 4ce130d, aaa7050, d825753
+
+### Summary
+Fee rules per partner and outcome, one delivery fee posted per outcome, and one cash chain: collected cash sits in 1015 until the partner deposits, then moves to 1010 once. Plan tasks: M5-T05, T06, T07.
+
+### Changes
+- **Fee rules (`feeRuleService`, partner routes):** rules per partner for delivered, failed and returned, with basis and `valid_from`; the rule in force is the latest one on or before the store day (`currentFeeRules`, `storeToday`). Missing rule raises a `fee_rule_missing` Finding once.
+- **Fee stamp:** the order state machine writes `delivery_fee` and `delivery_fee_source` in the same update as the status. A second failed attempt posts a second fee (F-935); `Order.deliveryFee` holds the latest fee.
+- **GL:** `createDeliveryFeeEntry` posts DR 5070 / CR 1015 per outcome (replaces `createFailedAttemptEntry` and pay-per-delivery 5040). Moving out of delivered reverses the fee. Old 5040 entries reverse into 5070. Partner net cash after fee comes from one `partnerNetCash` helper.
+- **Cash chain:** collections post to 1015; a verified deposit posts 1015 to 1010 once, any excess to 2040 with an `excess_deposit` Finding. Deposits match open collections first-in, first-out (`planCover`, then `claimCovers`), and the match is stored as `allocations` (`20261026110000_m5_deposit_allocations`) so a reject undoes exactly what was matched.
+- **Security fixes (review of a81e5df and 3c825ca):** reject undoes only the stored allocations and is refused for old deposits with none (409); verify and reject claim the deposit row first; the old `markCODAsDeposited` route covers collections through the same `claimCovers` path, so a deposit cannot post twice.
+- **Enum:** `JournalSourceType.commission_accrual` (`20261026120000`) for lane B commission accruals, so they cannot be voided by hand.
+- **Helpers:** `utils/collectionCash.ts` (`OPEN_COLLECTION_STATUSES`, `outstandingOf`), `utcDateOfYmd` in `kpi/dates.ts`, exported `loadPartner`, `flippedLines` for reversals.
+
+### Verification
+- Backend prisma generate, typecheck, lint and build clean. Full backend suite: 259 suites / 3299 tests pass; `reportsOverviewSales` failed once in the full run and passes alone (20/20). Lane run: integration 138 suites / 1656 tests pass, including the deposit race tests.
+- No screen changes, so no browser check (same as COD-47). The fee rule screen (T32) and collections page (T36) get browser checks when they land.
+
+### Open points
+- `User.deliveryRate` column and the pay-rate fields in the frontend stay; removal is a follow-up ticket.
+- `getCashFlowReport` still reads 1020; T27 fixes it.
+- `createReturnReversalEntry` still rebuilds amounts from current rates; not moved onto `flippedLines` because it would change rep commission reversals (lane B area).

@@ -17,6 +17,7 @@ import { runInTenant } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 import { fullName } from '../utils/nameUtils';
 import { DAY_MS } from './kpi/dates';
+import { currentFeeRules, storeToday } from './feeRuleService';
 import { DEFAULT_SUCCESS_TARGET, coveringTarget } from './kpi/leadership';
 import { partnerRates } from './kpi/partners';
 import { closedOutcomeResult, DIGITAL, ratePercent } from './kpi/rates';
@@ -38,11 +39,10 @@ const WAITING_OVERDUE_DAYS = 2;
 
 export type FeeRuleView = Record<FeeOutcome, string | null>;
 
-/** One partner's fee rule as amounts per outcome; an outcome with no rule is null. */
-export const feeRuleView = (rules: Array<{ outcome: FeeOutcome; amount: Prisma.Decimal }>): FeeRuleView => {
-  const view: FeeRuleView = { delivered: null, failed: null, returned: null };
-  for (const rule of rules) view[rule.outcome] = Money.toApi(rule.amount);
-  return view;
+/** One partner's fee rule as amounts per outcome, the rule in force today; an outcome with no rule is null. */
+export const feeRuleView = (rules: Array<{ outcome: FeeOutcome; amount: Prisma.Decimal; validFrom: Date }>, tenantId: string): FeeRuleView => {
+  const current = currentFeeRules(rules, storeToday(tenantId));
+  return { delivered: null, failed: null, returned: null, ...Object.fromEntries(Object.entries(current).map(([o, r]) => [o, Money.toApi(r.amount)])) };
 };
 
 export interface PartnerRow {
@@ -167,7 +167,7 @@ export async function listPartners(
       dispatchedToDeliveredDays: r?.dispatchedToDeliveredDays.value ?? null,
       dataSource: profile?.dataSource ?? defaultDataSource(u.kind),
       daysToPay: profile?.daysToPay ?? null,
-      ...(opts.showMoney ? { feeRule: rulesBy.has(u.id) ? feeRuleView(rulesBy.get(u.id)!) : null } : {}),
+      ...(opts.showMoney ? { feeRule: rulesBy.has(u.id) ? feeRuleView(rulesBy.get(u.id)!, tenantId) : null } : {}),
       cashHeld: null,
       oldestUnpaidDays: null,
     });

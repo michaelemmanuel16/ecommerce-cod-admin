@@ -3,7 +3,7 @@
  * migration SQL both add 2040, 2050, 3010, 5070 and 5080, run twice without duplicates,
  * relabel 1010, retire 1020 and 5040, and the migration stops on a clash.
  */
-import { describe, it, expect, afterAll } from '@jest/globals';
+import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import request from 'supertest';
 import '../mocks/logger.mock';
 import app from '../../server';
@@ -37,6 +37,14 @@ const sql = statements.join('\n');
 const MIGRATION_NEW_CODES = [...sql.matchAll(/^\s*\('(\d{4})', '(?:[^']|'')+', '(?:liability|equity|expense|asset|revenue)'/gm)].map((m) => m[1]).sort();
 const MIGRATION_RETIRED_CODES = [...sql.match(/code IN \(([^)]*)\) AND is_active/)![1].matchAll(/'(\d{4})'/g)].map((m) => m[1]).sort();
 const NEW_CODES = MIGRATION_NEW_CODES;
+
+// The shared GL fixtures (withGlTestTenant) create accounts by hand and leave them behind. They now include 5070 and 2040,
+// which the migration treats as a clash. They are scratch rows of the 'gl-integration-test' tenant only, so clear them first.
+beforeAll(async () => {
+  const scratch = { tenant: { slug: 'gl-integration-test' }, code: { in: NEW_CODES } };
+  await prismaBase.accountTransaction.deleteMany({ where: { account: scratch } });
+  await prismaBase.account.deleteMany({ where: scratch });
+});
 
 afterAll(async () => {
   await deleteTenantRows(tenantIds);

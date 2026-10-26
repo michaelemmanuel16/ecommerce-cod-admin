@@ -6,7 +6,7 @@ import { getCurrency } from '../utils/currency';
 import * as Money from '../utils/money';
 import { GLAutomationService } from './glAutomationService';
 import { rateOn } from './fxService';
-import { ymdOfUtc } from './kpi/dates';
+import { utcDateOfYmd, ymdOfUtc } from './kpi/dates';
 import { openFindingOnce } from './findingService';
 import { auditService } from './auditService';
 import { COUNT_SOURCES } from './stockCountService';
@@ -318,7 +318,7 @@ export async function receiveShipment(actor: StockActor, id: number, input: Rece
     if (input.countSource === 'three_pl_dashboard') {
       const count = await tx.stockCount.create({
         data: {
-          tenantId, locationId: location.id, countDate: new Date(`${ymdOfUtc(receivedAt)}T00:00:00.000Z`), source: input.countSource as StockCountSource,
+          tenantId, locationId: location.id, countDate: utcDateOfYmd(ymdOfUtc(receivedAt)), source: input.countSource as StockCountSource,
           countedById: actor.id, note: `Shipment ${id} received`, shipmentId: id,
         },
       });
