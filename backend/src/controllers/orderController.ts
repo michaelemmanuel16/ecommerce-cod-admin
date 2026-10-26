@@ -1,11 +1,14 @@
 import { Response } from 'express';
 import { AuthRequest } from '../types';
 import { FailureReason, OrderStatus } from '@prisma/client';
-import orderService, { OrderFilters, OrderInclude, OrderSortField } from '../services/orderService';
+import orderService, { OrderFilters, OrderInclude, OrderListQuery, OrderSortField } from '../services/orderService';
 import { clearCache } from '../middleware/cache';
 import { readDateBound } from '../utils/kpiRequest';
 import { ALL_STATUSES } from '../services/orderStateMachine';
 import orderDetailService from '../services/orderDetailService';
+import { AppError } from '../middleware/errorHandler';
+import agingService from '../services/agingService';
+import { hasPermission } from '../middleware/auth';
 import { fullName } from '../utils/nameUtils';
 import { assertWithinCap, BatchRow, ExportColumn, exportDate, exportMoney, exportPhone, readFormat, streamExport } from '../services/exportStream';
 
@@ -34,19 +37,39 @@ const readOrderFilters = (query: AuthRequest['query']): OrderFilters => {
   };
 };
 
+/**
+ * The "Unpaid by agent" tab (F-309): delivered orders whose cash the partner still holds past its days to pay. The rule is
+ * a database filter shared with the aging card and the Dashboard (agingService), so the count matches them and the list
+ * is paged in the database. Needs financial:view as well as orders:view. Each row says how many days it has waited and
+ * the days to pay it is measured against.
+ */
+const unpaidByAgentTab = async (req: AuthRequest, query: OrderListQuery) => {
+  if (!req.user || !(await hasPermission(req.user, 'financial', 'view'))) {
+    throw new AppError('Forbidden: Cannot view financial', 403, 'INSUFFICIENT_PERMISSION');
+  }
+  const overdue = await agingService.overdueFilter();
+  const result = await orderService.getAllOrders({ ...query, extra: { agentCollection: { is: overdue.where } } }, req.user);
+  return {
+    ...result,
+    orders: result.orders.map((o) => ({
+      ...o,
+      unpaid: { days: o.deliveryDate ? overdue.ageOf(o.deliveryDate) : null, daysToPay: o.deliveryAgentId ? overdue.daysToPayOf(o.deliveryAgentId) : null },
+    })),
+  };
+};
+
 export const getAllOrders = async (req: AuthRequest, res: Response): Promise<void> => {
   const { sortBy, sortOrder, page = 1, limit = 50, include } = req.query;
   // Row scope (a rep sees own orders, an agent own deliveries) is applied in the service from req.user
-  const result = await orderService.getAllOrders({
+  const query: OrderListQuery = {
     ...readOrderFilters(req.query),
     sortBy: sortBy as OrderSortField | undefined,
     sortOrder: sortOrder as 'asc' | 'desc' | undefined,
     page: Number(page),
     limit: Number(limit),
     include: String(include ?? '').split(',').filter((i): i is OrderInclude => ['flags', 'reminder', 'threadCount'].includes(i)),
-  }, req.user);
-
-  res.json(result);
+  };
+  res.json(req.query.tab === 'unpaid_by_agent' ? await unpaidByAgentTab(req, query) : await orderService.getAllOrders(query, req.user));
 };
 
 export const getOrderCounts = async (req: AuthRequest, res: Response): Promise<void> => {

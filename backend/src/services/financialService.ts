@@ -1581,38 +1581,6 @@ export class FinancialService {
 
     return result;
   }
-
-  /**
-   * Get agent aging analysis
-   */
-  async getAgentAgingAnalysis() {
-    const agents = await prisma.user.findMany({
-      where: {
-        role: 'delivery_agent',
-        isActive: true,
-      },
-      include: {
-        agingBucket: true,
-        balance: true,
-      }
-    });
-
-    return agents.map(agent => ({
-      agentId: agent.id,
-      name: `${agent.firstName} ${agent.lastName}`,
-      email: agent.email,
-      balance: Money.orZero(agent.balance?.currentBalance),
-      buckets: {
-        '0-1 days': Money.orZero(agent.agingBucket?.bucket_0_1),
-        '2-3 days': Money.orZero(agent.agingBucket?.bucket_2_3),
-        '4-7 days': Money.orZero(agent.agingBucket?.bucket_4_7),
-        '8+ days': Money.orZero(agent.agingBucket?.bucket_8_plus),
-      },
-      totalBalance: Money.orZero(agent.agingBucket?.totalBalance),
-      oldestCollectionDate: agent.agingBucket?.oldestCollectionDate,
-      isBlocked: agent.balance?.isBlocked || false,
-    }));
-  }
 }
 
 export default new FinancialService();

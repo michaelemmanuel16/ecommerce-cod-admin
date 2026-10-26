@@ -70,7 +70,6 @@ model Tenant {
   emailCampaigns          EmailCampaign[]
   agentCollections        AgentCollection[]
   agentDeposits           AgentDeposit[]
-  agentAgingBuckets       AgentAgingBucket[]
   payouts                 Payout[]
   calls                   Call[]
   orderHistories          OrderHistory[]
@@ -170,7 +169,6 @@ model User {
   balance               AgentBalance?
   deposits              AgentDeposit[]          @relation("AgentDeposits")
   verifiedDeposits      AgentDeposit[]          @relation("VerifiedDeposits")
-  agingBucket           AgentAgingBucket?
   blockedBalances       AgentBalance[]          @relation("BlockedBy")
   agentStock            AgentStock[]            @relation("AgentStockHoldings")
   transfersFrom         InventoryTransfer[]     @relation("TransferFrom")
@@ -1146,29 +1144,6 @@ model AuditLog {
   @@map("audit_logs")
 }
 
-model AgentAgingBucket {
-  id                   Int       @id @default(autoincrement())
-  agentId              Int       @unique @map("agent_id")
-  // M5 buckets are 0-3, 4-7, 8-14, 15+. bucket_0_1, bucket_2_3 and bucket_8_plus are read by agingService until M5-T14 replaces it.
-  bucket_0_3           Decimal   @default(0) @map("bucket_0_3") @db.Decimal(19, 4)
-  bucket_8_14          Decimal   @default(0) @map("bucket_8_14") @db.Decimal(19, 4)
-  bucket_15_plus       Decimal   @default(0) @map("bucket_15_plus") @db.Decimal(19, 4)
-  bucket_0_1           Decimal   @default(0) @map("bucket_0_1") @db.Decimal(19, 4)
-  bucket_2_3           Decimal   @default(0) @map("bucket_2_3") @db.Decimal(19, 4)
-  bucket_4_7           Decimal   @default(0) @map("bucket_4_7") @db.Decimal(19, 4)
-  bucket_8_plus        Decimal   @default(0) @map("bucket_8_plus") @db.Decimal(19, 4)
-  totalBalance         Decimal   @default(0) @map("total_balance") @db.Decimal(19, 4)
-  oldestCollectionDate DateTime? @map("oldest_collection_date")
-  updatedAt            DateTime  @updatedAt @map("updated_at")
-
-  agent    User   @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  tenantId String @map("tenant_id")
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@index([tenantId])
-  @@map("agent_aging_buckets")
-}
-
 model AgentBalance {
   id                 Int       @id @default(autoincrement())
   agentId            Int       @unique @map("agent_id")
@@ -1403,6 +1378,8 @@ enum FindingType {
   over_pay
   excess_deposit
   negative_cash_held
+  // A verify refused because it would take a partner's cash held below zero (F-912). Not closed by the cash held sync.
+  verify_exceeds_cash_held
 }
 
 enum FindingStatus {

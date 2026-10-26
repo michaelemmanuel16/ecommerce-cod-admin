@@ -280,7 +280,7 @@ describe('exports', () => {
     expect(cash.length).toBeGreaterThan(1);
     const aging = await get('/api/financial/export/agent-aging');
     expect(aging.status).toBe(200);
-    expect(csvOf(aging)[0]).toBe('Agent,Total balance,0-1 days,2-3 days,4-7 days,8+ days,Oldest collection');
+    expect(csvOf(aging)[0]).toBe('Partner,Cash held,0-3 days,4-7 days,8-14 days,15+ days,Oldest unpaid (days),Days to pay');
   });
 
   it.each(['profit-loss', 'general-ledger', 'cash-flow'])('%s: an empty range gives the header row only', async (report) => {

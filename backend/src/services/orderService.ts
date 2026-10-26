@@ -117,6 +117,8 @@ export interface OrderFilters {
   search?: string;
   /** Only these order ids (the orders an import made, F-319). Tenant and row scope still apply. */
   ids?: number[];
+  /** One more condition on the order, set by the server for a tab such as "Unpaid by agent" (F-309). Never read from the request. */
+  extra?: Prisma.OrderWhereInput;
 }
 
 export interface OrderListQuery extends OrderFilters {
@@ -137,6 +139,7 @@ function listWhere(filters: OrderFilters, requester: Requester | undefined, with
   if (withStatus && filters.status?.length) and.push({ status: { in: filters.status } });
   if (filters.customerId) and.push({ customerId: filters.customerId });
   if (filters.ids?.length) and.push({ id: { in: filters.ids } });
+  if (filters.extra) and.push(filters.extra);
   if (filters.unassigned) and.push({ customerRepId: null });
   else if (filters.customerRepId) and.push({ customerRepId: filters.customerRepId });
   if (filters.deliveryAgentId) and.push({ deliveryAgentId: filters.deliveryAgentId });

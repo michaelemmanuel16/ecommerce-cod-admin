@@ -91,25 +91,25 @@ const plReport = async (range: ExportRange): Promise<ReportExport<PlRow>> => {
 
 // ── Agent aging ────────────────────────────────────────────────────────────────
 
-interface AgingRow { agent: string; total: Money.MoneyInput; b01: Money.MoneyInput; b23: Money.MoneyInput; b47: Money.MoneyInput; b8: Money.MoneyInput; oldest: Date | null }
+interface AgingRow { partner: string; cashHeld: string; b03: string; b47: string; b814: string; b15: string; oldest: number | null; daysToPay: number }
 
 const agingReport = async (): Promise<ReportExport<AgingRow>> => {
-  const { buckets } = await agingService.getAgingReport();
-  const rows: AgingRow[] = buckets.map((b: any) => ({
-    agent: `${b.agent.firstName} ${b.agent.lastName}`,
-    total: b.totalBalance, b01: b.bucket_0_1, b23: b.bucket_2_3, b47: b.bucket_4_7, b8: b.bucket_8_plus,
-    oldest: b.oldestCollectionDate ? new Date(b.oldestCollectionDate) : null,
+  const { partners } = await agingService.getAgingReport();
+  const rows: AgingRow[] = partners.map((p) => ({
+    partner: p.name, cashHeld: p.cashHeld,
+    b03: p.buckets[0].amount, b47: p.buckets[1].amount, b814: p.buckets[2].amount, b15: p.buckets[3].amount,
+    oldest: p.oldestUnpaidDays, daysToPay: p.daysToPay,
   }));
-  const zone = getStoreTimeZone(getTenantId());
   return {
     columns: [
-      { header: 'Agent', value: (r) => r.agent },
-      { header: 'Total balance', value: (r) => exportMoney(r.total), kind: 'money' },
-      { header: '0-1 days', value: (r) => exportMoney(r.b01), kind: 'money' },
-      { header: '2-3 days', value: (r) => exportMoney(r.b23), kind: 'money' },
+      { header: 'Partner', value: (r) => r.partner },
+      { header: 'Cash held', value: (r) => exportMoney(r.cashHeld), kind: 'money' },
+      { header: '0-3 days', value: (r) => exportMoney(r.b03), kind: 'money' },
       { header: '4-7 days', value: (r) => exportMoney(r.b47), kind: 'money' },
-      { header: '8+ days', value: (r) => exportMoney(r.b8), kind: 'money' },
-      { header: 'Oldest collection', value: (r) => (r.oldest ? localDate(r.oldest, zone) : '') },
+      { header: '8-14 days', value: (r) => exportMoney(r.b814), kind: 'money' },
+      { header: '15+ days', value: (r) => exportMoney(r.b15), kind: 'money' },
+      { header: 'Oldest unpaid (days)', value: (r) => r.oldest ?? '', kind: 'count' },
+      { header: 'Days to pay', value: (r) => r.daysToPay, kind: 'count' },
     ],
     batches: once(rows),
   };

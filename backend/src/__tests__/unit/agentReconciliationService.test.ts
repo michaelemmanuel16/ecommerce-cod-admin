@@ -40,6 +40,7 @@ jest.mock('../../utils/prisma', () => ({
         agentBalance: {
             findUnique: jest.fn(),
             update: jest.fn(),
+            updateMany: jest.fn(),
             create: jest.fn(),
             findMany: jest.fn(),
             upsert: jest.fn(),
@@ -84,6 +85,11 @@ jest.mock('../../utils/socketInstance', () => ({
     getSocketInstance: jest.fn(),
 }));
 
+jest.mock('../../services/findingService', () => ({
+    openFindingOnce: jest.fn().mockImplementation(() => Promise.resolve(1)),
+}));
+import { openFindingOnce } from '../../services/findingService';
+
 jest.mock('../../services/glAutomationService', () => ({
     GLAutomationService: {
         createAgentDepositEntry: jest.fn().mockImplementation(() => Promise.resolve({ entry: {}, excessFindingId: null } as any)),
@@ -109,8 +115,10 @@ describe('AgentReconciliationService', () => {
         mockPrisma.$transaction.mockImplementation((cb: any) => cb(mockTx));
         (GLAutomationService.createAgentDepositEntry as any).mockResolvedValue({ entry: {}, excessFindingId: null });
         mockTx.$queryRaw.mockResolvedValue([]);
-        mockTx.agentDeposit.updateMany.mockResolvedValue({ count: 1 }); // the claim of a pending deposit
-        mockTx.agentCollection.updateMany.mockResolvedValue({ count: 1 }); // the claim of a part-covered collection
+        (openFindingOnce as any).mockResolvedValue(1);
+        mockTx.agentBalance.updateMany.mockResolvedValue({ count: 1 }); // the conditional debit of the balance
+        mockTx.agentDeposit.updateMany.mockImplementation(async (a: any) => ({ count: a.where.id.in?.length ?? 1 })); // the claim wins every row asked for
+        mockTx.agentCollection.updateMany.mockImplementation(async (a: any) => ({ count: a.where.id.in?.length ?? 1 })); // the claim wins every row asked for
         mockTx.account.findUnique.mockResolvedValue({ id: 10 });
     });
 
@@ -152,7 +160,7 @@ describe('AgentReconciliationService', () => {
                 status: 'draft'
             };
 
-            mockTx.agentCollection.findUnique.mockResolvedValue(collection);
+            mockTx.agentCollection.findMany.mockResolvedValue([collection]);
             mockTx.agentCollection.update.mockResolvedValue({ ...collection, status: 'reconciled' });
             mockTx.agentBalance.findUnique.mockResolvedValue({ id: 10, agentId: 456 });
             mockTx.agentBalance.update.mockResolvedValue({});
@@ -167,47 +175,14 @@ describe('AgentReconciliationService', () => {
         });
 
         it('should throw error if collection not found', async () => {
-            mockTx.agentCollection.findUnique.mockResolvedValue(null);
+            mockTx.agentCollection.findMany.mockResolvedValue([]);
             await expect(agentReconciliationService.verifyCollection(999, 1)).rejects.toThrow('Collection record not found');
         });
 
         it('should throw error if collection is already reconciled', async () => {
             const collection = { id: 1, status: 'reconciled' };
-            mockTx.agentCollection.findUnique.mockResolvedValue(collection);
-            await expect(agentReconciliationService.verifyCollection(1, 1)).rejects.toThrow(/Collection cannot be reconciled from status: reconciled/);
-        });
-    });
-
-    describe('approveCollection', () => {
-        it('should approve a verified collection and update agent balance', async () => {
-            const collectionId = 1;
-            const approverId = 999;
-            const collection = {
-                id: collectionId,
-                agentId: 456,
-                amount: 1000,
-                status: 'verified'
-            };
-
-            const balance = { id: 10, agentId: 456, currentBalance: 0 };
-
-            mockTx.agentCollection.findUnique.mockResolvedValue(collection);
-            mockTx.agentCollection.update.mockResolvedValue({ ...collection, status: 'approved' });
-            mockTx.agentBalance.findUnique.mockResolvedValue(balance);
-            mockTx.agentBalance.update.mockResolvedValue({ ...balance, currentBalance: 1000 });
-
-            const result = await agentReconciliationService.approveCollection(collectionId, approverId);
-
-            expect(mockTx.agentCollection.updateMany).toHaveBeenCalled();
-            expect(mockTx.agentBalance.update).toHaveBeenCalledWith({
-                where: { id: balance.id },
-                data: {
-                    totalDeposited: { increment: collection.amount },
-                    currentBalance: { decrement: collection.amount },
-                },
-            });
-
-            expect(result.status).toBe('reconciled'); // approve is verify: one step to reconciled
+            mockTx.agentCollection.findMany.mockResolvedValue([collection]);
+            await expect(agentReconciliationService.verifyCollection(1, 1)).rejects.toThrow('Already verified');
         });
     });
 
@@ -300,7 +275,8 @@ describe('AgentReconciliationService', () => {
 
             const result = await agentReconciliationService.verifyDeposit(depositId, verifierId);
 
-            expect(mockTx.agentBalance.update).toHaveBeenCalled();
+            // One conditional debit: it only passes while the balance stays at zero or above
+            expect(mockTx.agentBalance.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 10, currentBalance: { gte: expect.anything() } } }));
 
             // FIFO: 101 and 102 are fully covered in one UPDATE, 103 is untouched; the deposit keeps what it matched
             expect(mockTx.$queryRaw).toHaveBeenCalledTimes(1);
@@ -409,9 +385,12 @@ describe('AgentReconciliationService', () => {
 
             mockTx.agentDeposit.findUnique.mockResolvedValue(deposit);
             mockTx.agentBalance.findUnique.mockResolvedValue(balance);
+            mockTx.agentBalance.updateMany.mockResolvedValue({ count: 0 }); // the debit would go below zero
 
             await expect(agentReconciliationService.verifyDeposit(depositId, 1))
                 .rejects.toThrow(/Deposit amount exceeds current agent balance/);
+            // The transaction rolled back, so the Finding is opened after it, for the shortfall
+            expect(openFindingOnce).toHaveBeenCalledWith(expect.objectContaining({ type: 'verify_exceeds_cash_held', subjectType: 'delivery_partner', subjectId: '456' }), expect.anything());
         });
     });
 
@@ -445,12 +424,10 @@ describe('AgentReconciliationService', () => {
             const collectionIds = [1, 2];
             const verifierId = 789;
 
-            const collection1 = { id: 1, orderId: 101, status: 'draft', amount: 1000 };
-            const collection2 = { id: 2, orderId: 102, status: 'draft', amount: 2000 };
+            const collection1 = { id: 1, orderId: 101, agentId: 456, status: 'draft', amount: 1000 };
+            const collection2 = { id: 2, orderId: 102, agentId: 456, status: 'draft', amount: 2000 };
 
-            mockTx.agentCollection.findUnique
-                .mockResolvedValueOnce(collection1)
-                .mockResolvedValueOnce(collection2);
+            mockTx.agentCollection.findMany.mockResolvedValue([collection1, collection2]);
 
             mockTx.agentCollection.update
                 .mockResolvedValueOnce({ ...collection1, status: 'reconciled' })
@@ -468,18 +445,20 @@ describe('AgentReconciliationService', () => {
             expect(results).toHaveLength(2);
             expect(results[0].status).toBe('reconciled');
             expect(results[1].status).toBe('reconciled');
-            expect(mockTx.order.updateMany).toHaveBeenCalledTimes(2);
+            // One claim and one order update for all rows; one debit and one user update for the partner: 3000 in all
+            expect(mockTx.order.updateMany).toHaveBeenCalledTimes(1);
+            expect(mockTx.agentBalance.updateMany).toHaveBeenCalledTimes(1);
+            expect(mockTx.agentBalance.updateMany.mock.calls[0][0].data.currentBalance.decrement.toString()).toBe('3000');
+            expect(mockTx.user.update).toHaveBeenCalledTimes(1);
         });
 
         it('should fail entirely if one verification fails (atomicity)', async () => {
             const collectionIds = [1, 2];
             const verifierId = 789;
 
-            const collection1 = { id: 1, orderId: 101, status: 'draft', amount: 1000 };
+            const collection1 = { id: 1, orderId: 101, agentId: 456, status: 'draft', amount: 1000 };
 
-            mockTx.agentCollection.findUnique
-                .mockResolvedValueOnce(collection1)
-                .mockResolvedValueOnce(null);
+            mockTx.agentCollection.findMany.mockResolvedValue([collection1]); // id 2 is missing
 
             mockTx.agentCollection.update.mockResolvedValue({ ...collection1, status: 'reconciled' });
             mockTx.agentBalance.findUnique.mockResolvedValue({ id: 10, agentId: 456 });
@@ -603,7 +582,7 @@ describe('AgentReconciliationService', () => {
             expect(result.verified).toBe(3);
             expect(Money.toApi(result.totalAmount)).toBe('3000.00');
             expect(mockTx.agentDeposit.update).toHaveBeenCalledTimes(3);
-            expect(mockTx.agentBalance.update).toHaveBeenCalledTimes(1); // One update per agent
+            expect(mockTx.agentBalance.updateMany).toHaveBeenCalledTimes(1); // One debit per agent
         });
 
         it('should handle exactly 50 deposits', async () => {
@@ -635,9 +614,11 @@ describe('AgentReconciliationService', () => {
             ]; // Total 6000, balance is 5000
 
             mockTx.agentDeposit.findMany.mockResolvedValue(mockDeposits);
+            mockTx.agentBalance.updateMany.mockResolvedValue({ count: 0 });
 
             await expect(agentReconciliationService.bulkVerifyDeposits(depositIds, verifierId))
                 .rejects.toThrow(/insufficient balance/);
+            expect(openFindingOnce).toHaveBeenCalledWith(expect.objectContaining({ type: 'verify_exceeds_cash_held' }), expect.anything());
         });
 
         it('should throw error if any deposit is not found', async () => {
@@ -679,7 +660,7 @@ describe('AgentReconciliationService', () => {
             const result = await agentReconciliationService.bulkVerifyDeposits(depositIds, verifierId);
 
             expect(result.verified).toBe(2);
-            expect(mockTx.agentBalance.update).toHaveBeenCalledTimes(2); // One update per agent
+            expect(mockTx.agentBalance.updateMany).toHaveBeenCalledTimes(2); // One debit per agent
         });
 
         it('should emit AGENT_COLLECTION_RECONCILED event after bulk verification', async () => {

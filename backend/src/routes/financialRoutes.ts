@@ -36,6 +36,7 @@ router.get('/profitability/export', requireResourcePermission('financial', 'view
 router.get('/pipeline-revenue', requireResourcePermission('financial', 'view'), financialController.getPipelineRevenue);
 router.get('/cash-flow', requireResourcePermission('financial', 'view'), financialController.getCashFlowReport);
 router.get('/cash-flow/export/csv', requireResourcePermission('financial', 'view'), financialController.exportCashFlowCSV);
+router.get('/unpaid-by-age', requireResourcePermission('financial', 'view'), financialController.getUnpaidByAge);
 router.get('/agent-aging', requireResourcePermission('financial', 'view'), financialController.getAgentAgingReport);
 router.get('/agent-aging/export/csv', requireResourcePermission('financial', 'view'), financialController.exportAgentAgingCSV);
 
@@ -65,7 +66,7 @@ router.get('/agents/settlement/:agentId', requireResourcePermission('financial',
 router.get('/health', requireResourcePermission('financial', 'view'), getFinancialHealth);
 
 // Admin maintenance endpoints
-router.post('/refresh-aging', requireRole('admin', 'super_admin'), financialController.refreshAgingBuckets);
+router.post('/sync-cash-findings', requireRole('admin', 'super_admin'), financialController.syncCashFindings);
 router.post('/backfill-collections', requireRole('admin', 'super_admin'), financialController.backfillMissingCollections);
 router.post('/backfill-delivery-dates', requireRole('admin', 'super_admin'), financialController.backfillDeliveryDates);
 router.post('/backfill-commissions', requireRole('admin', 'super_admin'), financialController.backfillCommissions);

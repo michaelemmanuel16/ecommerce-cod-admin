@@ -27,7 +27,6 @@ import { runInTenant } from '../../utils/tenantContext';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import { GLAutomationService, ORDER_GL_INCLUDE } from '../../services/glAutomationService';
 import { GLAccountService } from '../../services/glAccountService';
-import { CASH_OVERDUE_DAYS } from '../../services/kpi/cash';
 
 export const FIXTURE_SLUG = 'fixture-numbers';
 const FIXTURE_NAME = 'Fixture (NUMBERS.md)';
@@ -491,6 +490,8 @@ const COPYBOOK_COGS = 30;
 export const PARTNER_CASH_HELD: Record<PartnerKey, number> = { logiswift: 17300, kofi: 2900, esi: 2100, kwesi: 1100, kasapa: 0 };
 /** Open (draft, verified, approved) collections older than 8 days: the Dashboard's "38 orders unpaid over 8 days" (NUMBERS.md, DESIGN-SPEC rule 7). */
 export const OVERDUE_OPEN_COLLECTIONS = 38;
+/** The sample's partners pay within 8 days ("orders over 8 days"); each partner profile carries it. */
+const FIXTURE_DAYS_TO_PAY = 8;
 /** How the 38 split across partners; the rest of the collection rows are the ones that must not count (see seedFixture). */
 const OVERDUE_OPEN_BY_PARTNER: Partial<Record<PartnerKey, number>> = { logiswift: 20, kofi: 8, esi: 6, kwesi: 4 };
 const OPEN_RECENT_COLLECTIONS = 6;
@@ -912,7 +913,8 @@ export async function seedFixture(prisma: PrismaClient, opts: SeedFixtureOptions
 
   // One AgentCollection per order (collectionDate = deliveryDate, amount = total) on delivered fixture orders of the right partner.
   // The 38 open ones older than 8 days are what the cash tile's "orders over 8 days" counts; the rest must not count.
-  const cutoff = FIXTURE_NOW - CASH_OVERDUE_DAYS * DAY;
+  const cutoff = FIXTURE_NOW - FIXTURE_DAYS_TO_PAY * DAY;
+  await prisma.deliveryPartnerProfile.createMany({ data: PARTNER_KEYS.map((key) => ({ userId: partnerIds[key], daysToPay: FIXTURE_DAYS_TO_PAY, tenantId })), skipDuplicates: true });
   const deliveredByPartner = (key: PartnerKey, old: boolean) => plan
     .filter((o) => o.status === 'delivered' && o.partner === key && o.deliveryDate !== null && (o.deliveryDate < cutoff) === old)
     .sort((a, b) => (a.orderNumber < b.orderNumber ? -1 : 1));

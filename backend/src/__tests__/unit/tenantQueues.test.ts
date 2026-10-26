@@ -6,12 +6,12 @@ import { getTenantId } from '../../utils/tenantContext';
 // all-tenant jobs. Under NODE_ENV=test the queues are inert, so the exported
 // processor functions are called directly.
 
-const mockRefreshAll = jest.fn<() => Promise<void>>();
+const mockSync = jest.fn<() => Promise<void>>();
 const mockGetOverdueAgents = jest.fn<() => Promise<any[]>>();
 jest.mock('../../services/agingService', () => ({
   __esModule: true,
   default: {
-    refreshAll: (...a: any[]) => (mockRefreshAll as any)(...a),
+    syncNegativeCashFindings: (...a: any[]) => (mockSync as any)(...a),
     getOverdueAgents: (...a: any[]) => (mockGetOverdueAgents as any)(...a),
   },
 }));
@@ -30,7 +30,7 @@ jest.mock('../../utils/socketInstance', () => ({
   getSocketInstance: jest.fn(() => null),
 }));
 
-import { processRefreshBuckets, processNotifyOverdueCollections } from '../../queues/agingQueue';
+import { processSyncCashFindings, processNotifyOverdueCollections } from '../../queues/agingQueue';
 import { processCleanupOldMessages } from '../../queues/messageCleanupQueue';
 import { processCleanupStalePending } from '../../queues/pendingCheckoutCleanupQueue';
 import { processExecuteWorkflow } from '../../queues/workflowQueue';
@@ -45,23 +45,23 @@ describe('job processors run inside a tenant context', () => {
     twoTenants();
   });
 
-  it('agingQueue refresh-buckets: refreshAll once per tenant, each in its own context', async () => {
+  it('agingQueue sync-cash-findings: sync once per tenant, each in its own context', async () => {
     const seen: Array<string | null> = [];
-    mockRefreshAll.mockImplementation(async () => { seen.push(getTenantId()); });
+    mockSync.mockImplementation(async () => { seen.push(getTenantId()); });
 
-    await processRefreshBuckets();
+    await processSyncCashFindings();
 
     expect(seen).toEqual(['tenant-a', 'tenant-b']);
   });
 
-  it('agingQueue refresh-buckets: a failing tenant does not stop the others, job still fails', async () => {
+  it('agingQueue sync-cash-findings: a failing tenant does not stop the others, job still fails', async () => {
     const seen: Array<string | null> = [];
-    mockRefreshAll.mockImplementation(async () => {
+    mockSync.mockImplementation(async () => {
       seen.push(getTenantId());
       if (getTenantId() === 'tenant-a') throw new Error('boom');
     });
 
-    await expect(processRefreshBuckets()).rejects.toThrow('failed for 1/2 tenants');
+    await expect(processSyncCashFindings()).rejects.toThrow('failed for 1/2 tenants');
     expect(seen).toEqual(['tenant-a', 'tenant-b']);
   });
 
