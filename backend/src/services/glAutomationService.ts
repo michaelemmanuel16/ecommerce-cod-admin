@@ -526,15 +526,16 @@ export class GLAutomationService {
   }
 
   /**
-   * Write-off of a Finding (F-909): DR 5100 operating expense, CR `creditCode` (1015 for cash still held by a partner,
-   * 2040 for excess or unapplied cash). Keyed `finding-writeoff:<id>` with its own source type, so a repeat posts
+   * Write-off of a Finding (F-909). `account` 1015 (cash a partner was to hand in): DR 5100 / CR 1015, an expense.
+   * `account` 2040 (extra money we hold): DR 2040 / CR 5100, the liability is released against operating expense.
+   * (The PRD text "DR 5100 and CR 1015 or 2040" is corrected here for the 2040 types.) Keyed `finding-writeoff:<id>` with its own source type, so a repeat posts
    * nothing and a manual journal void cannot reach it. An amount of 0 posts nothing.
    */
   static async createFindingWriteOffEntry(
     tx: Prisma.TransactionClient,
     finding: { id: number; type: string; tenantId?: string | null },
     amount: Money.MoneyInput,
-    creditCode: typeof GL_ACCOUNTS.CASH_IN_TRANSIT | typeof GL_ACCOUNTS.UNAPPLIED_PARTNER_RECEIPTS,
+    account: typeof GL_ACCOUNTS.CASH_IN_TRANSIT | typeof GL_ACCOUNTS.UNAPPLIED_PARTNER_RECEIPTS,
     userId: number,
     note: string
   ): Promise<JournalEntryWithTransactions | null> {
@@ -548,10 +549,11 @@ export class GLAutomationService {
     });
     if (existingEntry) return existingEntry as JournalEntryWithTransactions;
 
-    const [expenseAccountId, creditAccountId] = await Promise.all([
+    const [expenseAccountId, otherAccountId] = await Promise.all([
       GLAccountService.getAccountIdByCode(GL_ACCOUNTS.OPERATING_EXPENSE, tx),
-      GLAccountService.getAccountIdByCode(creditCode, tx),
+      GLAccountService.getAccountIdByCode(account, tx),
     ]);
+    const expenseDebit = account === GL_ACCOUNTS.CASH_IN_TRANSIT;
     return await this.createJournalEntryWithRetry(tx, {
       entryDate: new Date(),
       description: `Write-off of finding #${finding.id} (${finding.type}): ${note}`,
@@ -562,8 +564,8 @@ export class GLAutomationService {
       tenantId: finding.tenantId ?? undefined,
       transactions: {
         create: [
-          { accountId: expenseAccountId, debitAmount: size, creditAmount: Money.ZERO, description: `Written-off ${finding.type.replace(/_/g, ' ')}` },
-          { accountId: creditAccountId, debitAmount: Money.ZERO, creditAmount: size, description: `Finding #${finding.id} written off` },
+          { accountId: expenseAccountId, debitAmount: expenseDebit ? size : Money.ZERO, creditAmount: expenseDebit ? Money.ZERO : size, description: `Written-off ${finding.type.replace(/_/g, ' ')}` },
+          { accountId: otherAccountId, debitAmount: expenseDebit ? Money.ZERO : size, creditAmount: expenseDebit ? size : Money.ZERO, description: `Finding #${finding.id} written off` },
         ],
       },
     });

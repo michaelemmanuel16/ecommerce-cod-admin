@@ -56,7 +56,7 @@ export interface FindingFilters {
   limit?: number;
 }
 
-/** Which account a written-off Finding credits (DR 5100): cash a partner still holds (1015) or excess cash held unapplied (2040). A type not here has no ledger amount: it posts nothing. */
+/** The account a written-off Finding posts against 5100: 1015 for cash we expected and will not get (DR 5100 / CR 1015), 2040 for extra money we hold (DR 2040 / CR 5100). A type not here has no ledger amount: it posts nothing. */
 const WRITE_OFF_CREDIT: Partial<Record<FindingType, '1015' | '2040'>> = {
   short_pay: '1015',
   cash_gap: '1015',
@@ -106,7 +106,7 @@ export interface FindingChange {
 
 /**
  * Assign and resolve in one PATCH (F-909). Only an open Finding changes. Explained and written off need a note;
- * a write-off is the owner's call and posts DR 5100 / CR 1015 or 2040 by the Finding type (WRITE_OFF_CREDIT), in the same
+ * a write-off is the owner's call and posts against 5100 and 1015 or 2040 by the Finding type (WRITE_OFF_CREDIT), in the same
  * transaction. The status is claimed with a conditional update, so two people resolving at once cannot both win and
  * the write-off posts once.
  */

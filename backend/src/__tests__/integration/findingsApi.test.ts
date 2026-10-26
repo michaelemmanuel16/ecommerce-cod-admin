@@ -212,11 +212,25 @@ describe('a write-off posts to the ledger (F-909)', () => {
     expect(await bal('1015')).toBe(c1015 - 70);
   });
 
-  it.each(['excess_deposit', 'over_pay'])('%s: DR 5100, CR 2040', async (type) => {
+  it.each(['excess_deposit', 'over_pay'])('%s: DR 2040, CR 5100', async (type) => {
     const f = await mkFinding(type, { amount: 30 });
+    const [e5100, l2040] = [await bal('5100'), await bal('2040')];
     expect((await patch(owner.token, f.id, { status: 'written_off', explanation: 'Not claimed' })).status).toBe(200);
     const entries = await entriesOf(f.id);
-    expect(lines(entries[0])).toEqual([['2040', 0, 30], ['5100', 30, 0]]);
+    expect(entries).toHaveLength(1);
+    expect(lines(entries[0])).toEqual([['2040', 30, 0], ['5100', 0, 30]]);
+    // the liability falls, the expense falls
+    expect(await bal('2040')).toBe(l2040 - 30);
+    expect(await bal('5100')).toBe(e5100 - 30);
+  });
+
+  it('the trial balance stays in balance after write-offs of both kinds', async () => {
+    const rows = await prismaBase.accountTransaction.findMany({ where: { tenantId, journalEntry: { sourceType: 'finding_writeoff' } } });
+    expect(rows.length).toBeGreaterThan(0);
+    const sum = (k: 'debitAmount' | 'creditAmount') => rows.reduce((s, r) => s + Number(r[k]), 0);
+    expect(sum('debitAmount')).toBe(sum('creditAmount'));
+    const all = await prismaBase.accountTransaction.findMany({ where: { tenantId } });
+    expect(all.reduce((s, r) => s + Number(r.debitAmount) - Number(r.creditAmount), 0)).toBeCloseTo(0, 4);
   });
 
   it('a type with no ledger amount, or an amount of 0, posts nothing', async () => {
