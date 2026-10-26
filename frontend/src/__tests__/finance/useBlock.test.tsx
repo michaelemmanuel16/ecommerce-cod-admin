@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { clearBlockCache, useBlock } from '../../pages/financial/profit/useBlock';
+import { useAuthStore } from '../../stores/authStore';
 
 const load = vi.fn();
 function Probe({ k, label }: { k: string; label: string }) {
@@ -39,5 +40,15 @@ describe('useBlock shared cache (M5-T40 review)', () => {
     expect(await screen.findByText('x:failed:')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button'));
     expect(await screen.findByText('x:ready:a!')).toBeInTheDocument();
+  });
+
+  it('signing out forgets the cached answers, so the next person to sign in asks again', async () => {
+    const first = render(<Probe k="a" label="x" />);
+    await screen.findByText('x:ready:a!');
+    first.unmount();
+    useAuthStore.getState().logout(false);
+    render(<Probe k="a" label="x" />);
+    await screen.findByText('x:ready:a!');
+    expect(load).toHaveBeenCalledTimes(2);
   });
 });

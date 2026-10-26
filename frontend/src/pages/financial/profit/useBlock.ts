@@ -6,7 +6,7 @@ const STALE_MS = 60_000;
 const results = new Map<string, { data: unknown; at: number }>();
 const inflight = new Map<string, Promise<unknown>>();
 
-/** Forgets every cached answer. A test calls it between cases; nothing in the app needs it. */
+/** Forgets every cached answer. Sign-in and sign-out call it, so one person never sees another person's answers; tests call it between cases. */
 export function clearBlockCache(): void {
   results.clear();
   inflight.clear();
