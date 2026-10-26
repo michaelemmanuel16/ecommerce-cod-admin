@@ -7,9 +7,8 @@ import request from 'supertest';
 import '../mocks/logger.mock';
 import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
-import { runInTenant } from '../../utils/tenantContext';
-import glService from '../../services/glService';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
+import { postEntry } from './helpers/ledgerPost';
 import { createTenant, deleteTenantRows, mkUser } from './helpers/twoTenants';
 
 jest.setTimeout(120_000);
@@ -18,18 +17,10 @@ let a: string;
 let b: string;
 let ownerA: { id: number; token: string };
 let ownerB: { id: number; token: string };
+let c: string;
+let ownerC: { id: number; token: string };
 let agentA: { id: number; token: string };
 const auth = (u: { token: string }) => ({ Authorization: `Bearer ${u.token}` });
-
-/** One balanced manual entry: [code, debit, credit][]. */
-async function post(tenantId: string, who: number, date: string, lines: Array<[string, number, number]>) {
-  const accounts = await prismaBase.account.findMany({ where: { tenantId, code: { in: lines.map((l) => l[0]) } } });
-  const id = (code: string) => accounts.find((x) => x.code === code)!.id;
-  await runInTenant(tenantId, () => glService.createJournalEntry({
-    entryDate: `${date}T12:00:00.000Z`, description: `test ${date}`, sourceType: 'manual',
-    transactions: lines.map(([code, d, c]) => ({ accountId: id(code), debitAmount: d, creditAmount: c })),
-  }, { id: who, role: 'super_admin' }));
-}
 
 beforeAll(async () => {
   a = (await createTenant('Statements A')).id;
@@ -37,30 +28,40 @@ beforeAll(async () => {
   await Promise.all([seedTenantDefaults(a), seedTenantDefaults(b)]);
   [ownerA, ownerB, agentA] = await Promise.all([mkUser(a, 'ownerA', 'super_admin'), mkUser(b, 'ownerB', 'super_admin'), mkUser(a, 'agentA', 'delivery_agent')]);
 
-  await post(a, ownerA.id, '2026-07-01', [['1010', 5000, 0], ['3010', 0, 5000]]); // opening equity
+  await postEntry(a, ownerA.id, '2026-07-01', [['1010', 5000, 0], ['3010', 0, 5000]]); // opening equity
   // August: booked the old way, no 5050 line
-  await post(a, ownerA.id, '2026-08-10', [['1015', 1000, 0], ['4010', 0, 1000]]);
-  await post(a, ownerA.id, '2026-08-10', [['5010', 300, 0], ['1200', 0, 300]]);
-  await post(a, ownerA.id, '2026-08-12', [['5100', 100, 0], ['1010', 0, 100]]);
+  await postEntry(a, ownerA.id, '2026-08-10', [['1015', 1000, 0], ['4010', 0, 1000]]);
+  await postEntry(a, ownerA.id, '2026-08-10', [['5010', 300, 0], ['1200', 0, 300]]);
+  await postEntry(a, ownerA.id, '2026-08-12', [['5100', 100, 0], ['1010', 0, 100]]);
   // September
-  await post(a, ownerA.id, '2026-09-10', [['1015', 2000, 0], ['4010', 0, 2000]]);
-  await post(a, ownerA.id, '2026-09-10', [['5010', 600, 0], ['1200', 0, 600]]);
-  await post(a, ownerA.id, '2026-09-10', [['5070', 200, 0], ['1015', 0, 200]]);
-  await post(a, ownerA.id, '2026-09-25', [['5100', 50, 0], ['1010', 0, 50]]); // after day 17: not in "same days last month"
+  await postEntry(a, ownerA.id, '2026-09-10', [['1015', 2000, 0], ['4010', 0, 2000]]);
+  await postEntry(a, ownerA.id, '2026-09-10', [['5010', 600, 0], ['1200', 0, 600]]);
+  await postEntry(a, ownerA.id, '2026-09-10', [['5070', 200, 0], ['1015', 0, 200]]);
+  await postEntry(a, ownerA.id, '2026-09-25', [['5100', 50, 0], ['1010', 0, 50]]); // after day 17: not in "same days last month"
   // October 1-17 (the plan's October commission and reward)
-  await post(a, ownerA.id, '2026-10-05', [['1015', 3000, 0], ['4010', 0, 3000]]);
-  await post(a, ownerA.id, '2026-10-05', [['5010', 900, 0], ['1200', 0, 900]]);
-  await post(a, ownerA.id, '2026-10-05', [['5070', 400, 0], ['1015', 0, 400]]);
-  await post(a, ownerA.id, '2026-10-06', [['5050', 2128, 0], ['2020', 0, 2128]]);
-  await post(a, ownerA.id, '2026-10-07', [['5050', 640, 0], ['2020', 0, 640]]);
-  await post(a, ownerA.id, '2026-10-08', [['5080', 1000, 0], ['1010', 0, 1000]]);
-  await post(a, ownerA.id, '2026-10-20', [['5100', 77, 0], ['1010', 0, 77]]); // after asOf
+  await postEntry(a, ownerA.id, '2026-10-05', [['1015', 3000, 0], ['4010', 0, 3000]]);
+  await postEntry(a, ownerA.id, '2026-10-05', [['5010', 900, 0], ['1200', 0, 900]]);
+  await postEntry(a, ownerA.id, '2026-10-05', [['5070', 400, 0], ['1015', 0, 400]]);
+  await postEntry(a, ownerA.id, '2026-10-06', [['5050', 2128, 0], ['2020', 0, 2128]]);
+  await postEntry(a, ownerA.id, '2026-10-07', [['5050', 640, 0], ['2020', 0, 640]]);
+  await postEntry(a, ownerA.id, '2026-10-08', [['5080', 1000, 0], ['1010', 0, 1000]]);
+  await postEntry(a, ownerA.id, '2026-10-20', [['5100', 77, 0], ['1010', 0, 77]]); // after asOf
   // Tenant B: its own October revenue that must never reach A
-  await post(b, ownerB.id, '2026-10-03', [['1010', 999, 0], ['4010', 0, 999]]);
+  // Tenant C booked commission from the start of August: nothing is "not split out" there, and no default note applies
+  c = (await createTenant('Statements C')).id;
+  await seedTenantDefaults(c);
+  ownerC = await mkUser(c, 'ownerC', 'super_admin');
+  await postEntry(c, ownerC.id, '2026-08-02', [['5050', 50, 0], ['2020', 0, 50]]);
+  await postEntry(c, ownerC.id, '2026-08-10', [['1015', 400, 0], ['4010', 0, 400]]);
+  // Legacy delivery fee (5040, retired, inactive) booked by hand in the old months: it counts in the delivery fees line
+  await prismaBase.account.updateMany({ where: { tenantId: a, code: { in: ['5040', '1020'] } }, data: { isActive: true } });
+  await postEntry(a, ownerA.id, '2026-08-11', [['5040', 80, 0], ['1020', 0, 80]]);
+  await prismaBase.account.updateMany({ where: { tenantId: a, code: { in: ['5040', '1020'] } }, data: { isActive: false } });
+  await postEntry(b, ownerB.id, '2026-10-03', [['1010', 999, 0], ['4010', 0, 999]]);
 });
 
 afterAll(async () => {
-  await deleteTenantRows([a, b]);
+  await deleteTenantRows([a, b, c]);
   await prismaBase.$disconnect();
 });
 
@@ -79,8 +80,9 @@ describe('GET /api/financial/monthly-pl', () => {
     expect(aug.revenue).toBe('1000.00');
     expect(aug.productCost).toBe('300.00');
     expect(aug.otherExpenses).toBe('100.00');
-    expect(aug.netProfit).toBe('600.00');
-    expect(aug.netMarginPct).toBe(60);
+    expect(aug.deliveryFees).toBe('80.00'); // the retired 5040 holds the old delivery fee
+    expect(aug.netProfit).toBe('520.00');
+    expect(aug.netMarginPct).toBe(52);
     expect(aug.note).toBe('Booked with the older cost per set. Not restated.');
     expect(aug.repCommission).toBeNull();
     expect(aug.repCommissionNote).toBe('not split out');
@@ -154,13 +156,13 @@ describe('statements on /profit-loss and /balance-sheet', () => {
     const res = await request(app).get('/api/financial/balance-sheet?asOfDate=2026-10-17').set(auth(ownerA));
     const s = res.body.statement;
     expect(s.equity.ownersEquity).toBe('5000.00');
-    expect(s.equity.resultToDate).toBe('-318.00'); // 6000 - 400 - 850 - 5068
+    expect(s.equity.resultToDate).toBe('-398.00'); // 6000 - 480 - 850 - 5068
     expect(s.isBalanced).toBe(true);
     expect(s.outOfBalanceBy).toBeNull();
     expect(s.assets.total).toBe(s.totalLiabilitiesAndEquity);
     expect(s.assets.lines.map((l: any) => l.code).slice(0, 4)).toEqual(['1010', '1015', '1030', '1200']);
     expect(s.liabilities.lines.find((l: any) => l.code === '2020').amount).toBe('2768.00');
-  });
+      });
 
   it('a date with no entries returns zeros', async () => {
     const res = await request(app).get('/api/financial/balance-sheet?asOfDate=2020-01-01').set(auth(ownerA));
@@ -172,5 +174,35 @@ describe('statements on /profit-loss and /balance-sheet', () => {
     const is = await request(app).get('/api/financial/profit-loss?startDate=2020-01-01&endDate=2020-01-31').set(auth(ownerA));
     expect(is.body.statement.revenue).toBe('0.00');
     expect(is.body.statement.netMarginPct).toBeNull();
+  });
+});
+
+describe('one ledger reader and the "not split out" rule', () => {
+  it('old and new numbers of one response agree, retired 1020 and 5040 included', async () => {
+    const res = await request(app).get('/api/financial/balance-sheet?asOfDate=2026-10-17').set(auth(ownerA));
+    const old = res.body;
+    const s = res.body.statement;
+    expect(Number(old.assets.total)).toBe(Number(s.assets.total));
+    expect(Number(old.totalLiabilitiesAndEquity)).toBe(Number(s.totalLiabilitiesAndEquity));
+    expect(Number(old.equity.retainedEarnings)).toBe(Number(s.equity.resultToDate));
+    expect(old.assets.accounts.map((x: any) => x.code)).toContain('1020'); // retired but still carries -80
+    expect(old.isBalanced).toBe(true);
+    expect(s.isBalanced).toBe(true);
+
+    const pl = (await request(app).get('/api/financial/profit-loss?startDate=2026-08-01&endDate=2026-08-31').set(auth(ownerA))).body;
+    expect(Number(pl.netIncome)).toBe(Number(pl.statement.netProfit));
+    expect(pl.expenses.accounts.map((x: any) => x.code)).toContain('5040');
+    expect(pl.statement.deliveryFees).toBe('80.00');
+  });
+
+  it('a column is "not split out" only before the tenant\'s first 5050 posting; default notes follow it', async () => {
+    const c8 = (await pl(ownerC, 'asOf=2026-10-17')).body.columns[0];
+    expect(c8.label).toBe('Aug');
+    expect(c8.repCommission).toBe('50.00');
+    expect(c8.repCommissionNote).toBeNull();
+    expect(c8.note).toBeNull(); // the August default note belongs to columns booked before commission had its line
+    const a8 = (await pl(ownerA, 'asOf=2026-10-17')).body.columns[0];
+    expect(a8.repCommission).toBeNull();
+    expect(a8.note).not.toBeNull();
   });
 });

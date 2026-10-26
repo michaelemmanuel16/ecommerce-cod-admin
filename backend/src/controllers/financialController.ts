@@ -19,8 +19,6 @@ import { readDateBound } from '../utils/kpiRequest';
 import { AppError } from '../middleware/errorHandler';
 import { recordPaystackPayout } from '../services/paystackPayoutService';
 import { EXPENSE_CATEGORIES, EXPENSE_PAID_FROM } from '../config/expenseCategories';
-import { balanceSheetStatement, incomeStatement } from '../services/finance/statementsService';
-import { trendGrouping } from '../services/finance/cashFlowService';
 
 export const getFinancialSummary = async (req: AuthRequest, res: Response): Promise<void> => {
   const { startDate, endDate } = req.query;
@@ -94,13 +92,13 @@ export const getCODCollections = async (req: AuthRequest, res: Response): Promis
 export const getFinancialReports = async (req: AuthRequest, res: Response): Promise<void> => {
   const { period = 'daily', startDate, endDate } = req.query;
 
-  const reports = await financialService.getFinancialReports({
+  const trend = await financialService.getFinancialReports({
     period: period as string,
     startDate: readDateBound(startDate, 'from'),
     endDate: readDateBound(endDate, 'to', { snapToDay: true })
   });
 
-  res.json({ reports, grouping: trendGrouping(readDateBound(startDate, 'from') ?? new Date(), readDateBound(endDate, 'to', { snapToDay: true }) ?? new Date()) });
+  res.json({ reports: trend.rows, grouping: trend.grouping });
 };
 
 export const getPipelineRevenue = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -318,8 +316,7 @@ export const getBalanceSheet = async (req: AuthRequest, res: Response): Promise<
   try {
     const { asOfDate } = req.query;
     const balanceSheet = await financialService.getBalanceSheet(asOfDate as string);
-    // `statement` holds the F-922 lines (3010 and "Result to date"); the old fields stay as they were.
-    res.json({ ...balanceSheet, statement: await balanceSheetStatement(asOfDate as string | undefined) });
+    res.json(balanceSheet);
   } catch (error) {
     logger.error('Failed to fetch balance sheet', { error });
     res.status(500).json({ message: 'Failed to fetch balance sheet' });
@@ -334,8 +331,7 @@ export const getProfitLoss = async (req: AuthRequest, res: Response): Promise<vo
       return;
     }
     const profitLoss = await financialService.getProfitLoss(startDate as string, endDate as string);
-    // `statement` holds the F-922 income statement lines; the old fields stay as they were.
-    res.json({ ...profitLoss, statement: await incomeStatement(startDate as string, endDate as string) });
+    res.json(profitLoss);
   } catch (error) {
     logger.error('Failed to fetch profit & loss statement', { error });
     res.status(500).json({ message: 'Failed to fetch profit & loss statement' });

@@ -6,13 +6,13 @@
  * not); Meta spend has no campaign-to-product mapping before M8 (F-1003), so all of it is "Meta spend with no product".
  */
 import prisma from '../../utils/prisma';
-import { withSoftDeleted } from '../../utils/prismaExtensions';
 import * as Money from '../../utils/money';
 import { GL_ACCOUNTS } from '../../config/glAccounts';
-import { getStoreTimeZone, localDate, utcDateOfYmd } from '../kpi/dates';
+import { getStoreTimeZone, localDate } from '../kpi/dates';
 import { getTenantId, resolveTenantId } from '../../utils/tenantContext';
 import { rates } from '../kpi/rates';
-import { incomeStatementOver, pct } from './statementsService';
+import { resolveFee } from '../feeRuleService';
+import { incomeStatementOver } from './statementsService';
 
 const COST_MISSING = 'Cost missing';
 
@@ -30,7 +30,7 @@ function deliveredWhere(from: Date, to: Date) {
 
 /** Split `amount` over weights; the last share takes the rounding rest so the shares add up to `amount` exactly. */
 function shares(amount: Money.Money, weights: Money.Money[]): Money.Money[] {
-  const total = weights.reduce((t, w) => Money.add(t, w), Money.ZERO);
+  const total = Money.sum(weights);
   let left = amount;
   return weights.map((w, i) => {
     if (i === weights.length - 1) return left;
@@ -72,15 +72,17 @@ export interface ProfitByProduct {
   from: string;
   to: string;
   products: ProductProfitRow[];
-  /** Sums of the product rows (profit counts the rows that have a cost; see `costMissingProducts`). */
+  /** The ledger's totals for the range (income statement). Fees are delivery fees plus Paystack fees. */
   totals: { delivered: number; revenue: string; productCost: string; fees: string; metaAds: string };
+  /** Ledger figure less the sum of the product rows, so the rows plus this line equal the totals. */
+  notMatchedToProductRow: { revenue: string; productCost: string; fees: string };
   metaSpendWithNoProduct: string;
   repCommission: string;
-  /** Every other cost of the range (failed-delivery fees, other expenses), so the net result equals the income statement. */
+  /** The ledger's other expenses (5100 and the retired accounts). */
   otherExpenses: string;
   netProfit: string;
   netMarginPct: number | null;
-  /** Net profit / delivered orders of the whole range (the "-GH₵38" tile). Null when nothing was delivered. */
+  /** Ledger net profit / delivered orders of the range (the "-GH₵38" tile). Null when nothing was delivered. */
   profitPerDeliveredOrder: string | null;
   costMissingProducts: number;
 }
@@ -88,56 +90,42 @@ export interface ProfitByProduct {
 export async function profitByProduct(from: Date, to: Date): Promise<ProfitByProduct> {
   const tenantId = resolveTenantId();
   const zone = getStoreTimeZone(getTenantId());
-  const [orders, statement] = await Promise.all([
+  const [orders, statement, paystackLines] = await Promise.all([
     prisma.order.findMany({
       where: deliveredWhere(from, to),
       select: {
         id: true, status: true, totalAmount: true, deliveryFee: true, landedCostTotal: true,
-        orderItems: { select: { productId: true, quantity: true, totalPrice: true, product: { select: { cogs: true, productType: true } } } },
+        orderItems: { select: { productId: true, quantity: true, totalPrice: true, product: { select: { sku: true, name: true, cogs: true, productType: true } } } },
       },
     }),
     incomeStatementOver(from, to),
-  ]);
-
-  const productIds = [...new Set(orders.flatMap((o) => o.orderItems.map((i) => i.productId)))];
-  const products = productIds.length
-    ? await withSoftDeleted(() => prisma.product.findMany({ where: { id: { in: productIds } }, select: { id: true, sku: true, name: true, cogs: true, productType: true } }))
-    : [];
-  const productById = new Map(products.map((p) => [p.id, p]));
-
-  // Paystack fee of each digital order: the 5060 debit of its digital_sale entry.
-  const digitalIds = orders.filter((o) => o.status === 'digital_delivered').map((o) => o.id);
-  const paystackByOrder = new Map<number, Money.Money>();
-  if (digitalIds.length > 0) {
-    const lines = await prisma.accountTransaction.findMany({
-      where: { tenantId, account: { code: GL_ACCOUNTS.PAYSTACK_FEES }, journalEntry: { isVoided: false, sourceType: 'digital_sale', sourceId: { in: digitalIds } } },
+    // Paystack fee of each digital order: the 5060 debit of its digital_sale entry.
+    prisma.accountTransaction.findMany({
+      where: { tenantId, account: { code: GL_ACCOUNTS.PAYSTACK_FEES }, journalEntry: { isVoided: false, sourceType: 'digital_sale', entryDate: { gte: from, lt: to } } },
       select: { debitAmount: true, creditAmount: true, journalEntry: { select: { sourceId: true } } },
-    });
-    for (const l of lines) {
-      const id = l.journalEntry.sourceId as number;
-      paystackByOrder.set(id, Money.add(paystackByOrder.get(id) ?? Money.ZERO, Money.sub(l.debitAmount, l.creditAmount)));
-    }
+    }),
+  ]);
+  const paystackByOrder = new Map<number, Money.Money>();
+  for (const l of paystackLines) {
+    const id = l.journalEntry.sourceId as number;
+    paystackByOrder.set(id, Money.add(paystackByOrder.get(id) ?? Money.ZERO, Money.sub(l.debitAmount, l.creditAmount)));
   }
 
-  type Acc = { orders: Set<number>; units: number; revenue: Money.Money; cost: Money.Money; fees: Money.Money };
+  type Acc = { orders: Set<number>; units: number; revenue: Money.Money; cost: Money.Money; fees: Money.Money; product: { sku: string; name: string; cogs: Money.MoneyInput | null; productType: string } };
   const acc = new Map<number, Acc>();
-  const slot = (id: number): Acc => {
-    let a = acc.get(id);
-    if (!a) acc.set(id, (a = { orders: new Set(), units: 0, revenue: Money.ZERO, cost: Money.ZERO, fees: Money.ZERO }));
-    return a;
-  };
   for (const order of orders) {
     // A free bundled digital item (price 0) is not a sale of its own: it adds no revenue, cost or count.
     const items = order.orderItems.filter((i) => !(Money.orZero(i.totalPrice).isZero() && i.product.productType === 'digital'));
     if (items.length === 0) continue;
     const revenueShares = shares(Money.orZero(order.totalAmount), items.map((i) => Money.orZero(i.totalPrice)));
     const itemCost = items.map((i) => Money.mul(Money.orZero(i.product.cogs), i.quantity));
-    const orderCost = order.landedCostTotal != null ? Money.parse(order.landedCostTotal) : itemCost.reduce((t, c) => Money.add(t, c), Money.ZERO);
+    const orderCost = order.landedCostTotal != null ? Money.parse(order.landedCostTotal) : Money.sum(itemCost);
     const costShares = shares(orderCost, itemCost.map((c, k) => (c.isZero() ? Money.mul(Money.parse('0.0001'), items[k].quantity) : c)));
     const orderFee = order.status === 'digital_delivered' ? paystackByOrder.get(order.id) ?? Money.ZERO : Money.orZero(order.deliveryFee);
     const feeShares = shares(orderFee, items.map((i) => Money.orZero(i.totalPrice)));
     items.forEach((item, k) => {
-      const a = slot(item.productId);
+      let a = acc.get(item.productId);
+      if (!a) acc.set(item.productId, (a = { orders: new Set(), units: 0, revenue: Money.ZERO, cost: Money.ZERO, fees: Money.ZERO, product: item.product }));
       a.orders.add(order.id);
       a.units += item.quantity;
       a.revenue = Money.add(a.revenue, revenueShares[k]);
@@ -147,13 +135,11 @@ export async function profitByProduct(from: Date, to: Date): Promise<ProfitByPro
   }
 
   const rows: ProductProfitRow[] = [...acc.entries()].map(([productId, a]) => {
-    const product = productById.get(productId);
-    const type = product?.productType ?? 'physical';
-    const costMissing = type !== 'digital' && !Money.isNonZero(product?.cogs);
+    const costMissing = a.product.productType !== 'digital' && !Money.isNonZero(a.product.cogs);
     const delivered = a.orders.size;
-    const profit = costMissing ? null : Money.sub(Money.sub(a.revenue, a.cost), a.fees);
+    const profit = costMissing ? null : Money.sub(a.revenue, Money.add(a.cost, a.fees));
     return {
-      productId, sku: product?.sku ?? '', name: product?.name ?? '', productType: type,
+      productId, sku: a.product.sku, name: a.product.name, productType: a.product.productType,
       delivered, units: a.units,
       revenue: Money.toApi(a.revenue),
       productCost: costMissing ? null : Money.toApi(a.cost),
@@ -161,33 +147,32 @@ export async function profitByProduct(from: Date, to: Date): Promise<ProfitByPro
       fees: Money.toApi(a.fees),
       metaAds: Money.toApi(Money.ZERO),
       profit: profit ? Money.toApi(profit) : null,
-      marginPct: profit ? pct(profit, a.revenue) : null,
+      marginPct: profit ? Money.percentOrNull(profit, a.revenue) : null,
       profitPerDeliveredOrder: profit && delivered > 0 ? Money.toApi(Money.roundHalfUp(Money.div(profit, delivered), 2)) : null,
     };
   }).sort((x, y) => Money.compare(y.revenue, x.revenue) || x.productId - y.productId);
 
-  const sumRows = (pick: (r: ProductProfitRow) => string | null) => rows.reduce((t, r) => Money.add(t, pick(r) ?? 0), Money.ZERO);
-  const revenue = sumRows((r) => r.revenue);
-  const cost = [...acc.values()].reduce((t, a) => Money.add(t, a.cost), Money.ZERO);
-  const fees = sumRows((r) => r.fees);
-  const meta = Money.parse(statement.metaSpend);
-  const commission = Money.parse(statement.repCommission);
-  // Everything else the ledger carries: fees on failed orders, Paystack on physical orders, other expenses, and any cost
-  // difference between the ledger and the order rows. The net result then matches the income statement.
-  const other = Money.sub(Money.sub(Money.sub(Money.sub(Money.parse(statement.totalExpenses), cost), fees), meta), commission);
-  const net = Money.sub(Money.sub(Money.sub(Money.sub(Money.sub(revenue, cost), fees), meta), commission), other);
-  const deliveredOrders = orders.length;
-
+  // The totals are the ledger's. A row is built from orders, so the two can differ (returns, other currencies, fees on
+  // failed orders): the difference is shown as its own line instead of being hidden.
+  const ledgerFees = Money.add(statement.deliveryFees, statement.paystackFees);
+  const accs = [...acc.values()];
+  const rowSum = (pick: (a: Acc) => Money.Money) => Money.sum(accs.map(pick));
+  const delivered = orders.length;
   return {
     from: localDate(from, zone), to: localDate(new Date(to.getTime() - 1), zone),
     products: rows,
-    totals: { delivered: deliveredOrders, revenue: Money.toApi(revenue), productCost: Money.toApi(cost), fees: Money.toApi(fees), metaAds: Money.toApi(Money.ZERO) },
-    metaSpendWithNoProduct: Money.toApi(meta),
-    repCommission: Money.toApi(commission),
-    otherExpenses: Money.toApi(other),
-    netProfit: Money.toApi(net),
-    netMarginPct: pct(net, revenue),
-    profitPerDeliveredOrder: deliveredOrders > 0 ? Money.toApi(Money.roundHalfUp(Money.div(net, deliveredOrders), 2)) : null,
+    totals: { delivered, revenue: statement.revenue, productCost: statement.productCost, fees: Money.toApi(ledgerFees), metaAds: Money.toApi(Money.ZERO) },
+    notMatchedToProductRow: {
+      revenue: Money.toApi(Money.sub(statement.revenue, rowSum((a) => a.revenue))),
+      productCost: Money.toApi(Money.sub(statement.productCost, rowSum((a) => a.cost))),
+      fees: Money.toApi(Money.sub(ledgerFees, rowSum((a) => a.fees))),
+    },
+    metaSpendWithNoProduct: statement.metaSpend,
+    repCommission: statement.repCommission,
+    otherExpenses: statement.otherExpenses,
+    netProfit: statement.netProfit,
+    netMarginPct: statement.netMarginPct,
+    profitPerDeliveredOrder: delivered > 0 ? Money.toApi(Money.roundHalfUp(Money.div(statement.netProfit, delivered), 2)) : null,
     costMissingProducts: rows.filter((r) => r.costMissing).length,
   };
 }
@@ -207,8 +192,8 @@ export type CohortProfit =
     revenue: string; productCost: string; fees: string; metaAds: string; repCommission: string;
     profitBeforeOtherExpenses: string; marginPct: number | null;
     profitPerDeliveredOrder: string | null;
-    /** The two ways to read the range: net result by delivery date, projected profit by order cohort. */
-    byDeliveryDate: string; byOrderCohort: string;
+    /** The other way to read the range: net result by delivery date (the card's own figure is the cohort projection). */
+    byDeliveryDate: string;
   };
 
 /**
@@ -223,32 +208,25 @@ export async function cohortProfit(from: Date, to: Date): Promise<CohortProfit> 
   const labels = { from: localDate(from, zone), to: localDate(new Date(to.getTime() - 1), zone) };
   const notEnough: CohortProfit = { ...labels, available: false, message: NOT_ENOUGH_CLOSED };
 
-  const yieldKpi = (await rates(tenantId, from, to)).orderToCashYield;
-  if (yieldKpi.value === null) return notEnough;
-  const yieldPct = yieldKpi.value;
-
   const cohort = { tenantId, deletedAt: null, createdAt: { gte: from, lt: to }, status: { notIn: ['payment_pending', 'payment_failed', 'digital_delivered'] as ('payment_pending' | 'payment_failed' | 'digital_delivered')[] } };
-  const [placed, delivered, statement] = await Promise.all([
+  const deliveredCohort = { ...cohort, status: 'delivered' as const };
+  const [rate, placed, sums, commission, unstamped, statement] = await Promise.all([
+    rates(tenantId, from, to),
     prisma.order.count({ where: cohort }),
-    prisma.order.findMany({
-      where: { ...cohort, status: 'delivered' },
-      select: { id: true, totalAmount: true, deliveryFee: true, landedCostTotal: true, orderItems: { select: { quantity: true, product: { select: { cogs: true } } } } },
-    }),
+    prisma.order.aggregate({ where: deliveredCohort, _count: { _all: true }, _sum: { totalAmount: true, deliveryFee: true, landedCostTotal: true } }),
+    prisma.commissionEntry.aggregate({ where: { tenantId, status: { not: 'void' }, order: deliveredCohort }, _sum: { amount: true } }),
+    // Orders delivered before the landed cost was stamped on them: cost them at the product's current cost
+    prisma.orderItem.findMany({ where: { order: { ...deliveredCohort, landedCostTotal: null } }, select: { quantity: true, product: { select: { cogs: true } } } }),
     incomeStatementOver(from, to),
   ]);
-  if (delivered.length === 0) return notEnough;
+  const yieldPct = rate.orderToCashYield.value;
+  const n = sums._count._all;
+  if (yieldPct === null || n === 0) return notEnough;
 
-  const n = delivered.length;
-  const avg = (total: Money.Money) => Money.div(total, n);
-  const revenuePer = avg(delivered.reduce((t, o) => Money.add(t, o.totalAmount), Money.ZERO));
-  const costPer = avg(delivered.reduce((t, o) => Money.add(t, o.landedCostTotal != null
-    ? o.landedCostTotal
-    : o.orderItems.reduce((c, i) => Money.add(c, Money.mul(Money.orZero(i.product.cogs), i.quantity)), Money.ZERO)), Money.ZERO));
-  const feePer = avg(delivered.reduce((t, o) => Money.add(t, Money.orZero(o.deliveryFee)), Money.ZERO));
-  const commission = await prisma.commissionEntry.aggregate({
-    where: { tenantId, orderId: { in: delivered.map((o) => o.id) }, status: { not: 'void' } },
-    _sum: { amount: true },
-  });
+  const avg = (total: Money.MoneyInput) => Money.div(total, n);
+  const revenuePer = avg(Money.orZero(sums._sum.totalAmount));
+  const costPer = avg(Money.add(Money.orZero(sums._sum.landedCostTotal), Money.sum(unstamped.map((i) => Money.mul(Money.orZero(i.product.cogs), i.quantity)))));
+  const feePer = avg(Money.orZero(sums._sum.deliveryFee));
   const commissionPer = avg(Money.orZero(commission._sum.amount));
 
   const projected = Money.roundHalfUp(Money.mul(placed, Money.div(yieldPct, 100)), 0).toNumber();
@@ -257,7 +235,7 @@ export async function cohortProfit(from: Date, to: Date): Promise<CohortProfit> 
   const fees = Money.mul(projected, feePer);
   const rep = Money.mul(projected, commissionPer);
   const ads = Money.parse(statement.metaSpend);
-  const profit = Money.sub(Money.sub(Money.sub(Money.sub(revenue, cost), fees), rep), ads);
+  const profit = Money.sub(revenue, Money.sum([cost, fees, rep, ads]));
 
   return {
     ...labels, available: true,
@@ -265,9 +243,9 @@ export async function cohortProfit(from: Date, to: Date): Promise<CohortProfit> 
     ordersPlaced: placed, projectedDelivered: projected,
     revenue: Money.toApi(revenue), productCost: Money.toApi(cost), fees: Money.toApi(fees),
     metaAds: Money.toApi(ads), repCommission: Money.toApi(rep),
-    profitBeforeOtherExpenses: Money.toApi(profit), marginPct: pct(profit, revenue),
+    profitBeforeOtherExpenses: Money.toApi(profit), marginPct: Money.percentOrNull(profit, revenue),
     profitPerDeliveredOrder: projected > 0 ? Money.toApi(Money.roundHalfUp(Money.div(profit, projected), 2)) : null,
-    byDeliveryDate: statement.netProfit, byOrderCohort: Money.toApi(profit),
+    byDeliveryDate: statement.netProfit,
   };
 }
 
@@ -297,21 +275,31 @@ export interface FailedDeliveryCost {
   total: string;
 }
 
-/** Cost of one unit lost in a return: the product's landed cost per unit (kept current by each received shipment). */
-async function landedCostByProduct(productIds: number[]): Promise<Map<number, Money.Money>> {
-  if (productIds.length === 0) return new Map();
-  const products = await withSoftDeleted(() => prisma.product.findMany({ where: { id: { in: productIds } }, select: { id: true, cogs: true } }));
-  return new Map(products.map((p) => [p.id, Money.orZero(p.cogs)]));
+/** Return transfers we count for units lost: the same status filter as the stock-gap Findings (inventoryReadService). */
+const COUNTED_RETURN = { transferType: 'return_to_warehouse' as const, status: { in: ['received' as const, 'disputed' as const] }, receivedQuantity: { not: null } };
+
+/** Units sent back by a partner and never received, at the product's landed cost per unit (Product.cogs, kept current by each received shipment). */
+function lostUnits(transfers: Array<{ quantity: number; receivedQuantity: number | null; product: { cogs: Money.MoneyInput | null } }>): { units: number; value: Money.Money } {
+  let units = 0;
+  const values: Money.Money[] = [];
+  for (const t of transfers) {
+    const missing = t.quantity - t.receivedQuantity!;
+    if (missing <= 0) continue;
+    units += missing;
+    values.push(Money.mul(missing, Money.orZero(t.product.cogs)));
+  }
+  return { units, value: Money.sum(values) };
 }
 
 /**
  * What failed and returned orders cost in [from, to): the fees kept on them (ledger 5070 entries of outcome failed or
- * returned, by order date, split by partner) plus the returned units that never arrived (sent less received on a return
+ * returned, by entry date, split by partner) plus the returned units that never arrived (sent less received on a return
  * transfer) at landed cost. A partner with no fee rule shows fee 0 and a hint.
  */
 export async function failedDeliveryCost(from: Date, to: Date): Promise<FailedDeliveryCost> {
   const tenantId = resolveTenantId();
   const zone = getStoreTimeZone(getTenantId());
+  const partnerSelect = { select: { id: true, firstName: true, lastName: true } } as const;
 
   const [feeLines, histories, transfers] = await Promise.all([
     prisma.accountTransaction.findMany({
@@ -326,67 +314,55 @@ export async function failedDeliveryCost(from: Date, to: Date): Promise<FailedDe
     }),
     prisma.orderHistory.findMany({
       where: { tenantId, status: { in: ['failed_delivery', 'returned'] }, createdAt: { gte: from, lt: to } },
-      select: { orderId: true },
+      select: { orderId: true, order: { select: { deliveryAgent: partnerSelect } } },
     }),
     prisma.inventoryTransfer.findMany({
-      where: {
-        tenantId, transferType: 'return_to_warehouse', status: { not: 'cancelled' }, receivedQuantity: { not: null },
-        OR: [{ receivedAt: { gte: from, lt: to } }, { receivedAt: null, createdAt: { gte: from, lt: to } }],
+      where: { tenantId, ...COUNTED_RETURN, OR: [{ receivedAt: { gte: from, lt: to } }, { receivedAt: null, createdAt: { gte: from, lt: to } }] },
+      select: {
+        quantity: true, receivedQuantity: true, product: { select: { cogs: true } },
+        fromLocation: { select: { user: partnerSelect } }, order: { select: { deliveryAgent: partnerSelect } },
       },
-      select: { productId: true, quantity: true, receivedQuantity: true, fromLocation: { select: { userId: true } }, order: { select: { deliveryAgentId: true } } },
     }),
   ]);
+  // The fee lines carry the order id; its partner comes from the order
+  const feeOrders = await prisma.order.findMany({
+    where: { id: { in: [...new Set(feeLines.map((l) => l.journalEntry.sourceId as number))] } },
+    select: { id: true, deliveryAgent: partnerSelect },
+  });
+  const partnerOfOrder = new Map(feeOrders.map((o) => [o.id, o.deliveryAgent]));
 
-  const orderIds = [...new Set([...feeLines.map((l) => l.journalEntry.sourceId as number), ...histories.map((h) => h.orderId)])];
-  const orders = orderIds.length
-    ? await prisma.order.findMany({ where: { id: { in: orderIds } }, select: { id: true, deliveryAgentId: true } })
-    : [];
-  const partnerOfOrder = new Map(orders.map((o) => [o.id, o.deliveryAgentId]));
-  const cost = await landedCostByProduct([...new Set(transfers.map((t) => t.productId))]);
-
-  type Row = { fees: Money.Money; orders: Set<number>; units: number; lost: Money.Money };
+  type Partner = { id: number; firstName: string; lastName: string } | null;
+  type Row = { partner: Partner; fees: Money.Money[]; orders: Set<number>; transfers: typeof transfers };
   const byPartner = new Map<number | null, Row>();
-  const row = (id: number | null): Row => {
+  const row = (partner: Partner | undefined): Row => {
+    const id = partner?.id ?? null;
     let r = byPartner.get(id);
-    if (!r) byPartner.set(id, (r = { fees: Money.ZERO, orders: new Set(), units: 0, lost: Money.ZERO }));
+    if (!r) byPartner.set(id, (r = { partner: partner ?? null, fees: [], orders: new Set(), transfers: [] }));
     return r;
   };
-  for (const l of feeLines) {
-    const orderId = l.journalEntry.sourceId as number;
-    const r = row(partnerOfOrder.get(orderId) ?? null);
-    r.fees = Money.add(r.fees, Money.sub(l.debitAmount, l.creditAmount));
-  }
-  for (const h of histories) row(partnerOfOrder.get(h.orderId) ?? null).orders.add(h.orderId);
-  for (const t of transfers) {
-    const missing = t.quantity - (t.receivedQuantity ?? t.quantity);
-    if (missing <= 0) continue;
-    const r = row(t.fromLocation?.userId ?? t.order?.deliveryAgentId ?? null);
-    r.units += missing;
-    r.lost = Money.add(r.lost, Money.mul(missing, cost.get(t.productId) ?? Money.ZERO));
-  }
+  for (const l of feeLines) row(partnerOfOrder.get(l.journalEntry.sourceId as number)).fees.push(Money.sub(l.debitAmount, l.creditAmount));
+  for (const h of histories) row(h.order.deliveryAgent).orders.add(h.orderId);
+  for (const t of transfers) row(t.fromLocation?.user ?? t.order?.deliveryAgent).transfers.push(t);
 
-  const partnerIds = [...byPartner.keys()].filter((id): id is number => id !== null);
-  const [users, ruleCounts] = partnerIds.length
-    ? await Promise.all([
-      withSoftDeleted(() => prisma.user.findMany({ where: { id: { in: partnerIds } }, select: { id: true, firstName: true, lastName: true } })),
-      prisma.feeRule.groupBy({ by: ['partnerUserId'], where: { tenantId, partnerUserId: { in: partnerIds }, validFrom: { lte: utcDateOfYmd(localDate(new Date(), zone)) } }, _count: { _all: true } }),
-    ])
-    : [[], []];
-  const nameOf = new Map(users.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]));
-  const hasRule = new Set(ruleCounts.map((r) => r.partnerUserId));
+  const today = new Date();
+  const partners: FailedCostPartner[] = await Promise.all([...byPartner.values()].map(async (r) => {
+    const fees = Money.sum(r.fees);
+    const lost = lostUnits(r.transfers);
+    const noRule = r.partner !== null && !(await resolveFee(prisma, r.partner.id, 'failed', today, 0, tenantId)).hasRule;
+    return {
+      partnerId: r.partner?.id ?? null,
+      name: r.partner ? `${r.partner.firstName} ${r.partner.lastName}`.trim() : 'No partner',
+      failedOrders: r.orders.size,
+      fees: Money.toApi(fees),
+      unitsLost: lost.units,
+      lostCost: Money.toApi(lost.value),
+      total: Money.toApi(Money.add(fees, lost.value)),
+      hint: noRule ? 'No fee rule for this partner. The failed fee is 0.' : null,
+    };
+  }));
+  partners.sort((a, b) => Money.compare(b.total, a.total) || (a.partnerId ?? 0) - (b.partnerId ?? 0));
 
-  const partners: FailedCostPartner[] = [...byPartner.entries()].map(([partnerId, r]) => ({
-    partnerId,
-    name: partnerId === null ? 'No partner' : nameOf.get(partnerId) ?? `Partner ${partnerId}`,
-    failedOrders: r.orders.size,
-    fees: Money.toApi(r.fees),
-    unitsLost: r.units,
-    lostCost: Money.toApi(r.lost),
-    total: Money.toApi(Money.add(r.fees, r.lost)),
-    hint: partnerId !== null && !hasRule.has(partnerId) ? 'No fee rule for this partner. The failed fee is 0.' : null,
-  })).sort((a, b) => Money.compare(b.total, a.total) || (a.partnerId ?? 0) - (b.partnerId ?? 0));
-
-  const sum = (pick: (p: FailedCostPartner) => string) => partners.reduce((t, p) => Money.add(t, pick(p)), Money.ZERO);
+  const sum = (pick: (p: FailedCostPartner) => string) => Money.sum(partners.map(pick));
   return {
     from: localDate(from, zone), to: localDate(new Date(to.getTime() - 1), zone),
     partners,
@@ -401,43 +377,25 @@ export interface RefusalCost { failedFee: string; unitsLost: number; landedCostP
 
 /**
  * F-721: cost of one refused delivery = the failed fee stamped on the order + units lost in its return x landed cost.
- * A fee not stamped yet is read from the partner's failed rule in force today; no rule gives 0. Units are lost only when a
- * return transfer of the order shows fewer received than sent. Customers and the failed-delivery card both read this.
+ * A fee not stamped yet is read from the partner's failed rule in force today (feeRuleService.resolveFee); no rule gives 0.
+ * Units are lost only when a return transfer of the order shows fewer received than sent. Customers and the failed-delivery
+ * card both read this.
  */
 export async function refusalCost(order: { id: number; deliveryFee?: Money.MoneyInput | null; deliveryAgentId?: number | null; totalAmount?: Money.MoneyInput | null }): Promise<RefusalCost> {
   const tenantId = resolveTenantId();
-  let fee: Money.Money;
-  if (order.deliveryFee !== null && order.deliveryFee !== undefined) {
-    fee = Money.parse(order.deliveryFee);
-  } else if (order.deliveryAgentId) {
-    const today = utcDateOfYmd(localDate(new Date(), getStoreTimeZone(tenantId)));
-    const rule = await prisma.feeRule.findFirst({
-      where: { tenantId, partnerUserId: order.deliveryAgentId, outcome: 'failed', validFrom: { lte: today } },
-      orderBy: { validFrom: 'desc' }, select: { basis: true, amount: true },
-    });
-    fee = !rule ? Money.ZERO
-      : rule.basis === 'percent' ? Money.roundHalfUp(Money.mul(Money.orZero(order.totalAmount), Money.div(rule.amount, 100)), 2)
-        : Money.parse(rule.amount);
-  } else {
-    fee = Money.ZERO;
-  }
-
-  const transfers = await prisma.inventoryTransfer.findMany({
-    where: { tenantId, orderId: order.id, transferType: 'return_to_warehouse', status: { not: 'cancelled' }, receivedQuantity: { not: null } },
-    select: { productId: true, quantity: true, receivedQuantity: true },
-  });
-  const cost = await landedCostByProduct([...new Set(transfers.map((t) => t.productId))]);
-  let units = 0;
-  let lost = Money.ZERO;
-  for (const t of transfers) {
-    const missing = t.quantity - (t.receivedQuantity ?? t.quantity);
-    if (missing <= 0) continue;
-    units += missing;
-    lost = Money.add(lost, Money.mul(missing, cost.get(t.productId) ?? Money.ZERO));
-  }
+  const [fee, transfers] = await Promise.all([
+    order.deliveryFee !== null && order.deliveryFee !== undefined ? Money.parse(order.deliveryFee)
+      : order.deliveryAgentId ? resolveFee(prisma, order.deliveryAgentId, 'failed', new Date(), Money.orZero(order.totalAmount), tenantId).then((r) => r.fee)
+        : Money.ZERO,
+    prisma.inventoryTransfer.findMany({
+      where: { tenantId, orderId: order.id, ...COUNTED_RETURN },
+      select: { quantity: true, receivedQuantity: true, product: { select: { cogs: true } } },
+    }),
+  ]);
+  const lost = lostUnits(transfers);
   return {
-    failedFee: Money.toApi(fee), unitsLost: units,
-    landedCostPerUnit: Money.toApi(units > 0 ? Money.div(lost, units) : Money.ZERO),
-    lostCost: Money.toApi(lost), total: Money.toApi(Money.add(fee, lost)),
+    failedFee: Money.toApi(fee), unitsLost: lost.units,
+    landedCostPerUnit: Money.toApi(lost.units > 0 ? Money.div(lost.value, lost.units) : Money.ZERO),
+    lostCost: Money.toApi(lost.value), total: Money.toApi(Money.add(fee, lost.value)),
   };
 }

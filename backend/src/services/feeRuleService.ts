@@ -196,7 +196,7 @@ interface ResolvedFee {
 }
 
 /** The fee for one outcome on one date: the latest rule on or before the date; a percent rule applies to the order total. */
-async function resolveFee(
+export async function resolveFee(
   db: Pick<TransactionClient, 'feeRule'>,
   partnerId: number,
   outcome: FeeOutcome,

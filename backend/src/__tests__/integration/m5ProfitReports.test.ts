@@ -9,10 +9,10 @@ import '../mocks/logger.mock';
 import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
 import { runInTenant } from '../../utils/tenantContext';
-import glService from '../../services/glService';
 import { transitionOrder, TransitionActor } from '../../services/orderStateMachine';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import { refusalCost } from '../../services/finance/profitService';
+import { postEntry } from './helpers/ledgerPost';
 import { createTenant, deleteTenantRows, mkUser } from './helpers/twoTenants';
 import { mkCustomer, mkOrder, mkPartner, SettlementWorld } from './helpers/settlementFixtures';
 
@@ -33,14 +33,6 @@ let guideId: number;
 const auth = (u: { token: string }) => ({ Authorization: `Bearer ${u.token}` });
 const ADMIN: TransitionActor = { kind: 'user', userId: undefined, role: 'super_admin' };
 
-async function post(tenantId: string, who: number, date: string, lines: Array<[string, number, number]>, sourceType: any = 'manual', sourceId?: number) {
-  const accounts = await prismaBase.account.findMany({ where: { tenantId, code: { in: lines.map((l) => l[0]) } } });
-  const id = (code: string) => accounts.find((x) => x.code === code)!.id;
-  await runInTenant(tenantId, () => glService.createJournalEntry({
-    entryDate: `${date}T12:00:00.000Z`, description: `test ${date}`, sourceType, sourceId,
-    transactions: lines.map(([code, d, c]) => ({ accountId: id(code), debitAmount: d, creditAmount: c })),
-  }, { id: who, role: 'super_admin' }));
-}
 const get = (path: string, who: { token: string }, from: string, to: string) =>
   request(app).get(`/api/financial/${path}?from=${from}&to=${to}`).set(auth(who));
 const mkProduct = (tenantId: string, sku: string, cogs: number, productType = 'physical') =>
@@ -73,18 +65,18 @@ beforeAll(async () => {
   const orders = await prismaBase.order.findMany({ where: { tenantId: a, status: 'delivered' }, orderBy: { id: 'asc' }, select: { id: true, totalAmount: true } });
   await prismaBase.orderItem.createMany({ data: orders.map((o) => ({ orderId: o.id, productId: copybookId, quantity: 1, unitPrice: o.totalAmount, totalPrice: o.totalAmount })) });
   const id = ownerA.id;
-  await post(a, id, '2026-10-10', [['1015', 92000, 0], ['4010', 0, 92000]]);
-  await post(a, id, '2026-10-10', [['5010', 12000, 0], ['1200', 0, 12000]]);
-  await post(a, id, '2026-10-10', [['5070', 12200, 0], ['1015', 0, 12200]]);
-  await post(a, id, '2026-10-10', [['5080', 76200, 0], ['1010', 0, 76200]]);
-  await post(a, id, '2026-10-10', [['5100', 3100, 0], ['1010', 0, 3100]]);
-  await post(a, id, '2026-10-10', [['5050', 2768, 0], ['2020', 0, 2768]]);
+  await postEntry(a, id, '2026-10-10', [['1015', 92000, 0], ['4010', 0, 92000]]);
+  await postEntry(a, id, '2026-10-10', [['5010', 12000, 0], ['1200', 0, 12000]]);
+  await postEntry(a, id, '2026-10-10', [['5070', 12200, 0], ['1015', 0, 12200]]);
+  await postEntry(a, id, '2026-10-10', [['5080', 76200, 0], ['1010', 0, 76200]]);
+  await postEntry(a, id, '2026-10-10', [['5100', 3100, 0], ['1010', 0, 3100]]);
+  await postEntry(a, id, '2026-10-10', [['5050', 2768, 0], ['2020', 0, 2768]]);
 
   // Tenant B: one delivered order and revenue that must never show in A
   const custB = await mkCustomer(b, '+233241000002');
   const orderB = await prismaBase.order.create({ data: { customerId: custB, status: 'delivered', subtotal: 777, totalAmount: 777, codAmount: 777, tenantId: b, deliveryDate: new Date('2026-10-05T12:00:00Z'), deliveryFee: 7, landedCostTotal: 7 } });
   await prismaBase.orderItem.create({ data: { orderId: orderB.id, productId: await mkProduct(b, 'BCOPY', 7), quantity: 1, unitPrice: 777, totalPrice: 777 } });
-  await post(b, ownerB.id, '2026-10-05', [['1010', 777, 0], ['4010', 0, 777]]);
+  await postEntry(b, ownerB.id, '2026-10-05', [['1010', 777, 0], ['4010', 0, 777]]);
 });
 
 afterAll(async () => {
@@ -100,6 +92,7 @@ describe('F-924 profit by product', () => {
     expect(res.body.metaSpendWithNoProduct).toBe('76200.00');
     expect(res.body.repCommission).toBe('2768.00');
     expect(res.body.otherExpenses).toBe('3100.00');
+    expect(res.body.notMatchedToProductRow).toEqual({ revenue: '0.00', productCost: '0.00', fees: '0.00' }); // rows add up to the ledger
     expect(res.body.netProfit).toBe('-14268.00');
     expect(res.body.netMarginPct).toBe(-15.5);
     expect(res.body.profitPerDeliveredOrder).toBe('-37.95');
@@ -125,7 +118,7 @@ describe('F-924 profit by product', () => {
     await prismaBase.orderItem.create({ data: { orderId: pens.id, productId: pensId, quantity: 1, unitPrice: 40, totalPrice: 40 } });
     const guide = await prismaBase.order.create({ data: { customerId: worldA.customerId, status: 'digital_delivered', paymentStatus: 'paid', subtotal: 59, totalAmount: 59, tenantId: a, deliveryDate: new Date('2026-11-06T12:00:00Z') } });
     await prismaBase.orderItem.create({ data: { orderId: guide.id, productId: guideId, quantity: 1, unitPrice: 59, totalPrice: 59 } });
-    await post(a, ownerA.id, '2026-11-06', [['5060', 1.5, 0], ['1010', 0, 1.5]], 'digital_sale', guide.id);
+    await postEntry(a, ownerA.id, '2026-11-06', [['5060', 1.5, 0], ['1010', 0, 1.5]], 'digital_sale', guide.id);
 
     const body = (await get('profit-by-product', ownerA, '2026-11-01', '2026-11-30')).body;
     const p = body.products.find((r: any) => r.sku === 'PENS');
@@ -133,6 +126,8 @@ describe('F-924 profit by product', () => {
     const g = body.products.find((r: any) => r.sku === 'GUIDE');
     expect(g).toMatchObject({ costMissing: false, productCost: '0.00', fees: '1.50', profit: '57.50' });
     expect(body.costMissingProducts).toBe(1);
+    // No revenue was booked in the ledger for these two orders: the rows show up as the difference, not hidden
+    expect(body.notMatchedToProductRow.revenue).toBe('-99.00');
   });
 
   it('an empty range returns zeros, no NaN; tenant B data stays out of A', async () => {
@@ -161,7 +156,7 @@ describe('F-925 order cohort card', () => {
     for (const orderId of delivered) {
       await prismaBase.commissionEntry.create({ data: { tenantId: a, orderId, userId: ownerA.id, kind: 'base', status: 'earned', amount: 10 } });
     }
-    await post(a, ownerA.id, '2026-09-05', [['5080', 100, 0], ['1010', 0, 100]]);
+    await postEntry(a, ownerA.id, '2026-09-05', [['5080', 100, 0], ['1010', 0, 100]]);
 
     const res = await get('cohort-profit', ownerA, '2026-09-01', '2026-09-30');
     expect(res.status).toBe(200);
@@ -170,7 +165,7 @@ describe('F-925 order cohort card', () => {
       revenue: '600.00', productCost: '90.00', fees: '75.00', repCommission: '30.00', metaAds: '100.00',
       profitBeforeOtherExpenses: '305.00', marginPct: 50.8, profitPerDeliveredOrder: '101.67',
     });
-    expect(res.body.byOrderCohort).toBe('305.00');
+    expect(res.body.byOrderCohort).toBeUndefined();
     expect(res.body.byDeliveryDate).toBe('-100.00'); // nothing booked in revenue that month, only the 100 of ads
   });
 

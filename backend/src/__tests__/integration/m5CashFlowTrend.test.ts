@@ -7,10 +7,8 @@ import request from 'supertest';
 import '../mocks/logger.mock';
 import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
-import { runInTenant } from '../../utils/tenantContext';
-import glService from '../../services/glService';
-import financialService from '../../services/financialService';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
+import { postEntry } from './helpers/ledgerPost';
 import { createTenant, deleteTenantRows, mkUser } from './helpers/twoTenants';
 import { mkCustomer, mkOrder, mkPartner, mkCollection, SettlementWorld } from './helpers/settlementFixtures';
 
@@ -24,19 +22,7 @@ let worldA: SettlementWorld;
 let partner: number;
 const auth = (u: { token: string }) => ({ Authorization: `Bearer ${u.token}` });
 
-async function post(tenantId: string, who: number, date: string, lines: Array<[string, number, number]>) {
-  const accounts = await prismaBase.account.findMany({ where: { tenantId, code: { in: lines.map((l) => l[0]) } } });
-  const id = (code: string) => accounts.find((x) => x.code === code)!.id;
-  await runInTenant(tenantId, () => glService.createJournalEntry({
-    entryDate: `${date}T12:00:00.000Z`, description: `test ${date}`, sourceType: 'manual',
-    transactions: lines.map(([code, d, c]) => ({ accountId: id(code), debitAmount: d, creditAmount: c })),
-  }, { id: who, role: 'super_admin' }));
-}
-/** The forecast is cached for an hour per tenant (cleared by expense writes); a test that changes the ledger clears it. */
-const cash = (who: { token: string }) => {
-  (financialService as any).forecastCache.clear();
-  return request(app).get('/api/financial/cash-flow').set(auth(who));
-};
+const cash = (who: { token: string }) => request(app).get('/api/financial/cash-flow').set(auth(who));
 
 beforeAll(async () => {
   a = (await createTenant('Cash A')).id;
@@ -48,11 +34,11 @@ beforeAll(async () => {
   partner = (await mkPartner(a, 'pay', { fees: { delivered: 0 } })).id;
 
   const id = ownerA.id;
-  await post(a, id, '2026-10-01', [['1010', 1000, 0], ['3010', 0, 1000]]);
-  await post(a, id, '2026-10-01', [['1015', 500, 0], ['4010', 0, 500]]);
+  await postEntry(a, id, '2026-10-01', [['1010', 1000, 0], ['3010', 0, 1000]]);
+  await postEntry(a, id, '2026-10-01', [['1015', 500, 0], ['4010', 0, 500]]);
   // Legacy receivable on the retired account (inactive: no posting allowed): it must not count
   await prismaBase.account.updateMany({ where: { tenantId: a, code: '1020' }, data: { currentBalance: 300 } });
-  await post(b, ownerB.id, '2026-10-01', [['1010', 77, 0], ['3010', 0, 77]]);
+  await postEntry(b, ownerB.id, '2026-10-01', [['1010', 77, 0], ['3010', 0, 77]]);
 });
 
 afterAll(async () => {
@@ -67,7 +53,7 @@ describe('cash position (F-928)', () => {
     const { kpis } = (await cash(ownerA)).body;
     expect(kpis.cashInHand).toBe('1000.00');
     expect(kpis.cashInTransit).toBe('500.00'); // GL 1015, not an order sum
-    expect(kpis.outstandingReceivables).toBe('300.00'); // shown for reference
+    expect(kpis.outstandingReceivables).toBeUndefined(); // 1020 is not read at all
     expect(kpis.cashAvailableNow).toBe('1000.00');
     expect(kpis.totalCashPosition).toBe('1500.00');
     expect(kpis.cashExpected).toBe('250.00');
@@ -78,7 +64,7 @@ describe('cash position (F-928)', () => {
     let res = await cash(ownerA);
     expect(res.body.kpis.supplierPayables).toBe('0.00');
     const day1Before = res.body.forecast[0].expectedExpense;
-    await post(a, ownerA.id, '2026-10-02', [['1200', 800, 0], ['2050', 0, 800]]);
+    await postEntry(a, ownerA.id, '2026-10-02', [['1200', 800, 0], ['2050', 0, 800]]);
     res = await cash(ownerA);
     expect(res.body.kpis.supplierPayables).toBe('800.00');
     expect(Number(res.body.forecast[0].expectedExpense) - Number(day1Before)).toBe(800);
