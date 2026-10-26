@@ -1,8 +1,9 @@
 import { CommissionKind, PayoutKind, Prisma } from '@prisma/client';
+import { resolveTenantId } from '../utils/tenantContext';
+import { currencyOfTenant } from '../utils/currency';
 import prisma, { TransactionClient } from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { GLAutomationService } from './glAutomationService';
-import { lockEntry } from './commissionService';
 import * as Money from '../utils/money';
 
 /**
@@ -16,17 +17,15 @@ import * as Money from '../utils/money';
  * CR 1010 Cash at bank and MoMo. Method, reference and recorder are stored on the payout.
  */
 
-const AGENT_KINDS: CommissionKind[] = ['reward'];
+const CURRENCY_SIGN: Record<string, string> = { GHS: 'GH₵', NGN: '₦' };
 
-export interface OpenEntry {
+interface OpenEntry {
   id: number;
-  orderId: number | null;
-  kind: CommissionKind;
   amount: Money.Money;
   earnedAt: Date | null;
 }
 
-export interface Allocation {
+interface Allocation {
   entryId: number;
   /** What this payout pays on the entry. */
   pay: Money.Money;
@@ -45,20 +44,23 @@ export function allocateOldestFirst(entries: OpenEntry[], amount: Money.Money): 
   let left = amount;
   for (const e of sorted) {
     if (left.lte(0)) break;
-    const pay = Money.parse(e.amount).lt(left) ? Money.parse(e.amount) : left;
-    out.push({ entryId: e.id, pay, remainder: Money.parse(e.amount).minus(pay) });
+    const pay = e.amount.lt(left) ? e.amount : left;
+    out.push({ entryId: e.id, pay, remainder: e.amount.minus(pay) });
     left = left.minus(pay);
   }
   if (left.gt(0)) throw new RangeError('Amount is above what the entries hold');
   return out;
 }
 
-/** "GH₵2,034" or "GH₵2,034.50": the store currency sign, whole amounts without decimals. */
-export function formatOwed(amount: Money.MoneyInput, currency: string): string {
-  const sign = currency === 'GHS' ? 'GH₵' : currency === 'NGN' ? '₦' : `${currency} `;
-  const [whole, decimals] = Money.toApi(amount).split('.');
-  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return /^0+$/.test(decimals ?? '') ? `${sign}${grouped}` : `${sign}${grouped}.${decimals}`;
+/** What the lock query returns for an entry. */
+interface LockedEntry extends OpenEntry {
+  userId: number;
+  tenantId: string;
+  orderId: number | null;
+  kind: CommissionKind;
+  status: string;
+  payoutId: number | null;
+  journalEntryId: number | null;
 }
 
 export interface RecordPayoutInput {
@@ -90,23 +92,30 @@ class PayoutService {
   /** The preview of the form: what the person earned, what was paid, what is owed, and the open entries to tick. */
   async getOwed(payeeId: number) {
     const payee = await this.loadPayee(prisma, payeeId);
-    const kinds = payee.payoutKind === 'agent' ? AGENT_KINDS : undefined;
     const rows = await prisma.commissionEntry.findMany({
-      where: { userId: payeeId, status: { in: ['earned', 'paid'] }, ...(kinds ? { kind: { in: kinds } } : {}) },
+      where: { userId: payeeId, status: { in: ['earned', 'paid'] }, ...(payee.payoutKind === 'agent' ? { kind: 'reward' } : {}) },
       orderBy: [{ earnedAt: 'asc' }, { id: 'asc' }],
       select: { id: true, orderId: true, kind: true, status: true, amount: true, earnedAt: true, payoutId: true },
     });
-    const sum = (filter: (r: (typeof rows)[number]) => boolean) => Money.sum(rows.filter(filter).map((r) => r.amount));
-    const open = rows.filter((r) => r.status === 'earned' && r.payoutId === null);
+    const total = { base: Money.ZERO, upsell: Money.ZERO, reward: Money.ZERO, paid: Money.ZERO, owed: Money.ZERO };
+    const entries: Array<{ id: number; orderId: number | null; kind: CommissionKind; amount: Money.Money; earnedAt: Date | null }> = [];
+    for (const r of rows) {
+      total[r.kind] = total[r.kind].plus(r.amount);
+      if (r.status === 'paid') total.paid = total.paid.plus(r.amount);
+      else if (r.payoutId === null) {
+        total.owed = total.owed.plus(r.amount);
+        entries.push({ id: r.id, orderId: r.orderId, kind: r.kind, amount: r.amount, earnedAt: r.earnedAt });
+      }
+    }
     return {
       payee: { id: payee.id, firstName: payee.firstName, lastName: payee.lastName, role: payee.role, kind: payee.payoutKind },
-      commission: sum((r) => r.kind === 'base'),
-      upsellReward: sum((r) => r.kind === 'upsell'),
-      targetReward: sum((r) => r.kind === 'reward'),
-      earned: sum(() => true),
-      paid: sum((r) => r.status === 'paid'),
-      owed: sum((r) => open.includes(r)),
-      entries: open.map((r) => ({ id: r.id, orderId: r.orderId, kind: r.kind, amount: r.amount, earnedAt: r.earnedAt })),
+      commission: total.base,
+      upsellReward: total.upsell,
+      targetReward: total.reward,
+      earned: total.base.plus(total.upsell).plus(total.reward),
+      paid: total.paid,
+      owed: total.owed,
+      entries,
     };
   }
 
@@ -140,48 +149,44 @@ class PayoutService {
     try {
       return await prisma.$transaction(async (tx) => {
         const payee = await this.loadPayee(tx, input.payeeId);
-        const tenant = await tx.tenant.findUnique({ where: { id: payee.tenantId as string }, select: { currency: true } });
-        const currency = tenant?.currency ?? 'GHS';
         const method = input.method.trim();
         const reference = input.reference?.trim() || null;
-        const kinds = payee.payoutKind === 'agent' ? AGENT_KINDS : null;
+        const rewardOnly = payee.payoutKind === 'agent';
 
         if (reference) {
           const used = await tx.payout.findFirst({ where: { payeeId: payee.id, method, reference }, select: { id: true } });
           if (used) throw new AppError('This reference was already used for this person and method', 409);
         }
 
-        // Lock the entries first: two payouts on the same entries take turns, and the second finds them paid.
-        let ids: number[];
-        if (input.entryIds && input.entryIds.length > 0) {
-          ids = [...new Set(input.entryIds)].sort((a, b) => a - b);
-        } else {
-          const onlyRewards = kinds ? Prisma.sql`AND kind = 'reward'` : Prisma.empty;
-          const open = await (tx as any).$queryRaw<{ id: number }[]>`
-            SELECT id FROM commission_entries
-            WHERE tenant_id = ${payee.tenantId} AND user_id = ${payee.id} AND status = 'earned' AND payout_id IS NULL ${onlyRewards}
-            ORDER BY id FOR UPDATE`;
-          ids = open.map((r: { id: number }) => r.id);
-        }
-        const entries: OpenEntry[] = [];
-        for (const id of ids) {
-          const entry = await lockEntry(tx, id);
-          if (!entry || entry.userId !== payee.id) throw new AppError('An entry is not this person\'s', 400);
+        // One query locks the entries and returns them: two payouts on the same entries take turns, and the second finds them paid.
+        const ids = input.entryIds && input.entryIds.length > 0 ? [...new Set(input.entryIds)] : null;
+        const idFilter = ids ? Prisma.sql`id = ANY(${ids}::int[])` : Prisma.sql`user_id = ${payee.id} AND status = 'earned' AND payout_id IS NULL ${rewardOnly ? Prisma.sql`AND kind = 'reward'` : Prisma.empty}`;
+        const locked = await tx.$queryRaw<LockedEntry[]>`
+          SELECT id, user_id AS "userId", tenant_id AS "tenantId", order_id AS "orderId", kind, status, amount,
+                 earned_at AS "earnedAt", payout_id AS "payoutId", journal_entry_id AS "journalEntryId"
+          FROM commission_entries
+          WHERE tenant_id = ${resolveTenantId()} AND ${idFilter}
+          ORDER BY id FOR UPDATE`;
+        if (ids && locked.length !== ids.length) throw new AppError('An entry is not this person\'s', 400);
+        for (const entry of locked) {
+          if (entry.userId !== payee.id) throw new AppError('An entry is not this person\'s', 400);
           if (entry.status === 'paid' || entry.payoutId !== null) throw new AppError('Already paid', 409);
           if (entry.status !== 'earned') throw new AppError(`An entry is ${entry.status} and cannot be paid`, 409);
-          if (kinds && !kinds.includes(entry.kind)) throw new AppError('Delivery agents are paid target rewards only', 400);
-          entries.push({ id: entry.id, orderId: entry.orderId, kind: entry.kind, amount: Money.parse(entry.amount), earnedAt: entry.earnedAt });
+          if (rewardOnly && entry.kind !== 'reward') throw new AppError('Delivery agents are paid target rewards only', 400);
         }
 
-        const owed = Money.sum(entries.map((e) => e.amount));
-        if (entries.length === 0 || !owed.gt(0)) {
-          const hasPaid = await tx.commissionEntry.count({ where: { userId: payee.id, status: 'paid', ...(kinds ? { kind: { in: kinds } } : {}) } });
+        const owed = Money.sum(locked.map((e) => e.amount));
+        if (!owed.gt(0)) {
+          const hasPaid = await tx.commissionEntry.count({ where: { userId: payee.id, status: 'paid', ...(rewardOnly ? { kind: 'reward' } : {}) } });
           if (hasPaid > 0) throw new AppError('Already paid', 409);
           throw new AppError('Nothing is owed to this person', 400);
         }
         const amount = input.amount === undefined ? owed : Money.parse(input.amount);
         if (!amount.gt(0)) throw new AppError('Amount must be above zero', 400);
-        if (amount.gt(owed)) throw new AppError(`Owed is ${formatOwed(owed, currency)}`, 400);
+        if (amount.gt(owed)) {
+          const currency = await currencyOfTenant(payee.tenantId);
+          throw new AppError(`Owed is ${Money.format(owed, currency, { symbol: CURRENCY_SIGN[currency], wholeIfZero: true })}`, 400);
+        }
 
         const payout = await tx.payout.create({
           data: {
@@ -198,10 +203,12 @@ class PayoutService {
           },
         });
 
-        for (const a of allocateOldestFirst(entries, amount)) {
-          const entry = await tx.commissionEntry.findFirstOrThrow({ where: { id: a.entryId } });
+        const byId = new Map(locked.map((e) => [e.id, e]));
+        const whole: number[] = [];
+        for (const a of allocateOldestFirst(locked, amount)) {
           if (a.remainder.gt(0)) {
             // Partial payment: the paid part stays on this entry, the rest becomes a new open entry with the same ledger link
+            const entry = byId.get(a.entryId)!;
             await tx.commissionEntry.create({
               data: {
                 tenantId: entry.tenantId, orderId: entry.orderId, userId: entry.userId, kind: entry.kind, status: 'earned',
@@ -209,9 +216,12 @@ class PayoutService {
                 note: `Rest of entry ${entry.id} after payout ${payout.id}`,
               },
             });
+            await tx.commissionEntry.update({ where: { id: entry.id }, data: { status: 'paid', payoutId: payout.id, amount: a.pay } });
+          } else {
+            whole.push(a.entryId);
           }
-          await tx.commissionEntry.update({ where: { id: entry.id }, data: { status: 'paid', payoutId: payout.id, amount: a.pay } });
         }
+        await tx.commissionEntry.updateMany({ where: { id: { in: whole } }, data: { status: 'paid', payoutId: payout.id } });
 
         await GLAutomationService.recordCommissionPayout(tx as any, payout.id, payee.id, amount, recordedById, {
           entryDate: payout.payoutDate,

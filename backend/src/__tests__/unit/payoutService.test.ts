@@ -1,10 +1,10 @@
 import { describe, it, expect } from '@jest/globals';
 import '../mocks/prisma.mock';
-import { allocateOldestFirst, formatOwed, OpenEntry } from '../../services/payoutService';
+import { allocateOldestFirst } from '../../services/payoutService';
 import * as Money from '../../utils/money';
 
-const entry = (id: number, amount: number, day: number | null, kind: OpenEntry['kind'] = 'base'): OpenEntry => ({
-  id, orderId: null, kind, amount: Money.parse(amount), earnedAt: day === null ? null : new Date(Date.UTC(2026, 9, day)),
+const entry = (id: number, amount: number, day: number | null) => ({
+  id, amount: Money.parse(amount), earnedAt: day === null ? null : new Date(Date.UTC(2026, 9, day)),
 });
 const view = (rows: ReturnType<typeof allocateOldestFirst>) => rows.map((r) => [r.entryId, r.pay.toString(), r.remainder.toString()]);
 
@@ -15,12 +15,12 @@ describe('allocateOldestFirst (F-913 partial payment)', () => {
   });
 
   it('splits the last entry and leaves the rest earned', () => {
-    const out = allocateOldestFirst([entry(1, 104, 1), entry(2, 30, 2, 'upsell')], Money.parse(120));
+    const out = allocateOldestFirst([entry(1, 104, 1), entry(2, 30, 2)], Money.parse(120));
     expect(view(out)).toEqual([[1, '104', '0'], [2, '16', '14']]);
   });
 
   it('pays everything when the amount equals what the entries hold', () => {
-    const out = allocateOldestFirst([entry(1, 1424, 2), entry(2, 610, 3, 'upsell')], Money.parse(2034));
+    const out = allocateOldestFirst([entry(1, 1424, 2), entry(2, 610, 3)], Money.parse(2034));
     expect(out.reduce((s, r) => s.plus(r.pay), Money.ZERO).toString()).toBe('2034');
     expect(out.every((r) => r.remainder.isZero())).toBe(true);
   });
@@ -34,15 +34,18 @@ describe('allocateOldestFirst (F-913 partial payment)', () => {
   });
 });
 
-describe('formatOwed', () => {
-  it('writes the store currency sign, thousands and no decimals for a whole amount', () => {
-    expect(formatOwed('2034.0000', 'GHS')).toBe('GH₵2,034');
-    expect(formatOwed(134, 'GHS')).toBe('GH₵134');
+describe('Money.format for the owed message', () => {
+  const owed = (v: Money.MoneyInput, code: string, symbol?: string) => Money.format(v, code, { symbol, wholeIfZero: true });
+
+  it('writes the currency sign, thousands and no decimals for a whole amount', () => {
+    expect(owed('2034.0000', 'GHS', 'GH₵')).toBe('GH₵2,034');
+    expect(owed(134, 'GHS', 'GH₵')).toBe('GH₵134');
   });
 
-  it('keeps the decimals when the amount has them, and knows Naira and other codes', () => {
-    expect(formatOwed('2034.5', 'GHS')).toBe('GH₵2,034.50');
-    expect(formatOwed(5000, 'NGN')).toBe('₦5,000');
-    expect(formatOwed(12, 'USD')).toBe('USD 12');
+  it('keeps the decimals when the amount has them, and falls back to the code', () => {
+    expect(owed('2034.5', 'GHS', 'GH₵')).toBe('GH₵2,034.50');
+    expect(owed(5000, 'NGN', '₦')).toBe('₦5,000');
+    expect(owed(12, 'USD')).toBe('USD 12');
+    expect(Money.format(1234.5, 'GHS')).toBe('GHS 1,234.50');
   });
 });

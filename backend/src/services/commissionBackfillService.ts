@@ -31,14 +31,10 @@ export interface BackfillRow {
 
 export interface BackfillPlan {
   rows: BackfillRow[];
-  /** Number of entries to write. */
-  count: number;
   /** Sum of their amounts. */
   total: Money.Money;
-  /** Entries that point at the delivery journal entry (no new posting). */
+  /** Entries that point at the delivery journal entry (no new posting); the rest of `rows` post their own. */
   adopted: number;
-  /** Entries that post their own journal entry. */
-  toPost: number;
 }
 
 /** Orders that need an entry, with the amount each would get. Reads only. */
@@ -102,41 +98,42 @@ export async function planCommissionBackfill(tenantId: string): Promise<Backfill
       }
     }
     const adopted = rows.filter((r) => r.adoptJournalEntryId !== null).length;
-    return { rows, count: rows.length, total: Money.sum(rows.map((r) => r.amount)), adopted, toPost: rows.length - adopted };
+    return { rows, total: Money.sum(rows.map((r) => r.amount)), adopted };
   });
 }
 
 /** Writes the plan: one `earned` entry per row, in small transactions. Returns what was written. */
-export async function applyCommissionBackfill(tenantId: string, plan?: BackfillPlan): Promise<{ written: number; total: Money.Money }> {
-  const { rows } = plan ?? (await planCommissionBackfill(tenantId));
+export async function applyCommissionBackfill(tenantId: string, plan: BackfillPlan): Promise<{ written: number; total: Money.Money }> {
   return runInTenant(tenantId, async () => {
     const userId = await getSystemUserId();
     let written = 0;
     let total: Money.Money = Money.ZERO;
-    for (let i = 0; i < rows.length; i += BATCH) {
-      const chunk = rows.slice(i, i + BATCH);
+    for (let i = 0; i < plan.rows.length; i += BATCH) {
+      const chunk = plan.rows.slice(i, i + BATCH);
       await prisma.$transaction(async (tx) => {
-        for (const row of chunk) {
-          // A repeat or a concurrent run: the order already has a live base entry
-          const exists = await tx.commissionEntry.findFirst({ where: { orderId: row.orderId, kind: 'base', status: { not: 'void' } }, select: { id: true } });
-          if (exists) continue;
-          const entry = await tx.commissionEntry.create({
-            data: {
-              tenantId,
-              orderId: row.orderId,
-              userId: row.repId,
-              kind: 'base',
-              status: 'earned',
-              amount: row.amount,
-              earnedAt: row.earnedAt,
-              journalEntryId: row.adoptJournalEntryId,
-              note: 'Backfilled from the order (M5)',
-            },
-          });
-          if (row.adoptJournalEntryId === null) await postEntry(tx, entry.id, userId);
-          written++;
-          total = total.plus(row.amount);
+        // A repeat or a concurrent run: orders that already have a live base entry are skipped
+        const have = await tx.commissionEntry.findMany({
+          where: { orderId: { in: chunk.map((r) => r.orderId) }, kind: 'base', status: { not: 'void' } },
+          select: { orderId: true },
+        });
+        const skip = new Set(have.map((e) => e.orderId));
+        const fresh = chunk.filter((r) => !skip.has(r.orderId));
+        const entry = (r: BackfillRow) => ({
+          tenantId, orderId: r.orderId, userId: r.repId, kind: 'base' as const, status: 'earned' as const,
+          amount: r.amount, earnedAt: r.earnedAt, note: 'Backfilled from the order (M5)',
+        });
+
+        // Entries that keep the delivery journal entry need no posting: one insert
+        await tx.commissionEntry.createMany({
+          data: fresh.filter((r) => r.adoptJournalEntryId !== null).map((r) => ({ ...entry(r), journalEntryId: r.adoptJournalEntryId })),
+        });
+        // The rest post their own journal entry, so each needs its id
+        for (const row of fresh.filter((r) => r.adoptJournalEntryId === null)) {
+          const created = await tx.commissionEntry.create({ data: entry(row) });
+          await postEntry(tx, created.id, userId);
         }
+        written += fresh.length;
+        total = total.plus(Money.sum(fresh.map((r) => r.amount)));
       }, { timeout: 60_000 });
     }
     return { written, total };
@@ -146,10 +143,12 @@ export async function applyCommissionBackfill(tenantId: string, plan?: BackfillP
 /** Account 2020 against the open entries: the two numbers the health check compares (F-914). */
 export async function commissionLedgerCheck(tenantId: string): Promise<{ payableBalance: Money.Money; openEntries: Money.Money; difference: Money.Money }> {
   return runInTenant(tenantId, async () => {
-    const account = await prisma.account.findFirst({ where: { code: GL_ACCOUNTS.COMMISSIONS_PAYABLE }, select: { currentBalance: true } });
-    const open = await prisma.commissionEntry.findMany({ where: { status: 'earned', payoutId: null }, select: { amount: true } });
+    const [account, open] = await Promise.all([
+      prisma.account.findFirst({ where: { code: GL_ACCOUNTS.COMMISSIONS_PAYABLE }, select: { currentBalance: true } }),
+      prisma.commissionEntry.aggregate({ where: { status: 'earned', payoutId: null }, _sum: { amount: true } }),
+    ]);
     const payableBalance = Money.orZero(account?.currentBalance);
-    const openEntries = Money.sum(open.map((r) => r.amount));
+    const openEntries = Money.orZero(open._sum.amount);
     return { payableBalance, openEntries, difference: payableBalance.minus(openEntries) };
   });
 }

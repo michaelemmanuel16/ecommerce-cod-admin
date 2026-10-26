@@ -1,6 +1,7 @@
-import { CommissionEntry, JournalSourceType, Prisma } from '@prisma/client';
+import { CommissionEntry, JournalSourceType } from '@prisma/client';
 import { AppError } from '../middleware/errorHandler';
 import { TransactionClient } from '../utils/prisma';
+import { resolveTenantId } from '../utils/tenantContext';
 import logger from '../utils/logger';
 import { GLAutomationService } from './glAutomationService';
 import * as Money from '../utils/money';
@@ -16,7 +17,7 @@ import * as Money from '../utils/money';
 
 /** Lock one entry row for the rest of the transaction, so two callers on the same entry take turns. */
 export async function lockEntry(tx: TransactionClient, entryId: number): Promise<CommissionEntry | null> {
-  await (tx as any).$queryRaw`SELECT id FROM commission_entries WHERE id = ${entryId} FOR UPDATE`;
+  await tx.$queryRaw`SELECT id FROM commission_entries WHERE id = ${entryId} AND tenant_id = ${resolveTenantId()} FOR UPDATE`;
   return tx.commissionEntry.findFirst({ where: { id: entryId } });
 }
 
@@ -36,7 +37,7 @@ export async function postEntry(
   if (!Money.parse(entry.amount).gt(0)) throw new AppError('A commission of zero does not post', 400);
 
   const journal = await GLAutomationService.recordCommissionAccrual(
-    tx as any,
+    tx,
     { id: entry.id, tenantId: entry.tenantId, orderId: entry.orderId, amount: entry.amount },
     userId,
     entry.earnedAt ?? new Date(),
@@ -50,49 +51,28 @@ export async function postEntry(
  * Paid entries stay as they are. An entry whose posting this service made is reversed (DR 2020, CR 5050).
  * An entry that points at the delivery journal entry (backfilled from an old order) needs no second reversal: the
  * order's own revenue reversal already takes the commission back. An entry never posted has nothing to reverse.
- * Returns the number of entries voided.
+ * `actorId` is read only when an entry needs a reversal. Returns the number of entries voided.
  */
-export async function voidOpenEntriesForOrder(tx: TransactionClient, orderId: number, userId: number): Promise<number> {
-  const open = await tx.commissionEntry.findMany({
-    where: { orderId, status: { in: ['pending', 'earned'] } },
-    orderBy: { id: 'asc' },
+export async function voidOpenEntriesForOrder(tx: TransactionClient, orderId: number, actorId: () => Promise<number>): Promise<number> {
+  // One query takes every lock and returns the rows to work on; a payout that holds one makes this wait, then sees it paid
+  const open = await tx.$queryRaw<{ id: number; tenantId: string; orderId: number | null; amount: Money.Money; journalEntryId: number | null }[]>`
+    SELECT id, tenant_id AS "tenantId", order_id AS "orderId", amount, journal_entry_id AS "journalEntryId"
+    FROM commission_entries
+    WHERE order_id = ${orderId} AND tenant_id = ${resolveTenantId()} AND status IN ('pending', 'earned')
+    ORDER BY id FOR UPDATE`;
+  if (open.length === 0) return 0;
+
+  const posted = await tx.journalEntry.findMany({
+    where: { id: { in: open.flatMap((e) => (e.journalEntryId ? [e.journalEntryId] : [])) }, sourceType: JournalSourceType.manual },
     select: { id: true },
   });
-  let voided = 0;
-  for (const { id } of open) {
-    const entry = await lockEntry(tx, id);
-    // Another transaction may have paid or voided it while this one waited for the lock
-    if (!entry || (entry.status !== 'pending' && entry.status !== 'earned')) continue;
-
-    if (entry.journalEntryId) {
-      const journal = await tx.journalEntry.findFirst({
-        where: { id: entry.journalEntryId },
-        select: { sourceType: true },
-      });
-      if (journal?.sourceType === JournalSourceType.manual) {
-        await GLAutomationService.reverseCommissionAccrual(
-          tx as any,
-          { id: entry.id, tenantId: entry.tenantId, orderId: entry.orderId, amount: entry.amount },
-          userId,
-        );
-      }
+  const ownPosting = new Set(posted.map((j) => j.id));
+  for (const entry of open) {
+    if (entry.journalEntryId && ownPosting.has(entry.journalEntryId)) {
+      await GLAutomationService.reverseCommissionAccrual(tx, entry, await actorId());
     }
-    await tx.commissionEntry.update({ where: { id: entry.id }, data: { status: 'void' } });
-    voided++;
   }
-  if (voided > 0) logger.info(`Voided ${voided} commission entries of order ${orderId}`);
-  return voided;
-}
-
-/** What a payee is owed: the sum of their `earned` entries not yet linked to a payout. */
-export async function owedOf(
-  tx: TransactionClient | Prisma.TransactionClient,
-  payeeId: number,
-  kinds?: Array<'base' | 'upsell' | 'reward'>,
-): Promise<Money.Money> {
-  const rows = await (tx as TransactionClient).commissionEntry.findMany({
-    where: { userId: payeeId, status: 'earned', payoutId: null, ...(kinds ? { kind: { in: kinds } } : {}) },
-    select: { amount: true },
-  });
-  return Money.sum(rows.map((r) => r.amount));
+  await tx.commissionEntry.updateMany({ where: { id: { in: open.map((e) => e.id) } }, data: { status: 'void' } });
+  logger.info(`Voided ${open.length} commission entries of order ${orderId}`);
+  return open.length;
 }

@@ -7,6 +7,8 @@ import { Requester } from '../utils/authUtils';
 import { OrderStatusChangedEvent } from '../utils/appEvents';
 import { afterCommitEffects, applyGlEffects, GlEffects } from './orderSideEffects';
 import { fulfilOrder, reverseOrder } from './stockService';
+import { voidOpenEntriesForOrder } from './commissionService';
+import { getSystemUserId } from './systemUserService';
 import { recordDeliveryAttempt } from './deliveryAttemptHook';
 
 /**
@@ -282,7 +284,11 @@ async function applySideEffects(
   historyId: number,
 ): Promise<GlEffects> {
   if (to === 'delivered') await fulfilOrder(tx, order, actor.userId);
-  else if (from === 'delivered') await reverseOrder(tx, order, actor.userId);
+  else if (from === 'delivered') {
+    await reverseOrder(tx, order, actor.userId);
+    // F-914: an order that leaves delivered voids its unpaid commission entries (M5-T18); the actor is read only for a reversal
+    await voidOpenEntriesForOrder(tx, order.id, async () => actor.userId ?? await getSystemUserId());
+  }
   return applyGlEffects(tx, order, from, to, actor.userId, historyId, { postRevenueAlways: options.postRevenueAlways });
 }
 

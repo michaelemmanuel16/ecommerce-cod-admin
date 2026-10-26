@@ -23,10 +23,13 @@ jest.mock('../../services/orderSideEffects', () => ({
   afterCommitEffects: jest.fn(),
 }));
 jest.mock('../../services/stockService', () => ({ fulfilOrder: jest.fn(async () => undefined), reverseOrder: jest.fn(async () => undefined) }));
+// Commission entries void with the order (m5CommissionPosting.test.ts); here only the call is checked
+jest.mock('../../services/commissionService', () => ({ voidOpenEntriesForOrder: jest.fn(async () => 0) }));
 jest.mock('../../middleware/auth', () => ({ __esModule: true, hasPermission: jest.fn() }));
 // The attempt row has its own integration test (deliveryProofAttempts.test.ts); here only the call is checked
 jest.mock('../../services/deliveryAttemptHook', () => ({ recordDeliveryAttempt: jest.fn(async () => undefined) }));
 
+import { voidOpenEntriesForOrder } from '../../services/commissionService';
 import { transitionOrder, allowedTransitions, OrderTransitionError, TransitionActor } from '../../services/orderStateMachine';
 import { hasPermission } from '../../middleware/auth';
 import { recordDeliveryAttempt } from '../../services/deliveryAttemptHook';
@@ -425,6 +428,7 @@ describe('side effects', () => {
     setOrder({ status: 'delivered' });
     await transitionOrder(5, 'returned', ADMIN);
     expect(reverseOrder).toHaveBeenCalledTimes(1);
+    expect(voidOpenEntriesForOrder).toHaveBeenCalledTimes(1);
     expect(fulfilOrder).toHaveBeenCalledTimes(1);
     setOrder({ status: 'confirmed' });
     await transitionOrder(5, 'out_for_delivery', ADMIN);
@@ -432,6 +436,7 @@ describe('side effects', () => {
     await transitionOrder(5, 'failed_delivery', ADMIN, { failureReason: 'refused' });
     expect(fulfilOrder).toHaveBeenCalledTimes(1);
     expect(reverseOrder).toHaveBeenCalledTimes(1);
+    expect(voidOpenEntriesForOrder).toHaveBeenCalledTimes(1);
   });
   it('stock: a repeated delivered call is not a move and calls nothing', async () => {
     setOrder({ status: 'delivered' });

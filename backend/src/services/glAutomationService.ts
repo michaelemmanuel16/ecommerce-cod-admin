@@ -17,6 +17,7 @@ import { GLAccountService } from './glAccountService';
 import logger from '../utils/logger';
 import { GLUtils } from '../utils/glUtils';
 import { getTenantId } from '../utils/tenantContext';
+import type { TransactionClient } from '../utils/prisma';
 import * as Money from '../utils/money';
 
 // Define JournalSourceType locally if not correctly imported or use string literal
@@ -873,43 +874,57 @@ export class GLAutomationService {
   }
 
   /**
+   * The two legs of a commission entry: earned = DR 5050 / CR 2020, reversed = DR 2020 / CR 5050.
+   * Takes the app's extended transaction client, the one the services hold; the single cast to the base
+   * client is here, so callers need none.
+   */
+  private static async postCommissionLegs(
+    tx: TransactionClient,
+    entry: { id: number; tenantId: string; orderId: number | null; amount: Decimal },
+    userId: number,
+    entryDate: Date,
+    kind: 'earned' | 'reversed',
+  ): Promise<JournalEntryWithTransactions> {
+    const base = tx as unknown as Prisma.TransactionClient;
+    const earned = kind === 'earned';
+    const amount = Money.parse(entry.amount);
+    const label = entry.orderId ? `Order #${entry.orderId}` : `Entry #${entry.id}`;
+    const expense = { accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.SALES_REP_COMMISSION, base) };
+    const payable = { accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.COMMISSIONS_PAYABLE, base) };
+    return await this.createJournalEntryWithRetry(base, {
+      entryDate,
+      description: `${earned ? 'Commission earned' : 'Commission reversal'} - ${label}`,
+      sourceType: earned ? JournalSourceType.manual : JournalSourceType.reversal,
+      sourceId: entry.id,
+      externalRef: earned ? `commission-entry:${entry.id}` : `commission-entry-void:${entry.id}`,
+      createdBy: userId,
+      tenantId: entry.tenantId,
+      transactions: {
+        create: earned
+          ? [
+              { ...expense, debitAmount: amount, creditAmount: Money.ZERO, description: 'Sales representative commission expense' },
+              { ...payable, debitAmount: Money.ZERO, creditAmount: amount, description: 'Accrued commissions payable to sales rep' },
+            ]
+          : [
+              { ...payable, debitAmount: amount, creditAmount: Money.ZERO, description: 'Accrued commissions payable reversal' },
+              { ...expense, debitAmount: Money.ZERO, creditAmount: amount, description: 'Sales representative commission reversal' },
+            ],
+      },
+    });
+  }
+
+  /**
    * Commission earned (F-914, M5-T18): DR 5050 Sales rep commission, CR 2020 Commissions payable for one
    * `CommissionEntry`. Source is the entry (`manual` + entry id), and the external ref `commission-entry:<id>`
    * is unique per tenant, so a repeat can never post twice (the caller also locks the entry row).
    */
   static async recordCommissionAccrual(
-    tx: Prisma.TransactionClient,
+    tx: TransactionClient,
     entry: { id: number; tenantId: string; orderId: number | null; amount: Decimal },
     userId: number,
     entryDate: Date = new Date()
   ): Promise<JournalEntryWithTransactions> {
-    const amount = Money.parse(entry.amount);
-    const label = entry.orderId ? `Order #${entry.orderId}` : `Entry #${entry.id}`;
-    return await this.createJournalEntryWithRetry(tx, {
-      entryDate,
-      description: `Commission earned - ${label}`,
-      sourceType: JournalSourceType.manual,
-      sourceId: entry.id,
-      externalRef: `commission-entry:${entry.id}`,
-      createdBy: userId,
-      tenantId: entry.tenantId,
-      transactions: {
-        create: [
-          {
-            accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.SALES_REP_COMMISSION, tx),
-            debitAmount: amount,
-            creditAmount: Money.ZERO,
-            description: 'Sales representative commission expense',
-          },
-          {
-            accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.COMMISSIONS_PAYABLE, tx),
-            debitAmount: Money.ZERO,
-            creditAmount: amount,
-            description: 'Accrued commissions payable to sales rep',
-          },
-        ],
-      },
-    });
+    return this.postCommissionLegs(tx, entry, userId, entryDate, 'earned');
   }
 
   /**
@@ -918,7 +933,7 @@ export class GLAutomationService {
    * `commission-entry-void:<id>` makes a repeat a no-op.
    */
   static async reverseCommissionAccrual(
-    tx: Prisma.TransactionClient,
+    tx: TransactionClient,
     entry: { id: number; tenantId: string; orderId: number | null; amount: Decimal },
     userId: number,
     entryDate: Date = new Date()
@@ -928,34 +943,7 @@ export class GLAutomationService {
       include: { transactions: { include: { account: true } } },
     });
     if (existing) return existing as JournalEntryWithTransactions;
-
-    const amount = Money.parse(entry.amount);
-    const label = entry.orderId ? `Order #${entry.orderId}` : `Entry #${entry.id}`;
-    return await this.createJournalEntryWithRetry(tx, {
-      entryDate,
-      description: `Commission reversal - ${label}`,
-      sourceType: JournalSourceType.reversal,
-      sourceId: entry.id,
-      externalRef: `commission-entry-void:${entry.id}`,
-      createdBy: userId,
-      tenantId: entry.tenantId,
-      transactions: {
-        create: [
-          {
-            accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.COMMISSIONS_PAYABLE, tx),
-            debitAmount: amount,
-            creditAmount: Money.ZERO,
-            description: 'Accrued commissions payable reversal',
-          },
-          {
-            accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.SALES_REP_COMMISSION, tx),
-            debitAmount: Money.ZERO,
-            creditAmount: amount,
-            description: 'Sales representative commission reversal',
-          },
-        ],
-      },
-    });
+    return this.postCommissionLegs(tx, entry, userId, entryDate, 'reversed');
   }
 
   /**

@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { assertNotProduction, hasFlag, option } from './lib/scriptArgs';
+import * as Money from '../src/utils/money';
 import { applyCommissionBackfill, commissionLedgerCheck, planCommissionBackfill } from '../src/services/commissionBackfillService';
 
 // M5-T18 (COD-51, F-914). Turns every delivered order with commission_paid = false (and a confirming rep with a rate) into one
@@ -17,27 +18,27 @@ async function main() {
   console.log(apply ? 'APPLY' : 'DRY RUN (nothing is written)');
 
   let count = 0;
-  let total = 0;
+  let total = Money.ZERO;
   for (const tenant of tenants) {
     const plan = await planCommissionBackfill(tenant.id);
     const check = await commissionLedgerCheck(tenant.id);
     console.log(
-      `tenant ${tenant.slug}: ${plan.count} entries, total ${plan.total.toFixed(2)} ` +
-        `(${plan.adopted} keep the booked delivery entry, ${plan.toPost} post their own). ` +
-        `2020 now ${check.payableBalance.toFixed(2)}, open entries now ${check.openEntries.toFixed(2)}`,
+      `tenant ${tenant.slug}: ${plan.rows.length} entries, total ${Money.toApi(plan.total)} ` +
+        `(${plan.adopted} keep the booked delivery entry, ${plan.rows.length - plan.adopted} post their own). ` +
+        `2020 now ${Money.toApi(check.payableBalance)}, open entries now ${Money.toApi(check.openEntries)}`,
     );
-    count += plan.count;
-    total += plan.total.toNumber();
-    if (!apply || plan.count === 0) continue;
+    count += plan.rows.length;
+    total = Money.add(total, plan.total);
+    if (!apply || plan.rows.length === 0) continue;
 
     const done = await applyCommissionBackfill(tenant.id, plan);
     const after = await commissionLedgerCheck(tenant.id);
     console.log(
-      `  wrote ${done.written} entries, total ${done.total.toFixed(2)}. ` +
-        `2020 ${after.payableBalance.toFixed(2)}, open entries ${after.openEntries.toFixed(2)}, difference ${after.difference.toFixed(2)}`,
+      `  wrote ${done.written} entries, total ${Money.toApi(done.total)}. ` +
+        `2020 ${Money.toApi(after.payableBalance)}, open entries ${Money.toApi(after.openEntries)}, difference ${Money.toApi(after.difference)}`,
     );
   }
-  console.log(`total: ${count} entries, ${total.toFixed(2)} ${apply ? 'processed' : 'would be written'}`);
+  console.log(`total: ${count} entries, ${Money.toApi(total)} ${apply ? 'processed' : 'would be written'}`);
 }
 
 main()

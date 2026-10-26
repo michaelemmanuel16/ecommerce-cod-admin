@@ -166,10 +166,10 @@ describe('backfill of open delivered orders (M5-T18)', () => {
 
     const plan = await planCommissionBackfill(tenantId);
     expect(plan.rows.map((r) => r.orderId).sort()).toEqual([adoptedOrder, postedOrder].sort());
-    expect(plan.count).toBe(2);
+    expect(plan.rows).toHaveLength(2);
     expect(plan.total.toString()).toBe('14');
     expect(plan.adopted).toBe(1);
-    expect(plan.toPost).toBe(1);
+    expect(plan.rows.length - plan.adopted).toBe(1);
     expect(plan.rows.find((r) => r.orderId === adoptedOrder)!.adoptJournalEntryId).not.toBeNull();
     expect(plan.rows.find((r) => r.orderId === postedOrder)!.earnedAt.toISOString()).toBe('2026-10-02T09:00:00.000Z');
     // A dry run (plan only) wrote nothing
@@ -177,7 +177,8 @@ describe('backfill of open delivered orders (M5-T18)', () => {
   });
 
   it('after the run, 2020 equals the sum of the unpaid earned entries; a second run writes nothing', async () => {
-    const written = await applyCommissionBackfill(tenantId);
+    const plan = await planCommissionBackfill(tenantId);
+    const written = await applyCommissionBackfill(tenantId, plan);
     expect(written.written).toBe(2);
     expect(written.total.toString()).toBe('14');
 
@@ -191,9 +192,10 @@ describe('backfill of open delivered orders (M5-T18)', () => {
     expect(entries.map((e) => [e.status, e.kind, Number(e.amount)])).toEqual([['earned', 'base', 7], ['earned', 'base', 7]]);
     expect(entries.every((e) => e.journalEntryId !== null)).toBe(true);
 
-    const again = await applyCommissionBackfill(tenantId);
+    // The same plan again (a stale or concurrent run) skips orders that now have an entry; a fresh plan is empty
+    const again = await applyCommissionBackfill(tenantId, plan);
     expect(again.written).toBe(0);
-    expect((await planCommissionBackfill(tenantId)).count).toBe(0);
+    expect((await planCommissionBackfill(tenantId)).rows).toHaveLength(0);
     expect(await prismaBase.commissionEntry.count({ where: { orderId: paidOrder } })).toBe(0);
   });
 
