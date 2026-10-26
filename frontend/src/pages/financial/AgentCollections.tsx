@@ -1,386 +1,114 @@
-import React, { useEffect, useState, useMemo } from 'react';
-import { Users, AlertTriangle, Clock, BarChart3, Download, Filter, Mail, Eye, ChevronUp, ChevronDown, Info, Ban, ShieldCheck } from 'lucide-react';
-import { useFinancialStore } from '../../stores/financialStore';
-import { Card } from '../../components/ui/Card';
-import { Tooltip as UITooltip } from '../../components/ui/Tooltip';
-import { formatCurrency } from '../../utils/format';
-import { financialService } from '../../services/financial.service';
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
-import toast from 'react-hot-toast';
+import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { AlertTriangle, Ban, Clock, HandCoins, Hourglass, ShieldAlert } from 'lucide-react';
+import { Button, EmptyState, Skeleton, Tile, useToast } from '../../components/ui-v2';
+import { AgentAgingTab } from '../../components/financial/AgentAgingTab';
+import { UnpaidByAgeCard } from '../../components/financial/UnpaidByAgeCard';
 import { CollectionActionModal } from '../../components/financial/modals/CollectionActionModal';
+import { BlockPartnerModal } from '../../components/financial/modals/BlockPartnerModal';
+import { collectionsService, unpaidByAgeOf, type AgingPartner } from '../../services/collections.service';
+import { financialService } from '../../services/financial.service';
+import { usePermissions } from '../../hooks/usePermissions';
+import { useBlock } from './profit/useBlock';
+import { apiErrorMessage } from '../../utils/apiError';
+import { formatCurrency } from '../../utils/format';
+import { ListSkeleton } from '../deliveries/ListSkeleton';
+import { ordersText } from './collections/model';
 
-export const AgentCollections: React.FC = () => {
-  const {
-    agentAging,
-    loadingStates,
-    fetchAgentAging
-  } = useFinancialStore();
+/**
+ * The Agent collections tab of Finance (F-704, F-910 to F-912, M5-T36): aging by partner with the four buckets, cash held,
+ * oldest unpaid and days to pay; a review modal (verify reconciles in one step, reject needs a reason); reminder; block and unblock.
+ * One aging request feeds the tiles, the card and the table.
+ */
+export function AgentCollections() {
+  const say = useToast();
+  const { isAdmin } = usePermissions();
+  const aging = useBlock('collections:aging', collectionsService.aging);
+  const report = aging.data;
+  const failed = aging.status === 'failed';
+  const reload = aging.retry;
+  const [reviewing, setReviewing] = useState<AgingPartner | null>(null);
+  const [blocking, setBlocking] = useState<AgingPartner | null>(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const card = useMemo(() => (report ? unpaidByAgeOf(report) : null), [report]);
 
-  const [filterOverdue, setFilterOverdue] = useState(false);
-  const [sortField, setSortField] = useState<string>('totalBalance');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-
-  // Selection state for reconciliation
-  const [selectedAgent, setSelectedAgent] = useState<{ id: number; name: string } | null>(null);
-  const [blockingAgentId, setBlockingAgentId] = useState<number | null>(null);
-
-  const handleToggleBlock = async (agentId: number, agentName: string, isBlocked: boolean) => {
-    setBlockingAgentId(agentId);
+  /** Runs one call for a partner (its buttons wait meanwhile), says `message` when it works and the server's sentence when it does not. */
+  const act = async (p: AgingPartner, run: () => Promise<string>, fallback: string) => {
+    setBusyId(p.agentId);
     try {
-      if (isBlocked) {
-        await financialService.unblockAgent(agentId);
-        toast.success(`${agentName} unblocked`);
-      } else {
-        await financialService.blockAgent(agentId, 'Overdue collection balance');
-        toast.success(`${agentName} blocked from deliveries`);
-      }
-      fetchAgentAging();
-    } catch (error: any) {
-      toast.error(error?.response?.data?.message || `Failed to ${isBlocked ? 'unblock' : 'block'} agent`);
+      say(await run());
+      reload();
+    } catch (e) {
+      say(apiErrorMessage(e, fallback));
     } finally {
-      setBlockingAgentId(null);
+      setBusyId(null);
+    }
+  };
+  const remind = (p: AgingPartner) =>
+    act(p, async () => ((await collectionsService.remind(p.agentId)).sent
+      ? `Reminder sent to ${p.name} on WhatsApp`
+      : `WhatsApp is not connected, so the reminder to ${p.name} was saved but not sent`), 'The reminder could not be sent.');
+  const unblock = (p: AgingPartner) => act(p, async () => { await collectionsService.unblock(p.agentId); return `${p.name} unblocked`; }, 'The partner could not be unblocked.');
+
+  const checkCash = async () => {
+    try {
+      await collectionsService.syncCashFindings();
+      say('Cash held checked');
+      reload();
+    } catch (e) {
+      say(apiErrorMessage(e, 'The check did not run.'));
     }
   };
 
-  useEffect(() => {
-    fetchAgentAging();
-  }, []);
-
-  const handleExport = async () => {
+  const exportCsv = async () => {
     try {
       await financialService.downloadAgentAgingCSV();
-      toast.success('Agent collections report exported');
-    } catch (error) {
-      toast.error('Failed to export report');
+      say('Agent aging exported');
+    } catch {
+      say('The report could not be exported.');
     }
   };
 
-  const filteredAndSortedBuckets = useMemo(() => {
-    if (!agentAging) return [];
-
-    let result = [...agentAging.buckets];
-
-    if (filterOverdue) {
-      result = result.filter(b => b.overdueOrders > 0);
-    }
-
-    result.sort((a: any, b: any) => {
-      let valA = a[sortField];
-      let valB = b[sortField];
-
-      if (sortField === 'name') {
-        valA = a.agent.name;
-        valB = b.agent.name;
-      }
-
-      if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
-      if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
-      return 0;
-    });
-
-    return result;
-  }, [agentAging, filterOverdue, sortField, sortOrder]);
-
-  const chartData = useMemo(() => {
-    if (!agentAging?.summary?.bucketTotals) return [];
-    const colors: Record<string, string> = { '0-3': '#22c55e', '4-7': '#f97316', '8-14': '#ef4444', '15+': '#991b1b' };
-    return agentAging.summary.bucketTotals
-      .map(b => ({ name: b.label, value: b.amount, color: colors[b.key] }))
-      .filter(d => d.value > 0);
-  }, [agentAging]);
-
-  if (loadingStates.agents || !agentAging) {
-    return (
-      <div className="flex flex-col items-center justify-center py-24 bg-white rounded-lg border border-gray-100 shadow-sm">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-600"></div>
-        <p className="mt-4 text-gray-500 font-medium">Loading agent collections data...</p>
-      </div>
-    );
-  }
-
-  const { summary } = agentAging;
-
+  const s = report?.summary;
   return (
-    <div className="space-y-6">
-      {/* KPI Cards - 6 agent-specific metrics */}
-      <div className="grid grid-cols-2 md:grid-cols-3 2xl:grid-cols-5 gap-4">
-        <Card className="border-l-4 border-blue-500">
-          <div className="p-4">
-            <div className="flex items-start justify-between mb-2">
-              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                Agents Holding Cash
-                <UITooltip content="Number of delivery agents currently holding undeposited cash from customer payments" position="bottom">
-                  <Info className="w-3 h-3 text-gray-400 hover:text-gray-600 cursor-help" />
-                </UITooltip>
-              </span>
-              <div className="p-1.5 bg-blue-50 rounded-lg flex-shrink-0">
-                <Users className="w-4 h-4 text-blue-600" />
-              </div>
-            </div>
-            <div className="text-2xl font-bold text-gray-900">{summary.totalAgentsWithBalance}</div>
-          </div>
-        </Card>
-
-        <Card className="border-l-4 border-red-500">
-          <div className="p-4">
-            <div className="flex items-start justify-between mb-2">
-              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                Overdue Settlements
-                <UITooltip content="Agents holding cash past their days to pay (7 unless set on the partner) — require urgent follow-up" position="bottom">
-                  <Info className="w-3 h-3 text-gray-400 hover:text-gray-600 cursor-help" />
-                </UITooltip>
-              </span>
-              <div className="p-1.5 bg-red-50 rounded-lg flex-shrink-0">
-                <AlertTriangle className="w-4 h-4 text-red-600" />
-              </div>
-            </div>
-            <div className="text-2xl font-bold text-red-600">{summary.overdueAgentsCount}</div>
-            <div className="text-xs text-gray-500 mt-1">Past days to pay</div>
-          </div>
-        </Card>
-
-        <Card className="border-l-4 border-primary-500">
-          <div className="p-4">
-            <div className="flex items-start justify-between mb-2">
-              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                Outstanding Receivables
-                <UITooltip content="Net cash owed to the company from delivered orders — agent commissions already deducted. Matches the Overview tab." position="bottom">
-                  <Info className="w-3 h-3 text-gray-400 hover:text-gray-600 cursor-help" />
-                </UITooltip>
-              </span>
-              <div className="p-1.5 bg-primary-50 rounded-lg flex-shrink-0">
-                <BarChart3 className="w-4 h-4 text-primary-600" />
-              </div>
-            </div>
-            <div className="text-2xl font-bold text-gray-900">{formatCurrency(summary.outstandingReceivables ?? 0)}</div>
-          </div>
-        </Card>
-
-        <Card className="border-l-4 border-red-500">
-          <div className="p-4">
-            <div className="flex items-start justify-between mb-2">
-              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                Overdue
-                <UITooltip content="Collections held beyond 8 days — consider blocking agents from new deliveries" position="bottom">
-                  <Info className="w-3 h-3 text-gray-400 hover:text-gray-600 cursor-help" />
-                </UITooltip>
-              </span>
-              <div className="p-1.5 bg-red-50 rounded-lg flex-shrink-0">
-                <Clock className="w-4 h-4 text-red-600" />
-              </div>
-            </div>
-            <div className="text-2xl font-bold text-red-600">{formatCurrency(summary.overdueAmount)}</div>
-          </div>
-        </Card>
-
-        <Card className="border-l-4 border-orange-500">
-          <div className="p-4">
-            <div className="flex items-start justify-between mb-2">
-              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                Not yet due
-                <UITooltip content="Unpaid orders that are not yet past the partner's days to pay" position="bottom">
-                  <Info className="w-3 h-3 text-gray-400 hover:text-gray-600 cursor-help" />
-                </UITooltip>
-              </span>
-              <div className="p-1.5 bg-orange-50 rounded-lg flex-shrink-0">
-                <Clock className="w-4 h-4 text-orange-600" />
-              </div>
-            </div>
-            <div className="text-2xl font-bold text-orange-600">{formatCurrency(summary.notYetDueAmount)}</div>
-          </div>
-        </Card>
+    <div className="collections">
+      <div className="agtools top">
+        <Link className="btn" to="/finance/findings"><ShieldAlert />Findings</Link>
+        {isAdmin && <Button onClick={() => void checkCash()}>Check cash held</Button>}
       </div>
 
-      {/* Exposure Distribution Chart & Agent Table */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Exposure Distribution Chart */}
-        <Card className="lg:col-span-1 p-0 flex flex-col">
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-            <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider">Exposure Distribution</h3>
+      {failed && !report ? (
+        <div className="card"><EmptyState title="The collections could not load." action={<Button onClick={reload}>Try again</Button>} /></div>
+      ) : (
+        <>
+          <div className="grid kpis k5" style={{ marginTop: 0 }} aria-busy={!report}>
+            <Tile icon={<HandCoins />} tone="pine" value={s ? s.partnersWithCash : <Skeleton width={50} height={28} />} label="Partners holding cash" footer={<span>Cash held above zero</span>} />
+            <Tile icon={<AlertTriangle />} tone="coral" value={s ? s.overduePartners : <Skeleton width={50} height={28} />} label="Overdue partners" footer={<span>Past days to pay</span>} />
+            <Tile icon={<Hourglass />} tone="gold" value={s ? formatCurrency(s.totalOutstandingAmount) : <Skeleton width={90} height={28} />} label="Unpaid delivered orders" footer={<span>{s ? `${ordersText(s.totalOrders)}, net of delivery fee` : 'Net of delivery fee'}</span>} />
+            <Tile icon={<Clock />} tone="coral" value={s ? formatCurrency(s.overdueAmount) : <Skeleton width={90} height={28} />} label="Overdue" footer={<span>{s ? `${ordersText(s.overdueOrders)} past days to pay` : 'Past days to pay'}</span>} />
+            <Tile icon={<Ban />} tone="violet" value={s ? s.blockedPartners : <Skeleton width={50} height={28} />} label="Blocked partners" footer={<span>Keep their open deliveries</span>} />
           </div>
-          <div className="h-64 mt-4 mb-2">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={chartData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={80}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  formatter={(value: number) => formatCurrency(value)}
-                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                />
-                <Legend verticalAlign="bottom" height={36} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="px-6 py-4 mt-auto border-t border-gray-100 bg-gray-50/30 text-[11px] text-gray-500 italic">
-            Values represent the total amount held in each bucket across all agents.
-          </div>
-        </Card>
 
-        {/* Unified Agent Table */}
-        <Card className="lg:col-span-3 p-0">
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-            <div className="flex items-center space-x-3">
-              <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider">Agent Aging & Collections</h3>
-              <div className="h-4 w-px bg-gray-200" />
-              <div className="flex items-center bg-white border border-gray-200 rounded-md px-2 py-1">
-                <Filter className="w-3.5 h-3.5 text-gray-400 mr-2" />
-                <label className="flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 w-3.5 h-3.5"
-                    checked={filterOverdue}
-                    onChange={(e) => setFilterOverdue(e.target.checked)}
-                  />
-                  <span className="ml-2 text-xs font-medium text-gray-700 select-none">Show Overdue Only</span>
-                </label>
-              </div>
-            </div>
-            <button
-              onClick={handleExport}
-              className="flex items-center px-3 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors"
-            >
-              <Download className="w-4 h-4 mr-2" />
-              Export CSV
-            </button>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-white">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-900 transition-colors group" onClick={() => { setSortField('name'); setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc'); }}>
-                    <div className="flex items-center">
-                      Agent
-                      {sortField === 'name' ? (
-                        sortOrder === 'asc' ? <ChevronUp className="w-3 h-3 ml-1 text-primary-600" /> : <ChevronDown className="w-3 h-3 ml-1 text-primary-600" />
-                      ) : (
-                        <Users className="w-3 h-3 ml-1 opacity-0 group-hover:opacity-100" />
-                      )}
-                    </div>
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-900 transition-colors group" onClick={() => { setSortField('totalBalance'); setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc'); }}>
-                    <div className="flex items-center">
-                      Balance
-                      {sortField === 'totalBalance' ? (
-                        sortOrder === 'asc' ? <ChevronUp className="w-3 h-3 ml-1 text-primary-600" /> : <ChevronDown className="w-3 h-3 ml-1 text-primary-600" />
-                      ) : (
-                        <BarChart3 className="w-3 h-3 ml-1 opacity-0 group-hover:opacity-100" />
-                      )}
-                    </div>
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">0-3 Days</th>
-                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">4-7 Days</th>
-                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">8+ Days</th>
-                  <th className="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-100">
-                {filteredAndSortedBuckets.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center text-gray-400 italic text-sm">
-                      No aging data found matching filters
-                    </td>
-                  </tr>
-                ) : (
-                  filteredAndSortedBuckets.map((bucket: any) => (
-                    <tr key={bucket.agentId} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <div className="flex-shrink-0 h-8 w-8 bg-gradient-to-br from-primary-500 to-primary-700 rounded-full flex items-center justify-center text-white text-xs font-bold">
-                            {bucket.agent.name.split(' ').map((w: string) => w.charAt(0)).slice(0, 2).join('')}
-                          </div>
-                          <div className="ml-3">
-                            <div className="text-sm font-medium text-gray-900">{bucket.agent.name}</div>
-                            <div className="text-xs text-gray-500">{bucket.agent.email}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-bold text-gray-900">{formatCurrency(bucket.totalBalance)}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                          {formatCurrency(Number(bucket.bucket_0_3))}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                          {formatCurrency(bucket.bucket_4_7)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                          {formatCurrency(Number(bucket.bucket_8_14) + Number(bucket.bucket_15_plus))}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex items-center justify-end space-x-2">
-                          <button
-                            className="text-gray-400 hover:text-blue-600 transition-colors"
-                            title="Send reminder"
-                          >
-                            <Mail className="w-4 h-4" />
-                          </button>
-                          <button
-                            className="inline-flex items-center px-2.5 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-                            onClick={() => setSelectedAgent({
-                              id: bucket.agentId,
-                              name: bucket.agent.name
-                            })}
-                          >
-                            <Eye className="w-4 h-4 mr-1 text-gray-400" />
-                            View Details
-                          </button>
-                          <button
-                            title={bucket.isBlocked ? 'Unblock Agent' : 'Block Agent'}
-                            className={`p-1.5 rounded transition-colors ${
-                              bucket.isBlocked
-                                ? 'text-red-600 bg-red-50 hover:bg-red-100'
-                                : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
-                            }`}
-                            disabled={blockingAgentId === bucket.agentId}
-                            onClick={() => handleToggleBlock(
-                              bucket.agentId,
-                              bucket.agent.name,
-                              bucket.isBlocked
-                            )}
-                          >
-                            {bucket.isBlocked
-                              ? <ShieldCheck className="w-4 h-4" />
-                              : <Ban className="w-4 h-4" />
-                            }
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      </div>
+          <UnpaidByAgeCard data={card} />
 
-      {/* Collection Action Modal */}
-      {selectedAgent && (
-        <CollectionActionModal
-          isOpen={!!selectedAgent}
-          onClose={() => setSelectedAgent(null)}
-          agentId={selectedAgent.id}
-          agentName={selectedAgent.name}
-        />
+          {report ? (
+            <AgentAgingTab
+              report={report}
+              busyId={busyId}
+              onReview={setReviewing}
+              onRemind={(p) => void remind(p)}
+              onBlock={setBlocking}
+              onUnblock={(p) => void unblock(p)}
+              onExport={() => void exportCsv()}
+            />
+          ) : (
+            <div className="card"><ListSkeleton label="Loading partners" rows={2} height={44} style={{ padding: 20 }} /></div>
+          )}
+        </>
       )}
 
+      {reviewing && <CollectionActionModal agentId={reviewing.agentId} agentName={reviewing.name} onClose={() => setReviewing(null)} onChanged={reload} />}
+      {blocking && <BlockPartnerModal partnerId={blocking.agentId} partnerName={blocking.name} onClose={() => setBlocking(null)} onBlocked={reload} />}
     </div>
   );
-};
+}

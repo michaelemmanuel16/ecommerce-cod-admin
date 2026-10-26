@@ -345,6 +345,13 @@ export const getProfitLoss = async (req: AuthRequest, res: Response): Promise<vo
   }
 };
 
+/** POST /api/financial/agent-aging/:agentId/remind: a WhatsApp reminder to one partner about its unpaid cash (F-911). */
+export const remindPartner = async (req: AuthRequest, res: Response): Promise<void> => {
+  const agentId = Number(req.params.agentId);
+  if (!Number.isInteger(agentId) || agentId <= 0) throw new AppError('Partner ID must be a positive whole number', 400);
+  res.json(await agingService.remindPartner(agentId));
+};
+
 /**
  * POST /api/financial/sync-cash-findings
  * Admin-only: opens or closes the "negative cash held" Findings now, without waiting for the daily job.

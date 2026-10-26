@@ -38,6 +38,7 @@ router.get('/cash-flow', requireResourcePermission('financial', 'view'), financi
 router.get('/cash-flow/export/csv', requireResourcePermission('financial', 'view'), financialController.exportCashFlowCSV);
 router.get('/unpaid-by-age', requireResourcePermission('financial', 'view'), financialController.getUnpaidByAge);
 router.get('/agent-aging', requireResourcePermission('financial', 'view'), financialController.getAgentAgingReport);
+router.post('/agent-aging/:agentId(\\d+)/remind', requireResourcePermission('financial', 'update'), financialController.remindPartner);
 router.get('/agent-aging/export/csv', requireResourcePermission('financial', 'view'), financialController.exportAgentAgingCSV);
 
 // Transactions and collections

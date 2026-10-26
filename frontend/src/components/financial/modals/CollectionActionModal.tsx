@@ -1,500 +1,211 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { Modal } from '../../ui/Modal';
-import { Button } from '../../ui/Button';
-import { useFinancialStore } from '../../../stores/financialStore';
-import { financialService } from '../../../services/financial.service';
-import { formatCurrency } from '../../../utils/format';
-import { CheckCircle, XCircle, Loader2, ListChecks, ChevronLeft, ChevronRight, Image } from 'lucide-react';
-import { Badge } from '../../ui/Badge';
-import toast from 'react-hot-toast';
+import { useState } from 'react';
+import { Button, EmptyState, Input, Modal, Pagination, Table, Tabs, Tag, useToast, type Column } from '../../ui-v2';
+import { GuardedButtonV2 } from '../GuardedButtonV2';
+import { collectionsService, type PartnerCollection, type PartnerDeposit } from '../../../services/collections.service';
+import { apiErrorMessage } from '../../../utils/apiError';
+import { formatCurrency, formatDate } from '../../../utils/format';
+import { isPdfUrl, isSafeReceiptUrl } from '../../../utils/expenseRules';
+import { useBlock } from '../../../pages/financial/profit/useBlock';
+import { ListSkeleton } from '../../../pages/deliveries/ListSkeleton';
+import { DEPOSIT_TONE, depositLabel } from '../../../pages/financial/collections/model';
 
-const PAGE_SIZE = 50;
+/** The most collections the server verifies in one call; also the page size of the list. */
+const MAX_VERIFY = 50;
+const MIN_REASON = 5;
 
-type Tab = 'collections' | 'deposits';
-
-interface CollectionActionModalProps {
-    isOpen: boolean;
-    onClose: () => void;
-    agentId: number;
-    agentName: string;
+interface Props {
+  onClose: () => void;
+  agentId: number;
+  agentName: string;
+  /** Something changed (a verify or a reject): the page reloads its figures. */
+  onChanged?: () => void;
 }
 
-const collectionStatusColors = {
-    draft: 'bg-yellow-100 text-yellow-800',
-    verified: 'bg-blue-100 text-blue-800',
-    approved: 'bg-indigo-100 text-indigo-800',
-    deposited: 'bg-purple-100 text-purple-800',
-    reconciled: 'bg-green-100 text-green-800',
-};
+/** What each pane needs: run one call, say `done`, reload this modal and the page together. */
+type Run = (work: () => Promise<void>, done: string) => Promise<boolean>;
+interface PaneProps {
+  agentName: string;
+  busy: boolean;
+  run: Run;
+}
 
-const depositStatusColors = {
-    pending: 'bg-yellow-100 text-yellow-800',
-    verified: 'bg-green-100 text-green-800',
-    rejected: 'bg-red-100 text-red-800',
-};
+const outstanding = (c: PartnerCollection) => Math.max(c.amount - c.allocatedAmount, 0);
+const loading = <ListSkeleton label="Loading" rows={2} height={40} style={{ padding: 20 }} />;
 
-export const CollectionActionModal: React.FC<CollectionActionModalProps> = ({
-    isOpen,
-    onClose,
-    agentId,
-    agentName,
-}) => {
-    const {
-        currentAgentCollections,
-        fetchAgentCollections,
-        verifyCollection,
-        bulkVerifyCollections,
-        isLoading,
-        fetchAgentCashHoldings,
-        fetchAgentAging
-    } = useFinancialStore();
+/** Collections still to verify: one at a time or up to 50 together. Verify reconciles in one step. */
+function CollectionsPane({ rows, agentName, busy, run }: PaneProps & { rows: PartnerCollection[] | null }) {
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [page, setPage] = useState(1);
+  if (rows === null) return loading;
+  if (rows.length === 0) return <EmptyState title="Nothing to verify" text={`${agentName} has no collections waiting.`} />;
 
-    const [activeTab, setActiveTab] = useState<Tab>('collections');
-    const [selectedIds, setSelectedIds] = useState<number[]>([]);
-    const [isProcessingBulk, setIsProcessingBulk] = useState(false);
-    const [page, setPage] = useState(1);
+  const paged = rows.slice((page - 1) * MAX_VERIFY, page * MAX_VERIFY);
+  const allOnPage = paged.every((c) => selected.has(c.id));
+  const toggle = (ids: number[], on: boolean) => setSelected((s) => { const n = new Set(s); ids.forEach((id) => (on ? n.add(id) : n.delete(id))); return n; });
+  const verified = async (work: () => Promise<void>, done: string) => { if (await run(work, done)) setSelected(new Set()); };
 
-    // Deposit state (managed locally for per-agent context)
-    const [deposits, setDeposits] = useState<any[]>([]);
-    const [depositsLoading, setDepositsLoading] = useState(false);
-    const [depositVerifying, setDepositVerifying] = useState<number | null>(null);
-    const [rejectingId, setRejectingId] = useState<number | null>(null);
-    const [rejectNotes, setRejectNotes] = useState('');
+  const columns: Column<PartnerCollection>[] = [
+    {
+      key: 'sel',
+      width: 36,
+      header: <input type="checkbox" aria-label="Select all on this page" checked={allOnPage} onChange={(e) => toggle(paged.map((c) => c.id), e.target.checked)} />,
+      render: (c) => <input type="checkbox" aria-label={`Select order #${c.orderId}`} checked={selected.has(c.id)} onChange={(e) => toggle([c.id], e.target.checked)} />,
+    },
+    { key: 'order', header: 'Order', render: (c) => `#${c.orderId}` },
+    { key: 'amount', header: 'Amount', right: true, render: (c) => <b className="num">{formatCurrency(outstanding(c))}</b> },
+    { key: 'date', header: 'Delivered', render: (c) => formatDate(c.collectionDate, 'd MMM') },
+    {
+      key: 'act',
+      header: 'Action',
+      right: true,
+      render: (c) => (
+        <GuardedButtonV2 perm="verifyCollection" size="mini" variant="primary" disabled={busy} aria-label={`Verify order #${c.orderId}`} onClick={() => void verified(() => collectionsService.verify(c.id), `Order #${c.orderId} reconciled`)}>Verify</GuardedButtonV2>
+      ),
+    },
+  ];
 
-    const fetchDeposits = useCallback(async () => {
-        setDepositsLoading(true);
-        try {
-            const data = await financialService.getAgentDeposits({ agentId });
-            setDeposits(data);
-        } catch {
-            toast.error('Failed to fetch deposits');
-        } finally {
-            setDepositsLoading(false);
-        }
-    }, [agentId]);
+  return (
+    <>
+      <div className="agtools">
+        <b className="mut">{selected.size > 0 ? `${selected.size} selected` : `Select collections to verify them together (up to ${MAX_VERIFY})`}</b>
+        <GuardedButtonV2 perm="verifyCollection" variant="primary" disabled={selected.size === 0 || selected.size > MAX_VERIFY || busy} onClick={() => void verified(() => collectionsService.verifyMany([...selected]), `${selected.size} collections reconciled`)}>
+          Verify selected{selected.size > 0 ? ` (${selected.size})` : ''}
+        </GuardedButtonV2>
+      </div>
+      <Table label="Collections to verify" columns={columns} rows={paged} rowKey={(c) => c.id} />
+      {rows.length > MAX_VERIFY && <Pagination page={page} pageSize={MAX_VERIFY} total={rows.length} noun="collections" onPageChange={setPage} />}
+    </>
+  );
+}
 
-    useEffect(() => {
-        if (isOpen && agentId) {
-            fetchAgentCollections(agentId);
-            fetchDeposits();
-            setSelectedIds([]);
-            setPage(1);
-            setActiveTab('collections');
-        }
-    }, [isOpen, agentId, fetchAgentCollections, fetchDeposits]);
+/** Pay-ins: verify, or reject with a reason of at least 5 characters. */
+function DepositsPane({ rows, agentName, busy, run }: PaneProps & { rows: PartnerDeposit[] | null }) {
+  const [rejecting, setRejecting] = useState<PartnerDeposit | null>(null);
+  const [reason, setReason] = useState('');
+  const [receipt, setReceipt] = useState<string | null>(null);
+  if (rows === null) return loading;
+  if (rows.length === 0) return <EmptyState title="No pay-ins" text={`${agentName} has not sent a pay-in yet.`} />;
 
-    const reconcilableCollections = useMemo(
-        () => currentAgentCollections.filter(c => c.status !== 'reconciled'),
-        [currentAgentCollections]
-    );
-    const totalPages = Math.max(1, Math.ceil(reconcilableCollections.length / PAGE_SIZE));
-    const pagedCollections = useMemo(
-        () => reconcilableCollections.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
-        [reconcilableCollections, page]
-    );
+  const reject = async () => {
+    if (!rejecting || reason.trim().length < MIN_REASON) return;
+    const target = rejecting;
+    if (await run(() => collectionsService.rejectDeposit(target.id, reason.trim()), `Pay-in ${target.referenceNumber} rejected`)) {
+      setRejecting(null);
+      setReason('');
+    }
+  };
 
-    const handleVerify = async (collectionId: number) => {
-        await verifyCollection(collectionId);
-        // Refresh both collections and cash holdings after verification
-        fetchAgentCollections(agentId);
-        fetchAgentCashHoldings();
-        fetchAgentAging();
-    };
+  const columns: Column<PartnerDeposit>[] = [
+    { key: 'ref', header: 'Reference', render: (d) => d.referenceNumber },
+    { key: 'amount', header: 'Amount', right: true, render: (d) => <b className="num">{formatCurrency(d.amount)}</b> },
+    { key: 'date', header: 'Date', render: (d) => formatDate(d.depositDate, 'd MMM') },
+    { key: 'receipt', header: 'Receipt', render: (d) => (isSafeReceiptUrl(d.receiptUrl) ? <Button size="mini" onClick={() => setReceipt(d.receiptUrl)}>View</Button> : <span className="mut">No receipt</span>) },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (d) => (
+        <>
+          <Tag tone={DEPOSIT_TONE[d.status]}>{depositLabel(d.status)}</Tag>
+          {d.status === 'rejected' && d.rejectReason && <small className="note" style={{ display: 'block' }}>{d.rejectReason}</small>}
+        </>
+      ),
+    },
+    {
+      key: 'act',
+      header: 'Action',
+      right: true,
+      render: (d) =>
+        d.status === 'pending' ? (
+          <div className="rowacts">
+            <GuardedButtonV2 perm="verifyCollection" size="mini" variant="primary" disabled={busy} aria-label={`Verify pay-in ${d.referenceNumber}`} onClick={() => void run(() => collectionsService.verifyDeposit(d.id), `Pay-in ${d.referenceNumber} verified`)}>Verify</GuardedButtonV2>
+            <GuardedButtonV2 perm="verifyCollection" size="mini" disabled={busy} aria-label={`Reject pay-in ${d.referenceNumber}`} onClick={() => { setRejecting(d); setReason(''); }}>Reject</GuardedButtonV2>
+          </div>
+        ) : null,
+    },
+  ];
 
-    const handleBulkVerify = async () => {
-        if (selectedIds.length === 0) return;
+  return (
+    <>
+      <Table label="Pay-ins" columns={columns} rows={rows} rowKey={(d) => d.id} />
+      {rejecting && (
+        <form className="rejectbox" noValidate onSubmit={(e) => { e.preventDefault(); void reject(); }}>
+          <Input label={`Why reject ${rejecting.referenceNumber}?`} value={reason} autoComplete="off" hint={`Required, at least ${MIN_REASON} characters.`} onChange={(e) => setReason(e.target.value)} />
+          <div className="rowacts">
+            <Button onClick={() => setRejecting(null)}>Cancel</Button>
+            <Button variant="danger" disabled={reason.trim().length < MIN_REASON || busy} onClick={() => void reject()}>Reject pay-in</Button>
+          </div>
+        </form>
+      )}
+      <Modal open={receipt !== null} onClose={() => setReceipt(null)} title="Receipt" footer={<Button onClick={() => setReceipt(null)}>Close</Button>}>
+        {receipt && (isPdfUrl(receipt) ? <iframe title="Receipt PDF" src={receipt} style={{ width: '100%', height: '60vh', border: 0 }} /> : <img src={receipt} alt="Receipt" style={{ maxWidth: '100%' }} />)}
+      </Modal>
+    </>
+  );
+}
 
-        setIsProcessingBulk(true);
-        try {
-            await bulkVerifyCollections(selectedIds);
-            setSelectedIds([]);
-            // Refresh automated data
-            fetchAgentCollections(agentId);
-            fetchAgentCashHoldings();
-            fetchAgentAging();
-        } catch (error) {
-            // Error handled in store toast
-        } finally {
-            setIsProcessingBulk(false);
-        }
-    };
+/**
+ * Review one partner's cash (F-912, M5-T36). Collections: verify reconciles in one step, one or up to 50 at once; there is no
+ * approve step. Pay-ins: verify, or reject with a reason. After a change the modal and the page reload together.
+ */
+export function CollectionActionModal({ onClose, agentId, agentName, onChanged }: Props) {
+  const say = useToast();
+  const [tab, setTab] = useState<'collections' | 'deposits'>('collections');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const toVerify = useBlock(`collections:to-verify:${agentId}`, () => collectionsService.toVerify(agentId));
+  const payIns = useBlock(`collections:deposits:${agentId}`, () => collectionsService.deposits(agentId));
+  const collections = toVerify.data ?? null;
+  const deposits = payIns.data ?? null;
+  const pending = (deposits ?? []).filter((d) => d.status === 'pending').length;
 
-    const toggleSelectAll = () => {
-        // Select/deselect only the current page
-        const pageIds = pagedCollections.map(c => c.id);
-        const allPageSelected = pageIds.every(id => selectedIds.includes(id));
-        if (allPageSelected) {
-            setSelectedIds(prev => prev.filter(id => !pageIds.includes(id)));
-        } else {
-            setSelectedIds(prev => [...new Set([...prev, ...pageIds])]);
-        }
-    };
+  // The modal's lists and the page reload together, so one change costs one round of requests
+  const reload = () => {
+    toVerify.retry();
+    payIns.retry();
+    void onChanged?.();
+  };
+  const run: Run = async (work, done) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await work();
+      say(done);
+      reload();
+      return true;
+    } catch (e) {
+      setError(apiErrorMessage(e, 'That did not work. Try again.'));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+  const pane = { agentName, busy, run };
 
-    const toggleSelect = (id: number) => {
-        setSelectedIds(prev =>
-            prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
-        );
-    };
+  let body;
+  if (toVerify.status === 'failed' && !collections) body = <EmptyState title="This partner's cash could not load." action={<Button onClick={reload}>Try again</Button>} />;
+  else if (tab === 'collections') body = <CollectionsPane {...pane} rows={collections} />;
+  else body = <DepositsPane {...pane} rows={deposits} />;
 
-    const handleVerifyDeposit = async (depositId: number) => {
-        if (depositVerifying) return;
-        setDepositVerifying(depositId);
-        try {
-            await financialService.verifyDeposit(depositId);
-            toast.success('Deposit verified successfully');
-            fetchDeposits();
-            fetchAgentCashHoldings();
-            fetchAgentAging();
-        } catch (error: any) {
-            toast.error(error?.response?.data?.message || 'Failed to verify deposit');
-        } finally {
-            setDepositVerifying(null);
-        }
-    };
-
-    const handleRejectDeposit = async (depositId: number) => {
-        if (!rejectNotes.trim()) {
-            toast.error('Please provide a reason for rejection');
-            return;
-        }
-        setDepositVerifying(depositId);
-        try {
-            await financialService.rejectDeposit(depositId, rejectNotes);
-            toast.success('Deposit rejected');
-            setRejectingId(null);
-            setRejectNotes('');
-            fetchDeposits();
-            fetchAgentCashHoldings();
-            fetchAgentAging();
-        } catch (error: any) {
-            toast.error(error?.response?.data?.message || 'Failed to reject deposit');
-        } finally {
-            setDepositVerifying(null);
-        }
-    };
-
-    if (!isOpen) return null;
-
-    const reconcilableCount = reconcilableCollections.length;
-    const pageIds = pagedCollections.map(c => c.id);
-    const allPageSelected = pageIds.length > 0 && pageIds.every(id => selectedIds.includes(id));
-    const pendingDepositsCount = deposits.filter(d => d.status === 'pending').length;
-
-    return (
-        <Modal
-            isOpen={isOpen}
-            onClose={onClose}
-            title={`${agentName}`}
-            size="xl"
-        >
-            <div className="space-y-4">
-                {/* Tab Bar */}
-                <div className="flex border-b border-gray-200">
-                    <button
-                        onClick={() => setActiveTab('collections')}
-                        className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-                            activeTab === 'collections'
-                                ? 'border-blue-600 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                        }`}
-                    >
-                        Collections
-                        {reconcilableCount > 0 && (
-                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                                {reconcilableCount}
-                            </span>
-                        )}
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('deposits')}
-                        className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-                            activeTab === 'deposits'
-                                ? 'border-blue-600 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                        }`}
-                    >
-                        Deposits
-                        {pendingDepositsCount > 0 && (
-                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                {pendingDepositsCount} pending
-                            </span>
-                        )}
-                    </button>
-                </div>
-
-                {/* Collections Tab */}
-                {activeTab === 'collections' && (
-                    <>
-                        <div className="flex justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-200">
-                            <div className="text-sm font-medium text-gray-700">
-                                {selectedIds.length > 0 ? (
-                                    <span className="text-blue-600">{selectedIds.length} collections selected</span>
-                                ) : (
-                                    <span>Select collections to reconcile in bulk</span>
-                                )}
-                            </div>
-                            <div className="flex gap-2">
-                                {selectedIds.length > 0 && (
-                                    <Button
-                                        variant="primary"
-                                        size="sm"
-                                        onClick={handleBulkVerify}
-                                        isLoading={isProcessingBulk}
-                                    >
-                                        <ListChecks className="w-4 h-4 mr-2" />
-                                        Reconcile Selected ({selectedIds.length})
-                                    </Button>
-                                )}
-                            </div>
-                        </div>
-                        {isLoading && currentAgentCollections.length === 0 ? (
-                            <div className="flex items-center justify-center py-12">
-                                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-                            </div>
-                        ) : (
-                            <div className="overflow-x-auto min-h-[400px]">
-                                <table className="min-w-full divide-y divide-gray-200">
-                                    <thead className="bg-gray-50 sticky top-0 z-10">
-                                        <tr>
-                                            <th className="px-4 py-3 text-left">
-                                                <input
-                                                    type="checkbox"
-                                                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 h-4 w-4"
-                                                    checked={allPageSelected}
-                                                    onChange={toggleSelectAll}
-                                                    disabled={reconcilableCount === 0}
-                                                />
-                                            </th>
-                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order ID</th>
-                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                            <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="bg-white divide-y divide-gray-200">
-                                        {currentAgentCollections.length === 0 ? (
-                                            <tr>
-                                                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
-                                                    No pending collections for this agent.
-                                                </td>
-                                            </tr>
-                                        ) : (
-                                            pagedCollections.map((collection) => (
-                                                <tr
-                                                    key={collection.id}
-                                                    className={selectedIds.includes(collection.id) ? 'bg-blue-50' : ''}
-                                                >
-                                                    <td className="px-4 py-3 whitespace-nowrap">
-                                                        {collection.status !== 'reconciled' && (
-                                                            <input
-                                                                type="checkbox"
-                                                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 h-4 w-4"
-                                                                checked={selectedIds.includes(collection.id)}
-                                                                onChange={() => toggleSelect(collection.id)}
-                                                            />
-                                                        )}
-                                                    </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                                                        #{collection.orderId}
-                                                    </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                                                        {formatCurrency(collection.amount)}
-                                                    </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                                                        {new Date(collection.collectionDate).toLocaleDateString()}
-                                                    </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap">
-                                                        <Badge className={collectionStatusColors[collection.status as keyof typeof collectionStatusColors] || 'bg-gray-100 text-gray-800'}>
-                                                            {collection.status.charAt(0).toUpperCase() + collection.status.slice(1)}
-                                                        </Badge>
-                                                    </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
-                                                        <div className="flex justify-end gap-2">
-                                                            {(collection.status === 'draft' || collection.status === 'verified') && (
-                                                                <Button
-                                                                    size="sm"
-                                                                    variant="primary"
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        handleVerify(collection.id);
-                                                                    }}
-                                                                >
-                                                                    <CheckCircle className="w-4 h-4 mr-1" />
-                                                                    Reconcile
-                                                                </Button>
-                                                            )}
-                                                            {collection.status === 'reconciled' && (
-                                                                <span className="text-green-600 text-sm">✓ Reconciled</span>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            ))
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-
-                        {/* Pagination */}
-                        {totalPages > 1 && (
-                            <div className="flex items-center justify-between border-t border-gray-200 pt-3">
-                                <span className="text-sm text-gray-500">
-                                    Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, reconcilableCount)} of {reconcilableCount}
-                                </span>
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={() => setPage(p => Math.max(1, p - 1))}
-                                        disabled={page === 1}
-                                        className="p-1.5 rounded border border-gray-300 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                                    >
-                                        <ChevronLeft className="w-4 h-4" />
-                                    </button>
-                                    <span className="text-sm font-medium text-gray-700">
-                                        Page {page} of {totalPages}
-                                    </span>
-                                    <button
-                                        onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                                        disabled={page === totalPages}
-                                        className="p-1.5 rounded border border-gray-300 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                                    >
-                                        <ChevronRight className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                    </>
-                )}
-
-                {/* Deposits Tab */}
-                {activeTab === 'deposits' && (
-                    <>
-                        {depositsLoading && deposits.length === 0 ? (
-                            <div className="flex items-center justify-center py-12">
-                                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-                            </div>
-                        ) : (
-                            <div className="overflow-x-auto min-h-[400px]">
-                                <table className="min-w-full divide-y divide-gray-200">
-                                    <thead className="bg-gray-50 sticky top-0 z-10">
-                                        <tr>
-                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reference</th>
-                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Method</th>
-                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Receipt</th>
-                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                            <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="bg-white divide-y divide-gray-200">
-                                        {deposits.length === 0 ? (
-                                            <tr>
-                                                <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
-                                                    No deposits found for this agent.
-                                                </td>
-                                            </tr>
-                                        ) : (
-                                            deposits.map((deposit) => (
-                                                <tr key={deposit.id} className="hover:bg-gray-50">
-                                                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                                                        {deposit.referenceNumber}
-                                                    </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap text-sm font-semibold text-gray-900">
-                                                        {formatCurrency(deposit.amount)}
-                                                    </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                                                        {deposit.depositMethod.replace('_', ' ').toUpperCase()}
-                                                    </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                                                        {new Date(deposit.depositDate).toLocaleDateString()}
-                                                    </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap text-sm">
-                                                        {deposit.receiptUrl ? (
-                                                            <a
-                                                                href={deposit.receiptUrl}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800"
-                                                            >
-                                                                <Image className="w-4 h-4" />
-                                                                <span>View</span>
-                                                            </a>
-                                                        ) : (
-                                                            <span className="text-gray-400">No receipt</span>
-                                                        )}
-                                                    </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap">
-                                                        <Badge className={depositStatusColors[deposit.status as keyof typeof depositStatusColors] || 'bg-gray-100 text-gray-800'}>
-                                                            {deposit.status.charAt(0).toUpperCase() + deposit.status.slice(1)}
-                                                        </Badge>
-                                                    </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
-                                                        <div className="flex justify-end gap-2">
-                                                            {deposit.status === 'pending' && (
-                                                                <>
-                                                                    <Button
-                                                                        size="sm"
-                                                                        variant="primary"
-                                                                        onClick={() => handleVerifyDeposit(deposit.id)}
-                                                                        disabled={depositVerifying !== null}
-                                                                        isLoading={depositVerifying === deposit.id}
-                                                                    >
-                                                                        <CheckCircle className="w-4 h-4 mr-1" />
-                                                                        Verify
-                                                                    </Button>
-                                                                    <Button
-                                                                        size="sm"
-                                                                        variant="secondary"
-                                                                        onClick={() => {
-                                                                            setRejectingId(rejectingId === deposit.id ? null : deposit.id);
-                                                                            setRejectNotes('');
-                                                                        }}
-                                                                        disabled={depositVerifying !== null}
-                                                                    >
-                                                                        <XCircle className="w-4 h-4 mr-1" />
-                                                                        Reject
-                                                                    </Button>
-                                                                </>
-                                                            )}
-                                                            {deposit.status === 'verified' && (
-                                                                <span className="text-green-600 text-sm">✓ Verified</span>
-                                                            )}
-                                                            {deposit.status === 'rejected' && (
-                                                                <span className="text-red-600 text-sm">✗ Rejected</span>
-                                                            )}
-                                                        </div>
-                                                        {rejectingId === deposit.id && (
-                                                            <div className="mt-2 flex gap-2">
-                                                                <input
-                                                                    type="text"
-                                                                    value={rejectNotes}
-                                                                    onChange={(e) => setRejectNotes(e.target.value)}
-                                                                    placeholder="Reason for rejection..."
-                                                                    className="flex-1 text-sm border border-gray-300 rounded px-2 py-1 focus:ring-blue-500 focus:border-blue-500"
-                                                                />
-                                                                <Button
-                                                                    size="sm"
-                                                                    variant="danger"
-                                                                    onClick={() => handleRejectDeposit(deposit.id)}
-                                                                    disabled={depositVerifying !== null}
-                                                                >
-                                                                    Confirm
-                                                                </Button>
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                </tr>
-                                            ))
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-                    </>
-                )}
-            </div>
-        </Modal>
-    );
-};
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      wide
+      title={`Review ${agentName}`}
+      description="Verify reconciles the cash in one step. There is no separate approval."
+      footer={<Button onClick={onClose}>Close</Button>}
+    >
+      <Tabs
+        label="What to review"
+        items={[
+          { id: 'collections', label: 'Collections', count: collections?.length },
+          { id: 'deposits', label: 'Pay-ins', count: deposits ? (pending > 0 ? `${pending} pending` : deposits.length) : undefined },
+        ]}
+        value={tab}
+        onChange={(id) => setTab(id as 'collections' | 'deposits')}
+      />
+      {error && <p className="err" role="alert">{error}</p>}
+      {body}
+    </Modal>
+  );
+}

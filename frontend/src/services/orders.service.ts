@@ -37,6 +37,9 @@ export interface OrderListRow {
   threadCount?: number | null;
 }
 
+/** A row of the Unpaid by agent tab (F-309): days since delivery and the partner's days to pay. */
+export type UnpaidOrderRow = OrderListRow & { unpaid: { days: number | null; daysToPay: number | null } };
+
 /** Query of GET /api/orders and GET /api/orders/counts (counts ignore the sort and page fields). */
 export interface OrderListParams {
   status?: OrderStatus[];
@@ -57,6 +60,8 @@ export interface OrderListParams {
   flag?: 'any';
   /** Comma list of order ids (the orders an import made). */
   ids?: string;
+  /** "Unpaid by agent" (F-309): delivered orders whose cash the partner holds past its days to pay. Send it without dates or status: the server filters by cash held. */
+  tab?: 'unpaid_by_agent';
 }
 
 /** One problem row of the import check (POST /api/orders/upload/validate). */
@@ -92,6 +97,8 @@ export interface OrderCounts {
   all: number;
   byStatus: Record<OrderStatus, number>;
   waitingToDispatch: number;
+  /** Orders past their partner's days to pay: the same number as the unpaid-by-age card. null when the role cannot see finance. */
+  unpaidByAgent?: number | null;
 }
 
 /** Per-order result of a bulk status change or assign (orderService.BulkResult). */

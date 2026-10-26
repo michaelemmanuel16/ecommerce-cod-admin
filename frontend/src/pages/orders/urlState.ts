@@ -2,7 +2,7 @@ import type { OrderListParams } from '../../services/orders.service';
 import type { FailureReason } from '../../types';
 import { positive } from '../../utils/urlState';
 import { FAILURE_REASONS } from './reasons';
-import { isTabId, tabStatuses, type StatusTabId } from './model';
+import { isTabId, isViewTab, tabStatuses, type StatusTabId } from './model';
 import type { SortField, SortState } from './columns';
 
 export type DateBasis = 'created' | 'delivery';
@@ -167,13 +167,15 @@ export function listParams(view: ListView, limit: number, now: Date = new Date()
   const range = rangeOf(view, now);
   return {
     ...(status.length && { status }),
+    ...(view.tab === 'unpaid_by_agent' && { tab: view.tab }),
     ...(view.q && { search: view.q }),
     sortBy: view.sort.by,
     sortOrder: view.sort.dir,
     page: view.page,
     limit,
     // imported history orders can be older than the range, so a list of ids shows them whatever the dates
-    ...(!view.ids && { startDate: range.from, endDate: range.to, dateBasis: view.basis }),
+    // and the Unpaid by agent view counts every overdue order, so it sends no dates
+    ...(!view.ids && !isViewTab(view.tab) && { startDate: range.from, endDate: range.to, dateBasis: view.basis }),
     ...(view.ids && { ids: view.ids.join(',') }),
     ...(view.product !== null && { productId: [view.product] }),
     ...(view.agent !== null && { deliveryAgentId: view.agent }),

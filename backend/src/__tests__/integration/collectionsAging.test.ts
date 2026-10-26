@@ -308,6 +308,9 @@ describe('M5-T15: Orders "Unpaid by agent" tab', () => {
     const aging = (await agentAging()).body;
     expect(body.pagination.total).toBe(aging.summary.overdueOrders);
     expect((await unpaidByAge()).body.overdue.orders).toBe(body.pagination.total);
+    // The tab count on /api/orders/counts is the same number, and null for a role without financial:view
+    expect((await request(app).get('/api/orders/counts').set(auth(owner))).body.unpaidByAgent).toBe(body.pagination.total);
+    expect((await request(app).get('/api/orders/counts').set(auth(rep))).body.unpaidByAgent).toBeNull();
     expect((await cash.cashHeldByPartners(tenantId)).detail?.overdueOrders).toBe(body.pagination.total);
 
     // Paging happens in the database
