@@ -85,7 +85,7 @@ jest.mock('../../utils/socketInstance', () => ({
 jest.mock('../../services/glAutomationService', () => ({
     GLAutomationService: {
         createAgentDepositEntry: jest.fn().mockImplementation(() => Promise.resolve({} as any)),
-        createCollectionVerificationEntry: jest.fn().mockImplementation(() => Promise.resolve({} as any)),
+        voidJournalEntry: jest.fn().mockImplementation(() => Promise.resolve({} as any)),
     },
 }));
 
@@ -136,7 +136,7 @@ describe('AgentReconciliationService', () => {
     });
 
     describe('verifyCollection', () => {
-        it('should verify a draft collection and create a GL entry', async () => {
+        it('should verify a draft collection and post no GL entry (F-904)', async () => {
             const collectionId = 1;
             const verifierId = 789;
             const collection = {
@@ -156,9 +156,8 @@ describe('AgentReconciliationService', () => {
 
             const result = await agentReconciliationService.verifyCollection(collectionId, verifierId);
 
-            const { GLAutomationService } = require('../../services/glAutomationService');
             expect(mockTx.agentCollection.update).toHaveBeenCalled();
-            expect(GLAutomationService.createCollectionVerificationEntry).toHaveBeenCalled();
+            expect(mockTx.journalEntry.create).not.toHaveBeenCalled();
             expect(result.status).toBe('reconciled');
         });
 

@@ -7,6 +7,9 @@ import { TRANSACTION_CONFIG } from '../config/transactionConfig';
 import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 
+/** Collections a deposit can still cover. Same list as GLAutomationService.openCollectionCash. */
+const OPEN_COLLECTION_STATUSES = ['draft', 'verified', 'approved'];
+
 export class AgentReconciliationService {
     /**
      * Create a draft collection record for an order
@@ -73,18 +76,6 @@ export class AgentReconciliationService {
     }
 
     /**
-     * Create GL entry for collection verification - DEPRECATED
-     * Replaced by GLAutomationService.createCollectionVerificationEntry
-     */
-    /* private async createVerificationGLEntry(
-        tx: any,
-        collection: any,
-        userId: number
-    ) {
-       // ... deprecated content removed ...
-    } */
-
-    /**
      * Approve a verified collection record
      * This is now an alias for verifyCollection as both steps are merged.
      * It will settle the balance and ensure reconciled status.
@@ -118,7 +109,7 @@ export class AgentReconciliationService {
     }
 
     /**
-     * Apply FIFO matching from a deposit amount to approved agent collections.
+     * Apply FIFO matching from a deposit amount to the partner's open collections (draft, verified or approved).
      * Marks fully-covered collections as 'deposited' and updates allocatedAmount.
      * Returns the unmatched remainder (zero if fully allocated).
      */
@@ -130,7 +121,7 @@ export class AgentReconciliationService {
         let remainingAmount = depositAmount;
 
         const approvedCollections = await extTx.agentCollection.findMany({
-            where: { agentId, status: 'approved' },
+            where: { agentId, status: { in: OPEN_COLLECTION_STATUSES } },
             orderBy: { collectionDate: 'asc' }
         });
 
@@ -204,7 +195,9 @@ export class AgentReconciliationService {
     }
 
     /**
-     * Reject an agent deposit
+     * Reject an agent deposit. A pending deposit only changes status. A verified deposit has posted cash, so the
+     * posting is voided by a reversing entry (F-904), the partner balance is restored and the collections it matched
+     * are opened again, newest first.
      */
     async rejectDeposit(depositId: number, rejectedById: number, notes?: string): Promise<any> {
         return await prisma.$transaction(async (tx) => {
@@ -218,9 +211,11 @@ export class AgentReconciliationService {
                 throw new AppError('Deposit record not found', 404);
             }
 
-            if (deposit.status !== 'pending') {
+            if (deposit.status !== 'pending' && deposit.status !== 'verified') {
                 throw new AppError(`Deposit cannot be rejected from status: ${deposit.status} `, 400);
             }
+
+            if (deposit.status === 'verified') await this.undoVerifiedDeposit(extTx, deposit, rejectedById);
 
             const dateStr = new Date().toLocaleString();
             const formattedNotes = notes ? `${deposit.notes ? deposit.notes + '\n' : ''} [REJECTED] ${dateStr}: ${notes} ` : deposit.notes;
@@ -232,12 +227,51 @@ export class AgentReconciliationService {
                     verifiedAt: new Date(),
                     verifiedById: rejectedById,
                     notes: formattedNotes,
+                    ...(notes ? { rejectReason: notes } : {}),
                 },
             });
 
             logger.info(`Deposit ${depositId} rejected by user ${rejectedById} `);
             return updated;
         }, TRANSACTION_CONFIG);
+    }
+
+    /** Undoes what verifying a deposit did: the GL posting (voided by reversal), the balance and the matched collections. */
+    private async undoVerifiedDeposit(extTx: any, deposit: any, userId: number): Promise<void> {
+        const { GLAutomationService } = await import('./glAutomationService');
+        await GLAutomationService.voidJournalEntry(extTx, 'agent_deposit', deposit.id, userId);
+
+        const balance = await this.getOrCreateBalance(deposit.agentId, extTx);
+        await extTx.agentBalance.update({
+            where: { id: balance.id },
+            data: {
+                totalDeposited: { decrement: deposit.amount },
+                currentBalance: { increment: deposit.amount },
+            },
+        });
+
+        // Open the matched collections again, newest first (the reverse of the FIFO match)
+        let remaining = Money.parse(deposit.amount);
+        const matched = await extTx.agentCollection.findMany({
+            where: { agentId: deposit.agentId, allocatedAmount: { gt: 0 } },
+            orderBy: { collectionDate: 'desc' },
+        });
+        for (const coll of matched) {
+            if (remaining.isZero()) break;
+            const allocated = Money.parse(coll.allocatedAmount);
+            const undo = Prisma.Decimal.min(allocated, remaining);
+            await extTx.agentCollection.update({
+                where: { id: coll.id },
+                data: { allocatedAmount: allocated.minus(undo), ...(coll.status === 'deposited' ? { status: 'draft' } : {}) },
+            });
+            remaining = remaining.minus(undo);
+        }
+
+        // The excess Finding no longer stands: the deposit is void
+        await extTx.finding.updateMany({
+            where: { type: 'excess_deposit', subjectType: 'agent_deposit', subjectId: String(deposit.id), status: 'open' },
+            data: { status: 'closed', explanation: 'Deposit rejected', resolvedAt: new Date(), resolvedById: userId },
+        });
     }
 
     /**
@@ -401,8 +435,9 @@ export class AgentReconciliationService {
                         },
                     });
 
-                    // Create GL Entry for each deposit
+                    // Create GL Entry for each deposit, then match it (FIFO) so the next deposit sees what is still open
                     await GLAutomationService.createAgentDepositEntry(extTx, deposit, verifierId);
+                    await this.matchDepositsToCollections(extTx, agentId, Money.parse(deposit.amount));
 
                     totalAmount = totalAmount.plus(Money.parse(deposit.amount));
                 }
@@ -416,9 +451,6 @@ export class AgentReconciliationService {
                         lastSettlementDate: new Date(),
                     },
                 });
-
-                // FIFO Matching for this agent's total deposit amount
-                await this.matchDepositsToCollections(extTx, agentId, agentTotalDeposit);
             }
 
             logger.info(`Bulk verified ${deposits.length} deposits by user ${verifierId} `, {
@@ -495,7 +527,8 @@ export class AgentReconciliationService {
      * 1. Status: draft -> reconciled
      * 2. Order: paymentStatus -> reconciled
      * 3. Balance: totalDeposited+, currentBalance-
-     * 4. GL Entry: Cash in Transit -> Cash in Hand
+     * No journal entry: 1015 already holds the cash, net of the delivery fee. It moves to 1010 once, when a deposit
+     * is verified or a settlement line matches (F-904).
      */
     private async verifyCollectionInternal(tx: any, collectionId: number, verifierId: number) {
         const collection = await (tx as any).agentCollection.findUnique({
@@ -551,13 +584,6 @@ export class AgentReconciliationService {
                 },
             },
         });
-
-        // 5. Create GL Journal Entry (Transit -> Hand)
-        // Only if it wasn't already verified (to avoid duplicate entries)
-        if (collection.status === 'draft') {
-            const { GLAutomationService } = await import('./glAutomationService');
-            await GLAutomationService.createCollectionVerificationEntry(tx as any, updated, verifierId);
-        }
 
         logger.info(`Collection ${collectionId} reconciled by user ${verifierId} `);
 

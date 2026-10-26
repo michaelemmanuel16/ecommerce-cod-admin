@@ -16,7 +16,8 @@ import { BALANCE_TOLERANCE, GL_ACCOUNTS, GL_DEFAULTS, RETIRED_EXPENSE_CODES } fr
 import { GLAccountService } from './glAccountService';
 import logger from '../utils/logger';
 import { GLUtils } from '../utils/glUtils';
-import { getTenantId } from '../utils/tenantContext';
+import { openFindingOnce } from './findingService';
+import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 
 // Define JournalSourceType locally if not correctly imported or use string literal
@@ -662,66 +663,6 @@ export class GLAutomationService {
   }
 
   /**
-   * Create GL entry for collection verification (Reconciliation)
-   *
-   * Moves funds from Cash in Transit to Cash in Hand:
-   * - Debit: Cash in Hand
-   * - Credit: Cash in Transit
-   *
-   * @param tx - Prisma transaction client
-   * @param collection - Agent collection record
-   * @param userId - ID of user verifying the collection
-   * @returns Created journal entry
-   */
-  static async createCollectionVerificationEntry(
-    tx: Prisma.TransactionClient,
-    collection: any,
-    userId: number
-  ): Promise<JournalEntryWithTransactions> {
-    // Idempotency guard — prevent duplicate GL entries for the same collection
-    const existingEntry = await tx.journalEntry.findFirst({
-      where: {
-        sourceType: JournalSourceType.agent_collection,
-        sourceId: collection.id,
-        isVoided: false
-      },
-      include: { transactions: { include: { account: true } } }
-    });
-    if (existingEntry) {
-      logger.warn(`Skipping duplicate GL entry for collection ${collection.id}: ${existingEntry.entryNumber} already exists`);
-      return existingEntry as JournalEntryWithTransactions;
-    }
-
-    const amount = Money.parse(collection.amount);
-
-    const transactions: TransactionCreateData[] = [
-      {
-        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND),
-        debitAmount: amount,
-        creditAmount: Money.ZERO,
-        description: `Collection reconciled - Order #${collection.orderId}`,
-      },
-      {
-        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT),
-        debitAmount: Money.ZERO,
-        creditAmount: amount,
-        description: `Movement from transit to hand - Order #${collection.orderId}`,
-      },
-    ];
-
-    return await this.createJournalEntryWithRetry(tx, {
-      entryDate: new Date(),
-      description: `Collection reconciliation - Order #${collection.orderId}`,
-      sourceType: JournalSourceType.agent_collection,
-      sourceId: collection.id,
-      createdBy: userId,
-      transactions: {
-        create: transactions,
-      },
-    });
-  }
-
-  /**
    * Create GL journal entry for a recorded expense
    *
    * DR: Operating Expense (5100) = amount
@@ -846,11 +787,24 @@ export class GLAutomationService {
   }
 
   /**
-   * Create GL entry for agent deposit verification
-   *
-   * Records receipt of cash from agent and reduction of their receivable:
-   * - Debit: Cash in Hand (usually bank or actual cash vault)
-   * - Credit: Accounts Receivable - Agents
+   * Cash a partner still holds for us, from the app side: what is left of its collections that no deposit has
+   * covered yet (draft, verified or approved, minus the amount a verified deposit already matched to them).
+   */
+  static async openCollectionCash(tx: Prisma.TransactionClient, agentId: number): Promise<Decimal> {
+    const open = await tx.agentCollection.findMany({
+      where: { agentId, status: { in: ['draft', 'verified', 'approved'] } },
+      select: { amount: true, allocatedAmount: true },
+    });
+    return Money.sum(open.map((c) => Money.sub(c.amount, Money.orZero(c.allocatedAmount))));
+  }
+
+  /**
+   * GL entry for a verified agent deposit (F-904). The only place cash moves from the partner to the bank:
+   * - Debit: Cash at bank and MoMo 1010 (the amount received, which is cash collected minus the fees the partner kept)
+   * - Credit: Cash in Transit 1015 (the part that matches the partner's open collections, FIFO)
+   * - Credit: Unapplied Partner Receipts 2040 (any excess), with an `excess_deposit` Finding
+   * Verifying a single collection posts nothing; 1015 already holds the net amount from the delivery.
+   * Idempotent per deposit.
    *
    * @param tx - Prisma transaction client
    * @param deposit - Agent deposit record
@@ -877,6 +831,9 @@ export class GLAutomationService {
     }
 
     const depositAmount = Money.parse(deposit.amount);
+    const open = await this.openCollectionCash(tx, deposit.agentId);
+    const matched = Decimal.min(depositAmount, Decimal.max(open, Money.ZERO));
+    const excess = depositAmount.minus(matched);
 
     const transactions: TransactionCreateData[] = [
       {
@@ -885,24 +842,47 @@ export class GLAutomationService {
         creditAmount: Money.ZERO,
         description: `Deposit verification - Agent #${deposit.agentId} (Ref: ${deposit.referenceNumber})`,
       },
-      {
-        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.AR_AGENTS, tx),
-        debitAmount: Money.ZERO,
-        creditAmount: depositAmount,
-        description: `Deposit matching - Agent #${deposit.agentId}`,
-      },
     ];
+    if (matched.greaterThan(0)) {
+      transactions.push({
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT, tx),
+        debitAmount: Money.ZERO,
+        creditAmount: matched,
+        description: `Deposit matching - Agent #${deposit.agentId}`,
+      });
+    }
+    if (excess.greaterThan(0)) {
+      transactions.push({
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.UNAPPLIED_PARTNER_RECEIPTS, tx),
+        debitAmount: Money.ZERO,
+        creditAmount: excess,
+        description: `Deposit above open collections - Agent #${deposit.agentId} (Ref: ${deposit.referenceNumber})`,
+      });
+    }
 
-    return await this.createJournalEntryWithRetry(tx, {
-      entryDate: new Date(),
+    const entry = await this.createJournalEntryWithRetry(tx, {
+      entryDate: deposit.depositDate ?? new Date(),
       description: `Agent deposit verification - Ref #${deposit.referenceNumber}`,
       sourceType: JournalSourceType.agent_deposit,
       sourceId: deposit.id,
       createdBy: userId,
+      tenantId: deposit.tenantId ?? undefined,
       transactions: {
         create: transactions,
       },
     });
+
+    if (excess.greaterThan(0)) {
+      await openFindingOnce({
+        tenantId: resolveTenantId(deposit.tenantId),
+        type: 'excess_deposit',
+        subjectType: 'agent_deposit',
+        subjectId: String(deposit.id),
+        amount: excess,
+        note: `Deposit ${deposit.referenceNumber} is ${Money.toApi(excess)} more than the partner's open collections. The excess is held in 2040.`,
+      }, { includeClosed: true }, tx as any);
+    }
+    return entry;
   }
 
   /**

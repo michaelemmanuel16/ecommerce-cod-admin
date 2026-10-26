@@ -701,7 +701,8 @@ export class FinancialService {
         order: {
           select: {
             deliveryAgentId: true,
-            customerRepId: true
+            customerRepId: true,
+            deliveryFee: true
           }
         }
       }
@@ -739,40 +740,39 @@ export class FinancialService {
         data: { paymentStatus: 'deposited' }
       });
 
-      // Create GL deposit entry for non-reconciled transactions only
-      // (reconciled collections already have GL entries from the reconciliation path)
-      const reconciledCount = await tx.agentCollection.count({
-        where: {
-          orderId: { in: orderIds },
-          status: 'reconciled'
-        }
+      // The same entry a verified deposit posts (F-904): DR 1010, CR 1015, for the cash the partner kept net of its delivery fee.
+      // Cash already moved is skipped: a collection a deposit has covered ('deposited'), or one the old verify step posted
+      // (it has an agent_collection journal entry). Verifying a collection posts nothing any more.
+      const collections = await tx.agentCollection.findMany({
+        where: { orderId: { in: orderIds } },
+        select: { id: true, orderId: true, status: true, amount: true },
       });
+      const oldPosted = new Set((await tx.journalEntry.findMany({
+        where: { sourceType: 'agent_collection', sourceId: { in: collections.map((c) => c.id) }, isVoided: false },
+        select: { sourceId: true },
+      })).map((e) => e.sourceId));
+      const collectionOf = new Map(collections.map((c) => [c.orderId, c]));
+      const moved = (orderId: number | null) => {
+        const coll = orderId == null ? undefined : collectionOf.get(orderId);
+        return !!coll && (coll.status === 'deposited' || oldPosted.has(coll.id));
+      };
 
-      const totalTransactions = transactions.length;
-      const nonReconciledCount = totalTransactions - reconciledCount;
+      // The collection holds the net amount; with no collection the net is the transaction minus the fee stamped on the order
+      const depositAmount = Money.sum(
+        transactions
+          .filter((t) => !moved(t.orderId))
+          .map((t) => {
+            const coll = t.orderId == null ? undefined : collectionOf.get(t.orderId);
+            return coll ? coll.amount : Money.sub(t.amount, Money.orZero(t.order?.deliveryFee));
+          })
+      );
 
-      if (nonReconciledCount > 0) {
-        // Calculate amount for non-reconciled transactions only
-        const reconciledOrderIds = new Set(
-          (await tx.agentCollection.findMany({
-            where: { orderId: { in: orderIds }, status: 'reconciled' },
-            select: { orderId: true }
-          })).map((c) => c.orderId)
-        );
-
-        const nonReconciledAmount = Money.sum(
-          transactions
-            .filter(t => !t.orderId || !reconciledOrderIds.has(t.orderId))
-            .map(t => t.amount)
-        );
-
-        if (nonReconciledAmount.gt(0)) {
-          const userId = requester?.id ?? await getSystemUserId();
-          // Use the minimum transaction ID as a stable idempotency key for the batch.
-          // transactions[0].id is order-dependent; Math.min is consistent across re-calls.
-          const sourceId = Math.min(...transactions.map(t => t.id));
-          await GLAutomationService.createDepositGLEntry(tx as any, nonReconciledAmount, sourceId, userId);
-        }
+      if (depositAmount.gt(0)) {
+        const userId = requester?.id ?? await getSystemUserId();
+        // Use the minimum transaction ID as a stable idempotency key for the batch.
+        // transactions[0].id is order-dependent; Math.min is consistent across re-calls.
+        const sourceId = Math.min(...transactions.map(t => t.id));
+        await GLAutomationService.createDepositGLEntry(tx as any, depositAmount, sourceId, userId);
       }
 
       return result;

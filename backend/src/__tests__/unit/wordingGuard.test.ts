@@ -1,6 +1,6 @@
 /**
  * M1-T33 (F-112): wording guard. Fails the build when backend/src holds a retired word: `airtime`,
- * `delivery rate` or `6,400` (case-insensitive). The banned list and the allow-list are in
+ * `delivery rate`, `6,400`, `agent pay`, `agent fee` or `pay per delivery` (case-insensitive). The banned list and the allow-list are in
  * wording-allowlist.json at the repo root, shared with frontend/src/__tests__/wordingGuard.test.ts.
  * A line scan: it also reads comments. An allow-list entry exempts any line of its file that contains
  * its `match` text, and needs a reason. An entry whose text is no longer found is stale and fails.
@@ -55,6 +55,11 @@ describe('wording guard, backend (M1-T33)', () => {
   it('fails on a planted "Delivery Rate", "Airtime" and "6,400"', () => {
     const planted = scan([[`${SCAN_DIR}/planted.ts`, 'const a = "Delivery Rate";\nconst b = `Airtime`;\nconst c = "GH₵6,400";']]);
     expect(planted.hits).toHaveLength(3);
+  });
+
+  it('fails on a planted "agent pay", "agent fee" and "pay-per-delivery" (M5-T06, F-915)', () => {
+    const planted = scan([[`${SCAN_DIR}/planted.ts`, 'const a = "Agent pay";\nconst b = `agent fee`;\nconst c = "Pay-per-delivery";\nconst d = "pay per delivery";']]);
+    expect(planted.hits).toHaveLength(4);
   });
 
   it('does not flag the identifier deliveryRate', () => {

@@ -52,6 +52,7 @@ describe('Delivery GL Integration', () => {
     await withGlTestTenant(async () => {
       await prisma.accountTransaction.deleteMany({});
       await (prisma as any).agentCollection.deleteMany({});
+      await (prisma as any).agentBalance.deleteMany({}); // the draft collection of a COD delivery opens the partner's balance row
       await prisma.deliveryAttempt.deleteMany({}); // written by the state machine on a failed delivery (M4-T20)
       await prisma.delivery.deleteMany({});
       await prisma.orderItem.deleteMany({});
@@ -184,6 +185,7 @@ describe('Delivery GL Integration', () => {
     // Clean up test data in correct order to avoid FK issues
     await prisma.accountTransaction.deleteMany({});
     await (prisma as any).agentCollection.deleteMany({});
+    await (prisma as any).agentBalance.deleteMany({});
     await prisma.delivery.deleteMany({});
     await prisma.orderItem.deleteMany({});
     await (prisma as any).formSubmission.deleteMany({});
@@ -252,6 +254,33 @@ describe('Delivery GL Integration', () => {
 
       expect(totalDebits.toString()).toBe(totalCredits.toString());
       expect(glEntry!.transactions).toHaveLength(4);
+    });
+  });
+
+  describe('Complete Delivery with a delivery fee (M5-T06)', () => {
+    it('stamps the fee, posts it to 5070 / 1015 and books the draft collection at the cash minus the fee', async () => {
+      await prisma.feeRule.create({
+        data: { partnerUserId: testOrder.deliveryAgentId, outcome: 'delivered', amount: 25, validFrom: new Date('2026-01-01') },
+      });
+      await prisma.order.update({ where: { id: testOrder.id }, data: { codAmount: 210 } });
+
+      await deliveryService.completeDelivery(
+        testDelivery.id.toString(),
+        { proofType: 'signature', proofData: 'signature.png', recipientName: 'Test Customer' },
+        testUser.id.toString()
+      );
+
+      const order = await prisma.order.findUniqueOrThrow({ where: { id: testOrder.id } });
+      expect(Number(order.deliveryFee)).toBe(25);
+      const collection = await (prisma as any).agentCollection.findFirstOrThrow({ where: { orderId: testOrder.id } });
+      expect(Number(collection.amount)).toBe(185);
+
+      const fee = await prisma.journalEntry.findFirstOrThrow({
+        where: { sourceType: 'delivery_fee', sourceId: testOrder.id },
+        include: { transactions: { include: { account: true } } },
+      });
+      expect(fee.transactions.map((t) => [t.account.code, Number(t.debitAmount), Number(t.creditAmount)]).sort())
+        .toEqual([[GL_ACCOUNTS.CASH_IN_TRANSIT, 0, 25], [GL_ACCOUNTS.DELIVERY_FEES, 25, 0]]);
     });
   });
 
