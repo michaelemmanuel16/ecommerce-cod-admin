@@ -1,6 +1,9 @@
 import { Fragment, useState } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
-import { Button, EmptyState, Tag } from '../../../components/ui-v2';
+import { Button, EmptyState, Tag, useToast } from '../../../components/ui-v2';
+import { GuardedButtonV2 } from '../../../components/financial/GuardedButtonV2';
+import { collectionsService } from '../../../services/collections.service';
+import { apiErrorMessage } from '../../../utils/apiError';
 import type { Failed, ReconRow, Reconciliation, SettlementStatus } from '../../../services/finance-overview.service';
 import { shortDay } from '../../dashboard/format';
 import { initials } from '../../../utils/people';
@@ -8,6 +11,8 @@ import { plural } from '../../dashboard/format';
 import { dayRange, money } from './model';
 
 const COLS = 5;
+
+const showText = (r: ReconRow) => (r.unpaid && r.unpaid.orders > 0 ? `Show the ${plural(r.unpaid.orders, 'order')}` : 'Show unpaid orders');
 
 function Result({ row, currency }: { row: ReconRow; currency: string }) {
   const tag: Record<SettlementStatus, JSX.Element> = {
@@ -25,7 +30,22 @@ function Result({ row, currency }: { row: ReconRow; currency: string }) {
 }
 
 function Detail({ row, currency }: { row: ReconRow; currency: string }) {
+  const say = useToast();
+  const [sending, setSending] = useState(false);
   const unpaid = row.unpaid;
+
+  /** "Message partner" sends the partner the same WhatsApp reminder as Agent collections (POST /api/financial/agent-aging/:id/remind). */
+  const message = async () => {
+    setSending(true);
+    try {
+      const { sent } = await collectionsService.remind(row.partnerId);
+      say(sent ? `Reminder sent to ${row.partnerName} on WhatsApp` : `WhatsApp is not connected, so the reminder to ${row.partnerName} was saved but not sent`);
+    } catch (e) {
+      say(apiErrorMessage(e, 'The reminder could not be sent.'));
+    } finally {
+      setSending(false);
+    }
+  };
   if (!unpaid || unpaid.orders === 0) {
     return <p className="ink3">{row.partnerName} has no unpaid delivered orders left. The gap is not tied to an open order.</p>;
   }
@@ -53,6 +73,9 @@ function Detail({ row, currency }: { row: ReconRow; currency: string }) {
         {plural(unpaid.orders, 'unpaid order')}, {money(unpaid.amount, currency)} in all.
         {unpaid.orders > unpaid.rows.length && ` Showing the oldest ${unpaid.rows.length}.`}
       </p>
+      <div className="acts">
+        <GuardedButtonV2 perm="remindPartner" size="mini" variant="primary" disabled={sending} onClick={() => void message()}>Message {row.partnerName}</GuardedButtonV2>
+      </div>
     </>
   );
 }
@@ -102,7 +125,7 @@ export function ReconciliationCard({ data, range, currency, onRetry }: { data: R
                         {expandable && (
                           <div className="rowact">
                             <Button size="mini" variant="primary" aria-expanded={isOpen} aria-controls={`recon-${r.id}`} onClick={() => setOpen(isOpen ? null : r.id)}>
-                              {isOpen ? 'Hide unpaid orders' : 'Show unpaid orders'}<ChevronDown className={isOpen ? 'flip' : undefined} />
+                              {isOpen ? 'Hide the orders' : showText(r)}<ChevronDown className={isOpen ? 'flip' : undefined} />
                             </Button>
                           </div>
                         )}

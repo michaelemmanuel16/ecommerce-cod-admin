@@ -12,7 +12,7 @@ export function OverviewProfitCards() {
   const monthly = useMonthlyPl();
   return (
     <div className="fin">
-      <div className="grid two even">
+      <div className="grid two">
         <CohortCard cohort={cohort} />
         <FailedCostCard block={failed} />
       </div>

@@ -49,6 +49,14 @@
 .v2 .tab.on{background:var(--ink);color:var(--bg)}
 .v2 .tab.on span{background:rgba(255,255,255,.18)}
 
+/* page tab bar (.pgtabs): Reports and Finance; moved here from reports.css so more than one page can use it */
+.v2 .tabs.pgtabs{display:flex;gap:6px;flex-wrap:wrap;margin:16px 0;padding:0;border-bottom:0}
+.v2 .pgtabs .tab{border:1px solid var(--line);background:var(--card)}
+.v2 .pgtabs .tab.on{border-color:var(--ink);background:var(--ink);color:var(--bg)}
+.v2 .tab svg.lucide{width:16px;height:16px}
+.v2 .pgtabs .tab span{background:var(--hover);color:var(--ink-2)}
+.v2 .pgtabs .tab.on span{background:rgba(255,255,255,.18);color:inherit}
+
 /* drawer (index.html .sheet) */
 .v2 .scrim{position:fixed;inset:0;background:var(--veil);backdrop-filter:blur(2px);z-index:54;opacity:0;pointer-events:none;transition:opacity .2s}
 .v2 .scrim.on{opacity:1;pointer-events:auto}

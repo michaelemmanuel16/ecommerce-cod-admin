@@ -235,7 +235,7 @@ describe('add expense modal', () => {
     await screen.findByRole('option', { name: 'Packaging' });
     expect(screen.queryByRole('option', { name: 'COGS' })).toBeNull();
     expect(screen.getByRole('option', { name: 'MoMo' })).toBeInTheDocument();
-    expect(screen.getByText('Posts to account 5100 Operating expenses')).toBeInTheDocument();
+    expect(screen.getByText('Posts to account 5100 Operating Expenses.')).toBeInTheDocument();
   });
 
   it('shows the limit for a file that is too large, and does not upload it', async () => {

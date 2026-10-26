@@ -17,7 +17,7 @@ describe('Unpaid by age card (M5-T35, F-910)', () => {
     const list = screen.getByRole('list', { name: 'Unpaid delivered orders by age' });
     expect(list.querySelectorAll('[role=listitem]')).toHaveLength(4);
     for (const l of ['0-3 days', '4-7 days', '8-14 days', '15+ days']) expect(list).toHaveTextContent(l);
-    expect(screen.getByText('By age, net of delivery fee')).toBeInTheDocument();
+    expect(screen.getByText('By age')).toBeInTheDocument();
     expect(screen.getByTestId('overdue-count')).toHaveTextContent('3 orders');
     expect(screen.getByRole('link', { name: 'Show them in Orders' })).toHaveAttribute('href', '/orders?status=unpaid_by_agent');
   });

@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Paperclip } from 'lucide-react';
-import { Modal } from '../../ui/Modal';
-import { Button } from '../../ui/Button';
+import { Button, Input, Modal, Select } from '../../ui-v2';
 import { useFinancialStore } from '../../../stores/financialStore';
 import { financialService, Expense } from '../../../services/financial.service';
 import { ExpenseFormRules, ExpensePaidFrom, isClosedMonth, isSafeReceiptUrl, PAID_FROM, PAID_FROM_LABELS, receiptLimitText } from '../../../utils/expenseRules';
@@ -15,8 +14,6 @@ interface AddExpenseModalProps {
   onSaved?: () => void;
   expense?: Expense | null;
 }
-
-const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent';
 
 export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({ isOpen, onClose, onSaved, expense }) => {
   const { recordExpense, updateExpense } = useFinancialStore();
@@ -75,77 +72,64 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({ isOpen, onClos
   };
 
   return (
-    <Modal closeOnEscape isOpen={isOpen} onClose={onClose} title={isEditMode ? 'Edit Expense' : 'Add Expense'} size="md">
-      <form onSubmit={handleSubmit} className="space-y-4">
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      title={isEditMode ? 'Edit expense' : 'Add expense'}
+      description="Money you spent that is not ad spend or a delivery fee."
+      footer={
+        <>
+          <span className="ink3" style={{ fontSize: 12.5, marginRight: 'auto' }}>Posts to account 5100 Operating Expenses.</span>
+          <Button onClick={onClose} disabled={isSubmitting}>Cancel</Button>
+          <Button type="submit" form="expense-form" variant="primary" disabled={isSubmitting || receipt.uploading}>
+            {isSubmitting ? 'Saving...' : 'Save expense'}
+          </Button>
+        </>
+      }
+    >
+      <form id="expense-form" onSubmit={handleSubmit} className="cform">
         <div>
-          <label htmlFor="expense-date" className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-          <input id="expense-date" type="date" value={formData.expenseDate}
-            onChange={(e) => setFormData({ ...formData, expenseDate: e.target.value })} className={inputClass} required />
-          {closedMonth && <p role="status" className="mt-1 text-sm text-amber-700">{rules!.closedNotice}</p>}
+          <Input id="expense-date" label="Date" type="date" value={formData.expenseDate}
+            onChange={(e) => setFormData({ ...formData, expenseDate: e.target.value })} required />
+          {closedMonth && <p role="status" className="hint" style={{ color: 'var(--warn-ink)' }}>{rules!.closedNotice}</p>}
         </div>
+        <Input id="expense-amount" label="Amount" type="number" step="0.01" min="0.01" value={formData.amount} placeholder="0.00"
+          onChange={(e) => setFormData({ ...formData, amount: e.target.value })} required />
+        <Select id="expense-category" label="Category" value={category}
+          onChange={(e) => setFormData({ ...formData, category: e.target.value })} required>
+          {/* A row from before the category list shows its old name until it is changed */}
+          {category && !categories.includes(category) && <option value={category}>{category}</option>}
+          {categories.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+        </Select>
+        <Select id="expense-paid-from" label="Paid from" value={formData.paidFrom}
+          onChange={(e) => setFormData({ ...formData, paidFrom: e.target.value as ExpensePaidFrom })} required>
+          {PAID_FROM.map((p) => <option key={p} value={p}>{PAID_FROM_LABELS[p]}</option>)}
+        </Select>
+        <Input id="expense-description" className="span2" label="Description" type="text" value={formData.description} placeholder="What was it for?"
+          onChange={(e) => setFormData({ ...formData, description: e.target.value })} required />
 
-        <div>
-          <label htmlFor="expense-amount" className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
-          <input id="expense-amount" type="number" step="0.01" min="0.01" value={formData.amount}
-            onChange={(e) => setFormData({ ...formData, amount: e.target.value })} className={inputClass} placeholder="0.00" required />
-        </div>
-
-        <div>
-          <label htmlFor="expense-category" className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-          <select id="expense-category" value={category}
-            onChange={(e) => setFormData({ ...formData, category: e.target.value })} className={inputClass} required>
-            {/* A row from before the category list shows its old name until it is changed */}
-            {category && !categories.includes(category) && <option value={category}>{category}</option>}
-            {categories.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
-          </select>
-        </div>
-
-        <div>
-          <label htmlFor="expense-paid-from" className="block text-sm font-medium text-gray-700 mb-1">Paid from</label>
-          <select id="expense-paid-from" value={formData.paidFrom}
-            onChange={(e) => setFormData({ ...formData, paidFrom: e.target.value as ExpensePaidFrom })} className={inputClass} required>
-            {PAID_FROM.map((p) => <option key={p} value={p}>{PAID_FROM_LABELS[p]}</option>)}
-          </select>
-        </div>
-
-        <div>
-          <label htmlFor="expense-description" className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-          <textarea id="expense-description" value={formData.description}
-            onChange={(e) => setFormData({ ...formData, description: e.target.value })} className={inputClass} rows={3}
-            placeholder="Enter expense description..." required />
-        </div>
-
-        <div>
-          <span className="block text-sm font-medium text-gray-700 mb-1">Receipt</span>
-          <label className="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 cursor-pointer hover:bg-gray-50">
-            <Paperclip className="w-4 h-4" />
+        <div className="fl span2">
+          <label>Receipt <span className="opt">(optional)</span></label>
+          <label className="btn" style={{ cursor: 'pointer', fontWeight: 600 }}>
+            <Paperclip />
             {receipt.uploading ? 'Uploading...' : receipt.url ? 'Replace receipt' : 'Attach receipt'}
             <input type="file" aria-label="Attach receipt" className="sr-only" accept={rules?.receipt.mimeTypes.join(',')}
               disabled={receipt.uploading} onChange={(e) => { receipt.pick(e.target.files?.[0]); e.target.value = ''; }} />
           </label>
-          {rules && <p className="mt-1 text-xs text-gray-500">{receiptLimitText(rules.receipt)}</p>}
+          {rules && <p className="hint">{receiptLimitText(rules.receipt)}</p>}
           {receipt.url && !receipt.error && (
-            <p className="mt-1 text-sm text-green-700">
+            <p className="hint">
               {receipt.name ?? 'Receipt attached'}{' '}
-              {isSafeReceiptUrl(receipt.url) && <span className="text-gray-400">(saved)</span>}{' '}
-              <button type="button" className="text-red-600 hover:underline" onClick={receipt.remove}>Remove</button>
+              {isSafeReceiptUrl(receipt.url) && <span>(saved)</span>}{' '}
+              <button type="button" className="mini" onClick={receipt.remove}>Remove</button>
             </p>
           )}
           {receipt.error && (
-            <p role="alert" className="mt-1 text-sm text-red-600">
+            <p role="alert" className="err">
               {receipt.error}{' '}
-              {receipt.pending && <button type="button" className="font-semibold underline" onClick={receipt.retry}>Try again</button>}
+              {receipt.pending && <button type="button" className="mini" onClick={receipt.retry}>Try again</button>}
             </p>
           )}
-        </div>
-
-        <p className="text-xs text-gray-500">Posts to account 5100 Operating expenses</p>
-
-        <div className="flex justify-end gap-3 pt-2">
-          <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>Cancel</Button>
-          <Button type="submit" disabled={isSubmitting || receipt.uploading}>
-            {isSubmitting ? (isEditMode ? 'Saving...' : 'Adding...') : (isEditMode ? 'Save Changes' : 'Add Expense')}
-          </Button>
         </div>
       </form>
     </Modal>

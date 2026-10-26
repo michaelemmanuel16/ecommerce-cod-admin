@@ -162,10 +162,10 @@ describe('Export menu (M5-T41, F-930)', () => {
   it('lists the four files and Excel for profit and loss, and a link to Reports', async () => {
     const m = await menu();
     expect(within(m).getAllByRole('menuitem').map((i) => i.textContent)).toEqual([
-      'Profit and lossCSV, for the dates above', 'Agent aging and collectionsCSV, as it stands today', 'General ledgerCSV, for the dates above',
-      'Cash-flow forecastCSV, next 30 days', 'Profit and lossExcel, for the dates above', 'More in Reports',
+      'Profit and lossCSV', 'Agent aging and collectionsCSV', 'General ledgerCSV',
+      'Cash-flow forecastCSV', 'Profit and lossExcel', 'More in ReportsCSV and Excel, any dates',
     ]);
-    expect(within(m).getByRole('menuitem', { name: 'More in Reports' })).toHaveAttribute('href', '/reports?tab=products');
+    expect(within(m).getByRole('menuitem', { name: /More in Reports/ })).toHaveAttribute('href', '/reports?tab=products');
   });
 
   it('each item downloads a real file; profit and loss and the ledger take the Finance dates, the others do not', async () => {
@@ -187,7 +187,7 @@ describe('Export menu (M5-T41, F-930)', () => {
     await waitFor(() => expect(svc.exportFile).toHaveBeenLastCalledWith('cash-flow', { format: 'csv', startDate: undefined, endDate: undefined }, expect.anything()));
 
     await userEvent.click(screen.getByRole('button', { name: /Export/ }));
-    await userEvent.click(screen.getByRole('menuitem', { name: /Excel/ }));
+    await userEvent.click(screen.getByRole('menuitem', { name: /Profit and loss ?Excel/ }));
     await waitFor(() => expect(svc.exportFile).toHaveBeenLastCalledWith('profit-loss', { format: 'xlsx', startDate: '2026-10-01', endDate: '2026-10-17' }, expect.anything()));
     expect(svc.exportFile).toHaveBeenCalledTimes(5);
   });

@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
+import { ToastProvider } from '../../components/ui-v2';
 import { FinanceOverview } from '../../pages/financial/overview/FinanceOverview';
 import { useConfigStore } from '../../stores/configStore';
 import { useFinancialStore } from '../../stores/financialStore';
@@ -14,7 +16,23 @@ vi.mock('../../services/finance-overview.service', async (orig) => ({
   financeOverviewService: { get: (...a: unknown[]) => get(...a) },
 }));
 
-const renderPage = () => render(<FinanceOverview />);
+const remind = vi.fn();
+vi.mock('../../services/collections.service', async (orig) => ({
+  ...(await orig<typeof import('../../services/collections.service')>()),
+  collectionsService: {
+    aging: () => Promise.resolve({
+      summary: { totalOutstandingAmount: 23400, totalOrders: 94, overdueAmount: 9100, overdueOrders: 38, overduePartners: 1, partnersWithCash: 1, negativeCashPartners: 0, blockedPartners: 0, bucketTotals: [
+        { key: '0-3', label: '0-3 days', orders: 31, amount: 8100 }, { key: '4-7', label: '4-7 days', orders: 25, amount: 6200 },
+        { key: '8-14', label: '8-14 days', orders: 26, amount: 6600 }, { key: '15+', label: '15+ days', orders: 12, amount: 2500 },
+      ] },
+      partners: [],
+    }),
+    remind: (...a: unknown[]) => remind(...a),
+  },
+}));
+vi.mock('../../hooks/usePermissions', () => ({ usePermissions: () => ({ can: () => true, user: { role: 'admin' } }) }));
+
+const renderPage = () => render(<MemoryRouter><ToastProvider><FinanceOverview /></ToastProvider></MemoryRouter>);
 const tile = async (label: string) => (await screen.findByText(label, { selector: '.kpi .l .lbl' })).closest('.kpi') as HTMLElement;
 const withTiles = (fn: (t: Tile[]) => Tile[]): Overview => ({ ...OVERVIEW, tiles: fn(OVERVIEW.tiles) });
 const setRevenueTarget = (target: null) => withTiles((tiles) => tiles.map((t) => (t.key === 'deliveredRevenue' && t.status === 'ok' ? { ...t, detail: { ...t.detail, target } } : t)));
@@ -106,7 +124,7 @@ describe('Finance Overview (M5-T34)', () => {
 
   it('a Short row expands to its unpaid orders and collapses again', async () => {
     renderPage();
-    const open = await screen.findByRole('button', { name: /Show unpaid orders/ });
+    const open = await screen.findByRole('button', { name: /Show the 3 orders/ });
     expect(open).toHaveAttribute('aria-expanded', 'false');
     await userEvent.click(open);
     expect(open).toHaveAttribute('aria-expanded', 'true');
@@ -116,7 +134,24 @@ describe('Finance Overview (M5-T34)', () => {
     expect(screen.getByText(/3 unpaid orders, GH₵840 in all/)).toBeInTheDocument();
     await userEvent.click(open);
     expect(screen.queryByText(/#24098/)).not.toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: /unpaid orders/ })).toHaveLength(1); // only the Short row has one
+    expect(screen.getAllByRole('button', { name: /Show the 3 orders/ })).toHaveLength(1); // only the Short row has one
+  });
+
+  it('Message partner sends the partner the reminder; there is no Mark as received', async () => {
+    remind.mockResolvedValue({ sent: true, unpaidOrders: 3, overdueOrders: 0 });
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: /Show the 3 orders/ }));
+    expect(screen.queryByRole('button', { name: /Mark as received/ })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Message Logiswift 3PL' }));
+    expect(remind).toHaveBeenCalledWith(11);
+    expect(await screen.findByText('Reminder sent to Logiswift 3PL on WhatsApp')).toBeInTheDocument();
+  });
+
+  it('shows the unpaid delivered orders by age beside the reconciliation, from the aging report', async () => {
+    renderPage();
+    const list = await screen.findByRole('list', { name: 'Unpaid delivered orders by age' });
+    expect(list.querySelectorAll('[role=listitem]')).toHaveLength(4);
+    expect(screen.getByText('Payout reconciliation').closest('.grid.two')).toContainElement(list);
   });
 
   it('follows the Finance date control: the range goes to the API and a new range asks again', async () => {

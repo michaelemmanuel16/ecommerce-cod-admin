@@ -277,6 +277,7 @@ async function reconciliationOf(from: Date, to: Date) {
     return {
       id: s.id,
       date: s.payoutDate.toISOString().slice(0, 10),
+      partnerId: s.partnerId,
       partnerName: fullName(s.partner) || `Partner #${s.partnerId}`,
       partnerKind: s.partner.kind,
       paidIn: Money.toApi(s.payoutAmount),
