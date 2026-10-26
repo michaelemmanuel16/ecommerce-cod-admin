@@ -118,7 +118,7 @@ export function PartnerDrawer({ id, row, target, canEdit, canSwitch, startTab = 
             {tab === 'summary' && <DrawerSummary partner={partner} row={row} target={target} />}
             {ordersOpened && <div hidden={tab !== 'orders'}><DrawerOrders partnerId={partner.id} /></div>}
             {tab === 'stock' && <DrawerStock location={partner.stockLocation} />}
-            {tab === 'fees' && <DrawerFees key={JSON.stringify(fieldsOf(partner))} partner={partner} canEdit={canEdit} onSaved={(p) => { setPartner(p); onChanged(); }} />}
+            {tab === 'fees' && <DrawerFees key={JSON.stringify(fieldsOf(partner))} partner={partner} canEdit={canEdit} onSaved={(p) => { setPartner(p); onChanged(); }} onRulesChanged={onChanged} />}
           </>
         )}
       </Drawer>

@@ -65,12 +65,12 @@ export function buildColumns({ target, total, canSwitch, onSwitch }: ColumnConte
     },
     {
       key: 'fee',
-      header: <>Delivery fee rule <small>(delivered · failed · returned)</small></>,
+      header: <>Delivery fee <small>(delivered · failed · returned)</small></>,
       render: (p) => {
         // A role without financial:view gets no fee rule from the API at all
         if (p.feeRule === undefined) return dash;
         const text = feeRuleText(p.feeRule);
-        return text ? <span className="num">{text}</span> : <Tag>No fee rule</Tag>;
+        return text ? <span className="num">{text}</span> : <Tag>No delivery fee</Tag>;
       },
     },
     { key: 'source', header: 'Data source', render: (p) => <Tag>{DATA_SOURCE_LABEL[p.dataSource]}</Tag> },

@@ -15,6 +15,7 @@ const orderProof = vi.fn();
 const orderProofs = vi.fn();
 const listOrders = vi.fn();
 const stockLevels = vi.fn();
+const feeRules = vi.fn();
 vi.mock('../../services/delivery-partners.service', async (orig) => ({
   ...(await orig<typeof import('../../services/delivery-partners.service')>()),
   deliveryPartnersService: {
@@ -24,6 +25,7 @@ vi.mock('../../services/delivery-partners.service', async (orig) => ({
     orderProof: (...a: unknown[]) => orderProof(...a),
     orderProofs: (...a: unknown[]) => orderProofs(...a),
     stockLevels: (...a: unknown[]) => stockLevels(...a),
+    feeRules: (...a: unknown[]) => feeRules(...a),
   },
 }));
 vi.mock('../../services/orders.service', () => ({ ordersService: { listOrders: (...a: unknown[]) => listOrders(...a) } }));
@@ -53,8 +55,15 @@ function open(props: Partial<React.ComponentProps<typeof PartnerDrawer>> = {}) {
 }
 
 beforeEach(() => {
-  [get, update, setAvailability, orderProof, orderProofs, listOrders, stockLevels, onChanged].forEach((m) => m.mockReset());
+  [get, update, setAvailability, orderProof, orderProofs, listOrders, stockLevels, feeRules, onChanged].forEach((m) => m.mockReset());
   get.mockResolvedValue(KOFI);
+  const rule = (id: number, outcome: string, amount: string) => ({ id, outcome, basis: 'flat', amount, validFrom: '2026-01-01', createdAt: '2026-01-01T00:00:00Z' });
+  feeRules.mockResolvedValue({
+    rules: [rule(1, 'delivered', '25.00'), rule(2, 'failed', '5.00')],
+    current: { delivered: rule(1, 'delivered', '25.00'), failed: rule(2, 'failed', '5.00'), returned: null },
+    weightedFee: null,
+    deliveredOrders: 0,
+  });
   update.mockImplementation((_id: number, patch: { daysToPay: number }) => Promise.resolve({ ...KOFI, profile: { ...KOFI.profile, daysToPay: patch.daysToPay } }));
   setAvailability.mockResolvedValue(undefined);
   stockLevels.mockResolvedValue([
@@ -94,11 +103,10 @@ describe('Partner drawer (M4-T32)', () => {
     expect(within(list).getByText('Recipient', { exact: false })).toBeInTheDocument();
   });
 
-  it('Fees tab: the fee rule is read-only, a save sends the profile fields', async () => {
+  it('Fees tab: the delivery fee rules show, a save sends the profile fields', async () => {
     open();
     await userEvent.click(await screen.findByRole('tab', { name: 'Fees' }));
-    expect(await screen.findByText('Per delivered')).toBeInTheDocument();
-    expect(screen.getByText('GH₵25')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Delivered delivery fee')).toHaveValue(25);
     const days = screen.getByLabelText('Days to pay');
     await userEvent.clear(days);
     await userEvent.type(days, '5');

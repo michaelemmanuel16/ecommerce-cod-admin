@@ -89,6 +89,17 @@ describe('GET and POST /api/delivery-partners/:id/fee-rules', () => {
     expect(res.body.rules).toHaveLength(2);
   });
 
+  it('shows the weighted fee: the average fee stamped on the partner\'s delivered orders (R5)', async () => {
+    const wf = await mkUser('wfpartner', 'delivery_agent');
+    expect(await api.get('owner', wf.id).then((r) => [r.body.weightedFee, r.body.deliveredOrders])).toEqual([null, 0]);
+    await mk(wf.id, 'delivered', { deliveryFee: 20 });
+    await mk(wf.id, 'delivered', { deliveryFee: 30 });
+    await mk(wf.id, 'failed_delivery', { deliveryFee: 5 });
+    const res = await api.get('owner', wf.id);
+    expect(res.body.weightedFee).toBe('25.00');
+    expect(res.body.deliveredOrders).toBe(2);
+  });
+
   it('owner and admin may add a rule; manager and clerk may only read', async () => {
     const created = await api.post('admin', kofiId, { outcome: 'returned', amount: '3', validFrom: '2026-02-01' });
     expect(created.status).toBe(201);

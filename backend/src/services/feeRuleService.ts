@@ -63,7 +63,7 @@ const ruleView = (r: { id: number; outcome: FeeOutcome; basis: FeeBasis; amount:
   createdAt: r.createdAt,
 });
 
-/** All rules of a partner (history, newest first) and the rule in force today for each outcome. */
+/** All rules of a partner (history, newest first), the rule in force today for each outcome, and the weighted fee over its delivered orders. */
 export async function listFeeRules(partnerId: number) {
   await loadPartner(partnerId);
   const rules = await prisma.feeRule.findMany({
@@ -73,7 +73,14 @@ export async function listFeeRules(partnerId: number) {
   const inForce = currentFeeRules(rules, storeToday(resolveTenantId()));
   const current = Object.fromEntries(FEE_OUTCOMES.map((o) => [o, inForce[o] ? ruleView(inForce[o]!) : null])) as
     Record<FeeOutcome, ReturnType<typeof ruleView> | null>;
-  return { rules: rules.map(ruleView), current };
+  // The fee actually stamped on this partner's delivered orders, averaged (decision R5): what the fee costs in practice
+  const delivered = await prisma.order.aggregate({
+    where: { deliveryAgentId: partnerId, status: 'delivered', deletedAt: null, deliveryFee: { not: null } },
+    _avg: { deliveryFee: true },
+    _count: { _all: true },
+  });
+  const weightedFee = delivered._count._all > 0 && delivered._avg.deliveryFee ? Money.toApi(delivered._avg.deliveryFee) : null;
+  return { rules: rules.map(ruleView), current, weightedFee, deliveredOrders: delivered._count._all };
 }
 
 /** Validates and stores one rule. Percent above 100 and a second rule with the same valid-from are rejected. */

@@ -1,5 +1,5 @@
 import type { TagTone } from '../../components/ui-v2';
-import type { FeeRule, PartnerDataSource, PartnerRow, PartnerTab, PartnerType, RateResult } from '../../services/delivery-partners.service';
+import type { FeeBasis, FeeOutcome, FeeRule, PartnerDataSource, PartnerRow, PartnerTab, PartnerType, RateResult } from '../../services/delivery-partners.service';
 import type { OrderStatus } from '../../types';
 import { formatCurrency } from '../../utils/format';
 import { AVATAR_TONES } from '../../utils/people';
@@ -57,3 +57,10 @@ export const rowTags = (row: Pick<PartnerRow, 'isActive' | 'isAvailable' | 'isTr
 /** The order statuses a partner's closed work ends in: they can have a delivery proof and attempts. */
 export const CLOSED_STATUSES: OrderStatus[] = ['delivered', 'failed_delivery', 'returned'];
 export const isClosed = (status: OrderStatus): boolean => CLOSED_STATUSES.includes(status);
+
+export const FEE_OUTCOMES: FeeOutcome[] = ['delivered', 'failed', 'returned'];
+export const FEE_OUTCOME_LABEL: Record<FeeOutcome, string> = { delivered: 'Delivered', failed: 'Failed', returned: 'Returned' };
+
+/** "GH₵25" for a flat delivery fee, "10%" for a percent of the order total. */
+export const feeAmountText = (rule: { basis: FeeBasis; amount: string }): string =>
+  rule.basis === 'percent' ? `${Number(rule.amount).toLocaleString('en-GB', { maximumFractionDigits: 2 })}%` : formatCurrency(rule.amount);
