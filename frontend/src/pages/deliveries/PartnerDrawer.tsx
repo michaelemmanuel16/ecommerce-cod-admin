@@ -135,7 +135,6 @@ export function PartnerDrawer({ id, row, target, canEdit, canSwitch, startTab = 
       )}
       {editing && partner && (
         <AgentEditModal
-          isOpen
           agent={agentOf(partner)}
           onClose={() => {
             setEditing(false);
