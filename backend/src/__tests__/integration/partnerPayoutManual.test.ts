@@ -212,3 +212,50 @@ describe('concurrency', () => {
     expect(settled.filter((r) => r.status === 'fulfilled').length).toBeGreaterThanOrEqual(1);
   });
 });
+
+describe('POST /api/partner-settlements/manual/preview', () => {
+  const preview = (token: string, body: Record<string, unknown>) => request(app).post('/api/partner-settlements/manual/preview').set(bearer(token)).send(body);
+
+  it('shows the plan with no write, and the real call then does exactly that', async () => {
+    const partner = await mkPartner('mprev');
+    const [o1, o2, o3] = [await deliver(partner), await deliver(partner), await deliver(partner)];
+    await prismaBase.agentCollection.update({ where: { orderId: o3 }, data: { collectionDate: new Date('2026-01-01') } });
+    const snapshot = async () => ({
+      settlements: await prismaBase.partnerSettlement.count({ where: { tenantId } }),
+      entries: await prismaBase.journalEntry.count({ where: { tenantId } }),
+      collections: (await prismaBase.agentCollection.findMany({ where: { agentId: partner }, orderBy: { id: 'asc' } })).map((c) => [c.status, Number(c.allocatedAmount)]),
+    });
+    const before = await snapshot();
+
+    const res = await preview(owner.token, { partnerId: partner, amount: 400 });
+    expect(res.status).toBe(200);
+    const p = res.body.preview;
+    expect(p).toMatchObject({ unpaidTotal: '525.00', appliedAmount: '400.00', unappliedAmount: '0.00', leftUnpaid: '125.00', warnings: [] });
+    expect(p.orders).toEqual([
+      { orderId: o3, applied: '175.00', clearsOrder: true },
+      { orderId: o1, applied: '175.00', clearsOrder: true },
+      { orderId: o2, applied: '50.00', clearsOrder: false },
+    ]);
+    expect(await snapshot()).toEqual(before);
+
+    const real = (await manual(owner.token, { partnerId: partner, amount: 400, reference: ref('PREV') })).body.settlement;
+    expect(real.lines.map((l: any) => [l.orderId, l.expAmount])).toEqual(p.orders.map((o: any) => [o.orderId, o.applied]));
+    expect(real.unappliedAmount).toBe(p.unappliedAmount);
+    expect(real.expectedNet).toBe(p.unpaidTotal);
+    expect(real.warnings).toEqual(p.warnings);
+  });
+
+  it('shows the amount held as unapplied, validates, and needs the permission', async () => {
+    const partner = await mkPartner('mprev2');
+    await deliver(partner);
+    const res = await preview(owner.token, { partnerId: partner, amount: 300 });
+    expect(res.body.preview).toMatchObject({ appliedAmount: '175.00', unappliedAmount: '125.00', leftUnpaid: '0.00' });
+    expect(res.body.preview.warnings).toEqual(['GHS 125.00 will be held as unapplied (account 2040)']);
+    expect((await preview(owner.token, { partnerId: partner, amount: 0 })).status).toBe(400);
+    expect((await preview(owner.token, { partnerId: 'x', amount: 5 })).status).toBe(400);
+    expect((await preview(owner.token, { partnerId: stock.id, amount: 5 })).status).toBe(404);
+    expect((await preview(stock.token, { partnerId: partner, amount: 5 })).status).toBe(403);
+    const empty = await preview(owner.token, { partnerId: await mkPartner('mprev3'), amount: 80 });
+    expect(empty.body.preview).toMatchObject({ orders: [], unappliedAmount: '80.00' });
+  });
+});

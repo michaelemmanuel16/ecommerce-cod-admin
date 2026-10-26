@@ -171,7 +171,11 @@ interface DepositPost {
  * with the covers that cleared their collection completely. Throws 409 when a row was changed by someone else.
  */
 async function claimPlan(tx: TransactionClient, open: OpenCollection[], amount: Money.Money) {
-  const plan = planCover(open, amount);
+  return claimPlanned(tx, planCover(open, amount));
+}
+
+/** Claim the covers of a plan already made (see `claimPlan`). */
+async function claimPlanned(tx: TransactionClient, plan: ReturnType<typeof planCover>) {
   const { byCollection } = await agentReconciliationService.claimCovers(tx, plan.covers);
   if (byCollection.size !== plan.covers.length) throw new AppError('Collections were changed by someone else. Reload and try again.', 409, 'COLLECTIONS_CHANGED');
   const full = plan.covers.filter((c) => c.allocated.plus(c.take).gte(c.amount));
@@ -386,10 +390,50 @@ export interface ManualPayoutInput {
  * left is held in 2040 and the response says how much. Same postings as a payout list: one verified deposit, collections
  * paid in full become reconciled. The reference must be new for the partner (409 with the date it was used).
  */
+/**
+ * The FIFO plan of a manual payout: the partner's open collections oldest first, what `amount` covers, what is left.
+ * The one planner behind the preview and the real call, so they cannot differ. Reads only.
+ */
+async function planManualPayout(db: Pick<TransactionClient, 'agentCollection'>, partnerId: number, amount: Money.Money) {
+  const open = await agentReconciliationService.loadOpenCollections(db, partnerId);
+  const unpaid = Money.sum(open.map((c) => outstandingOf(c)));
+  const plan = planCover(open.map((c) => ({ ...c })), amount);
+  const orderOf = new Map((await db.agentCollection.findMany({ where: { id: { in: plan.covers.map((c) => c.id) } }, select: { id: true, orderId: true } })).map((c) => [c.id, c.orderId]));
+  return { unpaid, plan, orderOf };
+}
+
+/** The amount of a manual payout, or a 400. */
+function manualAmount(value: unknown): Money.Money {
+  const amount = Money.tryParse(value);
+  if (!amount || amount.lte(0)) throw new AppError('Amount must be above 0', 400, 'INVALID_AMOUNT');
+  return amount;
+}
+
+/** What a manual payout of `amount` would do, with no write: the orders covered FIFO, the amount applied, the amount held as unapplied (F-908, T37). */
+export async function previewManualPayout(input: { partnerId: number; amount: unknown }) {
+  const amount = manualAmount(input.amount);
+  const currency = await getCurrency();
+  await loadPartner(input.partnerId);
+  const { unpaid, plan, orderOf } = await planManualPayout(prisma, input.partnerId, amount);
+  return {
+    partnerId: input.partnerId,
+    amount: Money.toApi(amount),
+    unpaidTotal: Money.toApi(unpaid),
+    appliedAmount: Money.toApi(plan.matched),
+    unappliedAmount: Money.toApi(plan.remaining),
+    leftUnpaid: Money.toApi(Prisma.Decimal.max(unpaid.minus(plan.matched), Money.ZERO)),
+    orders: plan.covers.map((c) => ({
+      orderId: orderOf.get(c.id)!,
+      applied: Money.toApi(c.take),
+      clearsOrder: c.allocated.plus(c.take).gte(c.amount),
+    })),
+    warnings: plan.remaining.gt(0) ? [unappliedWarning(currency, plan.remaining, 'will be')] : [],
+  };
+}
+
 export async function recordManualPayout(actor: SettlementActor, input: ManualPayoutInput): Promise<SettlementView> {
   const tenantId = resolveTenantId();
-  const amount = Money.tryParse(input.amount);
-  if (!amount || amount.lte(0)) throw new AppError('Amount must be above 0', 400, 'INVALID_AMOUNT');
+  const amount = manualAmount(input.amount);
   const reference = typeof input.reference === 'string' ? input.reference.trim() : '';
   if (!reference || reference.length > 120) throw new AppError('Reference is required (up to 120 characters)', 400, 'REFERENCE_REQUIRED');
   const notes = typeof input.notes === 'string' && input.notes.trim() ? input.notes.trim().slice(0, 500) : undefined;
@@ -415,12 +459,9 @@ export async function recordManualPayout(actor: SettlementActor, input: ManualPa
       });
       const balance = await lockBalance(tx, input.partnerId);
 
-      // FIFO over the partner's open collections, read after the lock
-      const open = await agentReconciliationService.loadOpenCollections(tx, input.partnerId);
-      const unpaid = Money.sum(open.map((c) => outstandingOf(c)));
-      const { plan, full } = await claimPlan(tx, open.map((c) => ({ ...c })), amount);
-
-      const orderOf = new Map((await tx.agentCollection.findMany({ where: { id: { in: plan.covers.map((c) => c.id) } }, select: { id: true, orderId: true } })).map((c) => [c.id, c.orderId]));
+      // FIFO over the partner's open collections, read after the lock: the plan the preview shows
+      const { unpaid, plan, orderOf } = await planManualPayout(tx, input.partnerId, amount);
+      const { full } = await claimPlanned(tx, plan);
       await tx.partnerSettlementLine.createMany({
         data: plan.covers.map((c) => ({
           tenantId, settlementId: settlement.id, orderId: orderOf.get(c.id)!, externalOrderRef: `#${orderOf.get(c.id)}`,

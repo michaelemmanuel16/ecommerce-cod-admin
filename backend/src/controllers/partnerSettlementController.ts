@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../types';
 import { AppError } from '../middleware/errorHandler';
 import { auditService } from '../services/auditService';
-import { parsePartnerPayout, recordManualPayout, recordPartnerPayout } from '../services/partnerSettlementService';
+import { parsePartnerPayout, previewManualPayout, recordManualPayout, recordPartnerPayout } from '../services/partnerSettlementService';
 
 /**
  * POST /api/partner-settlements: record a partner payout from a paid-order list (F-906). Any outside agent with a key
@@ -40,4 +40,11 @@ export const recordManual = async (req: AuthRequest, res: Response): Promise<voi
     after: { status: settlement.status, unappliedAmount: settlement.unappliedAmount },
   });
   res.status(201).json({ settlement });
+};
+
+/** POST /api/partner-settlements/manual/preview { partnerId, amount }: the FIFO plan the manual payout would follow, with no write. */
+export const previewManual = async (req: AuthRequest, res: Response): Promise<void> => {
+  const partnerId = Number(req.body?.partnerId);
+  if (!Number.isInteger(partnerId) || partnerId <= 0) throw new AppError('partnerId must be a delivery partner id', 400, 'INVALID_PARTNER');
+  res.json({ preview: await previewManualPayout({ partnerId, amount: req.body?.amount }) });
 };
