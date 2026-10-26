@@ -7,38 +7,25 @@ import '../mocks/logger.mock';
 import request from 'supertest';
 import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
-import { runInTenant } from '../../utils/tenantContext';
-import { transitionOrder, TransitionActor } from '../../services/orderStateMachine';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
-import { FinancialSyncService } from '../../services/financialSyncService';
 import { recordPartnerPayout, parsePartnerPayout } from '../../services/partnerSettlementService';
+import { runInTenant } from '../../utils/tenantContext';
+import * as fx from './helpers/settlementFixtures';
 import { createTenant, deleteTenantRows, mkUser } from './helpers/twoTenants';
 import { bearer } from './helpers/superAdminToken';
 
 jest.setTimeout(180_000);
 
 const SUFFIX = Date.now();
-const ADMIN: TransitionActor = { kind: 'user', userId: undefined, role: 'super_admin' };
 let tenantId: string;
 let owner: { id: number; token: string };
 let stock: { id: number; token: string };
 let customerId: number;
 let refSeq = 0;
 
-const inTenant = <T>(fn: () => Promise<T>) => runInTenant(tenantId, fn);
-const mkPartner = async (label: string) => {
-  const id = (await mkUser(tenantId, label, 'delivery_agent', { kind: 'person' })).id;
-  await prismaBase.feeRule.create({ data: { tenantId, partnerUserId: id, outcome: 'delivered', amount: 25, validFrom: new Date('2026-01-01') } });
-  return id;
-};
-const deliver = async (partnerId: number, total = 200) => {
-  const id = (await prismaBase.order.create({
-    data: { customerId, status: 'out_for_delivery', subtotal: total, totalAmount: total, codAmount: total, deliveryAgentId: partnerId, tenantId } as any,
-  })).id;
-  await inTenant(() => transitionOrder(id, 'delivered', ADMIN));
-  await inTenant(() => FinancialSyncService.batchSyncOrders([id], ADMIN.userId));
-  return id;
-};
+const world = () => ({ tenantId, customerId, actorId: owner.id });
+const mkPartner = async (label: string) => (await fx.mkPartner(tenantId, label, { fees: { delivered: 25 } })).id;
+const deliver = (partnerId: number, total = 200) => fx.mkDeliveredOrder(world(), partnerId, total);
 const balance = async (code: string) =>
   Number((await prismaBase.account.findUniqueOrThrow({ where: { tenantId_code: { tenantId, code } } })).currentBalance);
 const collectionOf = (orderId: number) => prismaBase.agentCollection.findUniqueOrThrow({ where: { orderId } });
@@ -48,11 +35,8 @@ const manual = (token: string, body: Record<string, unknown>) => request(app).po
 beforeAll(async () => {
   tenantId = (await createTenant('Manual Payout')).id;
   await seedTenantDefaults(tenantId);
-  customerId = (await prismaBase.customer.create({
-    data: { firstName: 'Ama', lastName: 'Mensah', phoneNumber: `+2332${String(SUFFIX).slice(-8)}`, address: '3 Test Rd', state: 'Greater Accra', area: 'Accra', tenantId },
-  })).id;
+  customerId = await fx.mkCustomer(tenantId, `+2332${String(SUFFIX).slice(-8)}`);
   owner = await mkUser(tenantId, 'mowner', 'super_admin');
-  ADMIN.userId = owner.id;
   stock = await mkUser(tenantId, 'mstock', 'inventory_manager');
 }, 60000);
 
@@ -151,7 +135,7 @@ describe('POST /api/partner-settlements/manual', () => {
   it('closes a short_pay Finding when it covers the rest', async () => {
     const partner = await mkPartner('mshort');
     const [x, y] = [await deliver(partner), await deliver(partner)];
-    const short = await inTenant(() => recordPartnerPayout({ id: owner.id }, parsePartnerPayout({
+    const short = await runInTenant(tenantId, () => recordPartnerPayout({ id: owner.id }, parsePartnerPayout({
       partnerId: partner, payoutDate: '2026-10-20', payoutAmount: 300, reference: ref('SH'),
       lines: [{ externalOrderRef: String(x), orderId: x, expAmount: 200, charge: 25 }, { externalOrderRef: String(y), orderId: y, expAmount: 200, charge: 25 }],
     })));
@@ -193,14 +177,12 @@ describe('concurrency', () => {
   it('a payout and a verified deposit of one partner at once never cover the same cash twice', async () => {
     const partner = await mkPartner('mrace2');
     const o = await deliver(partner);
-    const deposit = await prismaBase.agentDeposit.create({
-      data: { tenantId, agentId: partner, amount: 175, depositDate: new Date(), depositMethod: 'momo', referenceNumber: `RACE-DEP-${SUFFIX}` },
-    });
+    const deposit = await fx.mkDeposit(tenantId, partner, 175, `RACE-DEP-${SUFFIX}`);
     const agentRecon = (await import('../../services/agentReconciliationService')).default;
     const [b1015, b1010, b2040] = [await balance('1015'), await balance('1010'), await balance('2040')];
     const settled = await Promise.allSettled([
       manual(owner.token, { partnerId: partner, amount: 175, reference: ref('RACE-3') }),
-      inTenant(() => agentRecon.verifyDeposit(deposit.id, owner.id)),
+      runInTenant(tenantId, () => agentRecon.verifyDeposit(deposit.id, owner.id)),
     ]);
     // Whichever runs first covers the order. 1015 falls by 175 once. The other either fails (the partner balance is
     // spent) or its 175 is held as unapplied in 2040: 1010 and 2040 move together, never the order's cash twice.

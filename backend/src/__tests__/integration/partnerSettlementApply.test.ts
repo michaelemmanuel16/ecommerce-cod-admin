@@ -7,16 +7,15 @@ import { describe, it, expect, beforeAll, afterAll, jest } from '@jest/globals';
 import '../mocks/logger.mock';
 import { prismaBase } from '../../utils/prisma';
 import { runInTenant } from '../../utils/tenantContext';
-import { transitionOrder, TransitionActor } from '../../services/orderStateMachine';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
-import { FinancialSyncService } from '../../services/financialSyncService';
 import { recordPartnerPayout, parsePartnerPayout } from '../../services/partnerSettlementService';
 import { createTenant, deleteTenantRows } from './helpers/twoTenants';
+import * as fx from './helpers/settlementFixtures';
 
 jest.setTimeout(180_000);
 
 const SUFFIX = Date.now();
-const ADMIN: TransitionActor = { kind: 'user', userId: undefined, role: 'super_admin' };
+const ADMIN: { userId?: number } = {};
 let tenantId: string;
 let otherTenantId: string;
 let customerId: number;
@@ -25,21 +24,10 @@ let otherPartnerId: number;
 let refSeq = 0;
 
 const inTenant = <T>(fn: () => Promise<T>) => runInTenant(tenantId, fn);
-const mkPartner = async (label: string, tid = tenantId) =>
-  (await prismaBase.user.create({
-    data: { email: `ps-${label}-${SUFFIX}@codadmin.test`, password: 'x', firstName: label, lastName: 'P', role: 'delivery_agent', kind: 'person', tenantId: tid },
-  })).id;
-const mkCustomer = async (phone: string) =>
-  (await prismaBase.customer.create({ data: { firstName: 'Ama', lastName: 'Mensah', phoneNumber: phone, address: '3 Test Rd', state: 'Greater Accra', area: 'Accra', tenantId } })).id;
-/** An order delivered through the state machine, then synced the way the post-delivery queue does (draft collection). */
-const deliver = async (partnerId: number, total = 200, cust = customerId) => {
-  const id = (await prismaBase.order.create({
-    data: { customerId: cust, status: 'out_for_delivery', subtotal: total, totalAmount: total, codAmount: total, deliveryAgentId: partnerId, tenantId } as any,
-  })).id;
-  await inTenant(() => transitionOrder(id, 'delivered', ADMIN));
-  await inTenant(() => FinancialSyncService.batchSyncOrders([id], ADMIN.userId));
-  return id;
-};
+const world = () => ({ tenantId, customerId, actorId: ADMIN.userId! });
+const mkPartner = async (label: string, tid = tenantId) => (await fx.mkPartner(tid, label)).id;
+const mkCustomer = (phone: string) => fx.mkCustomer(tenantId, phone);
+const deliver = (partnerId: number, total = 200, cust = customerId) => fx.mkDeliveredOrder(world(), partnerId, total, cust);
 const balance = async (code: string) =>
   Number((await prismaBase.account.findUniqueOrThrow({ where: { tenantId_code: { tenantId, code } } })).currentBalance);
 const collectionOf = (orderId: number) => prismaBase.agentCollection.findUniqueOrThrow({ where: { orderId } });
@@ -162,9 +150,7 @@ describe('gaps', () => {
   it('a line with no order, another partner\'s order, and an order not delivered are unmatched lines; their cash is held in 2040', async () => {
     const mine = await deliver(kofiId);
     const theirs = await deliver(otherPartnerId);
-    const onTheRoad = (await prismaBase.order.create({
-      data: { customerId, status: 'out_for_delivery', subtotal: 200, totalAmount: 200, codAmount: 200, deliveryAgentId: kofiId, tenantId } as any,
-    })).id;
+    const onTheRoad = await fx.mkOrder(world(), kofiId, 'out_for_delivery');
     const [b1015, b1010, b2040] = [await balance('1015'), await balance('1010'), await balance('2040')];
 
     // Four lines of 175 net each; only the first matches. The partner paid all four.

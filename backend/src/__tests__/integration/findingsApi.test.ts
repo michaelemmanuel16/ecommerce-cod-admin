@@ -11,6 +11,7 @@ import { runInTenant } from '../../utils/tenantContext';
 import { closeClearedShortPays } from '../../services/findingService';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import { createTenant, deleteTenantRows, mkUser } from './helpers/twoTenants';
+import { mkCollection, mkCustomer } from './helpers/settlementFixtures';
 import { bearer } from './helpers/superAdminToken';
 
 jest.setTimeout(120_000);
@@ -164,16 +165,14 @@ describe('closeClearedShortPays', () => {
 
   beforeAll(async () => {
     partnerId = (await mkUser(tenantId, 'fpartner', 'delivery_agent', { kind: 'person' })).id;
-    ids.customer = (await prismaBase.customer.create({
-      data: { firstName: 'Ama', lastName: 'Mensah', phoneNumber: `+2332${String(Date.now()).slice(-8)}`, address: '3 Test Rd', state: 'Greater Accra', area: 'Accra', tenantId },
-    })).id;
+    ids.customer = await mkCustomer(tenantId, `+2332${String(Date.now()).slice(-8)}`);
   });
 
   const mkOrderWithCollection = async (status: 'draft' | 'reconciled') => {
     const order = await prismaBase.order.create({
       data: { customerId: ids.customer, status: 'delivered', subtotal: 100, totalAmount: 100, codAmount: 100, deliveryAgentId: partnerId, tenantId } as any,
     });
-    await prismaBase.agentCollection.create({ data: { tenantId, orderId: order.id, agentId: partnerId, amount: 100, status, collectionDate: new Date() } });
+    await mkCollection(tenantId, order.id, partnerId, 100, status);
     return order.id;
   };
 

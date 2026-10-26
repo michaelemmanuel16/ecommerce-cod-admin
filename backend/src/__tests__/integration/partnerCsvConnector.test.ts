@@ -9,6 +9,7 @@ import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import { createTenant, deleteTenantRows, mkUser } from './helpers/twoTenants';
+import * as fx from './helpers/settlementFixtures';
 import { bearer } from './helpers/superAdminToken';
 
 jest.setTimeout(180_000);
@@ -25,10 +26,9 @@ let customerId: number;
 let phoneCustomerId: number;
 const PHONE = `+2332${String(SUFFIX + 3).slice(-8)}`;
 
-const mkOrder = async (partnerId: number | null, status: any, cust = customerId, extra: Record<string, unknown> = {}) =>
-  (await prismaBase.order.create({
-    data: { customerId: cust, status, subtotal: 200, totalAmount: 200, codAmount: 200, deliveryAgentId: partnerId, tenantId, ...extra } as any,
-  })).id;
+const world = () => ({ tenantId, customerId, actorId: owner.id });
+const mkOrder = (partnerId: number | null, status: any, cust = customerId, extra: Record<string, unknown> = {}) =>
+  fx.mkOrder(world(), partnerId, status, { customerId: cust, ...extra });
 const orderOf = (id: number) => prismaBase.order.findUniqueOrThrow({ where: { id } });
 const post = (token: string, partnerId: number, action: 'preview' | 'apply', body: Record<string, unknown>) =>
   request(app).post(`/api/delivery-partners/${partnerId}/csv/${action}`).set(bearer(token)).send(body);
@@ -42,19 +42,13 @@ beforeAll(async () => {
   otherTenantId = (await createTenant('Partner Csv Other')).id;
   await seedTenantDefaults(tenantId);
   await seedTenantDefaults(otherTenantId);
-  customerId = (await prismaBase.customer.create({
-    data: { firstName: 'Ama', lastName: 'Mensah', phoneNumber: `+2332${String(SUFFIX).slice(-8)}`, address: '3 Test Rd', state: 'Greater Accra', area: 'Accra', tenantId },
-  })).id;
-  phoneCustomerId = (await prismaBase.customer.create({
-    data: { firstName: 'Kojo', lastName: 'Asare', phoneNumber: PHONE, address: '4 Test Rd', state: 'Greater Accra', area: 'Accra', tenantId },
-  })).id;
+  customerId = await fx.mkCustomer(tenantId, `+2332${String(SUFFIX).slice(-8)}`);
+  phoneCustomerId = await fx.mkCustomer(tenantId, PHONE);
   owner = await mkUser(tenantId, 'cowner', 'super_admin');
   manager = await mkUser(tenantId, 'cmanager', 'manager');
   rep = await mkUser(tenantId, 'crep', 'sales_rep');
-  kofiId = (await mkUser(tenantId, 'ckofi', 'delivery_agent', { kind: 'person' })).id;
-  esiId = (await mkUser(tenantId, 'cesi', 'delivery_agent', { kind: 'person' })).id;
-  await prismaBase.feeRule.create({ data: { tenantId, partnerUserId: kofiId, outcome: 'delivered', amount: 25, validFrom: new Date('2026-01-01') } });
-  await prismaBase.feeRule.create({ data: { tenantId, partnerUserId: kofiId, outcome: 'failed', amount: 5, validFrom: new Date('2026-01-01') } });
+  kofiId = (await fx.mkPartner(tenantId, 'ckofi', { fees: { delivered: 25, failed: 5 } })).id;
+  esiId = (await fx.mkPartner(tenantId, 'cesi')).id;
 }, 60000);
 
 afterAll(async () => {

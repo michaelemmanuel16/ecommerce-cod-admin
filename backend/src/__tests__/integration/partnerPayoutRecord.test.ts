@@ -14,6 +14,7 @@ import '../../tools';
 import { clearPermissionsCache } from '../../middleware/auth';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import { createTenant, deleteTenantRows, mkUser } from './helpers/twoTenants';
+import { mkPartner } from './helpers/settlementFixtures';
 import { toolActorContext, toolAuditRows } from './helpers/callTool';
 import { bearer } from './helpers/superAdminToken';
 
@@ -48,9 +49,9 @@ beforeAll(async () => {
   await seedTenantDefaults(otherTenantId);
   owner = await mkUser(tenantId, 'powner', 'super_admin');
   admin = await mkUser(tenantId, 'padmin', 'admin');
-  kofiId = (await mkUser(tenantId, 'pkofi', 'delivery_agent', { kind: 'person' })).id;
-  esiId = (await mkUser(tenantId, 'pesi', 'delivery_agent', { kind: 'company' })).id;
-  otherPartnerId = (await mkUser(otherTenantId, 'pother', 'delivery_agent', { kind: 'person' })).id;
+  kofiId = (await mkPartner(tenantId, 'pkofi')).id;
+  esiId = (await mkPartner(tenantId, 'pesi', { kind: 'company' })).id;
+  otherPartnerId = (await mkPartner(otherTenantId, 'pother')).id;
 }, 60000);
 
 afterAll(async () => {
@@ -159,7 +160,7 @@ describe('POST /api/partner-settlements', () => {
     const other = await createTenant('Payout Override');
     await seedTenantDefaults(other.id);
     const adm = await mkUser(other.id, 'oadmin', 'admin');
-    const partner = (await mkUser(other.id, 'opartner', 'delivery_agent', { kind: 'person' })).id;
+    const partner = (await mkPartner(other.id, 'opartner')).id;
     const body = { partnerId: partner, payoutDate: '2026-10-20', payoutAmount: 10, lines: [{ externalOrderRef: '1', expAmount: 10 }] };
     try {
       expect((await post(adm.token, { ...body, reference: 'OV-1' })).status).toBe(201);
