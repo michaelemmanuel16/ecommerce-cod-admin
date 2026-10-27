@@ -1,10 +1,7 @@
-import { useMemo } from 'react';
 import { financeOverviewService } from '../../../services/finance-overview.service';
-import { unpaidByAgeOf } from '../../../services/collections.service';
 import { UnpaidByAgeCard } from '../../../components/financial/UnpaidByAgeCard';
 import { useConfigStore } from '../../../stores/configStore';
 import { BlockError } from '../../dashboard/blocks/Frame';
-import { useAging } from '../profit/blocks';
 import { useBlock } from '../profit/useBlock';
 import { useFinanceRange } from '../profit/range';
 import { ReconciliationCard } from './ReconciliationCard';
@@ -21,9 +18,8 @@ export function FinanceOverview() {
   const block = useBlock(`overview|${from}|${to}`, () => financeOverviewService.get({ from, to }));
   const storeCurrency = useConfigStore((s) => s.currency);
   const { data } = block;
-  // The same aging request as the Agent collections tab: one call feeds both
-  const aging = useAging();
-  const unpaid = useMemo(() => (aging.data ? unpaidByAgeOf(aging.data) : null), [aging.data]);
+  // The card reads the overview's own answer (the one the Cash outstanding tile uses): no second aging request on this tab
+  const unpaid = data && 'basis' in data.unpaidByAge ? data.unpaidByAge : null;
   const currency = data?.currency ?? storeCurrency ?? 'GHS';
 
   return (
@@ -37,7 +33,7 @@ export function FinanceOverview() {
           </div>
           <div className="grid two">
             {data ? <ReconciliationCard data={data.reconciliation} range={{ from: data.from, to: data.to }} currency={currency} onRetry={block.retry} /> : <div />}
-            <UnpaidByAgeCard data={unpaid} failed={aging.status === 'failed'} onRetry={aging.retry} />
+            <UnpaidByAgeCard data={unpaid} failed={!!data && !unpaid} onRetry={block.retry} />
           </div>
         </>
       )}

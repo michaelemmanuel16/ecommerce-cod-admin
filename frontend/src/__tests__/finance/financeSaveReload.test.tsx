@@ -10,12 +10,12 @@ import { Financial } from '../../pages/Financial';
 import { clearBlockCache, useBlock } from '../../pages/financial/profit/useBlock';
 import { useFinancialStore } from '../../stores/financialStore';
 
-const svc = vi.hoisted(() => ({ aging: vi.fn(), deposits: vi.fn(), repsOwed: vi.fn(), figure: vi.fn() }));
+const svc = vi.hoisted(() => ({ aging: vi.fn(), deposits: vi.fn(), repsOwedCount: vi.fn(), figure: vi.fn() }));
 vi.mock('../../services/collections.service', async (orig) => ({
   ...(await orig<typeof import('../../services/collections.service')>()),
   collectionsService: { aging: svc.aging, deposits: svc.deposits },
 }));
-vi.mock('../../services/payouts.service', () => ({ payoutsService: { repsOwed: svc.repsOwed } }));
+vi.mock('../../services/payouts.service', () => ({ payoutsService: { repsOwedCount: svc.repsOwedCount } }));
 vi.mock('../../hooks/usePermissions', () => ({ usePermissions: () => ({ can: () => true, user: { role: 'super_admin' } }) }));
 vi.mock('../../components/ui/DateRangePicker', () => ({ DateRangePicker: () => null }));
 vi.mock('../../pages/financial/cash/ExportMenu', () => ({ ExportMenu: () => null }));
@@ -51,7 +51,7 @@ beforeEach(() => {
   Object.values(svc).forEach((m) => m.mockReset());
   svc.figure.mockResolvedValue('figure');
   svc.deposits.mockResolvedValue([]);
-  svc.repsOwed.mockResolvedValue({ totals: { repsOwed: 2 } });
+  svc.repsOwedCount.mockResolvedValue(2);
   useFinancialStore.setState({ dateRange: { startDate: '2026-10-01', endDate: '2026-10-31' } });
 });
 
@@ -112,11 +112,11 @@ describe('Finance header (M5 UI fixes 22, V7, V8)', () => {
 
   it('shows the count pill only when the count is above 0', async () => {
     svc.aging.mockResolvedValue(aging(0));
-    svc.repsOwed.mockResolvedValue({ totals: { repsOwed: 0 } });
+    svc.repsOwedCount.mockResolvedValue(0);
     svc.deposits.mockResolvedValue([{ id: 1, status: 'pending' }, { id: 2, status: 'verified' }]);
     open();
     await waitFor(() => expect(screen.getByRole('tab', { name: /Agent collections/ })).toHaveTextContent('Agent collections1'));
-    await waitFor(() => expect(svc.repsOwed).toHaveBeenCalled());
+    await waitFor(() => expect(svc.repsOwedCount).toHaveBeenCalled());
     expect(screen.getByRole('tab', { name: /Rep commissions/ })).toHaveTextContent(/^Rep commissions$/);
   });
 });

@@ -1,4 +1,5 @@
 import apiClient from './api';
+import type { UnpaidByAge } from './collections.service';
 
 /**
  * GET /api/financial/overview (backend overviewService.ts, M5-T24). The API client turns money strings under money keys
@@ -83,6 +84,8 @@ export interface FinanceOverview {
   currency: string;
   tiles: Tile[];
   reconciliation: Reconciliation | Failed;
+  /** The unpaid-by-age card: the answer behind the Cash outstanding tile, so the Overview makes one scan. */
+  unpaidByAge: UnpaidByAge | Failed;
 }
 
 export interface RangeParams { from: string; to: string }

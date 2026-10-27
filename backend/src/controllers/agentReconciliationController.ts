@@ -205,14 +205,6 @@ export class AgentReconciliationController {
 
         const result = await agentReconciliationService.verifyDeposit(parsedId, userId);
 
-        // Emit socket event
-        const io = getSocketInstance();
-        if (io) {
-            const balance = await agentReconciliationService.getAgentBalance(result.agentId);
-            emitToTenant(io, `agent:balance-updated`, { agentId: result.agentId, balance });
-            emitToTenant(io, 'agent:deposit-verified', result);
-        }
-
         res.json(result);
     }
 

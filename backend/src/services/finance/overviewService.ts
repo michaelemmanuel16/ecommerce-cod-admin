@@ -1,7 +1,7 @@
 /**
  * M5-T24 (COD-52, F-902, F-907, F-910, F-927): the Finance overview in one call: six tiles and the payout reconciliation list.
  *
- * Nothing is computed twice: delivered revenue and AOV come from services/kpi, margin and expenses from the ledger reader
+ * Nothing is computed twice (the open collections are scanned once for the Cash outstanding tile and the unpaid-by-age card): delivered revenue and AOV come from services/kpi, margin and expenses from the ledger reader
  * (statementsService), cash from the cash buckets, aging buckets from agingService. This file only assembles them.
  *
  * Date basis. The revenue, cash received, margin and profit per order tiles cover the range [from, to) the caller picked.
@@ -16,12 +16,12 @@ import { getTenantId, resolveTenantId } from '../../utils/tenantContext';
 import { getCurrency } from '../../utils/currency';
 import { fullName } from '../../utils/nameUtils';
 import { formatOrderNumber } from '../../utils/orderNumber';
-import { getStoreTimeZone, localDate, parseYmd, shiftYmd, startOfDay, utcDateOfYmd } from '../kpi/dates';
+import { getStoreTimeZone, localDate, parseYmd, shiftYmd, startOfDay, utcDateOfYmd, ymdOfUtc } from '../kpi/dates';
 import { deliveredAov, deliveredRevenue } from '../kpi/revenue';
 import { coveringTarget, paceMarker, periodOfTarget } from '../kpi/leadership';
 import { progressTag } from '../kpi/status';
 import { ratePercent } from '../kpi/rates';
-import { profitByProduct } from './profitService';
+import { topProductByDelivered } from './profitService';
 import { TARGET_NET_MARGIN, incomeStatementOver } from './statementsService';
 import { cashBalances, cashBuckets } from './cashFlowService';
 import agingService from '../agingService';
@@ -141,7 +141,7 @@ export async function financeOverview(opts: OverviewOptions) {
   const revenueTarget = once(async () => {
     const target = await coveringTarget(tenantId, 'revenue', utcDateOfYmd(toDay));
     const period = target && periodOfTarget(target);
-    if (!target || !period || Money.parse(target.value).lte(0) || target.periodStart.toISOString().slice(0, 10) !== fromDay) return null;
+    if (!target || !period || Money.parse(target.value).lte(0) || ymdOfUtc(target.periodStart) !== fromDay) return null;
     const r = await revenue();
     const percent = ratePercent(Money.parse(r.total.value).toNumber(), Money.parse(target.value).toNumber());
     return { value: Money.toApi(target.value), status: progressTag(percent, paceMarker(parseYmd(toDay), period).percent) };
@@ -160,7 +160,7 @@ export async function financeOverview(opts: OverviewOptions) {
     return { days, badge: RUNWAY_BADGE[runwayLevel(days)], cash: Money.toApi(cash), adsPerDay: Money.toApi(adsPerDay) };
   });
 
-  const [tiles, reconciliation, currency] = await Promise.all([
+  const [tiles, reconciliation, unpaidByAge, currency] = await Promise.all([
     Promise.all([
       tile('deliveredRevenue', 'Delivered revenue', async () => {
         const r = await revenue();
@@ -206,11 +206,9 @@ export async function financeOverview(opts: OverviewOptions) {
         const [s, r] = await Promise.all([statement(), revenue()]);
         const orders = r.deliveredOrders.value;
         const per = orders > 0 ? Money.roundHalfUp(Money.div(s.netProfit, orders), 2) : null;
-        // The product with the most delivered orders, from profit by product. Best effort: the tile stands without it.
-        const topProduct = await profitByProduct(from, to).then((p) => {
-          const top = [...p.products].sort((a, b) => b.delivered - a.delivered || a.productId - b.productId)[0];
-          return top && top.profitPerDeliveredOrder !== null ? { name: top.name, profitPerOrder: top.profitPerDeliveredOrder } : null;
-        }).catch((error) => { logger.error('Finance overview: profit by product failed', { error }); return null; });
+        // The product with the most delivered orders. Best effort: the tile stands without it.
+        const topProduct = await topProductByDelivered(from, to)
+          .catch((error) => { logger.error('Finance overview: top product failed', { error }); return null; });
         return {
           dateBasis: 'range', value: per === null ? NOT_AVAILABLE : Money.toApi(per),
           badge: per === null ? null : per.lt(0) ? { label: 'Loss', tone: 'bad' } : { label: 'Profit', tone: 'ok' },
@@ -229,10 +227,12 @@ export async function financeOverview(opts: OverviewOptions) {
       }),
     ]),
     guarded('payout reconciliation', () => reconciliationOf(from, to)),
+    // The same answer as the Cash outstanding tile: the unpaid-by-age card reads it from here, so the page makes no second scan
+    guarded('unpaid by age', unpaid),
     getCurrency(),
   ]);
 
-  return { from: fromDay, to: toDay, currency, tiles, reconciliation };
+  return { from: fromDay, to: toDay, currency, tiles, reconciliation, unpaidByAge };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -276,7 +276,7 @@ async function reconciliationOf(from: Date, to: Date) {
     const group = s.status === 'short' ? unpaidOf.get(s.partnerId) : undefined;
     return {
       id: s.id,
-      date: s.payoutDate.toISOString().slice(0, 10),
+      date: ymdOfUtc(s.payoutDate),
       partnerId: s.partnerId,
       partnerName: fullName(s.partner) || `Partner #${s.partnerId}`,
       partnerKind: s.partner.kind,

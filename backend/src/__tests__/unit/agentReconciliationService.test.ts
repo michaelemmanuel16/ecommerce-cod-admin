@@ -129,10 +129,9 @@ describe('AgentReconciliationService', () => {
             const amount = 1000;
             const date = new Date();
 
-            mockTx.order.findUnique.mockResolvedValue({ tenantId: 'tenant-1' });
             mockTx.agentCollection.create.mockResolvedValue({ id: 1, orderId, agentId, amount, status: 'draft' });
 
-            const result = await agentReconciliationService.createDraftCollection(mockTx as any, orderId, agentId, amount, date);
+            const result = await agentReconciliationService.createDraftCollection(mockTx as any, orderId, agentId, amount, date, 'tenant-1');
 
             expect(mockTx.agentCollection.create).toHaveBeenCalledWith({
                 data: {

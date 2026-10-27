@@ -1,11 +1,11 @@
-import { OrderStatus, FeeOutcome, Prisma } from '@prisma/client';
+import { OrderStatus, FeeOutcome } from '@prisma/client';
 import prisma from '../utils/prisma';
 import { runInTenant } from '../utils/tenantContext';
-import { OPEN_COLLECTION_STATUSES } from '../utils/collectionCash';
+import { OPEN_COLLECTION_STATUSES, outstandingOf } from '../utils/collectionCash';
 import { GLAutomationService } from './glAutomationService';
 import agentReconciliationService from './agentReconciliationService';
 import agingService from './agingService';
-import { resolveFee } from './feeRuleService';
+import { netOpenCollectionByFee, pickFee, ruleDayOf } from './feeRuleService';
 import { CHARGE_VARIANCE_LIMIT } from './settlementMatching';
 import { getSystemUserId } from './systemUserService';
 import { getStoreTimeZone, localDate, utcDateOfYmd } from './kpi/dates';
@@ -111,7 +111,7 @@ export async function planDraftReconcile(tenantId: string): Promise<DraftPlan> {
     const isDelivered = (d: (typeof drafts)[number]) => d.order.status === 'delivered' && d.order.deletedAt === null;
     const delivered = drafts.filter(isDelivered);
     const notDelivered = drafts.filter((d) => !isDelivered(d));
-    const tally = (rows: typeof drafts) => ({ count: rows.length, amount: Money.sum(rows.map((d) => Money.sub(d.amount, Money.orZero(d.allocatedAmount)))) });
+    const tally = (rows: typeof drafts) => ({ count: rows.length, amount: Money.sum(rows.map(outstandingOf)) });
 
     // What each partner's recorded deposits cover that no collection shows yet
     const agentIds = [...new Set(delivered.map((d) => d.agentId))];
@@ -131,7 +131,7 @@ export async function planDraftReconcile(tenantId: string): Promise<DraftPlan> {
     const reconcile: DraftPlan['reconcile'] = [];
     for (const d of delivered) {
       const left = credit.get(d.agentId) ?? Money.ZERO;
-      const owed = Money.sub(d.amount, Money.orZero(d.allocatedAmount));
+      const owed = outstandingOf(d);
       if (owed.gt(0) && left.gte(owed)) {
         reconcile.push({ collectionId: d.id, orderId: d.orderId, agentId: d.agentId, amount: owed });
         credit.set(d.agentId, left.minus(owed));
@@ -198,12 +198,23 @@ export async function planFeeStamps(tenantId: string, since: string = DEFAULT_FE
       const latest = new Map<string, { id: number; createdAt: Date }>();
       for (const h of history) latest.set(`${h.orderId}:${h.status}`, { id: h.id, createdAt: h.createdAt });
 
+      // The rules of the batch's partners, read once
+      const rules = await prisma.feeRule.findMany({
+        where: { tenantId, partnerUserId: { in: [...new Set(orders.map((o) => o.deliveryAgentId!))] } },
+        select: { partnerUserId: true, outcome: true, basis: true, amount: true, validFrom: true },
+      });
+      const rulesOf = new Map<number, typeof rules>();
+      for (const r of rules) {
+        const list = rulesOf.get(r.partnerUserId);
+        if (list) list.push(r); else rulesOf.set(r.partnerUserId, [r]);
+      }
+
       for (const o of orders) {
         const outcome = FEE_OUTCOME[o.status]!;
         const h = latest.get(`${o.id}:${o.status}`);
         const on = outcomeOf(o, o.status === 'failed_delivery' ? h?.createdAt : undefined);
         if (!on || utcDateOfYmd(localDate(on, zone)) < sinceDay) continue;
-        const resolved = await resolveFee(prisma, o.deliveryAgentId!, outcome, on, o.totalAmount, tenantId);
+        const resolved = pickFee(rulesOf.get(o.deliveryAgentId!) ?? [], outcome, ruleDayOf(on, tenantId), o.totalAmount);
         if (!resolved.hasRule) { noRule += 1; continue; }
         if (resolved.fee.gt(0) && !h) { noHistory += 1; continue; }
         rows.push({ orderId: o.id, agentId: o.deliveryAgentId!, outcome, fee: resolved.fee, on, historyId: h?.id ?? null });
@@ -230,13 +241,7 @@ export async function applyFeeStamps(tenantId: string, plan: FeePlan): Promise<{
           total = total.plus(r.fee);
           if (r.fee.isZero()) continue;
           await GLAutomationService.createDeliveryFeeEntry(tx as any, { id: r.orderId, tenantId }, r.outcome, r.fee, r.historyId!, userId, r.on);
-          // The partner keeps the fee from the cash: an open collection is held net of it, like a new one
-          const coll = await tx.agentCollection.findFirst({ where: { orderId: r.orderId, status: { in: [...OPEN_COLLECTION_STATUSES] } }, select: { id: true, amount: true } });
-          if (!coll) continue;
-          const net = Prisma.Decimal.max(Money.sub(coll.amount, r.fee), Money.ZERO);
-          const cut = Money.sub(coll.amount, net);
-          await tx.agentCollection.update({ where: { id: coll.id }, data: { amount: net } });
-          await tx.agentBalance.updateMany({ where: { agentId: r.agentId }, data: { totalCollected: { decrement: cut }, currentBalance: { decrement: cut } } });
+          await netOpenCollectionByFee(tx, r.orderId, r.agentId, r.fee);
         }
       });
     }

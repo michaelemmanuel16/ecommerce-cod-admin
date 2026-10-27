@@ -6,7 +6,7 @@ import { GuardedButtonV2 } from './GuardedButtonV2';
 import type { AgingPartner, AgingReport } from '../../services/collections.service';
 import { formatCurrency } from '../../utils/format';
 import { initials } from '../../utils/people';
-import { daysText, isLateBucket, isLateOldest, toneOf } from '../../pages/financial/collections/model';
+import { daysText, isLateOldest, toneOf } from '../../pages/financial/collections/model';
 
 interface Props {
   report: AgingReport;
@@ -32,7 +32,6 @@ export function AgentAgingTab({ report, busyId, onRemind, onBlock, onUnblock, on
   const cashTotal = report.partners.reduce((sum, p) => sum + p.cashHeld, 0);
   // the oldest unpaid order across all partners
   const oldest = report.partners.reduce<number | null>((max, p) => (p.oldestUnpaidDays === null ? max : Math.max(max ?? 0, p.oldestUnpaidDays)), null);
-  const bucketTotal = (i: number) => formatCurrency(summary.bucketTotals[i]?.amount ?? 0);
 
   const columns: Column<AgingPartner>[] = [
     {
@@ -57,14 +56,14 @@ export function AgentAgingTab({ report, busyId, onRemind, onBlock, onUnblock, on
       total: <b className="num">{formatCurrency(cashTotal)}</b>,
       render: (p) => <b className={p.negativeCashHeld ? 'num neg' : 'num'}>{formatCurrency(p.cashHeld)}</b>,
     },
-    ...(['0-3', '4-7', '8-14', '15+'] as const).map((key, i): Column<AgingPartner> => ({
-      key: `b${key}`,
-      header: `${key.replace('-', '–')} days`,
+    ...summary.bucketTotals.map((total): Column<AgingPartner> => ({
+      key: `b${total.key}`,
+      header: `${total.key.replace('-', '–')} days`,
       right: true,
-      total: <span className="num">{bucketTotal(i)}</span>,
+      total: <span className="num">{formatCurrency(total.amount)}</span>,
       render: (p) => {
-        const amount = p.buckets.find((b) => b.key === key)?.amount ?? 0;
-        return amount > 0 && isLateBucket(key) ? <span className="num neg">{formatCurrency(amount)}</span> : money(amount);
+        const amount = p.buckets.find((b) => b.key === total.key)?.amount ?? 0;
+        return amount > 0 && total.late ? <span className="num neg">{formatCurrency(amount)}</span> : money(amount);
       },
     })),
     {

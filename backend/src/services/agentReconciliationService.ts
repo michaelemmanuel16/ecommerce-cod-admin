@@ -65,12 +65,13 @@ export class AgentReconciliationService {
         orderId: number,
         agentId: number,
         amount: Money.MoneyInput,
-        collectionDate: Date
+        collectionDate: Date,
+        /** The order's tenant, when the caller has the order. Left out, the tenant context is used. */
+        tenantId?: string | null
     ) {
-        const order = await tx.order.findUnique({ where: { id: orderId }, select: { tenantId: true } });
         const collection = await (tx as any).agentCollection.create({
             data: {
-                tenantId: resolveTenantId(order?.tenantId),
+                tenantId: resolveTenantId(tenantId),
                 orderId,
                 agentId,
                 amount,

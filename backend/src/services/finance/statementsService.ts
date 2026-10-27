@@ -10,7 +10,7 @@ import prisma from '../../utils/prisma';
 import * as Money from '../../utils/money';
 import { GL_ACCOUNTS } from '../../config/glAccounts';
 import { getTenantId, resolveTenantId } from '../../utils/tenantContext';
-import { daysInMonth, getStoreTimeZone, localDate, parseBound, parseYmd, endOfDay } from '../kpi/dates';
+import { daysInMonth, getStoreTimeZone, localDate, parseBound, parseYmd, endOfDay, ymdOfUtc } from '../kpi/dates';
 
 /** Net margin the owner aims for (F-923). */
 export const TARGET_NET_MARGIN = 35;
@@ -361,7 +361,7 @@ export async function monthlyPl(opts: { months?: number; compare?: 'to-date' | '
         OR: [{ fromCurrency: 'NGN', toCurrency: 'GHS' }, { fromCurrency: 'GHS', toCurrency: 'NGN' }],
       },
       select: { fromCurrency: true, rate: true, date: true, source: true },
-    })).map((r) => ({ fromCurrency: r.fromCurrency, rate: r.rate, date: r.date.toISOString().slice(0, 10), manual: r.source === 'manual' }))
+    })).map((r) => ({ fromCurrency: r.fromCurrency, rate: r.rate, date: ymdOfUtc(r.date), manual: r.source === 'manual' }))
     : [];
 
   const columns: PlColumn[] = statements.map(({ spec, s }) => {

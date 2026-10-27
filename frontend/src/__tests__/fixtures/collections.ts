@@ -1,10 +1,10 @@
 import type { AgingPartner, AgingReport, UnpaidByAge } from '../../services/collections.service';
 
 const buckets = (a: number, b: number, c: number, d: number) => [
-  { key: '0-3' as const, label: '0-3 days', orders: a ? 1 : 0, amount: a },
-  { key: '4-7' as const, label: '4-7 days', orders: b ? 1 : 0, amount: b },
-  { key: '8-14' as const, label: '8-14 days', orders: c ? 1 : 0, amount: c },
-  { key: '15+' as const, label: '15+ days', orders: d ? 1 : 0, amount: d },
+  { key: '0-3' as const, label: '0-3 days', late: false, orders: a ? 1 : 0, amount: a },
+  { key: '4-7' as const, label: '4-7 days', late: false, orders: b ? 1 : 0, amount: b },
+  { key: '8-14' as const, label: '8-14 days', late: true, orders: c ? 1 : 0, amount: c },
+  { key: '15+' as const, label: '15+ days', late: true, orders: d ? 1 : 0, amount: d },
 ];
 
 export const KOFI: AgingPartner = {

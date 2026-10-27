@@ -20,13 +20,6 @@ const remind = vi.fn();
 vi.mock('../../services/collections.service', async (orig) => ({
   ...(await orig<typeof import('../../services/collections.service')>()),
   collectionsService: {
-    aging: () => Promise.resolve({
-      summary: { totalOutstandingAmount: 23400, totalOrders: 94, overdueAmount: 9100, overdueOrders: 38, overduePartners: 1, partnersWithCash: 1, negativeCashPartners: 0, blockedPartners: 0, bucketTotals: [
-        { key: '0-3', label: '0-3 days', orders: 31, amount: 8100 }, { key: '4-7', label: '4-7 days', orders: 25, amount: 6200 },
-        { key: '8-14', label: '8-14 days', orders: 26, amount: 6600 }, { key: '15+', label: '15+ days', orders: 12, amount: 2500 },
-      ] },
-      partners: [],
-    }),
     remind: (...a: unknown[]) => remind(...a),
   },
 }));
@@ -147,7 +140,7 @@ describe('Finance Overview (M5-T34)', () => {
     expect(await screen.findByText('Reminder sent to Logiswift 3PL on WhatsApp')).toBeInTheDocument();
   });
 
-  it('shows the unpaid delivered orders by age beside the reconciliation, from the aging report', async () => {
+  it('shows the unpaid delivered orders by age beside the reconciliation, from the overview answer (no aging request)', async () => {
     renderPage();
     const list = await screen.findByRole('list', { name: 'Unpaid delivered orders by age' });
     expect(list.querySelectorAll('[role=listitem]')).toHaveLength(4);

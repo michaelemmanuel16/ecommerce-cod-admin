@@ -14,7 +14,7 @@ import * as Money from '../../utils/money';
 import { GL_ACCOUNTS } from '../../config/glAccounts';
 import { getTenantId, resolveTenantId } from '../../utils/tenantContext';
 import { OPEN_COLLECTION_STATUSES, outstandingOf } from '../../utils/collectionCash';
-import { DAY_MS, getStoreTimeZone, localDate, weekRange } from '../kpi/dates';
+import { DAY_MS, getStoreTimeZone, localDate, weekRange, ymdOfUtc } from '../kpi/dates';
 import { deliveredRevenueByDay, revenueScope } from '../kpi/revenue';
 import { rates } from '../kpi/rates';
 import { successTargetPct } from '../kpi/successTarget';
@@ -144,9 +144,9 @@ export function scenarioMultiplier(key: Scenario, currentRate: number | null, ta
 /** The scenario with the store's target and the delivery success of the last 30 days (KPI layer). Only the target scenario scales the inflow. */
 export async function forecastScenario(key: Scenario, now: Date = new Date()): Promise<ScenarioInfo> {
   const tenantId = resolveTenantId();
-  const targetRate = await successTargetPct(tenantId, now);
   const since = new Date(now.getTime() - 30 * DAY_MS);
-  const current = (await rates(tenantId, since, now, { basis: 'delivery' })).deliverySuccessRate.value;
+  const [targetRate, closed] = await Promise.all([successTargetPct(tenantId, now), rates(tenantId, since, now, { basis: 'delivery' })]);
+  const current = closed.deliverySuccessRate.value;
   return { key, currentRate: current, targetRate, multiplier: scenarioMultiplier(key, current, targetRate) };
 }
 
@@ -210,7 +210,7 @@ export async function buildForecast(input: { balances: CashBalances; payDays: Pa
     const inflow = Money.add(arrivals[i], i >= paceFrom ? avgDailyCollection : Money.ZERO);
     const outflow = Money.add(avgDailyExpense, i === 1 ? balances.payables2050 : Money.ZERO);
     balance = Money.add(balance, Money.sub(inflow, outflow));
-    forecast.push({ date: date.toISOString().split('T')[0], expectedCollection: inflow, expectedExpense: outflow, projectedBalance: balance });
+    forecast.push({ date: ymdOfUtc(date), expectedCollection: inflow, expectedExpense: outflow, projectedBalance: balance });
   }
   return forecast;
 }

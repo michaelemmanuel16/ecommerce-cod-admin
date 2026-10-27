@@ -60,8 +60,7 @@ export const OPEN: OrderStatus[] = ['pending_confirmation', 'confirmed', 'prepar
 
 /** Percent to 1 decimal (half up), null when the denominator is 0. */
 export function ratePercent(numerator: number, denominator: number): number | null {
-  if (denominator <= 0) return null;
-  return Money.roundHalfUp(Money.mul(Money.div(numerator, denominator), 100), 1).toNumber();
+  return denominator > 0 ? Money.percentOrNull(numerator, denominator) : null;
 }
 
 /**

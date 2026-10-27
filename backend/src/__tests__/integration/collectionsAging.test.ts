@@ -226,12 +226,6 @@ describe('M5-T14: aging buckets, cash held, fee-net amounts', () => {
     expect(card.total.orders).toBe(mine);
   });
 
-  it('the aging CSV keeps its path and shows the new columns', async () => {
-    const res = await request(app).get('/api/financial/agent-aging/export/csv').set(bearer(owner.token));
-    expect(res.status).toBe(200);
-    expect(res.text.replace(/^\uFEFF/, '').split(/\r?\n/)[0]).toBe('Partner,Cash held,0-3 days,4-7 days,8-14 days,15+ days,Oldest unpaid (days),Days to pay');
-  });
-
   it('negative cash held shows with a Finding, and the Finding closes when the balance recovers', async () => {
     const p = (await mkPartner(tenantId, 'negcash')).id;
     await setBalance(p, -75);

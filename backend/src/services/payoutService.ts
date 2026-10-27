@@ -6,6 +6,7 @@ import prisma, { TransactionClient } from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { GLAutomationService } from './glAutomationService';
 import * as Money from '../utils/money';
+import { getStoreTimeZone, localDate, MONTH_RE, monthRange } from './kpi/dates';
 
 /**
  * One payout service for money out to people (F-913, F-1164, M5-T19).
@@ -154,10 +155,11 @@ class PayoutService {
    * still owed something, unless `includeInactive`. Delivery agents and companies are not listed. `totals` add up the rows.
    */
   async listOwed(opts: { month?: string; includeInactive?: boolean } = {}) {
-    const month = opts.month ?? new Date().toISOString().slice(0, 7);
+    const zone = getStoreTimeZone(resolveTenantId());
+    const month = opts.month ?? localDate(new Date(), zone).slice(0, 7);
+    if (!MONTH_RE.test(month)) throw new AppError('Month must be written YYYY-MM', 400, 'VALIDATION_ERROR');
     const [year, mon] = month.split('-').map(Number);
-    const from = new Date(Date.UTC(year, mon - 1, 1));
-    const to = new Date(Date.UTC(year, mon, 1));
+    const { from, to } = monthRange(year, mon, zone);
 
     const candidates = await withSoftDeleted(() => prisma.user.findMany({
       where: { kind: 'person', role: { not: 'delivery_agent' }, OR: [{ role: 'sales_rep' }, { commissionEntries: { some: { status: { in: ['earned', 'paid'] } } } }] },
@@ -214,6 +216,19 @@ class PayoutService {
         repsOwed: reps.filter((r) => r.owed.gt(0)).length,
       },
     };
+  }
+
+  /**
+   * How many reps are owed something: the `totals.repsOwed` of `listOwed`, from one group by instead of the whole table
+   * (the count pill of the Rep commissions tab). A rep is owed when the `earned` entries not on a payout add up above 0.
+   */
+  async countRepsOwed(): Promise<number> {
+    const owed = await withSoftDeleted(() => prisma.commissionEntry.groupBy({
+      by: ['userId'],
+      where: { status: 'earned', payoutId: null, user: { kind: 'person', role: { not: 'delivery_agent' } } },
+      having: { amount: { _sum: { gt: 0 } } },
+    }));
+    return owed.length;
   }
 
   /** Payout history: one list for Finance and Staff. */

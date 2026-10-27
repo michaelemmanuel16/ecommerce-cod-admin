@@ -7,12 +7,12 @@ import { CollectionsToVerifyCard } from '../../components/financial/CollectionsT
 import { CollectionActionModal } from '../../components/financial/modals/CollectionActionModal';
 import { BlockPartnerModal } from '../../components/financial/modals/BlockPartnerModal';
 import { collectionsService, type AgingPartner, type PartnerDeposit } from '../../services/collections.service';
-import { financialService } from '../../services/financial.service';
 import { useAging, useDeposits } from './profit/blocks';
 import { apiErrorMessage } from '../../utils/apiError';
 import { formatCurrency } from '../../utils/format';
 import { ListSkeleton } from '../deliveries/ListSkeleton';
 import { lateOf, ordersText, pendingOf } from './collections/model';
+import { AGENT_AGING_CSV, useFinanceExport } from './cash/useFinanceExport';
 
 /**
  * The Agent collections tab of Finance (F-704, F-910 to F-912, M5-T36), laid out as the v2 mockup: four tiles, cash exposure
@@ -23,6 +23,7 @@ export function AgentCollections() {
   const say = useToast();
   const aging = useAging();
   const payIns = useDeposits();
+  const { run: runExport } = useFinanceExport();
   const report = aging.data;
   const deposits = payIns.data;
   const failed = aging.status === 'failed';
@@ -52,15 +53,6 @@ export function AgentCollections() {
       ? `Reminder sent to ${p.name} on WhatsApp`
       : `WhatsApp is not connected, so the reminder to ${p.name} was saved but not sent`), 'The reminder could not be sent.');
   const unblock = (p: AgingPartner) => act(p, async () => { await collectionsService.unblock(p.agentId); return `${p.name} unblocked`; }, 'The partner could not be unblocked.');
-
-  const exportCsv = async () => {
-    try {
-      await financialService.downloadAgentAgingCSV();
-      say('Agent aging exported');
-    } catch {
-      say('The report could not be exported.');
-    }
-  };
 
   const s = report?.summary;
   // "Overdue, 8 days or more" is the two oldest buckets of the aging report
@@ -97,7 +89,7 @@ export function AgentCollections() {
               onRemind={(p) => void remind(p)}
               onBlock={setBlocking}
               onUnblock={(p) => void unblock(p)}
-              onExport={() => void exportCsv()}
+              onExport={() => runExport(AGENT_AGING_CSV)}
             />
           ) : (
             <div className="card"><ListSkeleton label="Loading partners" rows={2} height={44} /></div>

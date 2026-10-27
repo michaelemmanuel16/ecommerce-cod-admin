@@ -12,7 +12,6 @@ const svc = vi.hoisted(() => ({
   aging: vi.fn(), unpaidByAge: vi.fn(), deposits: vi.fn(), verifyDeposit: vi.fn(), rejectDeposit: vi.fn(), remind: vi.fn(), block: vi.fn(), unblock: vi.fn(),
 }));
 vi.mock('../../services/collections.service', async (orig) => ({ ...(await orig<typeof import('../../services/collections.service')>()), collectionsService: svc }));
-vi.mock('../../services/financial.service', () => ({ financialService: { downloadAgentAgingCSV: vi.fn() } }));
 let role = 'super_admin';
 vi.mock('../../hooks/usePermissions', () => ({
   usePermissions: () => ({ can: (r: string, a: string) => role === 'super_admin' || (r === 'financial' && a === 'view'), isAdmin: role === 'super_admin', user: { role } }),

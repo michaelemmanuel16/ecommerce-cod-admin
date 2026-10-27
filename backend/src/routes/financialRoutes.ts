@@ -38,7 +38,6 @@ router.get('/cash-flow', requireResourcePermission('financial', 'view'), financi
 router.get('/unpaid-by-age', requireResourcePermission('financial', 'view'), financialController.getUnpaidByAge);
 router.get('/agent-aging', requireResourcePermission('financial', 'view'), financialController.getAgentAgingReport);
 router.post('/agent-aging/:agentId(\\d+)/remind', requireResourcePermission('financial', 'update'), financialController.remindPartner);
-router.get('/agent-aging/export/csv', requireResourcePermission('financial', 'view'), financialController.exportAgentAgingCSV);
 
 // Transactions and collections
 router.post('/collections/deposit', requireResourcePermission('financial', 'update'), financialController.markCollectionsAsDeposited);
@@ -61,8 +60,5 @@ router.get('/health', requireResourcePermission('financial', 'view'), getFinanci
 
 // Admin maintenance endpoints
 router.post('/sync-cash-findings', requireRole('admin', 'super_admin'), financialController.syncCashFindings);
-router.post('/backfill-collections', requireRole('admin', 'super_admin'), financialController.backfillMissingCollections);
-router.post('/backfill-delivery-dates', requireRole('admin', 'super_admin'), financialController.backfillDeliveryDates);
-router.post('/backfill-commissions', requireRole('admin', 'super_admin'), financialController.backfillCommissions);
 
 export default router;

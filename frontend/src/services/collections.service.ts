@@ -12,6 +12,8 @@ export type BucketKey = '0-3' | '4-7' | '8-14' | '15+';
 export interface AgingBucket {
   key: BucketKey;
   label: string;
+  /** The server marks the buckets of 8 days and older: the screens draw them as late. */
+  late: boolean;
   orders: number;
   amount: number;
 }
@@ -81,14 +83,6 @@ export interface ReminderResult {
   unpaidOrders: number;
   overdueOrders: number;
 }
-
-/** The unpaid-by-age card from the aging report, which holds the same totals: one request feeds the tiles, the card and the table. */
-export const unpaidByAgeOf = ({ summary }: AgingReport): UnpaidByAge => ({
-  basis: 'net_of_delivery_fee',
-  total: { orders: summary.totalOrders, amount: summary.totalOutstandingAmount },
-  overdue: { orders: summary.overdueOrders, amount: summary.overdueAmount },
-  buckets: summary.bucketTotals,
-});
 
 const bucket = (b: AgingBucket): AgingBucket => ({ ...b, amount: parseMoney(b.amount) });
 const QUIET = { quiet: true } as const;

@@ -105,6 +105,13 @@ describe('default permission matrix', () => {
     expect(defaults.admin.orders).not.toContain('force_status');
   });
 
+  it('the settings default (adminService) holds the finance resources the auth middleware grants', async () => {
+    const defaults = adminService.getDefaultPermissions() as Record<string, Record<string, string[]>>;
+    expect(defaults.super_admin.payouts).toEqual(['view', 'create']);
+    expect(defaults.super_admin.journal).toEqual(['post', 'void']);
+    expect(defaults.accountant.expenses).toEqual(['view_all', 'edit', 'delete']);
+  });
+
   it('effective permissions of a sales rep (auth middleware copy) have no customers:delete', async () => {
     const res = await request(app).get('/api/auth/me').set(bearer(pair.a.users.salesRep.token));
     expect(res.body.permissions.customers).not.toContain('delete');

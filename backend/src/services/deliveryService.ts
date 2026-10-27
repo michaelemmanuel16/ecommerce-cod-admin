@@ -317,7 +317,8 @@ export class DeliveryService {
           orderWithItems.id,
           orderWithItems.deliveryAgentId,
           netAmount,
-          updatedDelivery.actualDeliveryTime || new Date()
+          updatedDelivery.actualDeliveryTime || new Date(),
+          orderWithItems.tenantId
         );
       }
 

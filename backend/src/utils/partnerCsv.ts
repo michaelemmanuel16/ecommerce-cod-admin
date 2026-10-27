@@ -12,7 +12,7 @@
  */
 import { parse as readCsv } from 'csv-parse/sync';
 import * as Money from './money';
-import { parseYmd } from '../services/kpi/dates';
+import { addDays, parseYmd, ymdOfUtc } from '../services/kpi/dates';
 
 export const CSV_MAX_ROWS = 2000;
 export const CSV_MAX_BYTES = 10 * 1024 * 1024;
@@ -95,7 +95,7 @@ export function parsePartnerCsv(raw: string, now: Date = new Date()): CsvRow[] {
   if (body.length > CSV_MAX_ROWS) throw new CsvFileError(`The file has ${body.length} rows. The limit is ${CSV_MAX_ROWS}; split it and upload each part.`, 'TOO_MANY_ROWS');
 
   const cell = (fields: string[], i: number) => (i >= 0 ? (fields[i] ?? '').trim() : '');
-  const tomorrow = new Date(now.getTime() + 24 * 3600 * 1000).toISOString().slice(0, 10);
+  const tomorrow = ymdOfUtc(addDays(now, 1));
 
   return body.map(({ line, fields }): CsvRow => {
     const errors: string[] = [];

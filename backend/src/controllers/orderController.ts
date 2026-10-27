@@ -75,9 +75,9 @@ export const getAllOrders = async (req: AuthRequest, res: Response): Promise<voi
 export const getOrderCounts = async (req: AuthRequest, res: Response): Promise<void> => {
   // Tabs count every filter except status
   const { status: _status, ...filters } = readOrderFilters(req.query);
-  const counts = await orderService.getOrderCounts(filters, req.user);
   // The Unpaid by agent tab count (F-309): the card's overdue number, from the same filter. null without financial:view, so the tab is not drawn.
-  const unpaidByAgent = req.user && (await hasPermission(req.user, 'financial', 'view')) ? await agingService.countOverdue() : null;
+  const overdue = async () => (req.user && (await hasPermission(req.user, 'financial', 'view')) ? agingService.countOverdue() : null);
+  const [counts, unpaidByAgent] = await Promise.all([orderService.getOrderCounts(filters, req.user), overdue()]);
   res.json({ ...counts, unpaidByAgent });
 };
 
