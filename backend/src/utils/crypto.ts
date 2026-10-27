@@ -41,3 +41,6 @@ export const verifySignature = (payload: string, signature: string): boolean =>
 export const generateApiKey = (): string => {
   return crypto.randomBytes(32).toString('hex');
 };
+
+/** Hex SHA-256 of a text (a file fingerprint). */
+export const sha256Hex = (text: string): string => crypto.createHash('sha256').update(text).digest('hex');

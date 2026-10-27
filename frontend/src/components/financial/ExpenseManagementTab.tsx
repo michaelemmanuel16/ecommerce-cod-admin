@@ -1,269 +1,192 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Plus, Download, Edit2, Trash2, Filter } from 'lucide-react';
+import { Pencil, Paperclip, Plus, Search, Trash2, Lock } from 'lucide-react';
 import { useFinancialStore } from '../../stores/financialStore';
-import { ExpenseCategoryCard } from './cards/ExpenseCategoryCard';
-import { Card } from '../ui/Card';
+import { Button, Card, ConfirmDialog, Pagination, Skeleton, Tag } from '../ui-v2';
+import { BarList } from './BarList';
 import { AddExpenseModal } from './modals/AddExpenseModal';
-import { formatCurrency } from '../../utils/format';
+import { ReceiptViewerModal } from './modals/ReceiptViewerModal';
+import { GuardedButtonV2 } from './GuardedButtonV2';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import { isSafeReceiptUrl, PAID_FROM_LABELS } from '../../utils/expenseRules';
+import { formatCurrency, formatDate } from '../../utils/format';
+import { useFinanceRange } from '../../pages/financial/profit/range';
+import { rangeLabel } from '../../pages/reports/format';
 import type { Expense } from '../../services/financial.service';
 
+const PAGE_SIZE = 20;
+/** Bar colours in the mockup's order (finance.html CATC). */
+const CATEGORY_COLORS = ['var(--pine)', 'var(--violet)', 'var(--gold)', 'var(--coral)', 'var(--mint)', 'var(--ink-3)'];
+
+/** Expenses (finance.html #a-exp): the expense table beside the By category bars. A bar filters the table. */
 export const ExpenseManagementTab: React.FC = () => {
   const {
     expenses,
+    expensesTotal,
     expenseBreakdown,
+    expensesPagination,
     dateRange,
-    loadingStates,
+    expensesLoading,
     fetchExpenses,
     fetchExpenseBreakdown,
     deleteExpense
   } = useFinancialStore();
+  const range = useFinanceRange();
 
   const [categoryFilter, setCategoryFilter] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
+  const search = useDebouncedValue(searchTerm.trim(), 300);
+  const [page, setPage] = useState(1);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [deleting, setDeleting] = useState<Expense | null>(null);
+  const [receiptToView, setReceiptToView] = useState<string | null>(null);
+
+  const loadList = () => fetchExpenses({
+    category: categoryFilter || undefined, search: search || undefined, page, limit: PAGE_SIZE,
+    startDate: dateRange.startDate, endDate: dateRange.endDate
+  });
+  const loadBreakdown = () => fetchExpenseBreakdown(dateRange.startDate, dateRange.endDate);
+  // After a save or a delete this screen reloads the list and the breakdown, once each (the store does not)
+  const refresh = () => { loadList(); loadBreakdown(); };
 
   useEffect(() => {
-    fetchExpenses({ category: categoryFilter || undefined, startDate: dateRange.startDate, endDate: dateRange.endDate });
-    fetchExpenseBreakdown(dateRange.startDate, dateRange.endDate);
-  }, [dateRange.startDate, dateRange.endDate, categoryFilter]);
+    loadList();
+  }, [dateRange.startDate, dateRange.endDate, categoryFilter, search, page]);
 
-  // Calculate category totals
-  const categoryTotals = useMemo(() => {
-    const totalExpenses = expenseBreakdown.reduce((sum, cat) => sum + cat.totalAmount, 0);
-    return expenseBreakdown.map(cat => ({
-      ...cat,
-      percentage: totalExpenses > 0 ? (cat.totalAmount / totalExpenses) * 100 : 0
-    }));
+  useEffect(() => {
+    loadBreakdown();
+  }, [dateRange.startDate, dateRange.endDate]);
+
+  // By category: biggest first, each bar as long as its share of the biggest
+  const bars = useMemo(() => {
+    const rows = expenseBreakdown
+      .map((cat) => ({ category: cat.category, amount: Number(cat.totalAmount) }))
+      .sort((a, b) => b.amount - a.amount);
+    const max = rows[0]?.amount || 1;
+    return {
+      rows: rows.map((r) => ({ ...r, width: Math.max(0, (r.amount / max) * 100) })),
+      total: rows.reduce((sum, r) => sum + r.amount, 0),
+    };
   }, [expenseBreakdown]);
+  const count = expensesPagination?.total ?? expenses.length;
 
-  // Filter expenses
-  const filteredExpenses = useMemo(() => {
-    return expenses.filter(expense => {
-      const matchesCategory = !categoryFilter || expense.category === categoryFilter;
-      const matchesSearch = !searchTerm ||
-        expense.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        expense.category.toLowerCase().includes(searchTerm.toLowerCase());
-      return matchesCategory && matchesSearch;
-    });
-  }, [expenses, categoryFilter, searchTerm]);
-
-  const handleDeleteExpense = async (expenseId: string) => {
-    if (window.confirm('Are you sure you want to delete this expense?')) {
-      try {
-        await deleteExpense(expenseId);
-      } catch (error) {
-        console.error('Failed to delete expense:', error);
-      }
+  const confirmDelete = async () => {
+    const expense = deleting;
+    setDeleting(null);
+    if (!expense) return;
+    try {
+      await deleteExpense(expense.id);
+      refresh();
+    } catch (error) {
+      console.error('Failed to delete expense:', error);
     }
   };
 
-  const handleExportCSV = () => {
-    const headers = ['Date', 'Category', 'Amount', 'Description', 'Recorded By'];
-    const rows = filteredExpenses.map(expense => [
-      new Date(expense.expenseDate).toLocaleDateString(),
-      expense.category,
-      expense.amount.toString(),
-      expense.description,
-      expense.recordedBy ? `${expense.recordedBy.firstName} ${expense.recordedBy.lastName}` : 'N/A'
-    ]);
-
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `expenses-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
-  };
-
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    });
-  };
-
-  if (loadingStates.expenses) {
+  // Skeleton only for the first load: a reload while typing in the search box must keep the box mounted
+  if (expensesLoading && expenses.length === 0 && !search && !categoryFilter) {
     return (
-      <div className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {[...Array(7)].map((_, i) => (
-            <Card key={i} className="animate-pulse">
-              <div className="p-4">
-                <div className="h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
-                <div className="h-8 bg-gray-200 rounded w-3/4"></div>
-              </div>
-            </Card>
-          ))}
-        </div>
+      <div className="grid two expgrid" aria-busy="true" aria-label="Loading Expenses">
+        <Skeleton height={380} className="skelcard" />
+        <Skeleton height={380} className="skelcard" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Expense Category Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {categoryTotals.map((category) => (
-          <ExpenseCategoryCard
-            key={category.category}
-            category={category.category}
-            amount={category.totalAmount}
-            count={category.count}
-            percentage={category.percentage}
-            onClick={() => setCategoryFilter(
-              categoryFilter === category.category ? '' : category.category
+    <>
+      <div className="grid two expgrid">
+        <Card title="Expenses" aside={rangeLabel(range.from, range.to)}>
+          <div className="filters">
+            <label className="srch">
+              <Search width={16} height={16} aria-hidden="true" />
+              <input type="search" placeholder="Search expenses" aria-label="Search expenses" value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }} />
+            </label>
+            {categoryFilter && (
+              <Button className="on" onClick={() => { setCategoryFilter(''); setPage(1); }}>{categoryFilter} · Clear</Button>
             )}
-          />
-        ))}
+            <GuardedButtonV2 perm="addExpense" className="addexp" onClick={() => { setEditingExpense(null); setIsAddModalOpen(true); }}>
+              <Plus />Add expense
+            </GuardedButtonV2>
+          </div>
+          <div className="tablewrap">
+            <table className="dt" aria-label="Expenses">
+              <thead>
+                <tr>
+                  <th>Date</th><th>Category</th><th>Description</th><th>Paid from</th><th className="r">Amount</th><th className="r">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {expenses.length === 0 && (
+                  <tr><td colSpan={6} className="ledempty">{searchTerm || categoryFilter ? 'No expenses match your filters' : 'No expenses recorded'}</td></tr>
+                )}
+                {expenses.map((expense) => (
+                  <tr key={expense.id}>
+                    <td>{formatDate(expense.expenseDate, 'd MMM')}</td>
+                    <td><Tag>{expense.category}</Tag></td>
+                    <td className="desc">{expense.description}</td>
+                    <td>{expense.paidFrom ? PAID_FROM_LABELS[expense.paidFrom] : '-'}</td>
+                    <td className="r num"><b>{formatCurrency(expense.amount)}</b></td>
+                    <td className="r">
+                      <span className="rowact">
+                        {isSafeReceiptUrl(expense.receiptUrl) && (
+                          <Button size="icon-sm" aria-label="View receipt" onClick={() => setReceiptToView(expense.receiptUrl as string)}><Paperclip /></Button>
+                        )}
+                        {expense.locked ? (
+                          <span className="ink3" title="Posted by the system. It cannot be edited or deleted by hand.">
+                            <Lock width={15} height={15} aria-hidden="true" />
+                            <span className="sr-only">Locked: posted by the system</span>
+                          </span>
+                        ) : (
+                          <>
+                            <GuardedButtonV2
+                              perm="editExpense"
+                              size="icon-sm"
+                              aria-label="Edit expense"
+                              onClick={() => {
+                                setEditingExpense(expense);
+                                setIsAddModalOpen(true);
+                              }}
+                            >
+                              <Pencil />
+                            </GuardedButtonV2>
+                            <GuardedButtonV2 perm="deleteExpense" size="icon-sm" className="dng" aria-label="Delete expense" onClick={() => setDeleting(expense)}>
+                              <Trash2 />
+                            </GuardedButtonV2>
+                          </>
+                        )}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {count > PAGE_SIZE && <Pagination page={page} pageSize={PAGE_SIZE} total={count} noun="expenses" onPageChange={setPage} />}
+          <p className="note" data-testid="expense-total">
+            {categoryFilter ? `${categoryFilter}, ` : ''}{count} expense{count === 1 ? '' : 's'} · Total <b className="num ink">{formatCurrency(expensesTotal)}</b>
+          </p>
+        </Card>
+
+        <Card title="By category" aside={formatCurrency(bars.total)}>
+          {bars.rows.length === 0 ? (
+            <p className="note">No expenses in these dates.</p>
+          ) : (
+            <BarList
+              wide
+              label="Expenses by category"
+              rows={bars.rows.map((r, i) => ({
+                key: r.category, label: r.category, value: formatCurrency(r.amount), width: r.width, color: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
+                on: r.category === categoryFilter,
+                onClick: () => { setCategoryFilter(categoryFilter === r.category ? '' : r.category); setPage(1); },
+              }))}
+            />
+          )}
+        </Card>
       </div>
 
-      {/* Expenses Table */}
-      <Card>
-        <div className="p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Expenses</h3>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleExportCSV}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-              >
-                <Download className="w-4 h-4" />
-                Export CSV
-              </button>
-              <button
-                onClick={() => setIsAddModalOpen(true)}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2"
-              >
-                <Plus className="w-4 h-4" />
-                Add Expense
-              </button>
-            </div>
-          </div>
-
-          <div className="mb-4 flex gap-4">
-            <div className="flex-1">
-              <input
-                type="text"
-                placeholder="Search expenses..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-            {categoryFilter && (
-              <button
-                onClick={() => setCategoryFilter('')}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-              >
-                <Filter className="w-4 h-4" />
-                Clear Filter: {categoryFilter}
-              </button>
-            )}
-          </div>
-
-          <div className="overflow-x-auto">
-            {filteredExpenses.length === 0 ? (
-              <p className="text-center text-gray-500 py-8">
-                {searchTerm || categoryFilter ? 'No expenses match your filters' : 'No expenses recorded'}
-              </p>
-            ) : (
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Date
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Category
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Description
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Amount
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Recorded By
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Receipt
-                    </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredExpenses.map((expense) => (
-                    <tr key={expense.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {formatDate(expense.expenseDate)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800">
-                          {expense.category}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">
-                        {expense.description}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
-                        {formatCurrency(expense.amount)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {expense.recordedBy
-                          ? `${expense.recordedBy.firstName} ${expense.recordedBy.lastName}`
-                          : 'N/A'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        {expense.receiptUrl ? (
-                          <a
-                            href={expense.receiptUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:text-blue-800"
-                          >
-                            View
-                          </a>
-                        ) : (
-                          <span className="text-gray-400">None</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <button
-                          className="text-blue-600 hover:text-blue-900 mr-3"
-                          title="Edit expense"
-                          onClick={() => {
-                            setEditingExpense(expense);
-                            setIsAddModalOpen(true);
-                          }}
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteExpense(expense.id)}
-                          className="text-red-600 hover:text-red-900"
-                          title="Delete expense"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </div>
-      </Card>
+      <ConfirmDialog open={!!deleting} onClose={() => setDeleting(null)} onConfirm={() => void confirmDelete()} action="Delete" count={1} noun="expense">
+        {deleting ? `${deleting.description} will be deleted. The ledger entry is reversed.` : ''}
+      </ConfirmDialog>
 
       <AddExpenseModal
         isOpen={isAddModalOpen}
@@ -271,8 +194,10 @@ export const ExpenseManagementTab: React.FC = () => {
           setIsAddModalOpen(false);
           setEditingExpense(null);
         }}
+        onSaved={refresh}
         expense={editingExpense}
       />
-    </div>
+      <ReceiptViewerModal url={receiptToView} onClose={() => setReceiptToView(null)} />
+    </>
   );
 };

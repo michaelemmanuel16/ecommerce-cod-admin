@@ -35,6 +35,7 @@
 
 /* table */
 .v2 .tablewrap table{width:100%;border-collapse:collapse}
+.v2 .tablewrap th.chkcol{width:36px}
 .v2 .tablewrap th{text-align:left;font-size:12.5px;font-weight:600;color:var(--ink-3);padding:12px 20px;border-bottom:1px solid var(--line)}
 .v2 .tablewrap td{padding:12px 20px;border-bottom:1px solid var(--line);vertical-align:middle}
 .v2 .tablewrap tr:last-child td{border-bottom:0}
@@ -45,9 +46,15 @@
 /* tabs */
 .v2 .tabs{display:flex;gap:6px;padding:14px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap}
 .v2 .tab{padding:7px 12px;border-radius:10px;font-weight:600;color:var(--ink-2);display:flex;gap:7px;align-items:center}
-.v2 .tab span{font-size:12px;padding:0 7px;border-radius:99px;background:var(--hover)}
+.v2 .tab span{font-size:12px;padding:0 7px;border-radius:99px;background:var(--hover);color:var(--ink-2)}
 .v2 .tab.on{background:var(--ink);color:var(--bg)}
-.v2 .tab.on span{background:rgba(255,255,255,.18)}
+.v2 .tab.on span{background:rgba(255,255,255,.18);color:inherit}
+
+/* page tab bar (.pgtabs): Reports and Finance; moved here from reports.css so more than one page can use it */
+.v2 .tabs.pgtabs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 16px;padding:0;border-bottom:0}
+.v2 .pgtabs .tab{border:1px solid var(--line);background:var(--card)}
+.v2 .pgtabs .tab.on{border-color:var(--ink);background:var(--ink);color:var(--bg)}
+.v2 .tab svg.lucide{width:16px;height:16px}
 
 /* drawer (index.html .sheet) */
 .v2 .scrim{position:fixed;inset:0;background:var(--veil);backdrop-filter:blur(2px);z-index:54;opacity:0;pointer-events:none;transition:opacity .2s}
@@ -64,13 +71,25 @@
 
 /* modal (index.html .mveil / .dlg) */
 .v2 .mveil{position:fixed;inset:0;background:var(--veil);backdrop-filter:blur(3px);z-index:65;display:flex;align-items:center;justify-content:center;padding:20px}
-.v2 .dlg{width:520px;max-width:100%;max-height:90vh;overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-pop)}
+.v2 .dlg{width:520px;max-width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-pop)}
 .v2 .dlg .mh{display:flex;align-items:flex-start;gap:12px;padding:18px 20px 14px;border-bottom:1px solid var(--line)}
 .v2 .dlg .mh h3{font-size:19px;font-weight:800}
 .v2 .dlg .mh p{color:var(--ink-3);font-size:13px;margin-top:2px}
 .v2 .dlg .mh .ibtn{margin-left:auto;flex:none}
-.v2 .dlg .mb{padding:18px 20px;display:flex;flex-direction:column;gap:14px}
+/* Only the body scrolls, so the title and the footer buttons stay in view */
+.v2 .dlg .mb{padding:18px 20px;display:flex;flex-direction:column;gap:14px;overflow:auto;min-height:0}
 .v2 .dlg .mf{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end}
+/* modal sizes (Modal `size`): md is the 520px default; the mockup's .modal is 640px and .modal.wide 820px; wide is the 1120px history dialog */
+.v2 .dlg.lg{width:640px}
+.v2 .dlg.xl{width:820px}
+.v2 .dlg.wide{width:1120px}
+/* footer: a note on the left, or a first button pushed left (Reject), the rest on the right */
+.v2 .dlg .mf .mfnote{margin-right:auto;font-size:12.5px;color:var(--ink-3)}
+.v2 .dlg .mf .start{margin-right:auto}
+@media (max-width:760px){.v2 .dlg .mf{flex-wrap:wrap}}
+/* an error line inside a dialog; a field's own error keeps the small gap under its input */
+.v2 .dlg .err{margin-top:12px;font-size:12.5px;color:var(--coral)}
+.v2 .dlg .fl .err{margin-top:5px}
 
 /* confirm dialog and toast (shell.js components in app.css) */
 .v2 .sx-toast{position:fixed;left:50%;bottom:58px;transform:translateX(-50%);background:var(--pine);color:var(--on-pine);padding:9px 16px;border-radius:12px;font-weight:600;font-size:13px;z-index:90;box-shadow:var(--shadow)}
@@ -87,9 +106,11 @@
 .v2 .fl .opt{font-weight:500;color:var(--ink-3)}
 .v2 .fl input:not([type=checkbox]):not([type=file]),.v2 .fl select,.v2 .fl textarea{width:100%;font:500 14px "Plus Jakarta Sans",system-ui,sans-serif;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 11px}
 .v2 .fl .hint,.v2 .hint{font-size:12.5px;color:var(--ink-3);margin-top:5px}
+.v2 .hint.warn{color:var(--warn-ink)}
 /* new: error state for Input and Select */
 .v2 .fl .err{font-size:12.5px;color:var(--coral);margin-top:5px}
 .v2 .fl [aria-invalid="true"]{border-color:var(--coral)}
+.v2 input.tcell{width:100%;font:500 14px "Plus Jakarta Sans",system-ui,sans-serif;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
 .v2 .psel{font:600 13.5px "Plus Jakarta Sans",system-ui,sans-serif;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
 
 /* pagination footer (index.html .pfoot) */
@@ -130,3 +151,37 @@
 .v2 .hl+.hl{margin-top:8px}
 .v2 .chk{display:flex;align-items:center;gap:8px;font-weight:600}
 .v2 .chk input{width:16px;height:16px;accent-color:var(--pine)}
+
+/* grid and stack helpers: a grid child may shrink below its content, and a vstack spaces its children 16px apart */
+.v2 .two > *,.v2 .row2 > *,.v2 .row3 > *{min-width:0}
+.v2 .vstack > * + *{margin-top:16px}
+.v2 .vstack > .kpis:first-child{margin-top:0}
+
+/* table cells stay on one line in Finance screens and their dialogs; a `td.desc` may wrap */
+.v2 :is(.finance,.findings,.dlg) .tablewrap .dt th,.v2 :is(.finance,.findings,.dlg) .tablewrap .dt td{white-space:nowrap}
+.v2 :is(.finance,.findings,.dlg) .tablewrap .dt td.desc{white-space:normal;min-width:140px}
+
+/* receipt box and chip (finance.html #revReceipt, .rcpt): the review dialog and the expense form */
+.v2 .rcpt{display:inline-flex;align-items:center;gap:6px;font-weight:600;color:var(--pine)}
+.v2 .rcpt svg{width:15px;height:15px}
+.v2 .revreceipt{border:1px dashed var(--line);border-radius:14px;min-height:170px;display:grid;place-items:center;text-align:center;padding:14px;background:var(--hover);color:var(--ink-2)}
+.v2 .revreceipt.sm{min-height:0}
+.v2 .revreceipt b{display:block;margin-top:6px;color:var(--ink)}
+.v2 .revreceipt small{display:block;color:var(--ink-3)}
+.v2 .revreceipt svg{width:34px;height:34px;color:var(--ink-3)}
+.v2 .revreceipt svg.warn{color:var(--gold)}
+.v2 .revreceipt.sm svg{width:22px;height:22px}
+.v2 .revreceipt img{max-width:100%;max-height:260px;border-radius:8px}
+.v2 .revreceipt iframe{width:100%;height:260px;border:0}
+.v2 .btn.file{cursor:pointer}
+
+/* a list of bars, one per row: label, track, value (BarList); a row with onClick is a button */
+.v2 .bars button.bar-row,.v2 .bars a.bar-row{width:calc(100% + 16px);margin:-6px -8px;padding:6px 8px;border-radius:10px;text-align:left;color:inherit}
+.v2 .bars button.bar-row:hover,.v2 .bars button.bar-row.on,.v2 .bars a.bar-row:hover{background:var(--hover)}
+.v2 .bars button.bar-row:focus-visible,.v2 .bars a.bar-row:focus-visible{outline:2px solid var(--pine);outline-offset:2px}
+.v2 .bar-row .sub{color:var(--ink-3);display:block}
+.v2 .bars.wide .bar-row{grid-template-columns:150px 1fr 80px}
+
+/* a skeleton list directly inside a card (ListSkeleton) keeps the card's side padding */
+.v2 .card > .lskel{padding:20px}
+.v2 .note.flat{padding-top:0}

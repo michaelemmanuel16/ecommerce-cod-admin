@@ -7,9 +7,9 @@ import '../../tools';
 describe('TOOL_PERMISSIONS', () => {
   const registered = () => listTools().map((t) => t.name);
 
-  it('has a permission cell for each of the 14 registry tools, and no extras', () => {
+  it('has a permission cell for each of the 15 registry tools, and no extras', () => {
     const tools = registered();
-    expect(tools).toHaveLength(14);
+    expect(tools).toHaveLength(15);
     expect(Object.keys(TOOL_PERMISSIONS).sort()).toEqual([...tools].sort());
     for (const cell of Object.values(TOOL_PERMISSIONS)) expect(cell).toMatch(/^[a-z_]+:[a-z_]+$/);
   });
@@ -23,6 +23,8 @@ describe('TOOL_PERMISSIONS', () => {
     }
     const legacy = DEFAULT_ROLES.find((r) => r.name === LEGACY_MCP_ROLE_NAME)!;
     expect(legacy.isSystem).toBe(true);
+    // The 14 tools old keys were issued with: a tool added later never reaches the Legacy role
     expect(legacy.tools).toHaveLength(14);
+    expect(legacy.tools).not.toContain('partner_payout_record');
   });
 });

@@ -1,133 +1,51 @@
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
-import { prismaMock } from '../mocks/prisma.mock';
-import payoutService from '../../services/payoutService';
-import { OrderStatus } from '@prisma/client';
-import { GLAutomationService } from '../../services/glAutomationService';
-import { useTestTenant } from '../mocks/tenant.mock';
+import { describe, it, expect } from '@jest/globals';
+import '../mocks/prisma.mock';
+import { allocateOldestFirst } from '../../services/payoutService';
 import * as Money from '../../utils/money';
 
-jest.mock('../../services/glAutomationService', () => ({
-    GLAutomationService: {
-        recordCommissionPayout: jest.fn().mockResolvedValue({ id: 1, transactions: [] })
-    }
-}));
+const entry = (id: number, amount: number, day: number | null) => ({
+  id, amount: Money.parse(amount), earnedAt: day === null ? null : new Date(Date.UTC(2026, 9, day)),
+});
+const view = (rows: ReturnType<typeof allocateOldestFirst>) => rows.map((r) => [r.entryId, r.pay.toString(), r.remainder.toString()]);
 
-describe('PayoutService', () => {
-  useTestTenant();
-    const repId = 1001;
+describe('allocateOldestFirst (F-913 partial payment)', () => {
+  it('pays whole entries oldest first, whatever the input order', () => {
+    const out = allocateOldestFirst([entry(3, 30, 3), entry(1, 10, 1), entry(2, 20, 2)], Money.parse(30));
+    expect(view(out)).toEqual([[1, '10', '0'], [2, '20', '0']]);
+  });
 
-    describe('getPendingPayments', () => {
-        it('should return pending payments for a valid representative', async () => {
-            const mockRep = { id: repId, commissionAmount: 10 };
-            const mockOrders = [
-                {
-                    id: 1,
-                    totalAmount: 100,
-                    updatedAt: new Date(),
-                    customer: { firstName: 'John', lastName: 'Doe' },
-                    delivery: { actualDeliveryTime: new Date() }
-                }
-            ];
+  it('splits the last entry and leaves the rest earned', () => {
+    const out = allocateOldestFirst([entry(1, 104, 1), entry(2, 30, 2)], Money.parse(120));
+    expect(view(out)).toEqual([[1, '104', '0'], [2, '16', '14']]);
+  });
 
-            (prismaMock.user.findUnique as any).mockResolvedValue(mockRep as any);
-            (prismaMock.order.findMany as any).mockResolvedValue(mockOrders as any);
+  it('pays everything when the amount equals what the entries hold', () => {
+    const out = allocateOldestFirst([entry(1, 1424, 2), entry(2, 610, 3)], Money.parse(2034));
+    expect(out.reduce((s, r) => s.plus(r.pay), Money.ZERO).toString()).toBe('2034');
+    expect(out.every((r) => r.remainder.isZero())).toBe(true);
+  });
 
-            const result = await payoutService.getPendingPayments(repId);
+  it('puts an entry with no date first, and breaks a tie by id', () => {
+    expect(view(allocateOldestFirst([entry(2, 5, 1), entry(1, 5, 1), entry(3, 5, null)], Money.parse(10)))).toEqual([[3, '5', '0'], [1, '5', '0']]);
+  });
 
-            expect(result).toHaveLength(1);
-            expect(result[0].customerName).toBe('John Doe');
-            expect(Money.toApi(result[0].commissionAmount)).toBe('10.00');
-            expect(prismaMock.order.findMany).toHaveBeenCalledWith(expect.objectContaining({
-                where: {
-                    customerRepId: repId,
-                    status: OrderStatus.delivered,
-                    commissionPaid: false
-                }
-            }));
-        });
+  it('throws when the amount is above what the entries hold', () => {
+    expect(() => allocateOldestFirst([entry(1, 10, 1)], Money.parse(11))).toThrow(RangeError);
+  });
+});
 
-        it('should throw error if representative not found', async () => {
-            (prismaMock.user.findUnique as any).mockResolvedValue(null);
+describe('Money.format for the owed message', () => {
+  const owed = (v: Money.MoneyInput, code: string, symbol?: string) => Money.format(v, code, { symbol, wholeIfZero: true });
 
-            await expect(payoutService.getPendingPayments(repId))
-                .rejects.toThrow('Representative not found');
-        });
+  it('writes the currency sign, thousands and no decimals for a whole amount', () => {
+    expect(owed('2034.0000', 'GHS', 'GH₵')).toBe('GH₵2,034');
+    expect(owed(134, 'GHS', 'GH₵')).toBe('GH₵134');
+  });
 
-        it('should use updatedAt if actualDeliveryTime is missing', async () => {
-            const mockRep = { id: repId, commissionAmount: 10 };
-            const updatedAt = new Date('2024-01-01');
-            const mockOrders = [
-                {
-                    id: 1,
-                    totalAmount: 100,
-                    updatedAt,
-                    customer: { firstName: 'John', lastName: 'Doe' },
-                    delivery: null
-                }
-            ];
-
-            prismaMock.user.findUnique.mockResolvedValue(mockRep as any);
-            prismaMock.order.findMany.mockResolvedValue(mockOrders as any);
-
-            const result = await payoutService.getPendingPayments(repId);
-
-            expect(result[0].deliveredAt).toEqual(updatedAt);
-        });
-    });
-
-    describe('getPayoutHistory', () => {
-        it('should return payout history for a representative', async () => {
-            const mockPayouts = [
-                { id: 1, amount: 500, repId, payoutDate: new Date(), _count: { orders: 5 } }
-            ];
-
-            (prismaMock.payout.findMany as any).mockResolvedValue(mockPayouts as any);
-
-            const result = await payoutService.getPayoutHistory(repId);
-
-            expect(result).toHaveLength(1);
-            expect(result[0].amount).toBe(500);
-            expect(prismaMock.payout.findMany).toHaveBeenCalledWith(expect.objectContaining({
-                where: { repId }
-            }));
-        });
-    });
-
-    describe('processPayout', () => {
-        it('should process a payout within a transaction', async () => {
-            const payoutData = {
-                repId,
-                amount: 300,
-                method: 'Mobile Money',
-                orderIds: [1, 2, 3],
-                notes: 'Monthly payout',
-                processedBy: 99
-            };
-
-            const mockPayout = { id: 50, ...payoutData };
-
-            (prismaMock.$transaction as any).mockImplementation(async (callback: any) => {
-                return callback(prismaMock);
-            });
-
-            (prismaMock.payout.create as any).mockResolvedValue(mockPayout as any);
-            (prismaMock.order.updateMany as any).mockResolvedValue({ count: 3 } as any);
-
-            const result = await payoutService.processPayout(payoutData);
-
-            expect(result).toEqual(mockPayout);
-            expect(prismaMock.payout.create).toHaveBeenCalled();
-            expect(prismaMock.order.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-                where: {
-                    id: { in: payoutData.orderIds },
-                    customerRepId: repId
-                },
-                data: {
-                    commissionPaid: true,
-                    payoutId: 50
-                }
-            }));
-            expect(GLAutomationService.recordCommissionPayout).toHaveBeenCalledTimes(1);
-        });
-    });
+  it('keeps the decimals when the amount has them, and falls back to the code', () => {
+    expect(owed('2034.5', 'GHS', 'GH₵')).toBe('GH₵2,034.50');
+    expect(owed(5000, 'NGN', '₦')).toBe('₦5,000');
+    expect(owed(12, 'USD')).toBe('USD 12');
+    expect(Money.format(1234.5, 'GHS')).toBe('GHS 1,234.50');
+  });
 });

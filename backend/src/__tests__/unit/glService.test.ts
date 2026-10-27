@@ -864,6 +864,7 @@ describe('GLService', () => {
         id: 10,
         entryNumber: 'JE-001',
         description: 'Test',
+        sourceType: 'manual',
         tenantId: 'test-tenant', // reversing entry inherits the source entry's tenant
         transactions: [
           { accountId: 1, debitAmount: new Prisma.Decimal('100'), creditAmount: new Prisma.Decimal('0') },

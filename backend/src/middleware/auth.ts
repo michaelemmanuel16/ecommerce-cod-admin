@@ -7,6 +7,7 @@ import logger from '../utils/logger';
 import { enterTenant, getTenantId, withoutTenant } from '../utils/tenantContext';
 import { isPlatformAdmin } from '../utils/platformAdmin';
 import { canSeeCost } from '../utils/costAccess';
+import { defaultRolePermissions } from '../config/defaultRolePermissions';
 
 // Per-tenant cache for role permissions to avoid database hits on every request.
 // Keyed by tenantId to prevent cross-tenant permission leakage.
@@ -29,12 +30,12 @@ async function getPermissionsFromDatabase() {
 
     if (!config || !config.rolePermissions) {
       logger.info('[auth.getPermissionsFromDatabase] No config or rolePermissions found, using defaults');
-      permissions = getDefaultPermissions();
+      permissions = defaultRolePermissions();
     } else {
       logger.info('[auth.getPermissionsFromDatabase] Loaded permissions from database, merging with defaults');
       // Merge stored permissions with defaults so new resources (e.g. calls, gl)
       // are available even if the tenant saved permissions before those resources existed.
-      const defaults = getDefaultPermissions();
+      const defaults = defaultRolePermissions();
       const stored = config.rolePermissions as Record<string, Record<string, string[]>>;
       permissions = {} as any;
       for (const role of Object.keys(defaults) as Array<keyof typeof defaults>) {
@@ -43,7 +44,7 @@ async function getPermissionsFromDatabase() {
     }
   } catch (error) {
     logger.error('[auth.getPermissionsFromDatabase] Error fetching from database, using defaults:', error);
-    permissions = getDefaultPermissions();
+    permissions = defaultRolePermissions();
   }
 
   permissionsCache.set(tenantId, { data: permissions, timestamp: now });
@@ -56,104 +57,6 @@ async function getPermissionsFromDatabase() {
   }
 
   return permissions;
-}
-
-function getDefaultPermissions() {
-  return {
-    super_admin: {
-      users: ['create', 'view', 'update', 'delete'],
-      orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign', 'force_status'],
-      customers: ['create', 'view', 'update', 'delete', 'export'],
-      products: ['create', 'view', 'update', 'delete', 'update_stock'],
-      financial: ['view', 'create', 'update', 'delete'],
-      analytics: ['view', 'export'],
-      marketing: ['view'],
-      workflows: ['create', 'view', 'update', 'delete', 'execute'],
-      settings: ['view', 'update'],
-      calls: ['create', 'view', 'update', 'delete'],
-      gl: ['create', 'view', 'update', 'delete'],
-      audit: ['view'],
-    },
-    admin: {
-      users: ['create', 'view', 'update', 'delete'],
-      orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign', 'update_status'],
-      customers: ['create', 'view', 'update', 'delete', 'export'],
-      products: ['create', 'view', 'update', 'delete', 'update_stock'],
-      financial: ['view', 'create'],
-      analytics: ['view', 'export'],
-      marketing: ['view'],
-      workflows: ['create', 'view', 'update', 'delete', 'execute'],
-      settings: ['view'],
-      calls: ['create', 'view', 'update', 'delete'],
-      gl: ['create', 'view', 'update', 'delete'],
-      audit: ['view'],
-    },
-    manager: {
-      users: [],
-      orders: ['view', 'update', 'bulk_import', 'assign'],
-      customers: ['create', 'view', 'update', 'delete', 'export'],
-      products: ['view'],
-      financial: ['view'],
-      analytics: ['view', 'export'],
-      marketing: ['view'],
-      workflows: ['view', 'execute'],
-      settings: [],
-      calls: ['view'],
-      gl: ['view'],
-    },
-    sales_rep: {
-      users: [],
-      orders: ['create', 'view', 'update'],
-      customers: ['create', 'view', 'update'],
-      products: ['view'],
-      financial: [],
-      analytics: ['view'],
-      marketing: [],
-      workflows: [],
-      settings: [],
-      calls: ['create', 'view'],
-      gl: [],
-    },
-    inventory_manager: {
-      users: [],
-      orders: ['view', 'update_status'],
-      customers: ['view'],
-      products: ['create', 'view', 'update', 'delete', 'update_stock'],
-      financial: [],
-      analytics: ['view'],
-      marketing: [],
-      workflows: [],
-      settings: [],
-      calls: [],
-      gl: [],
-    },
-    delivery_agent: {
-      users: [],
-      orders: ['view', 'update'],
-      customers: ['view'],
-      products: ['view'],
-      financial: ['create'],
-      analytics: ['view'],
-      marketing: [],
-      workflows: [],
-      settings: [],
-      calls: ['view'],
-      gl: [],
-    },
-    accountant: {
-      users: [],
-      orders: ['view'],
-      customers: ['view'],
-      products: ['view'],
-      financial: ['view', 'create'],
-      analytics: ['view', 'export'],
-      marketing: [],
-      workflows: [],
-      calls: [],
-      settings: [],
-      gl: ['create', 'view', 'update'],
-    },
-  };
 }
 
 export const authenticate = (req: AuthRequest, res: Response, next: NextFunction): void => {

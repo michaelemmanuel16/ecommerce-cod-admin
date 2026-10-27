@@ -1,0 +1,49 @@
+/* Finance Overview (M5-T34, F-902, F-907, F-927). Copied from the style block of docs/mockups/v2/finance.html (#p-overview:
+   .kpis.k6 .dt .who .tag), with the `.v2` scope added. Colours come from tokens.css only. Rules with no mockup counterpart are marked "new". */
+
+/* six tiles, three a row over two rows as finance.html .kpis.k6; a tile's foot sits at the bottom so a row has even tiles */
+.v2 .fov .kpis.k6{grid-template-columns:repeat(3,1fr);margin-top:0}
+.v2 .fov .kpi{min-width:0;display:flex;flex-direction:column}
+.v2 .fov .kpi .s{margin-top:auto;padding-top:10px}
+.v2 .fov .kpi .v{font-size:22px;overflow-wrap:anywhere}
+.v2 .fov .kpi .v .neg{color:var(--coral)}
+.v2 .fov .kpi .s{flex-wrap:wrap;gap:6px}
+.v2 .fov .kpi .tag{white-space:nowrap}
+.v2 .fov .kpi .l .lbl{display:inline-flex;align-items:center;gap:6px}
+/* new: the tooltip carries a whole sentence, so it wraps and opens to the left of its icon */
+.v2 .fov .info{display:inline-grid;place-items:center;color:var(--ink-3);border-radius:50%;cursor:help}
+.v2 .fov .info svg{width:14px;height:14px}
+.v2 .fov .info:focus-visible{outline:2px solid var(--pine);outline-offset:2px}
+.v2 .fov .tip-bubble{white-space:normal;width:250px;max-width:70vw;left:auto;right:-8px;transform:none;font-weight:500;text-align:left}
+.v2 .fov .kpis .card:nth-child(3n+1) .tip-bubble{right:auto;left:-8px}
+.v2 .fov .tilewrap{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.v2 .fov .tilewrap .kpi{width:100%}
+.v2 .fov .tile-error .v{color:var(--ink-3)}
+.v2 .fov .sk-gap{margin-top:12px}
+/* new: a range change keeps the old figures on screen, dimmed, until the new answer arrives */
+.v2 .fov.busy .kpis,.v2 .fov.busy .tablewrap{opacity:.6;transition:opacity .15s}
+
+.v2 .fov .tablewrap{overflow-x:auto}
+.v2 .fov .two{align-items:start}
+.v2 .fov .dt td small{display:block;color:var(--ink-3);font-size:12px}
+.v2 .fov .dt .who{min-width:190px}
+.v2 .fov .dt .who .tag{margin-left:4px;vertical-align:1px}
+.v2 .fov .rowact{margin-top:6px}
+.v2 .fov .rowact svg{width:14px;height:14px;transition:transform .15s}
+.v2 .fov .rowact svg.flip{transform:rotate(180deg)}
+.v2 .fov .tag svg{width:12px;height:12px}
+.v2 .fov .dt tr.detail td{background:var(--hover);padding:14px 20px;white-space:normal}
+.v2 .fov tr.detail p{margin-top:10px;font-size:13px}
+.v2 .fov tr.detail .acts{display:flex;gap:8px;margin-top:12px}
+.v2 .fov .unpaid{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:8px}
+.v2 .fov .unpaid li .num{margin-left:auto;flex:none}
+.v2 .fov .unpaid li > div:nth-child(2){min-width:0}
+
+@media (max-width:1100px){
+  .v2 .fov .kpis.k6{grid-template-columns:repeat(2,1fr)}
+  .v2 .fov .kpis .card:nth-child(odd) .tip-bubble{right:auto;left:-8px}
+}
+@media (max-width:760px){
+  .v2 .fov .kpis.k6{grid-template-columns:1fr}
+  .v2 .fov .tip-bubble{width:200px}
+}

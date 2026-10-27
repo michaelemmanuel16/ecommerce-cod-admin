@@ -126,6 +126,11 @@ describe('Bulk Agent Collection Reconciliation Integration', () => {
             });
             draftCollections.push(collection);
         }
+
+        // The delivery flow adds each collection to the partner's cash held; a verify takes it off again and may not go below zero
+        await (prisma as any).agentBalance.create({
+            data: { tenantId: testTenantId, agentId: testAgent.id, totalCollected: 6000, totalDeposited: 0, currentBalance: 6000 }
+        });
     });
 
     it('should verify multiple collections in bulk', async () => {
@@ -155,14 +160,14 @@ describe('Bulk Agent Collection Reconciliation Integration', () => {
             expect(o.paymentStatus).toBe('reconciled');
         });
 
-        // Verify GL Entries created
+        // Verifying a collection posts no journal entry (M5-T07, F-904)
         const glEntries = await prisma.journalEntry.findMany({
             where: {
                 sourceId: { in: ids },
                 sourceType: 'agent_collection'
             }
         });
-        expect(glEntries).toHaveLength(3);
+        expect(glEntries).toHaveLength(0);
     });
 
     it('should roll back all if one verification fails (atomic transaction)', async () => {

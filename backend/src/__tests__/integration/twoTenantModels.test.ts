@@ -30,7 +30,6 @@ const MODELS: Array<[string, string, string, string]> = [
   ['deliveries', 'delivery', 'delivery', 'Delivery'],
   ['collections', 'agentCollection', 'agentCollection', 'AgentCollection'],
   ['deposits', 'agentDeposit', 'agentDeposit', 'AgentDeposit'],
-  ['aging buckets', 'agentAgingBucket', 'agentAgingBucket', 'AgentAgingBucket'],
   ['payouts', 'payout', 'payout', 'Payout'],
   ['calls', 'call', 'call', 'Call'],
   ['order history', 'orderHistory', 'orderHistory', 'OrderHistory'],
@@ -72,6 +71,10 @@ const MODELS: Array<[string, string, string, string]> = [
   ['stock count lines', 'stockCountLine', 'stockCountLine', 'StockCountLine'],
   ['delivery partner profiles', 'deliveryPartnerProfile', 'deliveryPartnerProfile', 'DeliveryPartnerProfile'],
   ['delivery attempts', 'deliveryAttempt', 'deliveryAttempt', 'DeliveryAttempt'],
+  // M5 models
+  ['partner settlements', 'partnerSettlement', 'partnerSettlement', 'PartnerSettlement'],
+  ['partner settlement lines', 'partnerSettlementLine', 'partnerSettlementLine', 'PartnerSettlementLine'],
+  ['commission entries', 'commissionEntry', 'commissionEntry', 'CommissionEntry'],
 ];
 
 describe('tenant B data never shows for tenant A', () => {
@@ -128,7 +131,7 @@ describe('tenant B data never shows for tenant A', () => {
 
   it('every model the plan names is in the table', () => {
     const planned = [
-      'Order', 'Customer', 'Product', 'Delivery', 'AgentCollection', 'AgentDeposit', 'AgentAgingBucket', 'Payout', 'Call',
+      'Order', 'Customer', 'Product', 'Delivery', 'AgentCollection', 'AgentDeposit', 'Payout', 'Call',
       'OrderHistory', 'AuditLog', 'WebhookLog', 'SmsTemplate', 'DownloadToken', 'FormSubmission', 'product_cost_entries',
       'JournalEntry', 'AccountTransaction', 'Notification', 'PendingCheckout', 'WebhookEvent', 'WorkflowExecution',
     ];

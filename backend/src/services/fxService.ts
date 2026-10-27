@@ -19,7 +19,7 @@ import * as Money from '../utils/money';
 import { runInTenant } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
 import { currencyOfTenant, getCurrency, setStoreCurrency } from '../utils/currency';
-import { getStoreTimeZone, localDate, parseYmd, ymdOfUtc } from './kpi/dates';
+import { getStoreTimeZone, localDate, parseYmd, utcDateOfYmd, ymdOfUtc } from './kpi/dates';
 import { FxProvider, getFxProvider } from './fx/fxProvider';
 
 const CURRENCY_CODE = /^[A-Z]{3}$/;
@@ -35,8 +35,6 @@ interface FxLookup {
   /** True when the rate is the inverse of the stored opposite pair. */
   inverse: boolean;
 }
-
-const dayDate = (ymd: string): Date => new Date(`${ymd}T00:00:00.000Z`);
 
 /** Today in the store zone, YYYY-MM-DD. */
 function todayYmd(tenantId: string, now: Date = new Date()): string {
@@ -109,7 +107,7 @@ async function laterRate(from: string, to: string, day: Date): Promise<FxLookup 
 
 async function rateOnInTenant(from: string, to: string, ymd: string): Promise<FxLookup | null> {
   if (from === to) return { rate: Money.parse(1), date: ymd, source: 'auto', exact: true, inverse: false };
-  const day = dayDate(ymd);
+  const day = utcDateOfYmd(ymd);
   const rows = await prisma.fxRate.findMany({ where: { OR: pairsOf(from, to), date: { lte: day } }, orderBy: newestFirst });
   return pickEarlier(rows, from, to, day) ?? laterRate(from, to, day);
 }
@@ -141,11 +139,11 @@ export function makeConverter(tenantId: string, storeCurrency: string) {
         const maxDay = [...days].reduce((a, b) => (a > b ? a : b));
         // Rates are stored as (store -> other); rate(other -> store) reads the inverse of that row.
         const history = await prisma.fxRate.findMany({
-          where: { OR: pairsOf(currency, storeCurrency), date: { lte: dayDate(maxDay) } },
+          where: { OR: pairsOf(currency, storeCurrency), date: { lte: utcDateOfYmd(maxDay) } },
           orderBy: newestFirst,
         });
         for (const ymd of days) {
-          const day = dayDate(ymd);
+          const day = utcDateOfYmd(ymd);
           const found = pickEarlier(history.filter((r) => r.date <= day), currency, storeCurrency, day)
             ?? await laterRate(currency, storeCurrency, day);
           if (!found) throw new AppError(`No exchange rate between ${currency} and ${storeCurrency}`, 409, 'NO_FX_RATE');
@@ -256,7 +254,7 @@ export async function refreshAutoRates(
   if (extras.length === 0) return { pairs: 0, written: 0, skipped: [] };
 
   const rates = await ratesOf(provider, store, opts.cache);
-  const day = dayDate(todayYmd(tenantId, opts.now));
+  const day = utcDateOfYmd(todayYmd(tenantId, opts.now));
   const { written, skipped } = await writeAutoRates(tenantId, store, extras, rates, day, { overwrite: false, userId: null });
   if (skipped.length) logger.warn(`FX refresh for tenant ${tenantId}: provider has no rate for ${skipped.join(', ')}`);
   return { pairs: extras.length, written, skipped };
@@ -286,7 +284,7 @@ export async function setManualRate(
       }
     }
     if (ymd > today) throw new AppError('A manual rate cannot be dated in the future', 400, 'INVALID_DATE');
-    const date = dayDate(ymd);
+    const date = utcDateOfYmd(ymd);
     return prisma.fxRate.upsert({
       where: { tenantId_fromCurrency_toCurrency_date_source: { tenantId, fromCurrency: from, toCurrency: to, date, source: 'manual' } },
       create: { fromCurrency: from, toCurrency: to, rate, date, source: 'manual', createdById: userId, tenantId },
@@ -316,7 +314,7 @@ export async function useTodaysRate(
     logger.error('FX provider failed on use-today:', error);
     throw new AppError('The rate provider is not reachable. Try again later or enter a manual rate.', 502, 'FX_PROVIDER_UNAVAILABLE');
   }
-  const { rates, skipped } = await writeAutoRates(tenantId, store, targets, fetched, dayDate(todayYmd(tenantId)), { overwrite: true, userId });
+  const { rates, skipped } = await writeAutoRates(tenantId, store, targets, fetched, utcDateOfYmd(todayYmd(tenantId)), { overwrite: true, userId });
   if (opts.to && skipped.length) throw new AppError(`The provider has no rate for ${skipped[0]}`, 422, 'FX_RATE_NOT_AVAILABLE');
   return { rates, skipped };
 }

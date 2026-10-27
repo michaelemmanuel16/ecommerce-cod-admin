@@ -18,6 +18,8 @@ const canOversee = requireRole('super_admin', 'admin', 'manager');
 // Photo links and attempts of a partner's orders: the roles of /api/deliveries/by-order that can also read partners (no agent, no stock keeper).
 const canSeeProofs = requireRole('super_admin', 'admin', 'manager', 'accountant');
 const canEdit = requireRole('super_admin', 'admin');
+// F-703: fee rules show to owner, admin, manager and finance clerk; the stock keeper does not see money.
+const canSeeFees = requireRole('super_admin', 'admin', 'manager', 'accountant');
 
 const profileFields = [
   body('daysToPay').optional().isInt({ min: 0, max: 365 }).withMessage('Days to pay must be a whole number from 0 to 365').toInt(),
@@ -51,6 +53,12 @@ router.post(
 );
 router.get('/:id(\\d+)', canRead, controller.getOne);
 router.get('/:id(\\d+)/order-proofs', canSeeProofs, controller.orderProofs);
+router.get('/:id(\\d+)/fee-rules', canSeeFees, controller.feeRules);
+// The service validates outcome, basis, amount and date (one place)
+router.post('/:id(\\d+)/fee-rules', canEdit, controller.addFeeRule);
+// F-712: the partner's status list in CSV. Owner, admin and manager; rows go through the order status service.
+router.post('/:id(\\d+)/csv/preview', canOversee, controller.csvPreview);
+router.post('/:id(\\d+)/csv/apply', canOversee, controller.csvApply);
 router.patch('/:id(\\d+)', canEdit, [...profileFields, validate], controller.update);
 router.patch(
   '/:id(\\d+)/availability',

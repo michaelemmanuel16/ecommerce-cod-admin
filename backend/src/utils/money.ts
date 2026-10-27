@@ -114,15 +114,26 @@ export function isNonZero(v: MoneyInput | null | undefined): boolean {
   return !orZero(v).isZero();
 }
 
+/** part / whole as a percentage number rounded half up to `dp` decimals; null when whole is 0 (a page shows "n/a"). */
+export function percentOrNull(part: MoneyInput, whole: MoneyInput, dp = 1): number | null {
+  if (!isNonZero(whole)) return null;
+  return roundHalfUp(mul(div(part, whole), 100), dp).toNumber();
+}
+
 /** a / b as a percentage number. Zero when b is not positive. */
 export function percent(a: MoneyInput, b: MoneyInput): number {
   return gt(b, 0) ? mul(div(a, b), 100).toNumber() : 0;
 }
 
-/** "GHS 1,234.50": 2 decimals and thousands separators, no float conversion. */
-export function format(a: MoneyInput, currency: string): string {
+/**
+ * "GHS 1,234.50": 2 decimals and thousands separators, no float conversion.
+ * `symbol` replaces the "GHS " prefix ("GH₵"); `wholeIfZero` drops the decimals of a whole amount ("GH₵2,034").
+ */
+export function format(a: MoneyInput, currency: string, opts: { symbol?: string; wholeIfZero?: boolean } = {}): string {
   const [whole, decimals] = toApi(a).split('.');
-  return `${currency} ${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${decimals}`;
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const prefix = opts.symbol ?? `${currency} `;
+  return opts.wholeIfZero && /^0+$/.test(decimals) ? `${prefix}${grouped}` : `${prefix}${grouped}.${decimals}`;
 }
 
 /**

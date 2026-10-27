@@ -2,7 +2,7 @@ import type { OrderListParams } from '../../services/orders.service';
 import type { FailureReason } from '../../types';
 import { positive } from '../../utils/urlState';
 import { FAILURE_REASONS } from './reasons';
-import { isTabId, tabStatuses, type StatusTabId } from './model';
+import { isTabId, isViewTab, tabStatuses, type StatusTabId } from './model';
 import type { SortField, SortState } from './columns';
 
 export type DateBasis = 'created' | 'delivery';
@@ -145,17 +145,17 @@ export function presetOf(range: { from: string; to: string }, now: Date = new Da
   }) ?? 'custom';
 }
 
-/** "in October", "today", "from 1 Oct to 17 Oct": the end of the page sub-line. */
-export function rangePhrase(range: { from: string; to: string }, now: Date = new Date()): string {
+/** "in October", "today", "from 1 Oct to 17 Oct": the end of the page sub-line. `lead` 'for' gives "for October" and "for the last 7 days". */
+export function rangePhrase(range: { from: string; to: string }, now: Date = new Date(), lead: 'in' | 'for' = 'in'): string {
   const preset = presetOf(range, now);
   const month = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleString('en-GB', { month: 'long', timeZone: 'UTC' });
   const day = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
   switch (preset) {
     case 'today': return 'today';
     case 'yesterday': return 'yesterday';
-    case 'last7': return 'in the last 7 days';
+    case 'last7': return `${lead} the last 7 days`;
     case 'month':
-    case 'lastMonth': return `in ${month(range.from)}`;
+    case 'lastMonth': return `${lead} ${month(range.from)}`;
     default: return range.from === range.to ? `on ${day(range.from)}` : `from ${day(range.from)} to ${day(range.to)}`;
   }
 }
@@ -167,13 +167,15 @@ export function listParams(view: ListView, limit: number, now: Date = new Date()
   const range = rangeOf(view, now);
   return {
     ...(status.length && { status }),
+    ...(view.tab === 'unpaid_by_agent' && { tab: view.tab }),
     ...(view.q && { search: view.q }),
     sortBy: view.sort.by,
     sortOrder: view.sort.dir,
     page: view.page,
     limit,
     // imported history orders can be older than the range, so a list of ids shows them whatever the dates
-    ...(!view.ids && { startDate: range.from, endDate: range.to, dateBasis: view.basis }),
+    // and the Unpaid by agent view counts every overdue order, so it sends no dates
+    ...(!view.ids && !isViewTab(view.tab) && { startDate: range.from, endDate: range.to, dateBasis: view.basis }),
     ...(view.ids && { ids: view.ids.join(',') }),
     ...(view.product !== null && { productId: [view.product] }),
     ...(view.agent !== null && { deliveryAgentId: view.agent }),

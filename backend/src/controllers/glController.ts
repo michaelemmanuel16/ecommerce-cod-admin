@@ -2,10 +2,11 @@ import { Response } from 'express';
 import { AuthRequest } from '../types';
 import glService from '../services/glService';
 import { AccountType, JournalSourceType } from '@prisma/client';
+import { startLedgerJob } from './financeExportController';
 
 export const getAllAccounts = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { accountType, isActive, page = 1, limit = 50, startDate, endDate } = req.query;
+    const { accountType, isActive, page = 1, limit = 50, startDate, endDate, search } = req.query;
 
     const result = await glService.getAllAccounts({
       accountType: accountType as AccountType | undefined,
@@ -13,7 +14,8 @@ export const getAllAccounts = async (req: AuthRequest, res: Response): Promise<v
       page: Number(page),
       limit: Number(limit),
       startDate: startDate as string | undefined,
-      endDate: endDate as string | undefined
+      endDate: endDate as string | undefined,
+      search: search as string | undefined
     });
 
     res.json(result);
@@ -102,13 +104,14 @@ export const activateAccount = async (req: AuthRequest, res: Response): Promise<
 
 export const createJournalEntry = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { entryDate, description, sourceType, sourceId, transactions } = req.body;
+    const { entryDate, description, transactions } = req.body;
 
+    // A hand-made entry is always source `manual`. The source types of automatic postings (expense, payout, ...) and
+    // their source ids belong to the services that post them: a clerk must not be able to fake one.
     const entry = await glService.createJournalEntry({
       entryDate,
       description,
-      sourceType: sourceType as JournalSourceType,
-      sourceId: sourceId ? parseInt(sourceId, 10) : undefined,
+      sourceType: JournalSourceType.manual,
       transactions
     }, req.user);
 
@@ -168,6 +171,11 @@ export const voidJournalEntry = async (req: AuthRequest, res: Response): Promise
   }
 };
 
+export const getTrialBalance = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { endDate } = req.query;
+  res.json(await glService.getTrialBalance({ endDate: endDate as string | undefined }));
+};
+
 export const getAccountBalance = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -200,6 +208,9 @@ export const exportAccountLedger = async (req: AuthRequest, res: Response): Prom
   try {
     const { id } = req.params;
     const { startDate, endDate } = req.query;
+
+    // Over the line limit this becomes a background job (F-921); it used to stop at 50,000 lines without saying so.
+    if (Number.isInteger(Number(id)) && await startLedgerJob(res, { accountId: Number(id), startDate: startDate as string | undefined, endDate: endDate as string | undefined }, 'csv')) return;
 
     const { csv, filename } = await glService.exportAccountLedgerToCSV(id, {
       startDate: startDate as string | undefined,

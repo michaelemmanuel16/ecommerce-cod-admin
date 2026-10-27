@@ -10,13 +10,15 @@
  * All methods are designed to be called from within Prisma transactions to ensure atomicity.
  */
 
-import { Prisma, Order, OrderItem, Product, Customer, User, JournalEntry, AccountTransaction, JournalSourceType, AgentDeposit, InventoryShipment } from '@prisma/client';
+import { Prisma, Order, OrderItem, Product, Customer, User, JournalEntry, AccountTransaction, JournalSourceType, AgentDeposit, InventoryShipment, FeeOutcome } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
-import { BALANCE_TOLERANCE, GL_ACCOUNTS, GL_DEFAULTS } from '../config/glAccounts';
+import { BALANCE_TOLERANCE, GL_ACCOUNTS, GL_DEFAULTS, RETIRED_EXPENSE_CODES } from '../config/glAccounts';
 import { GLAccountService } from './glAccountService';
 import logger from '../utils/logger';
 import { GLUtils } from '../utils/glUtils';
-import { getTenantId } from '../utils/tenantContext';
+import { openFindingOnce } from './findingService';
+import { getTenantId, resolveTenantId } from '../utils/tenantContext';
+import type { TransactionClient } from '../utils/prisma';
 import * as Money from '../utils/money';
 
 // Define JournalSourceType locally if not correctly imported or use string literal
@@ -260,6 +262,19 @@ export class GLAutomationService {
   }
 
   /**
+   * Agent commission an entry booked before M5: the debit on the retired commission expense account (lines must carry
+   * their account). Entries booked from M5 on have none, so this is 0 for them.
+   */
+  static legacyAgentCommission(entry: JournalEntryWithTransactions | undefined | null): Decimal {
+    if (!entry?.transactions) return Money.ZERO;
+    return Money.sum(
+      entry.transactions
+        .filter((t) => t.account && t.account.code !== undefined && RETIRED_EXPENSE_CODES.includes(t.account.code))
+        .map((t) => Money.sub(t.debitAmount, t.creditAmount)),
+    );
+  }
+
+  /**
    * Validate that all products have COGS set
    *
    * @param orderItems - Array of order items with product information
@@ -299,8 +314,7 @@ export class GLAutomationService {
    * Create revenue recognition GL entry when order is delivered
    *
    * Creates journal entry with:
-   * - Debit: Cash in Transit (order amount - delivery commission - sales rep commission)
-   * - Debit: Delivery Agent Commission Expense (if agent assigned)
+   * - Debit: Cash in Transit 1015 (the full order amount; the delivery fee is a separate entry, F-936)
    * - Debit: Sales Rep Commission Expense (if rep assigned)
    * - Credit: Product Revenue (full order amount)
    * - Debit: COGS (if totalCOGS > threshold)
@@ -327,26 +341,21 @@ export class GLAutomationService {
 
     const orderAmount = Money.parse(order.totalAmount);
 
-    const deliveryAgent = order.deliveryAgent;
     const salesRep = order.customerRep;
-
-    // Uses profile flat rate — must match draft collection creation in deliveryService
-    const deliveryCommission = Money.orZero(deliveryAgent?.commissionAmount);
     const salesRepCommission = Money.orZero(salesRep?.commissionAmount);
 
     // Build journal entry transactions
-    // Note: Cash in Transit = Gross Amount - Agent Commission
+    // Cash in Transit = the gross amount the partner collected. The partner keeps its delivery fee from that cash;
+    // the fee posts as its own entry (DR 5070, CR 1015), so 1015 ends at gross minus fee.
     // Commissions Payable = Sales Rep Commission (since they don't hold the cash)
-    const agentComm = deliveryCommission;
     const repComm = salesRepCommission;
-    const netCashInTransit = orderAmount.minus(agentComm);
 
     const transactions: TransactionCreateData[] = [
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT),
-        debitAmount: netCashInTransit,
+        debitAmount: orderAmount,
         creditAmount: Money.ZERO,
-        description: `Net collection held by agent for order ${order.id} (Gross ${orderAmount} - Agent Comm ${agentComm})`,
+        description: `Collection held by partner for order ${order.id} (Gross ${orderAmount})`,
       },
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.PRODUCT_REVENUE),
@@ -355,15 +364,6 @@ export class GLAutomationService {
         description: 'Product sales revenue (Gross)',
       },
     ];
-
-    if (agentComm.greaterThan(0)) {
-      transactions.push({
-        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION),
-        debitAmount: agentComm,
-        creditAmount: Money.ZERO,
-        description: 'Delivery agent commission expense',
-      });
-    }
 
     if (repComm.greaterThan(0)) {
       transactions.push({
@@ -414,64 +414,187 @@ export class GLAutomationService {
   }
 
   /**
-   * Failed-attempt fee entry, one per `failed_delivery` move (D6, F-935). The fee is the FeeRule of the
-   * order's delivery agent with outcome `failed`; no agent or no rule means 0 and nothing is posted.
-   * Keyed on the OrderHistory row of the move, so a repeat of the same move posts nothing and two
-   * attempts post two entries. Accounts: 5020 / cash in hand.
+   * One two-line entry, posted once: DR `debitCode` / CR `creditCode` for `amount`, keyed `externalRef` under `sourceType`.
+   * A repeat of the key returns the entry already posted; an amount of 0 or below posts nothing (null).
    */
-  static async createFailedAttemptEntry(
+  private static async postOnce(
     tx: Prisma.TransactionClient,
-    order: { id: number; tenantId?: string | null; deliveryAgentId?: number | null },
-    historyId: number,
-    userId: number,
-    entryDate: Date = new Date()
+    p: {
+      sourceType: JournalSourceType; externalRef: string; sourceId: number; entryDate: Date; description: string;
+      createdBy: number; tenantId?: string | null; debitCode: string; creditCode: string; amount: Money.MoneyInput;
+      debitNote: string; creditNote: string;
+    }
   ): Promise<JournalEntryWithTransactions | null> {
-    const rule = order.deliveryAgentId
-      ? await tx.feeRule.findFirst({
-          where: {
-            partnerUserId: order.deliveryAgentId,
-            outcome: 'failed',
-            ...(order.tenantId ? { tenantId: order.tenantId } : {}),
-          },
-        })
-      : null;
-    const fee = rule ? Money.parse(rule.amount) : Money.ZERO;
-    if (!fee.greaterThan(0)) return null;
+    const amount = Money.parse(p.amount);
+    if (!amount.greaterThan(0)) return null;
 
     const existingEntry = await tx.journalEntry.findFirst({
-      where: { sourceType: JournalSourceType.order_failed_delivery, sourceId: historyId, isVoided: false },
+      where: { sourceType: p.sourceType, externalRef: p.externalRef, isVoided: false },
       include: { transactions: { include: { account: true } } }
     });
     if (existingEntry) return existingEntry as JournalEntryWithTransactions;
 
-    const [expenseAccountId, cashAccountId] = await Promise.all([
-      GLAccountService.getAccountIdByCode(GL_ACCOUNTS.FAILED_DELIVERY_EXPENSE),
-      GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND),
+    const [debitAccountId, creditAccountId] = await Promise.all([
+      GLAccountService.getAccountIdByCode(p.debitCode, tx),
+      GLAccountService.getAccountIdByCode(p.creditCode, tx),
     ]);
     return await this.createJournalEntryWithRetry(tx, {
-      entryDate,
-      description: `Failed delivery expense - Order #${order.id}`,
-      sourceType: JournalSourceType.order_failed_delivery,
-      sourceId: historyId,
-      createdBy: userId,
-      tenantId: order.tenantId ?? undefined,
+      entryDate: p.entryDate,
+      description: p.description,
+      sourceType: p.sourceType,
+      sourceId: p.sourceId,
+      externalRef: p.externalRef,
+      createdBy: p.createdBy,
+      tenantId: p.tenantId ?? undefined,
       transactions: {
         create: [
-          {
-            accountId: expenseAccountId,
-            debitAmount: fee,
-            creditAmount: Money.ZERO,
-            description: `Failed delivery - Order #${order.id}`,
-          },
-          {
-            accountId: cashAccountId,
-            debitAmount: Money.ZERO,
-            creditAmount: fee,
-            description: 'Cash impact of failed delivery',
-          },
+          { accountId: debitAccountId, debitAmount: amount, creditAmount: Money.ZERO, description: p.debitNote },
+          { accountId: creditAccountId, debitAmount: Money.ZERO, creditAmount: amount, description: p.creditNote },
         ],
       },
     });
+  }
+
+  /**
+   * Delivery fee entry, one per outcome move (F-936, F-935): DR 5070 / CR 1015 for the fee stamped on the order.
+   * The partner keeps the fee from the cash it holds, so 1015 goes down by the fee and nothing is paid out.
+   * Keyed on `<outcome>:<OrderHistory id>` in `externalRef` with the order as source, so a repeat of the same
+   * move posts nothing and a second failed attempt posts a second fee. A fee of 0 posts nothing.
+   * Dated by the outcome (delivery date, close date or return date).
+   */
+  static async createDeliveryFeeEntry(
+    tx: Prisma.TransactionClient,
+    order: { id: number; tenantId?: string | null },
+    outcome: FeeOutcome,
+    fee: Money.MoneyInput,
+    historyId: number,
+    userId: number,
+    entryDate: Date = new Date()
+  ): Promise<JournalEntryWithTransactions | null> {
+    return this.postOnce(tx, {
+      sourceType: JournalSourceType.delivery_fee,
+      externalRef: `${outcome}:${historyId}`,
+      sourceId: order.id,
+      entryDate,
+      description: `Delivery fee (${outcome}) - Order #${order.id}`,
+      createdBy: userId,
+      tenantId: order.tenantId,
+      debitCode: GL_ACCOUNTS.DELIVERY_FEES,
+      creditCode: GL_ACCOUNTS.CASH_IN_TRANSIT,
+      amount: fee,
+      debitNote: `Delivery fee kept by partner (${outcome}) - Order #${order.id}`,
+      creditNote: 'Fee netted from the cash the partner holds',
+    });
+  }
+
+  /**
+   * Fee true-up of one settlement (F-906, F-936): the partner's real charges replace the fees booked at delivery.
+   * `net` is the sum over the settlement's lines of (charge - fee booked). Above 0: DR 5070 / CR 1015. Below 0 the
+   * entry is flipped. One entry per settlement, keyed `trueup:<settlementId>`, so a repeat posts nothing. 0 posts nothing.
+   */
+  static async createFeeTrueUpEntry(
+    tx: Prisma.TransactionClient,
+    settlement: { id: number; reference: string; tenantId?: string | null },
+    net: Money.MoneyInput,
+    userId: number,
+    entryDate: Date = new Date()
+  ): Promise<JournalEntryWithTransactions | null> {
+    const amount = Money.parse(net);
+    const more = amount.gt(0);
+    return this.postOnce(tx, {
+      sourceType: JournalSourceType.delivery_fee,
+      externalRef: `trueup:${settlement.id}`,
+      sourceId: settlement.id,
+      entryDate,
+      description: `Delivery fee true-up - settlement ${settlement.reference}`,
+      createdBy: userId,
+      tenantId: settlement.tenantId,
+      debitCode: more ? GL_ACCOUNTS.DELIVERY_FEES : GL_ACCOUNTS.CASH_IN_TRANSIT,
+      creditCode: more ? GL_ACCOUNTS.CASH_IN_TRANSIT : GL_ACCOUNTS.DELIVERY_FEES,
+      amount: amount.abs(),
+      debitNote: `Partner charge ${more ? 'above' : 'below'} the fee booked (settlement ${settlement.reference})`,
+      creditNote: 'Fee true-up netted from the cash the partner holds',
+    });
+  }
+
+  /**
+   * What a written-off Finding posts, by its type (F-909). Cash we expected and will not get: DR 5100 / CR 1015, an
+   * expense. Extra money we hold: DR 2040 / CR 5100, the liability is released against operating expense. (The PRD text
+   * "DR 5100 and CR 1015 or 2040" is corrected here for the 2040 types.) A type not listed has no ledger amount.
+   */
+  private static readonly WRITE_OFF_ACCOUNTS: Partial<Record<string, { debit: string; credit: string }>> = {
+    short_pay: { debit: GL_ACCOUNTS.OPERATING_EXPENSE, credit: GL_ACCOUNTS.CASH_IN_TRANSIT },
+    cash_gap: { debit: GL_ACCOUNTS.OPERATING_EXPENSE, credit: GL_ACCOUNTS.CASH_IN_TRANSIT },
+    unpaid_term: { debit: GL_ACCOUNTS.OPERATING_EXPENSE, credit: GL_ACCOUNTS.CASH_IN_TRANSIT },
+    negative_cash_held: { debit: GL_ACCOUNTS.OPERATING_EXPENSE, credit: GL_ACCOUNTS.CASH_IN_TRANSIT },
+    excess_deposit: { debit: GL_ACCOUNTS.UNAPPLIED_PARTNER_RECEIPTS, credit: GL_ACCOUNTS.OPERATING_EXPENSE },
+    over_pay: { debit: GL_ACCOUNTS.UNAPPLIED_PARTNER_RECEIPTS, credit: GL_ACCOUNTS.OPERATING_EXPENSE },
+  };
+
+  /**
+   * Write-off of a Finding: the accounts come from its type (see WRITE_OFF_ACCOUNTS). Keyed `finding-writeoff:<id>` with
+   * its own source type, so a repeat posts nothing and a manual journal void cannot reach it. A type with no ledger
+   * amount, or an amount of 0 or none, posts nothing.
+   */
+  static async createFindingWriteOffEntry(
+    tx: Prisma.TransactionClient,
+    finding: { id: number; type: string; amount: Money.MoneyInput | null; tenantId?: string | null },
+    userId: number,
+    note: string
+  ): Promise<JournalEntryWithTransactions | null> {
+    const accounts = this.WRITE_OFF_ACCOUNTS[finding.type];
+    if (!accounts || finding.amount === null) return null;
+    return this.postOnce(tx, {
+      sourceType: JournalSourceType.finding_writeoff,
+      externalRef: `finding-writeoff:${finding.id}`,
+      sourceId: finding.id,
+      entryDate: new Date(),
+      description: `Write-off of finding #${finding.id} (${finding.type}): ${note}`,
+      createdBy: userId,
+      tenantId: finding.tenantId,
+      debitCode: accounts.debit,
+      creditCode: accounts.credit,
+      amount: finding.amount,
+      debitNote: `Written-off ${finding.type.replace(/_/g, ' ')}`,
+      creditNote: `Finding #${finding.id} written off`,
+    });
+  }
+
+  /**
+   * Reverses the order's delivered fee entry when the order leaves `delivered`, like the revenue reversal (D7):
+   * the original is linked to its reversal through `reversingEntryId`, so the order has no active delivered fee
+   * afterwards and a later delivery posts a fresh one. Returns null when the order has none (fee 0, or booked before M5).
+   */
+  static async reverseDeliveredFee(
+    tx: Prisma.TransactionClient,
+    order: { id: number; tenantId?: string | null },
+    userId: number,
+    entryDate: Date = new Date()
+  ): Promise<JournalEntryWithTransactions | null> {
+    const original = await tx.journalEntry.findFirst({
+      where: {
+        sourceType: JournalSourceType.delivery_fee, sourceId: order.id, externalRef: { startsWith: 'delivered:' },
+        isVoided: false, reversingEntryId: null,
+      },
+      include: { transactions: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!original) return null;
+
+    const reversal = await this.createJournalEntryWithRetry(tx, {
+      entryDate,
+      description: `Delivery fee reversal - Order #${order.id} (Original JE: ${original.entryNumber})`,
+      sourceType: JournalSourceType.delivery_fee,
+      sourceId: order.id,
+      externalRef: `reversal:${original.id}`,
+      createdBy: userId,
+      tenantId: order.tenantId ?? undefined,
+      transactions: {
+        create: this.flippedLines(original.transactions, 'Reversal'),
+      },
+    });
+    await tx.journalEntry.update({ where: { id: original.id }, data: { reversingEntryId: reversal.id } });
+    return reversal;
   }
 
   /**
@@ -504,18 +627,15 @@ export class GLAutomationService {
   ): Promise<JournalEntryWithTransactions> {
     const orderAmount = Money.parse(order.totalAmount);
 
-    const deliveryAgent = order.deliveryAgent;
     const salesRep = order.customerRep;
-
-    // Uses profile flat rate — must match draft collection creation in deliveryService
-    const deliveryCommission = Money.orZero(deliveryAgent?.commissionAmount);
     const salesRepCommission = Money.orZero(salesRep?.commissionAmount);
 
     // COGS to reverse: the amount the original entry booked (F-611), so a later cost change never makes the ledger uneven.
     const totalCOGS = this.cogsBooked(originalEntry) ?? this.calculateTotalCOGS(order.orderItems);
 
-    // Build reversal transactions (flip debits/credits from original entry)
-    const agentComm = deliveryCommission;
+    // An entry booked before M5 netted the agent commission against cash in transit and booked it to the retired
+    // commission expense account. Reverse exactly that amount, and credit it to 5070 (delivery fees): nothing posts to a retired account.
+    const agentComm = this.legacyAgentCommission(originalEntry);
     const repComm = salesRepCommission;
     const netCashInTransit = orderAmount.minus(agentComm);
 
@@ -524,7 +644,7 @@ export class GLAutomationService {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT),
         debitAmount: Money.ZERO,
         creditAmount: netCashInTransit,
-        description: 'Cash in transit reversal (Net)',
+        description: 'Cash in transit reversal',
       },
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.PRODUCT_REVENUE),
@@ -536,10 +656,10 @@ export class GLAutomationService {
 
     if (agentComm.greaterThan(0)) {
       transactions.push({
-        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION),
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.DELIVERY_FEES),
         debitAmount: Money.ZERO,
         creditAmount: agentComm,
-        description: 'Delivery agent commission reversal',
+        description: 'Delivery fee reversal (booked as agent commission before M5)',
       });
     }
 
@@ -629,66 +749,6 @@ export class GLAutomationService {
   }
 
   /**
-   * Create GL entry for collection verification (Reconciliation)
-   *
-   * Moves funds from Cash in Transit to Cash in Hand:
-   * - Debit: Cash in Hand
-   * - Credit: Cash in Transit
-   *
-   * @param tx - Prisma transaction client
-   * @param collection - Agent collection record
-   * @param userId - ID of user verifying the collection
-   * @returns Created journal entry
-   */
-  static async createCollectionVerificationEntry(
-    tx: Prisma.TransactionClient,
-    collection: any,
-    userId: number
-  ): Promise<JournalEntryWithTransactions> {
-    // Idempotency guard — prevent duplicate GL entries for the same collection
-    const existingEntry = await tx.journalEntry.findFirst({
-      where: {
-        sourceType: JournalSourceType.agent_collection,
-        sourceId: collection.id,
-        isVoided: false
-      },
-      include: { transactions: { include: { account: true } } }
-    });
-    if (existingEntry) {
-      logger.warn(`Skipping duplicate GL entry for collection ${collection.id}: ${existingEntry.entryNumber} already exists`);
-      return existingEntry as JournalEntryWithTransactions;
-    }
-
-    const amount = Money.parse(collection.amount);
-
-    const transactions: TransactionCreateData[] = [
-      {
-        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND),
-        debitAmount: amount,
-        creditAmount: Money.ZERO,
-        description: `Collection reconciled - Order #${collection.orderId}`,
-      },
-      {
-        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT),
-        debitAmount: Money.ZERO,
-        creditAmount: amount,
-        description: `Movement from transit to hand - Order #${collection.orderId}`,
-      },
-    ];
-
-    return await this.createJournalEntryWithRetry(tx, {
-      entryDate: new Date(),
-      description: `Collection reconciliation - Order #${collection.orderId}`,
-      sourceType: JournalSourceType.agent_collection,
-      sourceId: collection.id,
-      createdBy: userId,
-      transactions: {
-        create: transactions,
-      },
-    });
-  }
-
-  /**
    * Create GL journal entry for a recorded expense
    *
    * DR: Operating Expense (5100) = amount
@@ -699,6 +759,7 @@ export class GLAutomationService {
    * @param amount - Expense amount
    * @param description - Expense description
    * @param userId - ID of user recording the expense
+   * @param entryDate - Date of the entry (the expense date); defaults to now
    * @returns Created journal entry
    */
   static async createExpenseGLEntry(
@@ -706,7 +767,8 @@ export class GLAutomationService {
     expenseId: number,
     amount: Money.MoneyInput,
     description: string,
-    userId: number
+    userId: number,
+    entryDate: Date = new Date()
   ): Promise<JournalEntryWithTransactions> {
     // Idempotency guard — prevent duplicate GL entries for the same expense
     const existingEntry = await tx.journalEntry.findFirst({
@@ -740,7 +802,7 @@ export class GLAutomationService {
     ];
 
     return await this.createJournalEntryWithRetry(tx, {
-      entryDate: new Date(),
+      entryDate,
       description: `Expense - ${description}`,
       sourceType: JournalSourceType.expense,
       sourceId: expenseId,
@@ -813,22 +875,26 @@ export class GLAutomationService {
   }
 
   /**
-   * Create GL entry for agent deposit verification
-   *
-   * Records receipt of cash from agent and reduction of their receivable:
-   * - Debit: Cash in Hand (usually bank or actual cash vault)
-   * - Credit: Accounts Receivable - Agents
+   * GL entry for a verified agent deposit (F-904). The only place cash moves from the partner to the bank:
+   * - Debit: Cash at bank and MoMo 1010 (the amount received, which is cash collected minus the fees the partner kept)
+   * - Credit: Cash in Transit 1015 (`cover.matched`: the part that matched the partner's open collections, FIFO)
+   * - Credit: Unapplied Partner Receipts 2040 (`cover.remaining`: any excess), with an `excess_deposit` Finding
+   * The caller matches the collections first and passes the result in.
+   * Verifying a single collection posts nothing; 1015 already holds the net amount from the delivery.
+   * Idempotent per deposit.
    *
    * @param tx - Prisma transaction client
    * @param deposit - Agent deposit record
    * @param userId - ID of user verifying the deposit
-   * @returns Created journal entry
+   * @param cover - What the FIFO match covered (`matched`) and what is left over (`remaining`)
+   * @returns The entry, and the id of the excess_deposit Finding it opened (null when there is no excess)
    */
   static async createAgentDepositEntry(
     tx: Prisma.TransactionClient,
     deposit: AgentDeposit,
-    userId: number
-  ): Promise<JournalEntryWithTransactions> {
+    userId: number,
+    cover: { matched: Money.MoneyInput; remaining: Money.MoneyInput }
+  ): Promise<{ entry: JournalEntryWithTransactions; excessFindingId: number | null }> {
     // Idempotency guard — prevent duplicate GL entries for the same agent deposit
     const existingEntry = await tx.journalEntry.findFirst({
       where: {
@@ -840,10 +906,12 @@ export class GLAutomationService {
     });
     if (existingEntry) {
       logger.warn(`Skipping duplicate GL entry for agent deposit ${deposit.id}: ${existingEntry.entryNumber} already exists`);
-      return existingEntry as JournalEntryWithTransactions;
+      return { entry: existingEntry as JournalEntryWithTransactions, excessFindingId: null };
     }
 
     const depositAmount = Money.parse(deposit.amount);
+    const matched = Money.parse(cover.matched);
+    const excess = Money.parse(cover.remaining);
 
     const transactions: TransactionCreateData[] = [
       {
@@ -852,24 +920,121 @@ export class GLAutomationService {
         creditAmount: Money.ZERO,
         description: `Deposit verification - Agent #${deposit.agentId} (Ref: ${deposit.referenceNumber})`,
       },
-      {
-        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.AR_AGENTS, tx),
-        debitAmount: Money.ZERO,
-        creditAmount: depositAmount,
-        description: `Deposit matching - Agent #${deposit.agentId}`,
-      },
     ];
+    if (matched.greaterThan(0)) {
+      transactions.push({
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT, tx),
+        debitAmount: Money.ZERO,
+        creditAmount: matched,
+        description: `Deposit matching - Agent #${deposit.agentId}`,
+      });
+    }
+    if (excess.greaterThan(0)) {
+      transactions.push({
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.UNAPPLIED_PARTNER_RECEIPTS, tx),
+        debitAmount: Money.ZERO,
+        creditAmount: excess,
+        description: `Deposit above open collections - Agent #${deposit.agentId} (Ref: ${deposit.referenceNumber})`,
+      });
+    }
 
-    return await this.createJournalEntryWithRetry(tx, {
-      entryDate: new Date(),
+    const entry = await this.createJournalEntryWithRetry(tx, {
+      entryDate: deposit.depositDate ?? new Date(),
       description: `Agent deposit verification - Ref #${deposit.referenceNumber}`,
       sourceType: JournalSourceType.agent_deposit,
       sourceId: deposit.id,
       createdBy: userId,
+      tenantId: deposit.tenantId ?? undefined,
       transactions: {
         create: transactions,
       },
     });
+
+    let excessFindingId: number | null = null;
+    if (excess.greaterThan(0)) {
+      excessFindingId = await openFindingOnce({
+        tenantId: resolveTenantId(deposit.tenantId),
+        type: 'excess_deposit',
+        subjectType: 'agent_deposit',
+        subjectId: String(deposit.id),
+        amount: excess,
+        note: `Deposit ${deposit.referenceNumber} is ${Money.toApi(excess)} more than the partner's open collections. The excess is held in 2040.`,
+      }, { includeClosed: true }, tx as any);
+    }
+    return { entry, excessFindingId };
+  }
+
+  /**
+   * The two legs of a commission entry: earned = DR 5050 / CR 2020, reversed = DR 2020 / CR 5050.
+   * Takes the app's extended transaction client, the one the services hold; the single cast to the base
+   * client is here, so callers need none.
+   */
+  private static async postCommissionLegs(
+    tx: TransactionClient,
+    entry: { id: number; tenantId: string; orderId: number | null; amount: Decimal },
+    userId: number,
+    entryDate: Date,
+    kind: 'earned' | 'reversed',
+  ): Promise<JournalEntryWithTransactions> {
+    const base = tx as unknown as Prisma.TransactionClient;
+    const earned = kind === 'earned';
+    const amount = Money.parse(entry.amount);
+    const label = entry.orderId ? `Order #${entry.orderId}` : `Entry #${entry.id}`;
+    const expense = { accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.SALES_REP_COMMISSION, base) };
+    const payable = { accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.COMMISSIONS_PAYABLE, base) };
+    return await this.createJournalEntryWithRetry(base, {
+      entryDate,
+      description: `${earned ? 'Commission earned' : 'Commission reversal'} - ${label}`,
+      sourceType: JournalSourceType.commission_accrual,
+      sourceId: entry.id,
+      externalRef: earned ? `commission-entry:${entry.id}` : `commission-entry-void:${entry.id}`,
+      createdBy: userId,
+      tenantId: entry.tenantId,
+      transactions: {
+        create: earned
+          ? [
+              { ...expense, debitAmount: amount, creditAmount: Money.ZERO, description: 'Sales representative commission expense' },
+              { ...payable, debitAmount: Money.ZERO, creditAmount: amount, description: 'Accrued commissions payable to sales rep' },
+            ]
+          : [
+              { ...payable, debitAmount: amount, creditAmount: Money.ZERO, description: 'Accrued commissions payable reversal' },
+              { ...expense, debitAmount: Money.ZERO, creditAmount: amount, description: 'Sales representative commission reversal' },
+            ],
+      },
+    });
+  }
+
+  /**
+   * Commission earned (F-914, M5-T18): DR 5050 Sales rep commission, CR 2020 Commissions payable for one
+   * `CommissionEntry`. Source is the entry (`commission_accrual` + entry id), and the external ref `commission-entry:<id>`
+   * is unique per tenant, so a repeat can never post twice (the caller also locks the entry row).
+   */
+  static async recordCommissionAccrual(
+    tx: TransactionClient,
+    entry: { id: number; tenantId: string; orderId: number | null; amount: Decimal },
+    userId: number,
+    entryDate: Date = new Date()
+  ): Promise<JournalEntryWithTransactions> {
+    return this.postCommissionLegs(tx, entry, userId, entryDate, 'earned');
+  }
+
+  /**
+   * Reversal of `recordCommissionAccrual` when a returned order voids its entry: DR 2020, CR 5050 for the
+   * entry's amount (a split remainder reverses only what it still holds). External ref
+   * `commission-entry-void:<id>` makes a repeat a no-op.
+   */
+  static async reverseCommissionAccrual(
+    tx: TransactionClient,
+    entry: { id: number; tenantId: string; orderId: number | null; amount: Decimal },
+    userId: number,
+    entryDate: Date = new Date()
+  ): Promise<JournalEntryWithTransactions> {
+    const existing = await tx.journalEntry.findFirst({
+      where: { tenantId: entry.tenantId, sourceType: JournalSourceType.commission_accrual, externalRef: `commission-entry-void:${entry.id}` },
+      include: { transactions: { include: { account: true } } },
+    });
+    if (existing) return existing as JournalEntryWithTransactions;
+    return this.postCommissionLegs(tx, entry, userId, entryDate, 'reversed');
   }
 
   /**
@@ -891,7 +1056,8 @@ export class GLAutomationService {
     payoutId: number,
     repId: number,
     amount: Decimal,
-    userId: number
+    userId: number,
+    opts: { entryDate?: Date; tenantId?: string } = {}
   ): Promise<JournalEntryWithTransactions> {
     // Idempotency guard — prevent duplicate GL entries for the same payout
     const existingEntry = await tx.journalEntry.findFirst({
@@ -923,15 +1089,29 @@ export class GLAutomationService {
     ];
 
     return await this.createJournalEntryWithRetry(tx, {
-      entryDate: new Date(),
+      entryDate: opts.entryDate ?? new Date(),
       description: `Commission payout - Rep #${repId} (Payout #${payoutId})`,
       sourceType: JournalSourceType.payout,
       sourceId: payoutId,
       createdBy: userId,
+      tenantId: opts.tenantId,
       transactions: {
         create: transactions,
       },
     });
+  }
+
+  /** The lines of an entry with debit and credit swapped, each description prefixed. */
+  private static flippedLines(
+    transactions: Array<{ accountId: number; debitAmount: Decimal | Prisma.Decimal; creditAmount: Decimal | Prisma.Decimal; description: string | null }>,
+    prefix: string
+  ): TransactionCreateData[] {
+    return transactions.map((t) => ({
+      accountId: t.accountId,
+      debitAmount: t.creditAmount as unknown as Decimal,
+      creditAmount: t.debitAmount as unknown as Decimal,
+      description: `${prefix}: ${t.description ?? ''}`,
+    }));
   }
 
   /**
@@ -972,12 +1152,7 @@ export class GLAutomationService {
     }
 
     // Create reversing transactions (flip debits and credits)
-    const reversingTransactions: TransactionCreateData[] = originalEntry.transactions.map(txn => ({
-      accountId: txn.accountId,
-      debitAmount: txn.creditAmount as unknown as Decimal,
-      creditAmount: txn.debitAmount as unknown as Decimal,
-      description: `Void: ${txn.description}`,
-    }));
+    const reversingTransactions = this.flippedLines(originalEntry.transactions, 'Void');
 
     // Create the reversing journal entry (marked as voided so idempotency guards
     // and future void calls don't pick it up as an active entry)

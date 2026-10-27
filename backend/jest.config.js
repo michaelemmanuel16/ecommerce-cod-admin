@@ -29,10 +29,10 @@ module.exports = {
   restoreMocks: true,
   coverageThreshold: {
     global: {
-      branches: 49,     // Floor = current 49.33 rounded down (COD-8); raise at M5 and M11
-      functions: 60,    // Floor = current 60.30 rounded down
-      lines: 62,        // Floor = current 62.57 rounded down
-      statements: 62,   // Floor = current 62.87 rounded down
+      branches: 77,     // Floor = M5 measured 77.80 rounded down (COD-55, T49); raise again at M11
+      functions: 90,    // Floor = M5 measured 90.05 rounded down
+      lines: 87,        // Floor = M5 measured 87.02 rounded down
+      statements: 86,   // Floor = M5 measured 86.72 rounded down
     },
   },
   globals: {

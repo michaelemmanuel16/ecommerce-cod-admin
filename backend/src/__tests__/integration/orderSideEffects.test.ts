@@ -1,6 +1,6 @@
 /**
  * M1-T10: side effects of a status move, inside the state machine, against the test DB.
- * Failed-delivery fee (FeeRule, one per move), revenue and reversal (D7), the reconcile safety net,
+ * Failed-delivery fee (FeeRule, one per move, DR 5070 CR 1015), revenue and reversal (D7), the reconcile safety net,
  * and the removed GL_DEFAULTS fee.
  */
 import { describe, it, expect, beforeAll, afterAll, jest } from '@jest/globals';
@@ -32,8 +32,7 @@ const inTenant = <T>(fn: () => Promise<T>) => runInTenant(tenantId, fn);
 const move = (id: number, to: any, options: any = {}) => inTenant(() => transitionOrder(id, to, ADMIN, options));
 const entries = (where: Record<string, unknown>) => prismaBase.journalEntry.findMany({ where: { tenantId, ...where }, orderBy: { id: 'asc' } });
 const failedEntries = (orderId: number) =>
-  prismaBase.orderHistory.findMany({ where: { orderId, status: 'failed_delivery' }, select: { id: true } })
-    .then((rows) => entries({ sourceType: 'order_failed_delivery', sourceId: { in: rows.map((r) => r.id) } }));
+  entries({ sourceType: 'delivery_fee', sourceId: orderId, externalRef: { startsWith: 'failed:' } });
 const allEntryCount = () => prismaBase.journalEntry.count({ where: { tenantId } });
 
 beforeAll(async () => {
@@ -63,7 +62,7 @@ describe('failed-delivery fee (F-935, D6)', () => {
   });
 
   it('with a FeeRule it posts exactly one entry, a repeat posts none, and two attempts post two', async () => {
-    await prismaBase.feeRule.create({ data: { tenantId, partnerUserId: agentId, outcome: 'failed', amount: 25 } });
+    await prismaBase.feeRule.create({ data: { tenantId, partnerUserId: agentId, outcome: 'failed', amount: 25, validFrom: new Date('2026-01-01') } });
     const id = await mk('out_for_delivery');
 
     await move(id, 'failed_delivery', { failureReason: 'not_reachable' });
@@ -77,11 +76,12 @@ describe('failed-delivery fee (F-935, D6)', () => {
     await move(id, 'failed_delivery', { failureReason: 'not_reachable' });
     const posted = await failedEntries(id);
     expect(posted).toHaveLength(2);
-    expect(new Set(posted.map((e) => e.sourceId)).size).toBe(2);
+    expect(new Set(posted.map((e) => e.externalRef)).size).toBe(2);
 
     const lines = await prismaBase.accountTransaction.findMany({ where: { journalEntryId: posted[0].id }, include: { account: true } });
     const debit = lines.find((l) => Number(l.debitAmount) > 0)!;
-    expect(debit.account.code).toBe(GL_ACCOUNTS.FAILED_DELIVERY_EXPENSE);
+    expect(debit.account.code).toBe(GL_ACCOUNTS.DELIVERY_FEES);
+    expect(lines.find((l) => Number(l.creditAmount) > 0)!.account.code).toBe(GL_ACCOUNTS.CASH_IN_TRANSIT);
     expect(Number(debit.debitAmount)).toBe(25);
   });
 });

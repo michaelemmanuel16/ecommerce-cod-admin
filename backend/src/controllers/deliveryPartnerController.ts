@@ -11,6 +11,8 @@ import {
 import {
   createPartner, getPartner, setPartnerAvailability, updatePartner,
 } from '../services/deliveryPartnerAdminService';
+import { createFeeRule, createFeeRules, listFeeRules } from '../services/feeRuleService';
+import { applyPartnerCsv, previewPartnerCsv } from '../services/partnerCsvService';
 import { unmappedRegions } from '../services/regionService';
 import { proofSummaries } from '../services/deliveryProofService';
 
@@ -101,4 +103,29 @@ export const update = async (req: AuthRequest, res: Response): Promise<void> => 
 /** PATCH /api/delivery-partners/:id/availability */
 export const availability = async (req: AuthRequest, res: Response): Promise<void> => {
   res.json({ partner: await setPartnerAvailability(req.user!, partnerIdOf(req), req.body?.isAvailable) });
+};
+
+/** GET /api/delivery-partners/:id/fee-rules: rule history and the rule in force today per outcome (F-703). */
+export const feeRules = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.json(await listFeeRules(partnerIdOf(req)));
+};
+
+/** POST /api/delivery-partners/:id/fee-rules: one rule for one outcome, or `{ rules: [...] }` for several together, valid from a date (F-703). */
+export const addFeeRule = async (req: AuthRequest, res: Response): Promise<void> => {
+  // `{ rules: [...] }` saves the changed outcomes together and answers with the list as GET gives it; one rule keeps the old shape
+  if (Array.isArray(req.body?.rules)) {
+    res.status(201).json(await createFeeRules(req.user!, partnerIdOf(req), req.body.rules));
+    return;
+  }
+  res.status(201).json({ rule: await createFeeRule(req.user!, partnerIdOf(req), req.body ?? {}) });
+};
+
+/** POST /api/delivery-partners/:id/csv/preview { csv }: matched, changed, flagged and rejected rows of a partner's status list. Writes nothing (F-712). */
+export const csvPreview = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.json(await previewPartnerCsv(req.user!, partnerIdOf(req), req.body?.csv));
+};
+
+/** POST /api/delivery-partners/:id/csv/apply { csv, fileHash }: applies the rows the preview showed as changed, through the order status service. */
+export const csvApply = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.json(await applyPartnerCsv(req.user!, partnerIdOf(req), req.body?.csv, req.body?.fileHash));
 };

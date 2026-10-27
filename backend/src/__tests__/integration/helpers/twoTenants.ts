@@ -181,14 +181,11 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
         referenceNumber: `dep-${tag}`, notes: `deposit ${marker}`, tenantId,
       },
     })),
-    seed('agentAgingBucket', prismaBase.agentAgingBucket.create({
-      data: { agentId: deliveryAgent.id, totalBalance: amount, bucket_8_plus: amount, tenantId },
-    })),
     seed('agentBalance', prismaBase.agentBalance.create({
       data: { agentId: deliveryAgent.id, totalCollected: amount, currentBalance: amount, tenantId },
     })),
     seed('payout', prismaBase.payout.create({
-      data: { repId: salesRep.id, amount: '20', method: 'cash', notes: `payout ${marker}`, tenantId },
+      data: { payeeId: salesRep.id, amount: '20', method: 'cash', notes: `payout ${marker}`, tenantId },
     })),
     seed('webhookLog', prismaBase.webhookLog.create({
       data: { webhookConfigId: webhookConfig.id, endpoint: `/hook/${marker}`, method: 'POST', headers: {}, body: { marker }, tenantId },
@@ -213,7 +210,7 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
       data: { type: 'ledger_gap', subjectType: 'day', subjectId: `2026-10-01-${marker}`, amount, note: `finding ${marker}`, tenantId },
     })),
     seed('feeRule', prismaBase.feeRule.create({
-      data: { partnerUserId: deliveryAgent.id, outcome: 'delivered', amount: '25', tenantId },
+      data: { partnerUserId: deliveryAgent.id, outcome: 'delivered', amount: '25', validFrom: new Date('2026-10-01'), tenantId },
     })),
     seed('fxRate', prismaBase.fxRate.create({
       data: { fromCurrency: 'GHS', toCurrency: 'NGN', rate: '112', date: new Date('2026-10-01'), source: 'auto', createdById: admin.id, tenantId },
@@ -292,6 +289,22 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
     })),
   ]);
 
+  // M5 models: a partner payout list with one matched line, and one earned commission entry.
+  const settlement = await seed('partnerSettlement', prismaBase.partnerSettlement.create({
+    data: {
+      tenantId, partnerId: deliveryAgent.id, payoutDate: new Date('2026-10-20'), payoutAmount: '86.11', currency: side === 'a' ? 'GHS' : 'NGN',
+      reference: `settle-${tag}`, expectedNet: '86.11', status: 'matched',
+    },
+  }));
+  await wave([
+    seed('partnerSettlementLine', prismaBase.partnerSettlementLine.create({
+      data: { tenantId, settlementId: settlement.id, orderId: order.id, externalOrderRef: `ext-${marker}`, expAmount: amount, charge: '25', matched: true, matchedBy: 'order_id' },
+    })),
+    seed('commissionEntry', prismaBase.commissionEntry.create({
+      data: { tenantId, orderId: order.id, userId: salesRep.id, kind: 'base', status: 'earned', amount: '8', earnedAt: new Date('2026-10-20') },
+    })),
+  ]);
+
   // The MCP key acts as an ai_agent user. admin holds every cell the 14 tools need and the Legacy role lists all
   // 14 tools, so suites that call every tool work. A suite that tests a narrower key makes its own user, role and key.
   const legacyRole = await prismaBase.role.findFirstOrThrow({ where: { tenantId, name: 'Legacy MCP (14 tools)' } });
@@ -333,12 +346,14 @@ export async function deleteTenantRows(tenantIds: string[]): Promise<void> {
     db.downloadToken.deleteMany({ where: t }),
     db.call.deleteMany({ where: t }),
     db.orderHistory.deleteMany({ where: t }),
+    db.commissionEntry.deleteMany({ where: t }),
     db.agentCollection.deleteMany({ where: t }),
+    db.partnerSettlementLine.deleteMany({ where: t }),
+    db.partnerSettlement.deleteMany({ where: t }),
     db.delivery.deleteMany({ where: t }),
     db.messageLog.deleteMany({ where: t }),
     db.payout.deleteMany({ where: t }),
     db.agentDeposit.deleteMany({ where: t }),
-    db.agentAgingBucket.deleteMany({ where: t }),
     db.agentBalance.deleteMany({ where: t }),
     db.accountTransaction.deleteMany({ where: t }),
     db.transaction.deleteMany({ where: t }),

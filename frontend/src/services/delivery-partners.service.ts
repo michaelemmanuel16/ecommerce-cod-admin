@@ -22,6 +22,35 @@ export interface FeeRule {
   returned: string | null;
 }
 
+export type FeeOutcome = 'delivered' | 'failed' | 'returned';
+export type FeeBasis = 'flat' | 'percent';
+
+/** One delivery fee rule as GET /api/delivery-partners/:id/fee-rules returns it (F-703). `amount` is a money string, or a percent for basis `percent`. */
+export interface FeeRuleRow {
+  id: number;
+  outcome: FeeOutcome;
+  basis: FeeBasis;
+  amount: string;
+  validFrom: string;
+}
+
+export interface FeeRulesResponse {
+  /** Every rule of the partner, newest first within an outcome. */
+  rules: FeeRuleRow[];
+  /** The rule in force today per outcome; null when there is none. */
+  current: Record<FeeOutcome, FeeRuleRow | null>;
+  /** Average delivery fee stamped on the partner's delivered orders (decision R5); null with no delivered order. */
+  weightedFee: string | null;
+  deliveredOrders: number;
+}
+
+export interface NewFeeRule {
+  outcome: FeeOutcome;
+  basis: FeeBasis;
+  amount: string;
+  validFrom: string;
+}
+
 export interface PartnerRow {
   partnerId: number;
   name: string;
@@ -230,6 +259,21 @@ export const deliveryPartnersService = {
   async update(id: number, patch: PartnerPatch): Promise<PartnerDetail> {
     const response = await apiClient.patch(`/api/delivery-partners/${id}`, patch);
     return response.data.partner;
+  },
+
+  /** Rule history, the rule in force per outcome and the weighted fee. `quiet`: the tab shows a failure itself. */
+  async feeRules(id: number): Promise<FeeRulesResponse> {
+    const response = await apiClient.get(`/api/delivery-partners/${id}/fee-rules`, { skipCache: true, quiet: true });
+    return response.data;
+  },
+
+  /**
+   * The changed outcomes in one request, all or none. The answer is the list as `feeRules` gives it. A refusal (a second rule
+   * with the same date, a bad value) is a 4xx whose body has `errors` per outcome; `quiet`: the form shows them.
+   */
+  async addFeeRules(id: number, rules: NewFeeRule[]): Promise<FeeRulesResponse> {
+    const response = await apiClient.post(`/api/delivery-partners/${id}/fee-rules`, { rules }, { quiet: true });
+    return response.data;
   },
 
   async create(body: NewPartner): Promise<PartnerDetail> {

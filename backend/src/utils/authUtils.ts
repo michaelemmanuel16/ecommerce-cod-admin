@@ -9,6 +9,9 @@ export interface Requester {
 export const isManagerUp = (requester: { role: UserRole | string }): boolean =>
     requester.role === 'super_admin' || requester.role === 'admin' || requester.role === 'manager';
 
+/** The owner: the one role that may do the owner-only things (a write-off). */
+export const isOwner = (requester: { role: UserRole | string }): boolean => requester.role === 'super_admin';
+
 /** Order row scope: a rep sees orders where they are the call rep, a delivery agent their own deliveries. Other roles see all. */
 export function orderScope(requester?: Requester): Prisma.OrderWhereInput {
     if (requester?.role === 'sales_rep') return { customerRepId: requester.id };

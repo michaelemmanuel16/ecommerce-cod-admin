@@ -32,7 +32,11 @@ jest.setTimeout(180_000);
 const PINNED_HASH: Record<string, string> = {
   '2026.10.1': '3f922785c1c8a87245e744157208076d7d995e9e2e9205acd8cca3b4e0cf6d36',
   '2026.10.2': '9d9c5d932641596b5dd7ff34af7ce0c36c6f0b0a2428d11d22f7acf965a69713', // orders_update_status: runWorkflows (M2-T17)
+  '2026.10.3': '9d9c5d932641596b5dd7ff34af7ce0c36c6f0b0a2428d11d22f7acf965a69713', // partner_payout_record added (M5-T10); not on the Legacy role, so the legacy key's list is unchanged
 };
+
+/** The 14 tools the Legacy MCP role holds: partner_payout_record (M5) is not in it, so an old key never gains a money-moving tool. */
+const legacyToolNames = () => listTools().map((t) => t.name).filter((n) => n !== 'partner_payout_record').sort();
 
 const FROM = '2026-10-01';
 const TO = '2026-10-17';
@@ -87,7 +91,7 @@ describe('all 14 tools on the numbers fixture', () => {
       // already delivered: the idempotent path, so the fixture is left as it is
       orders_update_status: { orderId: order.id, status: 'delivered' },
     };
-    expect(Object.keys(calls).sort()).toEqual(listTools().map((t) => t.name).sort());
+    expect(Object.keys(calls).sort()).toEqual(legacyToolNames());
     for (const [name, args] of Object.entries(calls)) {
       const res = await call(name, args);
       expect({ name, isError: res.isError, text: res.isError ? res.text : '' }).toEqual({ name, isError: false, text: '' });
@@ -135,7 +139,7 @@ describe('tools/list is pinned to the registry version', () => {
   const hashOf = (tools: unknown) => createHash('sha256').update(JSON.stringify(tools)).digest('hex');
 
   it('lists the 14 tools', async () => {
-    expect((await listed()).map((t) => t.name)).toEqual(listTools().map((t) => t.name).sort());
+    expect((await listed()).map((t) => t.name)).toEqual(legacyToolNames());
   });
 
   it('the names, descriptions and input schemas match what was pinned for this REGISTRY_VERSION', async () => {

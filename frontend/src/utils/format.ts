@@ -14,6 +14,16 @@ export const getStoreCurrency = (): string => useConfigStore.getState().currency
 export const formatCurrency = (amount: string | number | null | undefined, currency?: string): string =>
   formatMoney(amount, currency || getStoreCurrency());
 
+/** The sign of a currency alone ("GH₵"), from the same Intl formatter as `formatCurrency`. The store currency by default. */
+export const currencySymbol = (currency: string = getStoreCurrency()): string => {
+  try {
+    const parts = new Intl.NumberFormat('en-US', { style: 'currency', currency, currencyDisplay: 'narrowSymbol' }).formatToParts(0);
+    return parts.find((p) => p.type === 'currency')?.value ?? currency;
+  } catch {
+    return currency;
+  }
+};
+
 /** "₦112 = GH₵1": the rate used, `rate` = units of `foreign` for 1 unit of the store currency on that day. */
 export const formatRateUsed = (foreign: string, rate: number, store: string = getStoreCurrency()): string =>
   `${getCurrencySymbol(foreign)}${new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 }).format(rate)} = ${getCurrencySymbol(store)}1`;

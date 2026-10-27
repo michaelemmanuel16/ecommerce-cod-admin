@@ -52,6 +52,7 @@ describe('Delivery GL Integration', () => {
     await withGlTestTenant(async () => {
       await prisma.accountTransaction.deleteMany({});
       await (prisma as any).agentCollection.deleteMany({});
+      await (prisma as any).agentBalance.deleteMany({}); // the draft collection of a COD delivery opens the partner's balance row
       await prisma.deliveryAttempt.deleteMany({}); // written by the state machine on a failed delivery (M4-T20)
       await prisma.delivery.deleteMany({});
       await prisma.orderItem.deleteMany({});
@@ -88,7 +89,7 @@ describe('Delivery GL Integration', () => {
       { id: parseInt(GL_ACCOUNTS.COGS), code: GL_ACCOUNTS.COGS, name: 'COGS', accountType: 'expense', normalBalance: 'debit' },
       { id: parseInt(GL_ACCOUNTS.FAILED_DELIVERY_EXPENSE), code: GL_ACCOUNTS.FAILED_DELIVERY_EXPENSE, name: 'Failed Delivery Expense', accountType: 'expense', normalBalance: 'debit' },
       { id: parseInt(GL_ACCOUNTS.RETURN_PROCESSING_EXPENSE), code: GL_ACCOUNTS.RETURN_PROCESSING_EXPENSE, name: 'Return Processing Expense', accountType: 'expense', normalBalance: 'debit' },
-      { id: parseInt(GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION), code: GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION, name: 'Delivery Agent Commission', accountType: 'expense', normalBalance: 'debit' },
+      { id: parseInt(GL_ACCOUNTS.DELIVERY_FEES), code: GL_ACCOUNTS.DELIVERY_FEES, name: 'Delivery Fees', accountType: 'expense', normalBalance: 'debit' },
       { id: parseInt(GL_ACCOUNTS.SALES_REP_COMMISSION), code: GL_ACCOUNTS.SALES_REP_COMMISSION, name: 'Sales Rep Commission', accountType: 'expense', normalBalance: 'debit' },
       { id: parseInt(GL_ACCOUNTS.REFUND_LIABILITY), code: GL_ACCOUNTS.REFUND_LIABILITY, name: 'Refund Liability', accountType: 'liability', normalBalance: 'credit' },
     ];
@@ -184,6 +185,7 @@ describe('Delivery GL Integration', () => {
     // Clean up test data in correct order to avoid FK issues
     await prisma.accountTransaction.deleteMany({});
     await (prisma as any).agentCollection.deleteMany({});
+    await (prisma as any).agentBalance.deleteMany({});
     await prisma.delivery.deleteMany({});
     await prisma.orderItem.deleteMany({});
     await (prisma as any).formSubmission.deleteMany({});
@@ -255,6 +257,33 @@ describe('Delivery GL Integration', () => {
     });
   });
 
+  describe('Complete Delivery with a delivery fee (M5-T06)', () => {
+    it('stamps the fee, posts it to 5070 / 1015 and books the draft collection at the cash minus the fee', async () => {
+      await prisma.feeRule.create({
+        data: { partnerUserId: testOrder.deliveryAgentId, outcome: 'delivered', amount: 25, validFrom: new Date('2026-01-01') },
+      });
+      await prisma.order.update({ where: { id: testOrder.id }, data: { codAmount: 210 } });
+
+      await deliveryService.completeDelivery(
+        testDelivery.id.toString(),
+        { proofType: 'signature', proofData: 'signature.png', recipientName: 'Test Customer' },
+        testUser.id.toString()
+      );
+
+      const order = await prisma.order.findUniqueOrThrow({ where: { id: testOrder.id } });
+      expect(Number(order.deliveryFee)).toBe(25);
+      const collection = await (prisma as any).agentCollection.findFirstOrThrow({ where: { orderId: testOrder.id } });
+      expect(Number(collection.amount)).toBe(185);
+
+      const fee = await prisma.journalEntry.findFirstOrThrow({
+        where: { sourceType: 'delivery_fee', sourceId: testOrder.id },
+        include: { transactions: { include: { account: true } } },
+      });
+      expect(fee.transactions.map((t) => [t.account.code, Number(t.debitAmount), Number(t.creditAmount)]).sort())
+        .toEqual([[GL_ACCOUNTS.CASH_IN_TRANSIT, 0, 25], [GL_ACCOUNTS.DELIVERY_FEES, 25, 0]]);
+    });
+  });
+
   describe('Complete Delivery without COGS', () => {
     it('should create GL entry without COGS transactions when product has no COGS', async () => {
       // Update product to have no COGS
@@ -291,9 +320,9 @@ describe('Delivery GL Integration', () => {
 
   describe('Failed Delivery', () => {
     it('should create GL entry for failed delivery expense', async () => {
-      // The fee comes from the agent's FeeRule (M1-T10); with no rule nothing posts
+      // The fee comes from the agent's FeeRule (M1-T10, M5-T06); with no rule nothing posts
       await prisma.feeRule.create({
-        data: { partnerUserId: testOrder.deliveryAgentId, outcome: 'failed', amount: 50 },
+        data: { partnerUserId: testOrder.deliveryAgentId, outcome: 'failed', amount: 50, validFrom: new Date('2026-01-01') },
       });
       // markDeliveryFailed is gone (M4-T20); the fail goes through the state machine, as the order status route does
       await transitionOrder(testOrder.id, 'failed_delivery', actorOf(undefined, testUser.id), {
@@ -311,23 +340,25 @@ describe('Delivery GL Integration', () => {
       expect(updatedOrder!.status).toBe('failed_delivery');
 
       // Verify GL entry was created
-      // M1-T11: the fee is keyed on the OrderHistory row of the failed_delivery move (D6)
+      // M1-T11, M5-T06: the fee is keyed on the OrderHistory row of the failed_delivery move (D6)
       const failedMove = await prisma.orderHistory.findFirstOrThrow({
         where: { orderId: testOrder.id, status: 'failed_delivery' },
       });
       const glEntries = await prisma.journalEntry.findMany({
         where: {
-          sourceType: 'order_failed_delivery',
-          sourceId: failedMove.id,
+          sourceType: 'delivery_fee',
+          sourceId: testOrder.id,
+          externalRef: `failed:${failedMove.id}`,
         },
-        include: { transactions: true },
+        include: { transactions: { include: { account: true } } },
       });
 
       expect(glEntries).toHaveLength(1);
 
       const glEntry = glEntries[0];
-      expect(glEntry.description).toContain('Failed delivery expense');
+      expect(glEntry.description).toContain('Delivery fee (failed)');
       expect(glEntry.transactions).toHaveLength(2);
+      expect(glEntry.transactions.map((t) => t.account.code).sort()).toEqual([GL_ACCOUNTS.CASH_IN_TRANSIT, GL_ACCOUNTS.DELIVERY_FEES]);
     });
   });
 

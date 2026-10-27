@@ -12,6 +12,7 @@ import agentReconciliationService from './agentReconciliationService';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitGLEntryCreated } from '../sockets/index';
 import * as Money from '../utils/money';
+import { partnerNetCash } from './feeRuleService';
 import { customerPhoneSearch } from '../utils/phone';
 
 
@@ -306,19 +307,18 @@ export class DeliveryService {
 
       logger.info(`GL entry created for order ${orderWithItems.id}: ${glEntry.entryNumber}`);
 
-      // Create draft agent collection record with net amount (gross - agent commission)
+      // Create draft agent collection record with the net amount: the cash collected minus the delivery fee the
+      // partner keeps (F-936). The state machine stamped the fee before it posted the revenue.
       if (orderWithItems.deliveryAgentId && Money.isNonZero(orderWithItems.codAmount)) {
-        const grossAmount = Money.orZero(orderWithItems.codAmount);
-        // Uses profile flat rate — must match createRevenueRecognitionEntry in glAutomationService
-        const agentCommission = Money.orZero(orderWithItems.deliveryAgent?.commissionAmount);
-        const netAmount = Money.sub(grossAmount, agentCommission);
+        const netAmount = partnerNetCash(orderWithItems, Money.orZero(orderWithItems.codAmount));
 
         await agentReconciliationService.createDraftCollection(
           tx,
           orderWithItems.id,
           orderWithItems.deliveryAgentId,
           netAmount,
-          updatedDelivery.actualDeliveryTime || new Date()
+          updatedDelivery.actualDeliveryTime || new Date(),
+          orderWithItems.tenantId
         );
       }
 

@@ -1,0 +1,47 @@
+/* Agent collections tab, unpaid-by-age card and Findings page (M5-T35, T36). Built from docs/mockups/v2/finance.html
+   (.kpis .bars .bar-row .note .dt .tag), with the `.v2` scope added. Colours come from tokens.css only.
+   Rules with no mockup counterpart are marked "new". */
+
+.v2 .collections{min-width:0}
+.v2 .agtools{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:12px 20px 4px}
+.v2 .agtools .mut,.v2 .mut{color:var(--ink-3)}
+.v2 .agtools b{font-weight:600}
+.v2 a.btn{text-decoration:none}
+/* new: the card scrolls its table sideways, never the page */
+.v2 .agingwrap .tablewrap,.v2 .findwrap .tablewrap,.v2 .dlg .tablewrap{overflow-x:auto}
+.v2 .agingwrap td .who,.v2 .findwrap td .who{min-width:200px}
+.v2 .agingwrap tfoot td{border-top:1px solid var(--line);background:var(--hover)}
+.v2 .rowacts{display:inline-flex;gap:6px;justify-content:flex-end;align-items:center}
+.v2 .agecard .note a{color:var(--pine);font-weight:600}
+
+/* Collections to verify and the review modal (mockup .rcpt, #revReceipt; the rest is new) */
+.v2 .verifywrap tr.sel td{background:var(--hover)}
+.v2 .verifywrap input[type=checkbox]{accent-color:var(--pine)}
+.v2 .revbody{display:grid;gap:16px}
+.v2 .revbody .fl .lbl{display:block;font-weight:600;font-size:13px;margin-bottom:5px}
+.v2 .revfacts{display:grid;gap:10px;align-content:start}
+
+/* Rep commissions and the payout form (mockup #p-commissions, #repPayModal; the entries and history lists are new, T38 needs them) */
+.v2 .repcom{min-width:0}
+.v2 .comwrap td .who{min-width:190px}
+@media (max-width:760px){.v2 .repcom .kpis{grid-template-columns:repeat(2,1fr)}}
+.v2 .comwrap td .who .tag{margin-left:4px;vertical-align:1px}
+.v2 .payform{display:grid;gap:16px}
+.v2 .payfields{display:grid;gap:14px}
+.v2 .payform .warnline{font-size:13px;font-weight:700;color:var(--warn-ink)}
+.v2 .payentries h4{font-size:13px;font-weight:700;margin-bottom:6px}
+.v2 .payentries .tablewrap{border:1px solid var(--line);border-radius:12px;max-height:220px;overflow:auto}
+.v2 .payentries table th,.v2 .payentries table td{padding:9px 10px}
+.v2 .payform input[type=checkbox]{accent-color:var(--pine)}
+
+/* Findings (new) */
+.v2 .findings .filters{border-bottom:1px solid var(--line)}
+.v2 .findwrap td small{display:block;color:var(--ink-3);font-size:12px;white-space:normal;max-width:360px}
+.v2 .findwrap .fnote{white-space:normal;min-width:220px;max-width:380px}
+.v2 .dlg .fform{display:flex;flex-direction:column;gap:14px}
+.v2 .dlg .fform textarea{width:100%;min-height:84px}
+.v2 .dlg .fmeta{color:var(--ink-2);font-size:13px}
+.v2 .dlg .fmeta b{color:var(--ink)}
+
+/* Orders "Unpaid by agent" row line (new) */
+.v2 .ot .unpaidline{margin-top:3px;font-size:12.5px;font-weight:600;color:var(--coral)}

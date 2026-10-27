@@ -1,12 +1,11 @@
 import { Request, Response } from 'express';
 import agentReconciliationService from '../services/agentReconciliationService';
-import agingService from '../services/agingService';
 import { AppError } from '../middleware/errorHandler';
 import prisma from '../utils/prisma';
 import { readDateBound } from '../utils/kpiRequest';
 import { getSocketInstance } from '../utils/socketInstance';
 import * as Money from '../utils/money';
-import { emitCollectionVerified, emitCollectionApproved, emitToTenant, emitToUser } from '../sockets/index';
+import { emitToTenant, emitToUser } from '../sockets/index';
 
 export class AgentReconciliationController {
     /**
@@ -71,8 +70,7 @@ export class AgentReconciliationController {
             if (endDate) where.depositDate.lte = readDateBound(endDate, 'to');
         }
 
-        const deposits = await (prisma as any).agentDeposit.findMany({
-            where,
+        const query = {
             include: {
                 agent: {
                     select: { id: true, firstName: true, lastName: true, email: true }
@@ -82,7 +80,21 @@ export class AgentReconciliationController {
                 }
             },
             orderBy: { depositDate: 'desc' }
-        });
+        };
+        const db = (prisma as any).agentDeposit;
+        // recentDecided=N: every pending row plus the N newest decided rows, so the Finance screens stay bounded (read only)
+        const recentDecided = req.query.recentDecided === undefined ? null : Number(req.query.recentDecided);
+        let deposits;
+        if (recentDecided === null) {
+            deposits = await db.findMany({ where, ...query });
+        } else {
+            const { status: _ignored, ...scope } = where;
+            const [pending, decided] = await Promise.all([
+                db.findMany({ where: { ...scope, status: 'pending' }, ...query }),
+                db.findMany({ where: { ...scope, status: { not: 'pending' } }, ...query, take: recentDecided }),
+            ]);
+            deposits = [...pending, ...decided].sort((a, b) => +new Date(b.depositDate) - +new Date(a.depositDate));
+        }
 
         res.json(deposits);
     }
@@ -104,76 +116,6 @@ export class AgentReconciliationController {
         });
 
         res.json(stats);
-    }
-
-    /**
-     * Verify a collection (Accountant)
-     */
-    async verifyCollection(req: Request, res: Response) {
-        const { id } = req.params;
-        const userId = (req as any).user.id;
-
-        const parsedId = parseInt(id);
-        if (isNaN(parsedId)) throw new AppError('Invalid collection ID', 400);
-
-        const result = await agentReconciliationService.verifyCollection(parsedId, userId);
-
-        // Emit socket event
-        const io = getSocketInstance();
-        if (io) {
-            emitCollectionVerified(io, result);
-            // Also emit balance update
-            const balance = await agentReconciliationService.getAgentBalance(result.agentId);
-            emitToTenant(io, `agent:balance-updated`, { agentId: result.agentId, balance });
-        }
-
-        res.json(result);
-    }
-
-    /**
-     * Bulk verify collections (Accountant)
-     */
-    async bulkVerify(req: Request, res: Response) {
-        const { ids } = req.body;
-        const userId = (req as any).user.id;
-
-        if (!Array.isArray(ids)) {
-            throw new AppError('IDs must be an array', 400);
-        }
-
-        const results = await agentReconciliationService.bulkVerifyCollections(ids, userId);
-
-        // Emit socket event for the whole batch
-        const io = getSocketInstance();
-        if (io) {
-            emitToTenant(io, 'collections:bulkVerified', { count: results.length });
-        }
-
-        res.json(results);
-    }
-
-    /**
-     * Approve a collection (Manager/Admin)
-     */
-    async approveCollection(req: Request, res: Response) {
-        const { id } = req.params;
-        const userId = (req as any).user.id;
-
-        const parsedId = parseInt(id);
-        if (isNaN(parsedId)) throw new AppError('Invalid collection ID', 400);
-
-        const result = await agentReconciliationService.approveCollection(parsedId, userId);
-
-        // Emit socket event
-        const io = getSocketInstance();
-        if (io) {
-            emitCollectionApproved(io, result);
-            // Also emit balance update
-            const balance = await agentReconciliationService.getAgentBalance(result.agentId);
-            emitToTenant(io, `agent:balance-updated`, { agentId: result.agentId, balance });
-        }
-
-        res.json(result);
     }
 
     /**
@@ -263,14 +205,6 @@ export class AgentReconciliationController {
 
         const result = await agentReconciliationService.verifyDeposit(parsedId, userId);
 
-        // Emit socket event
-        const io = getSocketInstance();
-        if (io) {
-            const balance = await agentReconciliationService.getAgentBalance(result.agentId);
-            emitToTenant(io, `agent:balance-updated`, { agentId: result.agentId, balance });
-            emitToTenant(io, 'agent:deposit-verified', result);
-        }
-
         res.json(result);
     }
 
@@ -279,13 +213,13 @@ export class AgentReconciliationController {
      */
     async rejectDeposit(req: Request, res: Response) {
         const { id } = req.params;
-        const { notes } = req.body;
+        const { reason } = req.body;
         const userId = (req as any).user.id;
 
         const parsedId = parseInt(id);
         if (isNaN(parsedId)) throw new AppError('Invalid deposit ID', 400);
 
-        const result = await agentReconciliationService.rejectDeposit(parsedId, userId, notes);
+        const result = await agentReconciliationService.rejectDeposit(parsedId, userId, reason);
 
         // Emit socket event (optional for rejection, but good for real-time status)
         const io = getSocketInstance();
@@ -339,29 +273,6 @@ export class AgentReconciliationController {
         }
 
         res.json(result);
-    }
-
-    /**
-     * Get agent aging report (Manager/Admin/Accountant)
-     */
-    async getAgingReport(_req: Request, res: Response) {
-        const report = await agingService.getAgingReport();
-        res.json(report);
-    }
-
-    /**
-     * Export aging report to CSV (Manager/Admin/Accountant)
-     */
-    async exportAgingReport(_req: Request, res: Response) {
-        try {
-            const csv = await agingService.generateAgingCSV();
-
-            res.setHeader('Content-Type', 'text/csv');
-            res.setHeader('Content-Disposition', `attachment; filename=agent-aging-report-${new Date().toISOString().split('T')[0]}.csv`);
-            res.status(200).send(csv);
-        } catch (error) {
-            res.status(500).json({ error: 'Failed to export aging report' });
-        }
     }
 
     /**

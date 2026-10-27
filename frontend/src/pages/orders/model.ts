@@ -5,17 +5,19 @@ import { ORDER_STATUS_LABELS } from '../../utils/orderStatus';
 import { personName } from '../../utils/people';
 
 /** Tab ids are the URL values of `?status=`: a status, `payment_issues` (two statuses) or `all`. */
-export type StatusTabId = 'all' | OrderStatus | 'payment_issues';
+export type StatusTabId = 'all' | OrderStatus | 'payment_issues' | 'unpaid_by_agent';
 
 interface TabDef {
   id: StatusTabId;
   label: string;
   statuses: OrderStatus[];
+  /** A view, not a status: the server filters the list and gives the count (Unpaid by agent). It ignores dates, so the date range is hidden. */
+  view?: { count: (counts: OrderCounts) => number | null | undefined };
   /** Shown only when its count is above 0 (F-308). */
   extra?: boolean;
 }
 
-/** Tab order of docs/mockups/v2/index.html#orders. "Unpaid by agent" (F-309) ships in M5. */
+/** Tab order of docs/mockups/v2/index.html#orders. "Unpaid by agent" (F-309, M5-T35) is not a status: the server filters by cash held past days to pay. */
 const STATUS_TABS: TabDef[] = [
   { id: 'all', label: 'All', statuses: [] },
   { id: 'pending_confirmation', label: ORDER_STATUS_LABELS.pending_confirmation, statuses: ['pending_confirmation'] },
@@ -27,22 +29,32 @@ const STATUS_TABS: TabDef[] = [
   { id: 'failed_delivery', label: ORDER_STATUS_LABELS.failed_delivery, statuses: ['failed_delivery'] },
   { id: 'returned', label: ORDER_STATUS_LABELS.returned, statuses: ['returned'] },
   { id: 'cancelled', label: ORDER_STATUS_LABELS.cancelled, statuses: ['cancelled'] },
+  { id: 'unpaid_by_agent', label: 'Unpaid by agent', statuses: [], view: { count: (c) => c.unpaidByAgent } },
   { id: 'digital_delivered', label: 'Digital', statuses: ['digital_delivered'], extra: true },
   { id: 'payment_issues', label: 'Payment issues', statuses: ['payment_pending', 'payment_failed'], extra: true },
 ];
 
 export const isTabId = (value: string | null): value is StatusTabId => STATUS_TABS.some((t) => t.id === value);
 
+/** Unpaid by agent and any later view: no status filter, no date range. */
+export const isViewTab = (id: StatusTabId): boolean => STATUS_TABS.some((t) => t.id === id && t.view);
+
 export const tabStatuses = (id: StatusTabId): OrderStatus[] => STATUS_TABS.find((t) => t.id === id)?.statuses ?? [];
 
 export function tabCount(id: StatusTabId, counts: OrderCounts): number {
   if (id === 'all') return counts.all;
+  const view = STATUS_TABS.find((t) => t.id === id)?.view;
+  if (view) return view.count(counts) ?? 0;
   return tabStatuses(id).reduce((sum, s) => sum + (counts.byStatus[s] ?? 0), 0);
 }
 
 /** The tabs to draw: every fixed tab, and an extra tab when it has orders or is the one selected. */
 export function visibleTabs(counts: OrderCounts | null, selected: StatusTabId): TabDef[] {
-  return STATUS_TABS.filter((t) => !t.extra || t.id === selected || (counts !== null && tabCount(t.id, counts) > 0));
+  return STATUS_TABS.filter((t) => {
+    // A view tab needs a count from the server (null for a role without finance view): then it is not drawn
+    if (t.view) return t.id === selected || (counts !== null && t.view.count(counts) != null);
+    return !t.extra || t.id === selected || (counts !== null && tabCount(t.id, counts) > 0);
+  });
 }
 
 /** Tag tone per status, as ST in the mockup (new statuses: payment waiting = warn, digital = ok, payment failed = bad). */

@@ -1,9 +1,9 @@
-import { Parser } from 'json2csv';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma, PaymentStatus } from '@prisma/client';
 import logger from '../utils/logger';
 import { checkResourceOwnership, Requester } from '../utils/authUtils';
+import { hasPermission } from '../middleware/auth';
 import { getSocketInstance } from '../utils/socketInstance';
 import {
   emitExpenseCreated,
@@ -12,16 +12,22 @@ import {
   emitTransactionDeposited,
   emitTransactionReconciled
 } from '../sockets/index';
-import { GL_ACCOUNTS } from '../config/glAccounts';
+import { GL_ACCOUNTS, RETIRED_EXPENSE_CODES } from '../config/glAccounts';
 import { TRANSACTION_CONFIG } from '../config/transactionConfig';
 import { GLAutomationService } from './glAutomationService';
 import { getSystemUserId } from './systemUserService';
 import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 import { roleScope } from '../utils/kpiRequest';
-import { getStoreTimeZone, kpiWindow, parseInclusiveBound } from './kpi/dates';
+import { isStorageUrl } from '../config/r2';
+import { EXPENSE_PAID_FROM, matchExpenseCategory, EXPENSE_CATEGORIES } from '../config/expenseCategories';
+import { getStoreTimeZone, kpiWindow, localDate, parseInclusiveBound } from './kpi/dates';
 import { deliveredRevenue, revenueScope } from './kpi/revenue';
-import { PENDING_STATUSES } from './kpi/pending';
+import { OPEN_COLLECTION_STATUSES, outstandingOf } from '../utils/collectionCash';
+import agentReconciliationService, { Cover } from './agentReconciliationService';
+import { partnerNetCash } from './feeRuleService';
+import { cashBuckets, DEFAULT_DAYS_TO_PAY, expectedFromOutForDelivery, getCashForecast, revenueExpenseTrend, summarizeForecast, type Scenario } from './finance/cashFlowService';
+import { balanceSheetOf, incomeStatementOf, ledgerAccounts, type IncomeStatement } from './finance/statementsService';
 
 interface DateFilters {
   startDate?: Date;
@@ -35,13 +41,75 @@ interface CreateExpenseData {
   expenseDate: Date;
   recordedBy: string;
   receiptUrl?: string;
+  paidFrom?: string | null;
 }
 
-interface CashFlowForecast {
-  date: string;
-  expectedCollection: Money.Money;
-  expectedExpense: Money.Money;
-  projectedBalance: Money.Money;
+/** Shown when an expense is dated in a month that has already ended (F-917). The entry is still saved. */
+export const CLOSED_MONTH_NOTICE = 'This month is closed; the P&L changes';
+
+/** The list entry for a category, or a 400 that names the list. */
+function expenseCategoryOrThrow(input: unknown): string {
+  const category = matchExpenseCategory(input);
+  if (!category) throw new AppError(`Category must be one of: ${EXPENSE_CATEGORIES.join(', ')}`, 400, 'EXPENSE_CATEGORY_INVALID');
+  return category;
+}
+
+const RECEIPT_EXTENSIONS = 'jpg|jpeg|png|webp|gif|pdf';
+const RECEIPT_EXT = new RegExp(`\\.(${RECEIPT_EXTENSIONS})$`, 'i');
+/** What POST /api/upload returns without R2: /uploads/<slug>-<ms>-<random>.<ext>. */
+const LOCAL_RECEIPT = new RegExp(`^/uploads/[a-z0-9_-]+-\\d+-\\d+\\.(${RECEIPT_EXTENSIONS})$`, 'i');
+
+/** A receipt link is empty, an upload path, or an https address on our own storage. Anything else is a 400 (stored XSS guard). */
+function receiptUrlOrThrow(input: unknown): string | null {
+  if (input === undefined || input === null || input === '') return null;
+  if (typeof input === 'string') {
+    if (LOCAL_RECEIPT.test(input)) return input;
+    // The raw text is checked: URL parsing would quietly resolve a ".." segment away.
+    if (isStorageUrl(input) && !input.includes('..') && RECEIPT_EXT.test(new URL(input).pathname)) return input;
+  }
+  throw new AppError('Receipt must be a file uploaded through the receipt upload (JPEG, PNG, WebP, GIF or PDF)', 400, 'EXPENSE_RECEIPT_INVALID');
+}
+
+/** `momo`, `bank` or `cash`; null and undefined mean "not given". */
+function paidFromOrThrow(input: unknown): (typeof EXPENSE_PAID_FROM)[number] | null {
+  if (input === undefined || input === null || input === '') return null;
+  if (!(EXPENSE_PAID_FROM as readonly unknown[]).includes(input)) {
+    throw new AppError(`Paid from must be one of: ${EXPENSE_PAID_FROM.join(', ')}`, 400, 'EXPENSE_PAID_FROM_INVALID');
+  }
+  return input as (typeof EXPENSE_PAID_FROM)[number];
+}
+
+/** First day of the current store-zone month as YYYY-MM-DD. A date before it is in a closed month. */
+export function closedBefore(now: Date = new Date()): string {
+  return `${localDate(now, getStoreTimeZone(getTenantId())).slice(0, 7)}-01`;
+}
+
+function closedMonthNotice(...dates: Date[]): string | null {
+  const zone = getStoreTimeZone(getTenantId());
+  const limit = closedBefore();
+  return dates.some((d) => localDate(d, zone) < limit) ? CLOSED_MONTH_NOTICE : null;
+}
+
+/**
+ * The rows of expenses a requester may read and change: every row for a role that holds `expenses:view_all`
+ * (the tenant's role matrix decides), the rows they recorded for anyone else. No requester means an internal call.
+ */
+async function expenseRowScope(requester?: Requester): Promise<Prisma.ExpenseWhereInput> {
+  if (!requester || await hasPermission(requester, 'expenses', 'view_all')) return {};
+  return { recordedBy: requester.id };
+}
+
+/** True when the requester may change this row: a view_all role, or the person who recorded it. */
+async function ownsExpense(requester: Requester | undefined, expense: { recordedBy: number | null }): Promise<boolean> {
+  const scope = await expenseRowScope(requester);
+  return scope.recordedBy === undefined || scope.recordedBy === expense.recordedBy;
+}
+
+/** Rows posted by the system (Meta pull, delivery fee, AI) cannot be edited or deleted by hand (F-917). */
+function assertExpenseEditable(expense: { source: string }) {
+  if (expense.source !== 'manual') {
+    throw new AppError('This expense is posted by the system and cannot be edited or deleted by hand', 403, 'EXPENSE_LOCKED');
+  }
 }
 
 interface AgentHolding {
@@ -56,13 +124,6 @@ interface AgentHolding {
   OldestCollectionDate: Date;
 }
 
-interface TransactionFilters {
-  type?: string;
-  status?: PaymentStatus;
-  page?: number;
-  limit?: number;
-}
-
 interface ReconcileTransactionData {
   transactionId: string;
   status: PaymentStatus;
@@ -75,25 +136,6 @@ interface FinancialStatementAccount {
   code: string;
   name: string;
   balance: Money.Money;
-}
-
-interface BalanceSheetData {
-  asOfDate: Date;
-  assets: {
-    accounts: FinancialStatementAccount[];
-    total: Money.Money;
-  };
-  liabilities: {
-    accounts: FinancialStatementAccount[];
-    total: Money.Money;
-  };
-  equity: {
-    accounts: FinancialStatementAccount[];
-    retainedEarnings: Money.Money;
-    total: Money.Money;
-  };
-  totalLiabilitiesAndEquity: Money.Money;
-  isBalanced: boolean;
 }
 
 interface ProfitLossData {
@@ -115,11 +157,10 @@ interface ProfitLossData {
   grossMarginPercentage: number;
   netIncome: Money.Money;
   netMarginPercentage: number;
+  statement: IncomeStatement;
 }
 
 export class FinancialService {
-  private forecastCache = new Map<string, { data: CashFlowForecast[]; timestamp: number }>();
-  private readonly FORECAST_CACHE_DURATION_MS = 60 * 60 * 1000; // 1 hour
 
   /**
    * Get financial summary. Revenue is the KPI delivered revenue (delivery-date basis, physical plus paid digital,
@@ -142,7 +183,8 @@ export class FinancialService {
       GL_ACCOUNTS.COGS,
       GL_ACCOUNTS.FAILED_DELIVERY_EXPENSE,
       GL_ACCOUNTS.RETURN_PROCESSING_EXPENSE,
-      GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION,
+      ...RETIRED_EXPENSE_CODES, // Aug and Sep agent commission, as booked
+      GL_ACCOUNTS.DELIVERY_FEES,
       GL_ACCOUNTS.SALES_REP_COMMISSION,
       GL_ACCOUNTS.PAYSTACK_FEES,
       GL_ACCOUNTS.OPERATING_EXPENSE
@@ -289,86 +331,33 @@ export class FinancialService {
   }
 
   /**
-   * Get all transactions with filters
-   */
-  async getAllTransactions(filters: TransactionFilters, requester?: Requester) {
-    const { type, status, page = 1, limit = 20 } = filters;
-
-    const where: Prisma.TransactionWhereInput = {};
-    if (type) where.type = type;
-    if (status) where.status = status;
-
-
-    // Role-based filtering for transactions
-    if (requester && requester.role === 'sales_rep') {
-      where.order = { customerRepId: requester.id };
-    } else if (requester && requester.role === 'delivery_agent') {
-      where.order = { deliveryAgentId: requester.id };
-    }
-
-    const skip = (page - 1) * limit;
-
-    const [transactions, total] = await Promise.all([
-      prisma.transaction.findMany({
-        where,
-        skip,
-        take: limit,
-        include: {
-          order: {
-            select: {
-              // orderNumber removed - using id
-              customer: {
-                select: {
-                  firstName: true,
-                  lastName: true
-                }
-              },
-              deliveryAgent: {
-                select: {
-                  firstName: true,
-                  lastName: true
-                }
-              }
-            }
-          }
-        },
-        orderBy: { createdAt: 'desc' }
-      }),
-      prisma.transaction.count({ where })
-    ]);
-
-    return {
-      transactions,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit)
-      }
-    };
-  }
-
-  /**
-   * Create expense record
+   * Create expense record. A manual expense posts DR 5100, CR 1010 dated by the expense date, and keeps the entry id.
+   * Every way of paying (cash, bank, MoMo) credits 1010, the one cash account. The result carries `notice` when the
+   * date is in a closed month.
    */
   async recordExpense(data: CreateExpenseData, requester?: Requester) {
     const amount = Money.tryParse(data.amount);
     if (!amount || amount.lte(0)) {
       throw new AppError('Expense amount must be a positive number', 400);
     }
+    const category = expenseCategoryOrThrow(data.category);
+    const paidFrom = paidFromOrThrow(data.paidFrom);
+    const receiptUrl = receiptUrlOrThrow(data.receiptUrl) ?? undefined;
 
     const userId = requester ? requester.id : parseInt(data.recordedBy, 10);
 
     const expense = await prisma.$transaction(async (tx) => {
       const created = await tx.expense.create({
         data: {
-          category: data.category,
+          category,
           amount,
           description: data.description,
           expenseDate: data.expenseDate,
           recordedBy: userId,
-          receiptUrl: data.receiptUrl,
-            },
+          receiptUrl,
+          paidFrom,
+          source: 'manual',
+        },
         include: {
           user: {
             select: {
@@ -380,21 +369,21 @@ export class FinancialService {
       });
 
       // Create GL journal entry for the expense
-      await GLAutomationService.createExpenseGLEntry(
+      const entry = await GLAutomationService.createExpenseGLEntry(
         tx as any,
         created.id,
         amount,
         data.description,
-        userId
+        userId,
+        data.expenseDate
       );
+      await tx.expense.update({ where: { id: created.id }, data: { journalEntryId: entry.id } });
 
       // Remap Prisma relation `user` → `recordedBy` for frontend compatibility
       const { user, ...rest } = created as any;
-      return { ...rest, recordedBy: user || null };
+      return { ...rest, journalEntryId: entry.id, recordedBy: user || null };
     }, TRANSACTION_CONFIG);
 
-    // Invalidate forecast cache since expense data changed
-    this.forecastCache.clear();
 
     logger.info('Expense recorded', {
       expenseId: expense.id,
@@ -408,14 +397,14 @@ export class FinancialService {
       emitExpenseCreated(ioInstance as any, expense);
     }
 
-    return expense;
+    return { ...expense, notice: closedMonthNotice(data.expenseDate) };
   }
 
   /**
-   * Get all expenses
+   * Get all expenses. `search` matches the description or the category. A delivery agent sees only their own rows.
    */
-  async getAllExpenses(filters: DateFilters & { category?: string; page?: number; limit?: number }, requester?: Requester) {
-    const { startDate, endDate, category, page = 1, limit = 20 } = filters;
+  async getAllExpenses(filters: DateFilters & { category?: string; search?: string; page?: number; limit?: number }, requester?: Requester) {
+    const { startDate, endDate, category, search, page = 1, limit = 20 } = filters;
 
     const where: Prisma.ExpenseWhereInput = {};
 
@@ -426,16 +415,18 @@ export class FinancialService {
     }
 
     if (category) where.category = category;
-
-
-    // Role-based filtering for expenses
-    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
-      where.recordedBy = requester.id;
+    if (search?.trim()) {
+      where.OR = [
+        { description: { contains: search.trim(), mode: 'insensitive' } },
+        { category: { contains: search.trim(), mode: 'insensitive' } }
+      ];
     }
+
+    Object.assign(where, await expenseRowScope(requester));
 
     const skip = (page - 1) * limit;
 
-    const [rawExpenses, total] = await Promise.all([
+    const [rawExpenses, totals] = await Promise.all([
       prisma.expense.findMany({
         where,
         skip,
@@ -448,171 +439,28 @@ export class FinancialService {
             }
           }
         },
-        orderBy: { expenseDate: 'desc' }
+        orderBy: [{ expenseDate: 'desc' }, { id: 'desc' }]
       }),
-      prisma.expense.count({ where })
+      prisma.expense.aggregate({ where, _sum: { amount: true }, _count: true })
     ]);
+    const total = totals._count;
 
-    // Remap Prisma relation `user` → `recordedBy` for frontend compatibility
+    // Remap Prisma relation `user` → `recordedBy` for frontend compatibility. `locked` rows are read-only (F-917).
     const expenses = rawExpenses.map(({ user, ...rest }: any) => ({
       ...rest,
+      locked: rest.source !== 'manual',
       recordedBy: user || null
     }));
 
     return {
       expenses,
+      /** Sum of every row the filters match, not only this page: the breakdown total for the same filters equals it. */
+      totalAmount: Money.orZero(totals._sum.amount),
       pagination: {
         page,
         limit,
         total,
         pages: Math.ceil(total / limit)
-      }
-    };
-  }
-
-  /**
-   * Get COD collections
-   */
-  async getCODCollections(filters: {
-    agentId?: string;
-    status?: PaymentStatus;
-    page?: number;
-    limit?: number;
-  }, requester?: Requester) {
-    const { agentId, status, page = 1, limit = 20 } = filters;
-
-    const where: Prisma.TransactionWhereInput = {
-      type: 'cod_collection',
-      order: {
-        deletedAt: null
-      },
-    };
-
-    if (status) where.status = status;
-
-    if (agentId) {
-      where.order = {
-        ...where.order as any,
-        deliveryAgentId: parseInt(agentId, 10)
-      };
-    }
-
-    // Role-based filtering for COD collections
-    if (requester && requester.role === 'delivery_agent') {
-      where.order = { deliveryAgentId: requester.id };
-    }
-
-    const skip = (page - 1) * limit;
-
-    const [collections, total] = await Promise.all([
-      prisma.transaction.findMany({
-        where,
-        skip,
-        take: limit,
-        include: {
-          order: {
-            select: {
-              // orderNumber removed - using id
-              deliveryAgent: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true
-                }
-              },
-              customer: {
-                select: {
-                  firstName: true,
-                  lastName: true
-                }
-              }
-            }
-          }
-        },
-        orderBy: { createdAt: 'desc' }
-      }),
-      prisma.transaction.count({ where })
-    ]);
-
-    // Filter by agent if specified
-    let filteredCollections = collections;
-    if (agentId) {
-      filteredCollections = collections.filter((c) => c.order?.deliveryAgent?.id === parseInt(agentId, 10));
-    }
-
-    return {
-      collections: filteredCollections,
-      pagination: {
-        page,
-        limit,
-        total: agentId ? filteredCollections.length : total,
-        pages: Math.ceil((agentId ? filteredCollections.length : total) / limit)
-      }
-    };
-  }
-
-  /**
-   * Get COD collections by agent
-   */
-  async getCODCollectionsByAgent(agentId: string, filters?: DateFilters, requester?: Requester) {
-    // Role-based ownership check for COD collections by agent
-    if (requester && requester.role === 'delivery_agent' && parseInt(agentId, 10) !== requester.id) {
-      throw new AppError('You do not have permission to view other agents collections', 403);
-    }
-
-    const where: Prisma.TransactionWhereInput = {
-      type: 'cod_collection',
-      order: {
-        deliveryAgentId: parseInt(agentId, 10),
-        deletedAt: null
-      },
-    };
-
-    if (filters?.startDate || filters?.endDate) {
-      where.createdAt = {};
-      if (filters.startDate) where.createdAt.gte = filters.startDate;
-      if (filters.endDate) where.createdAt.lte = filters.endDate;
-    }
-
-    const [collections, totalCollected, totalPending, totalDeposited] = await Promise.all([
-      prisma.transaction.findMany({
-        where,
-        include: {
-          order: {
-            select: {
-              // orderNumber removed - using id
-              customer: {
-                select: {
-                  firstName: true,
-                  lastName: true
-                }
-              }
-            }
-          }
-        },
-        orderBy: { createdAt: 'desc' }
-      }),
-      prisma.transaction.aggregate({
-        where: { ...where, status: 'collected' },
-        _sum: { amount: true }
-      }),
-      prisma.transaction.aggregate({
-        where: { ...where, status: 'pending' },
-        _sum: { amount: true }
-      }),
-      prisma.transaction.aggregate({
-        where: { ...where, status: { in: ['deposited', 'reconciled'] } },
-        _sum: { amount: true }
-      })
-    ]);
-
-    return {
-      collections,
-      summary: {
-        totalCollected: Money.orZero(totalCollected._sum.amount),
-        totalPending: Money.orZero(totalPending._sum.amount),
-        totalDeposited: Money.orZero(totalDeposited._sum.amount),
-        totalCount: collections.length
       }
     };
   }
@@ -700,7 +548,8 @@ export class FinancialService {
         order: {
           select: {
             deliveryAgentId: true,
-            customerRepId: true
+            customerRepId: true,
+            deliveryFee: true
           }
         }
       }
@@ -721,15 +570,20 @@ export class FinancialService {
     }
 
     const updated = await prisma.$transaction(async (tx) => {
+      // Claim the transactions first: a parallel call for the same rows waits here, then finds none still 'collected'
       const result = await tx.transaction.updateMany({
         where: {
-          id: { in: transactions.map(t => t.id) }
+          id: { in: transactions.map(t => t.id) },
+          status: 'collected'
         },
         data: {
           status: 'deposited',
           reference: depositReference
         }
       });
+      if (result.count !== transactions.length) {
+        throw new AppError('These transactions were changed by someone else. Reload and try again.', 409);
+      }
 
       // Update corresponding orders
       const orderIds = transactions.filter(t => t.orderId).map(t => t.orderId as number);
@@ -738,47 +592,55 @@ export class FinancialService {
         data: { paymentStatus: 'deposited' }
       });
 
-      // Create GL deposit entry for non-reconciled transactions only
-      // (reconciled collections already have GL entries from the reconciliation path)
-      const reconciledCount = await tx.agentCollection.count({
-        where: {
-          orderId: { in: orderIds },
-          status: 'reconciled'
-        }
+      // The same entry a verified deposit posts (F-904): DR 1010, CR 1015, for the cash the partner kept net of its delivery fee.
+      // Only what no deposit has covered yet is posted: a collection's outstanding amount. Skipped: a collection already
+      // 'deposited' and one the old verify step posted (an agent_collection journal entry). The open collections are covered
+      // through the same claim a verified deposit uses, so a later deposit cannot match them again and the partner balance drops.
+      const collections = await tx.agentCollection.findMany({
+        where: { orderId: { in: orderIds } },
+        select: { id: true, orderId: true, agentId: true, status: true, amount: true, allocatedAmount: true },
       });
+      const oldPosted = new Set((await tx.journalEntry.findMany({
+        where: { sourceType: 'agent_collection', sourceId: { in: collections.map((c) => c.id) }, isVoided: false },
+        select: { sourceId: true },
+      })).map((e) => e.sourceId));
+      const collectionOf = new Map(collections.map((c) => [c.orderId, c]));
+      const isOpen = (c: (typeof collections)[number]) => (OPEN_COLLECTION_STATUSES as readonly string[]).includes(c.status);
+      const owed = (c: (typeof collections)[number]) => (c.status === 'deposited' || oldPosted.has(c.id) ? Money.ZERO : outstandingOf(c));
 
-      const totalTransactions = transactions.length;
-      const nonReconciledCount = totalTransactions - reconciledCount;
+      const covers: Cover[] = collections.filter((c) => isOpen(c) && owed(c).gt(0)).map((c) => ({
+        id: c.id, agentId: c.agentId, amount: Money.parse(c.amount), allocated: Money.orZero(c.allocatedAmount), take: owed(c),
+      }));
+      const { byCollection, byAgent } = await agentReconciliationService.claimCovers(tx, covers);
 
-      if (nonReconciledCount > 0) {
-        // Calculate amount for non-reconciled transactions only
-        const reconciledOrderIds = new Set(
-          (await tx.agentCollection.findMany({
-            where: { orderId: { in: orderIds }, status: 'reconciled' },
-            select: { orderId: true }
-          })).map((c) => c.orderId)
-        );
+      // The collection holds the net amount; with no collection the net is the transaction minus the fee stamped on the order
+      const depositAmount = Money.sum(
+        transactions.map((t) => {
+          const coll = t.orderId == null ? undefined : collectionOf.get(t.orderId);
+          if (!coll) return partnerNetCash(t.order ?? {}, t.amount);
+          // An open collection counts only if we won it; a reconciled one (no old posting) counts in full
+          return isOpen(coll) ? (byCollection.get(coll.id) ?? Money.ZERO) : owed(coll);
+        })
+      );
 
-        const nonReconciledAmount = Money.sum(
-          transactions
-            .filter(t => !t.orderId || !reconciledOrderIds.has(t.orderId))
-            .map(t => t.amount)
-        );
+      if (depositAmount.gt(0)) {
+        const userId = requester?.id ?? await getSystemUserId();
+        // Use the minimum transaction ID as a stable idempotency key for the batch.
+        // transactions[0].id is order-dependent; Math.min is consistent across re-calls.
+        const sourceId = Math.min(...transactions.map(t => t.id));
+        await GLAutomationService.createDepositGLEntry(tx as any, depositAmount, sourceId, userId);
+      }
 
-        if (nonReconciledAmount.gt(0)) {
-          const userId = requester?.id ?? await getSystemUserId();
-          // Use the minimum transaction ID as a stable idempotency key for the batch.
-          // transactions[0].id is order-dependent; Math.min is consistent across re-calls.
-          const sourceId = Math.min(...transactions.map(t => t.id));
-          await GLAutomationService.createDepositGLEntry(tx as any, nonReconciledAmount, sourceId, userId);
-        }
+      for (const [agentId, drop] of byAgent) {
+        await tx.agentBalance.updateMany({
+          where: { agentId },
+          data: { totalDeposited: { increment: drop }, currentBalance: { decrement: drop }, lastSettlementDate: new Date() },
+        });
       }
 
       return result;
     }, TRANSACTION_CONFIG);
 
-    // Invalidate forecast cache since deposit data changed
-    this.forecastCache.clear();
 
     logger.info('COD marked as deposited', {
       transactionIds,
@@ -804,102 +666,12 @@ export class FinancialService {
   async getFinancialReports(filters: { period?: string; startDate?: Date; endDate?: Date }, requester?: Requester) {
     const { period = 'daily', startDate, endDate } = filters;
 
-    const start = startDate || new Date();
-    const end = endDate || new Date();
-
-    const orderWhere: Prisma.OrderWhereInput = {
-      status: 'delivered',
-      updatedAt: {
-        gte: start,
-        lte: end
-      },
-      deletedAt: null,
-    };
-
-    // Role-based filtering for financial reports
-    if (requester && requester.role === 'sales_rep') {
-      orderWhere.customerRepId = requester.id;
-    } else if (requester && requester.role === 'delivery_agent') {
-      orderWhere.deliveryAgentId = requester.id;
-    }
-
-    const transactionWhere: Prisma.TransactionWhereInput = {
-      createdAt: {
-        gte: start,
-        lte: end
-      },
-      order: {
-        deletedAt: null
-      }
-    };
-    if (requester && requester.role === 'delivery_agent') {
-      transactionWhere.order = { deliveryAgentId: requester.id };
-    }
-
-    const expenseWhere: Prisma.ExpenseWhereInput = {
-      expenseDate: {
-        gte: start,
-        lte: end
-      },
-    };
-    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
-      expenseWhere.recordedBy = requester.id;
-    }
-
-
-    const [expenses] = await Promise.all([
-      prisma.expense.findMany({
-        where: expenseWhere
-      })
-    ]);
-
-    // Group by period
-    const groupedData: Record<string, { revenue: Money.Money; expenses: Money.Money; orders: number }> = {};
-
-    // Fetch delivered orders for the same period to get Accrual Revenue trends
-    const deliveredOrders = await prisma.order.findMany({
-      where: orderWhere,
-      select: {
-        totalAmount: true,
-        updatedAt: true
-      }
+    // Revenue by delivery date (F-929); a range over 366 days groups by week. Expenses by expense date.
+    const expenseRecordedBy = requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager'
+      ? requester.id : undefined;
+    return revenueExpenseTrend({
+      start: startDate || new Date(), end: endDate || new Date(), period, role: requester, expenseRecordedBy,
     });
-    (deliveredOrders || []).forEach((order) => {
-      const key =
-        period === 'daily'
-          ? order.updatedAt.toISOString().split('T')[0]
-          : `${order.updatedAt.getFullYear()}-${String(order.updatedAt.getMonth() + 1).padStart(2, '0')}`;
-
-      if (!groupedData[key]) {
-        groupedData[key] = { revenue: Money.ZERO, expenses: Money.ZERO, orders: 0 };
-      }
-
-      groupedData[key].revenue = Money.add(groupedData[key].revenue, order.totalAmount);
-      groupedData[key].orders += 1;
-    });
-
-    expenses.forEach((e) => {
-      const key =
-        period === 'daily'
-          ? e.expenseDate.toISOString().split('T')[0]
-          : `${e.expenseDate.getFullYear()}-${String(e.expenseDate.getMonth() + 1).padStart(2, '0')}`;
-
-      if (!groupedData[key]) {
-        groupedData[key] = { revenue: Money.ZERO, expenses: Money.ZERO, orders: 0 };
-      }
-
-      groupedData[key].expenses = Money.add(groupedData[key].expenses, e.amount);
-    });
-
-    const reports = Object.entries(groupedData).map(([date, data]) => ({
-      date,
-      revenue: data.revenue,
-      expenses: data.expenses,
-      profit: Money.sub(data.revenue, data.expenses),
-      orders: data.orders
-    })).sort((a, b) => a.date.localeCompare(b.date));
-
-    return reports;
   }
 
   /**
@@ -916,306 +688,18 @@ export class FinancialService {
 
 
 
-    // Role-based filtering for expense breakdown
-    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
-      where.recordedBy = requester.id;
-    }
+    Object.assign(where, await expenseRowScope(requester));
 
-    const breakdown = await prisma.expense.findMany({
-      where
-    }) || [];
+    const groups = await prisma.expense.groupBy({ by: ['category'], where, _sum: { amount: true }, _count: { _all: true } });
 
-    const normalizedBreakdown: Record<string, { totalAmount: Money.Money; count: number }> = {};
-
-    breakdown.forEach((item) => {
-      const category = item.category.trim().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ');
-      if (!normalizedBreakdown[category]) {
-        normalizedBreakdown[category] = { totalAmount: Money.ZERO, count: 0 };
-      }
-      normalizedBreakdown[category].totalAmount = Money.add(normalizedBreakdown[category].totalAmount, item.amount);
-      normalizedBreakdown[category].count += 1;
-    });
-
-    return Object.entries(normalizedBreakdown)
-      .map(([category, stats]) => ({
-        category,
-        totalAmount: stats.totalAmount,
-        count: stats.count
-      }))
+    return groups
+      .map((g) => ({ category: g.category, totalAmount: Money.orZero(g._sum.amount), count: g._count._all }))
       .sort((a, b) => Money.compare(b.totalAmount, a.totalAmount));
   }
 
   /**
-   * Get agent settlement report
-   */
-  async getAgentSettlement(agentId: string, filters?: DateFilters, requester?: Requester) {
-    // Role-based ownership check for agent settlement
-    if (requester && requester.role === 'delivery_agent' && parseInt(agentId, 10) !== requester.id) {
-      throw new AppError('You do not have permission to view other agents settlements', 403);
-    }
-
-    // Get all COD collections by agent
-    const codData = await this.getCODCollectionsByAgent(agentId, filters, requester);
-
-    // Calculate pending settlement
-    const pendingAmount = Money.sub(codData.summary.totalCollected, codData.summary.totalDeposited);
-
-    return {
-      agentId,
-      totalCollected: codData.summary.totalCollected,
-      totalDeposited: codData.summary.totalDeposited,
-      pendingSettlement: pendingAmount,
-      collections: codData.collections
-    };
-  }
-
-  /**
-   * Get comprehensive profitability analysis
-   */
-  async getProfitabilityAnalysis(filters: { startDate?: Date; endDate?: Date; productId?: number }) {
-    // The controller hands over store-day bounds: endDate is already the last millisecond of its store day.
-    const { startDate, endDate, productId } = filters;
-
-    // Filter orders by GL journal entry date (not deliveryDate) so breakdowns
-    // align with the GL-based summary KPIs. deliveryDate and GL entryDate can
-    // diverge for backfilled orders. Since glJournalEntryId may be null on
-    // orders, we look up order IDs via journal_entries.source_id instead.
-    const orderWhere: Prisma.OrderWhereInput = {
-      status: 'delivered',
-      revenueRecognized: true,
-      deletedAt: null,
-    };
-
-    if (startDate || endDate) {
-      // Find order IDs that have GL revenue entries in the date range
-      const glOrderEntries = await prisma.journalEntry.findMany({
-        where: {
-          sourceType: 'order_delivery',
-          isVoided: false,
-          entryDate: {
-            ...(startDate ? { gte: startDate } : {}),
-            ...(endDate ? { lte: endDate } : {}),
-          },
-            },
-        select: { sourceId: true },
-      });
-      const glOrderIds = glOrderEntries
-        .map(e => e.sourceId)
-        .filter((id): id is number => id !== null);
-      orderWhere.id = { in: glOrderIds };
-    }
-
-    if (productId) {
-      orderWhere.orderItems = {
-        some: {
-          productId: productId,
-        },
-      };
-    }
-
-    // Fetch orders with items and products
-    const orders = await prisma.order.findMany({
-      where: orderWhere,
-      include: {
-        orderItems: {
-          include: {
-            product: true,
-          },
-        },
-        deliveryAgent: { select: { commissionAmount: true } },
-        customerRep: { select: { commissionAmount: true } },
-      },
-    });
-
-    // Calculate revenue and COGS
-    let totalCOGS = Money.ZERO;
-    let totalShippingCost = Money.ZERO;
-    let totalDiscount = Money.ZERO;
-
-    const productProfitability: Record<number, {
-      id: number,
-      name: string,
-      sku: string,
-      revenue: Money.Money,
-      cogs: Money.Money,
-      quantity: number,
-      commission: Money.Money,
-      grossProfit: Money.Money
-    }> = {};
-
-    const dailyProfitability: Record<string, {
-      date: string,
-      revenue: Money.Money,
-      cogs: Money.Money,
-      grossProfit: Money.Money
-    }> = {};
-
-    for (const order of orders) {
-      // Use totalAmount (subtotal + shipping - discount) to match GL revenue recognition
-      totalShippingCost = Money.add(totalShippingCost, order.shippingCost);
-      totalDiscount = Money.add(totalDiscount, order.discount);
-
-      const dateStr = (order.deliveryDate || order.updatedAt).toISOString().split('T')[0];
-      if (!dailyProfitability[dateStr]) {
-        dailyProfitability[dateStr] = {
-          date: dateStr,
-          revenue: Money.ZERO,
-          cogs: Money.ZERO,
-          grossProfit: Money.ZERO
-        };
-      }
-      dailyProfitability[dateStr].revenue = Money.add(dailyProfitability[dateStr].revenue, order.totalAmount);
-
-      const orderCommission = Money.add(
-        Money.orZero(order.deliveryAgent?.commissionAmount),
-        Money.orZero(order.customerRep?.commissionAmount)
-      );
-      const orderSubtotal = Money.sum(
-        order.orderItems.map(item => Money.mul(item.unitPrice, item.quantity))
-      );
-
-      for (const item of order.orderItems) {
-        const itemCOGS = Money.mul(Money.orZero(item.product.cogs), item.quantity);
-        totalCOGS = Money.add(totalCOGS, itemCOGS);
-        dailyProfitability[dateStr].cogs = Money.add(dailyProfitability[dateStr].cogs, itemCOGS);
-
-        const itemRevenue = Money.mul(item.unitPrice, item.quantity);
-        const itemCommission = Money.gt(orderSubtotal, 0)
-          ? Money.div(Money.mul(orderCommission, itemRevenue), orderSubtotal)
-          : Money.ZERO;
-
-        if (!productProfitability[item.productId]) {
-          productProfitability[item.productId] = {
-            id: item.productId,
-            name: item.product.name,
-            sku: item.product.sku,
-            revenue: Money.ZERO,
-            cogs: Money.ZERO,
-            quantity: 0,
-            commission: Money.ZERO,
-            grossProfit: Money.ZERO
-          };
-        }
-
-        const productStats = productProfitability[item.productId];
-        productStats.revenue = Money.add(productStats.revenue, itemRevenue);
-        productStats.cogs = Money.add(productStats.cogs, itemCOGS);
-        productStats.quantity += item.quantity;
-        productStats.commission = Money.add(productStats.commission, itemCommission);
-      }
-    }
-
-    // Query GL using entryDate (same filter as P&L / Overview) — single source of truth
-    const glEntryDateFilter: any = {};
-    if (startDate || endDate) {
-      glEntryDateFilter.entryDate = {};
-      if (startDate) glEntryDateFilter.entryDate.gte = startDate;
-      if (endDate) glEntryDateFilter.entryDate.lte = endDate;
-    }
-
-    // GL Revenue — use account 4010 (same as Overview) so numbers always match
-    const revenueAgg = await prisma.accountTransaction.aggregate({
-      where: {
-        account: { code: GL_ACCOUNTS.PRODUCT_REVENUE },
-        journalEntry: { isVoided: false, ...glEntryDateFilter },
-        },
-      _sum: { debitAmount: true, creditAmount: true }
-    });
-    // Revenue account has credit-normal balance
-    const glRevenue = Money.sub(Money.orZero(revenueAgg._sum.creditAmount), Money.orZero(revenueAgg._sum.debitAmount));
-
-    const commissionCodes = [GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION, GL_ACCOUNTS.SALES_REP_COMMISSION];
-
-    const expenseAgg = await prisma.accountTransaction.groupBy({
-      by: ['accountId'],
-      where: {
-        account: { accountType: 'expense' },
-        journalEntry: { isVoided: false, ...glEntryDateFilter },
-        },
-      _sum: { debitAmount: true, creditAmount: true }
-    });
-
-    // Map account IDs to codes for categorization
-    const expenseAccounts = await prisma.account.findMany({
-      where: { accountType: 'expense' },
-      select: { id: true, code: true }
-    });
-    const commissionIdSet = new Set(
-      expenseAccounts.filter(a => (commissionCodes as string[]).includes(a.code)).map(a => a.id)
-    );
-    const cogsIdSet = new Set(
-      expenseAccounts.filter(a => a.code === GL_ACCOUNTS.COGS).map(a => a.id)
-    );
-
-    const netDebit = (r: (typeof expenseAgg)[number]) =>
-      Money.sub(Money.orZero(r._sum.debitAmount), Money.orZero(r._sum.creditAmount));
-
-    const glCOGS = Money.sum(expenseAgg
-      .filter(r => cogsIdSet.has(r.accountId))
-      .map(netDebit));
-
-    const totalCommissions = Money.sum(expenseAgg
-      .filter(r => commissionIdSet.has(r.accountId))
-      .map(netDebit));
-
-    const totalOperatingExpenses = Money.sum(expenseAgg
-      .filter(r => !commissionIdSet.has(r.accountId) && !cogsIdSet.has(r.accountId))
-      .map(netDebit));
-
-    // Use GL revenue + GL COGS for summary totals (matches Overview exactly)
-    const grossProfit = Money.sub(glRevenue, glCOGS);
-    const grossMargin = Money.percent(grossProfit, glRevenue);
-
-    const netProfit = Money.sub(Money.sub(grossProfit, totalCommissions), totalOperatingExpenses);
-    const netMargin = Money.percent(netProfit, glRevenue);
-
-    // Format product profitability
-    const products = Object.values(productProfitability).map(p => ({
-      id: p.id,
-      name: p.name,
-      sku: p.sku,
-      revenue: p.revenue,
-      cogs: p.cogs,
-      quantity: p.quantity,
-      commission: p.commission,
-      grossProfit: Money.sub(p.revenue, p.cogs),
-      grossMargin: Money.percent(Money.sub(p.revenue, p.cogs), p.revenue)
-    })).sort((a, b) => Money.compare(b.grossProfit, a.grossProfit));
-
-    // Format daily profitability
-    const daily = Object.values(dailyProfitability).map(d => ({
-      ...d,
-      grossProfit: Money.sub(d.revenue, d.cogs),
-      grossMargin: Money.percent(Money.sub(d.revenue, d.cogs), d.revenue)
-    })).sort((a, b) => a.date.localeCompare(b.date));
-
-    return {
-      summary: {
-        totalRevenue: glRevenue,
-        totalCOGS: glCOGS,
-        totalShippingCost,
-        totalDiscount,
-        totalCommissions,
-        totalOperatingExpenses,
-        grossProfit,
-        grossMargin,
-        netProfit,
-        netMargin,
-        orderCount: orders.length,
-        dataSources: {
-          revenue: 'GL account 4010 (matches Overview)',
-          cogs: 'GL account 5010 (matches Overview)',
-          commissions: 'GL accounts 5040/5050 (accrual)',
-          operatingExpenses: 'GL non-COGS, non-commission expense accounts',
-        }
-      },
-      products,
-      daily,
-    };
-  }
-
-  /**
-   * Update an existing expense
+   * Update an existing expense. A new amount or date voids the old ledger entry (reversal kept) and posts a new one
+   * dated by the expense date. A change of category, description, paid from or receipt leaves the ledger alone.
    */
   async updateExpense(
     expenseId: string,
@@ -1224,11 +708,19 @@ export class FinancialService {
       amount?: Money.MoneyInput;
       description?: string;
       expenseDate?: Date;
+      paidFrom?: string | null;
+      receiptUrl?: string | null;
     }
     , requester?: Requester) {
-    if (data.amount !== undefined && Money.parse(data.amount).lte(0)) {
-      throw new AppError('Expense amount must be a positive number', 400);
+    let newAmount: Money.Money | undefined;
+    if (data.amount !== undefined) {
+      const parsed = Money.tryParse(data.amount);
+      if (!parsed || parsed.lte(0)) throw new AppError('Expense amount must be a positive number', 400);
+      newAmount = parsed;
     }
+    const category = data.category !== undefined ? expenseCategoryOrThrow(data.category) : undefined;
+    const paidFrom = data.paidFrom !== undefined ? paidFromOrThrow(data.paidFrom) : undefined;
+    const receiptUrl = data.receiptUrl !== undefined ? receiptUrlOrThrow(data.receiptUrl) : undefined;
 
     const expense = await prisma.expense.findUnique({
       where: { id: parseInt(expenseId, 10) }
@@ -1237,25 +729,24 @@ export class FinancialService {
     if (!expense) {
       throw new AppError('Expense not found', 404);
     }
+    assertExpenseEditable(expense);
 
-    // Role-based ownership check for updating expense
-    if (!checkResourceOwnership(requester!, expense, 'expense')) {
+    if (!(await ownsExpense(requester, expense))) {
       throw new AppError('You do not have permission to update this expense', 403);
     }
 
     const numericId = parseInt(expenseId, 10);
     const actorId = requester?.id ?? await getSystemUserId();
     const updated = await prisma.$transaction(async (tx) => {
-      // Void old GL entry before updating
-      await GLAutomationService.voidJournalEntry(tx as any, 'expense', numericId, actorId);
-
       const result = await tx.expense.update({
         where: { id: numericId },
         data: {
-          ...(data.category && { category: data.category }),
-          ...(data.amount !== undefined && { amount: data.amount }),
+          ...(category && { category }),
+          ...(newAmount !== undefined && { amount: newAmount }),
           ...(data.description && { description: data.description }),
-          ...(data.expenseDate && { expenseDate: data.expenseDate })
+          ...(data.expenseDate && { expenseDate: data.expenseDate }),
+          ...(paidFrom !== undefined && { paidFrom }),
+          ...(receiptUrl !== undefined && { receiptUrl })
         },
         include: {
           user: {
@@ -1267,24 +758,28 @@ export class FinancialService {
         }
       });
 
-      // Create new GL entry with updated amount
-      const newAmount = data.amount !== undefined ? data.amount : expense.amount;
-      const newDescription = data.description || expense.description;
-      await GLAutomationService.createExpenseGLEntry(
-        tx as any,
-        numericId,
-        newAmount,
-        newDescription,
-        actorId
-      );
+      let journalEntryId = result.journalEntryId;
+      if ((newAmount !== undefined && !newAmount.eq(expense.amount))
+        || (data.expenseDate !== undefined && data.expenseDate.getTime() !== expense.expenseDate.getTime())) {
+        // Void the old entry, then post the new one with the new amount and date
+        await GLAutomationService.voidJournalEntry(tx as any, 'expense', numericId, actorId);
+        const entry = await GLAutomationService.createExpenseGLEntry(
+          tx as any,
+          numericId,
+          result.amount,
+          result.description,
+          actorId,
+          result.expenseDate
+        );
+        journalEntryId = entry.id;
+        await tx.expense.update({ where: { id: numericId }, data: { journalEntryId } });
+      }
 
       // Remap Prisma relation `user` → `recordedBy` for frontend compatibility
       const { user, ...rest } = result as any;
-      return { ...rest, recordedBy: user || null };
+      return { ...rest, journalEntryId, recordedBy: user || null };
     }, TRANSACTION_CONFIG);
 
-    // Invalidate forecast cache since expense data changed
-    this.forecastCache.clear();
 
     logger.info('Expense updated', {
       expenseId,
@@ -1297,11 +792,12 @@ export class FinancialService {
       emitExpenseUpdated(ioInstance as any, updated);
     }
 
-    return updated;
+    return { ...updated, notice: closedMonthNotice(updated.expenseDate, expense.expenseDate) };
   }
 
   /**
-   * Delete an expense
+   * Delete an expense. Its ledger entry is voided by a reversal first, so the account balances return to what
+   * they were before the expense.
    */
   async deleteExpense(expenseId: string, requester?: Requester) {
     const expense = await prisma.expense.findUnique({
@@ -1311,9 +807,9 @@ export class FinancialService {
     if (!expense) {
       throw new AppError('Expense not found', 404);
     }
+    assertExpenseEditable(expense);
 
-    // Role-based ownership check for deleting expense
-    if (!checkResourceOwnership(requester!, expense, 'expense')) {
+    if (!(await ownsExpense(requester, expense))) {
       throw new AppError('You do not have permission to delete this expense', 403);
     }
 
@@ -1327,8 +823,6 @@ export class FinancialService {
       });
     }, TRANSACTION_CONFIG);
 
-    // Invalidate forecast cache since expense data changed
-    this.forecastCache.clear();
 
     logger.info('Expense deleted', {
       expenseId,
@@ -1342,45 +836,7 @@ export class FinancialService {
       emitExpenseDeleted(ioInstance as any, expenseId);
     }
 
-    return { message: 'Expense deleted successfully' };
-  }
-
-  /**
-   * Get pipeline revenue (expected revenue from active orders)
-   */
-  async getPipelineRevenue(requester?: Requester) {
-    const where: Prisma.OrderWhereInput = {
-      status: {
-        in: PENDING_STATUSES
-      },
-      deletedAt: null,
-    };
-
-    // Role-based filtering for pipeline revenue
-    if (requester && requester.role === 'sales_rep') {
-      where.customerRepId = requester.id;
-    } else if (requester && requester.role === 'delivery_agent') {
-      where.deliveryAgentId = requester.id;
-    }
-
-    const groups = await prisma.order.groupBy({
-      by: ['status'],
-      where,
-      _sum: { totalAmount: true },
-      _count: { _all: true },
-    });
-
-    const byStatus = groups.map((g) => ({
-      status: g.status as string,
-      amount: Money.orZero(g._sum.totalAmount),
-      count: g._count._all,
-    }));
-    const totalExpected = Money.sum(byStatus.map((g) => g.amount));
-
-    return {
-      totalExpected,
-      byStatus
-    };
+    return { message: 'Expense deleted successfully', notice: closedMonthNotice(expense.expenseDate) };
   }
 
   /**
@@ -1419,7 +875,7 @@ export class FinancialService {
         by: ['agentId'],
         where: {
           agentId: { in: agentIds },
-          status: { in: ['draft', 'verified', 'approved'] }
+          status: { in: [...OPEN_COLLECTION_STATUSES] }
         },
         _count: { id: true },
       }),
@@ -1427,7 +883,7 @@ export class FinancialService {
         by: ['agentId'],
         where: {
           agentId: { in: agentIds },
-          status: { in: ['draft', 'verified', 'approved'] }
+          status: { in: [...OPEN_COLLECTION_STATUSES] }
         },
         _min: { collectionDate: true },
       }),
@@ -1464,157 +920,37 @@ export class FinancialService {
   /**
    * Get Cash Flow Report
    */
-  async getCashFlowReport(requester?: Requester) {
-    // 1. Get current cash position KPIs from GL
-    const tenantId = resolveTenantId();
-    const [cashInHand, , arAgents] = await Promise.all([
-      prisma.account.findUnique({ where: { tenantId_code: { tenantId, code: GL_ACCOUNTS.CASH_IN_HAND } } }),
-      prisma.account.findUnique({ where: { tenantId_code: { tenantId, code: GL_ACCOUNTS.CASH_IN_TRANSIT } } }),
-      prisma.account.findUnique({ where: { tenantId_code: { tenantId, code: GL_ACCOUNTS.AR_AGENTS } } }),
+  async getCashFlowReport(requester?: Requester, scenarioKey: Scenario = 'pace') {
+    // Balances, expected cash, pay days and the partners' holdings are independent: read them together, once each.
+    const [{ balances, payDays, scenario, forecast }, expected, agentBreakdown] = await Promise.all([
+      getCashForecast(scenarioKey), expectedFromOutForDelivery(), this.getAgentCashHoldings(requester),
     ]);
-
-    // 2. Calculate operational figures from actual order status
-    const [cashInTransitData, cashExpectedData] = await Promise.all([
-      prisma.order.aggregate({
-        where: {
-          status: 'delivered',
-          paymentStatus: { notIn: ['reconciled', 'deposited'] },
-          deletedAt: null,
-            },
-        _sum: { totalAmount: true }
-      }),
-      prisma.order.aggregate({
-        where: {
-          status: 'out_for_delivery',
-          deletedAt: null,
-          codAmount: { not: null },
-            },
-        _sum: { totalAmount: true }
-      })
-    ]);
-
-    const kpis = {
-      cashInHand: Money.orZero(cashInHand?.currentBalance),
-      cashInTransit: Money.orZero(cashInTransitData._sum.totalAmount),
-      outstandingReceivables: Money.orZero(arAgents?.currentBalance),
-      cashExpected: Money.orZero(cashExpectedData._sum.totalAmount),
-    };
-
-    const cashAvailableNow = Money.add(kpis.cashInHand, kpis.outstandingReceivables);
-    const totalCashPosition = Money.sum([kpis.cashInHand, kpis.cashInTransit, kpis.outstandingReceivables, kpis.cashExpected]);
-    const totalCashPipeline = Money.sum([cashAvailableNow, kpis.cashInTransit, kpis.cashExpected]);
-
-    // 3. 30-day Forecast
-    const forecast = await this.generateCashFlowForecast();
-
-    // 4. Agent Breakdown (Pending collections)
-    const agentBreakdown = await this.getAgentCashHoldings(requester);
+    const { summary, weeks } = summarizeForecast(balances.cash1010, forecast);
+    // Cash buckets (F-928): 1010 and 1015 from the ledger; expected from out-for-delivery orders apart, never added to cash.
+    const buckets = cashBuckets({ cash1010: balances.cash1010, cash1015: balances.cash1015, expected });
 
     return {
-      kpis: { ...kpis, cashAvailableNow, totalCashPosition, totalCashPipeline },
+      kpis: {
+        cashInHand: buckets.cashAtBank,
+        cashInTransit: buckets.cashWithPartners,
+        cashExpected: buckets.expectedFromOutForDelivery,
+        cashAvailableNow: buckets.cashAvailableNow,
+        totalCashPosition: buckets.totalCashPosition,
+        totalCashPipeline: buckets.totalCashPipeline,
+        supplierPayables: balances.payables2050,
+      },
+      payDays: { default: DEFAULT_DAYS_TO_PAY, overall: payDays.overall, fromHistory: payDays.fromHistory, byPartner: Object.fromEntries(payDays.byPartner) },
+      scenario,
       forecast,
+      summary,
+      weeks,
       agentBreakdown
     };
   }
 
   /**
-   * Generate 30-day Cash Flow Forecast
-   * Uses historical data (last 30 days) to project future flows
-   */
-  async generateCashFlowForecast() {
-    const tenantId = getTenantId();
-    const cacheKey = tenantId ?? '__system__';
-    const cached = this.forecastCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < this.FORECAST_CACHE_DURATION_MS) {
-      return cached.data;
-    }
-
-    // Calculate historical averages (last 30 days)
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    const [historicalCollections, historicalExpenses] = await Promise.all([
-      prisma.transaction.aggregate({
-        where: {
-          type: 'cod_collection',
-          status: { in: ['collected', 'deposited', 'reconciled'] },
-          createdAt: { gte: thirtyDaysAgo },
-          order: {
-            deletedAt: null
-          },
-            },
-        _sum: { amount: true }
-      }),
-      prisma.expense.aggregate({
-        where: {
-          expenseDate: { gte: thirtyDaysAgo },
-            },
-        _sum: { amount: true }
-      })
-    ]);
-
-    const avgDailyCollection = Money.div(Money.orZero(historicalCollections._sum.amount), 30);
-    const avgDailyExpense = Money.div(Money.orZero(historicalExpenses._sum.amount), 30);
-
-    // Start with current liquidity (Cash in Hand + Bank if existed)
-    // For this implementation, we'll use Total Cash Position as starting balance
-    const accountTenantId = resolveTenantId(tenantId);
-    const [cashInHand, cashInTransit] = await Promise.all([
-      prisma.account.findUnique({ where: { tenantId_code: { tenantId: accountTenantId, code: GL_ACCOUNTS.CASH_IN_HAND } } }),
-      prisma.account.findUnique({ where: { tenantId_code: { tenantId: accountTenantId, code: GL_ACCOUNTS.CASH_IN_TRANSIT } } }),
-    ]);
-
-    let runningBalance = Money.add(Money.orZero(cashInHand?.currentBalance), Money.orZero(cashInTransit?.currentBalance));
-
-    const forecast: CashFlowForecast[] = [];
-    const today = new Date();
-
-    for (let i = 1; i <= 30; i++) {
-      const forecastDate = new Date(today);
-      forecastDate.setDate(today.getDate() + i);
-
-      runningBalance = Money.add(runningBalance, Money.sub(avgDailyCollection, avgDailyExpense));
-
-      forecast.push({
-        date: forecastDate.toISOString().split('T')[0],
-        expectedCollection: avgDailyCollection,
-        expectedExpense: avgDailyExpense,
-        projectedBalance: runningBalance.lt(0) ? Money.ZERO : runningBalance
-      });
-    }
-
-    this.forecastCache.set(cacheKey, { data: forecast, timestamp: Date.now() });
-    return forecast;
-  }
-
-  /**
-   * Export Cash Flow Report as CSV
-   */
-  async exportCashFlowCSV(requester?: Requester) {
-    const report = await this.getCashFlowReport(requester);
-
-    // Prepare data for CSV
-    const csvData = [
-      { Section: 'KPIs', Label: 'Cash in Hand', Value: Money.toApi(report.kpis.cashInHand) },
-      { Section: 'KPIs', Label: 'Cash in Transit', Value: Money.toApi(report.kpis.cashInTransit) },
-      { Section: 'KPIs', Label: 'Outstanding Receivables', Value: Money.toApi(report.kpis.outstandingReceivables) },
-      { Section: 'KPIs', Label: 'Cash Expected', Value: Money.toApi(report.kpis.cashExpected) },
-      { Section: 'KPIs', Label: 'Total Cash Position', Value: Money.toApi(report.kpis.totalCashPosition) },
-      { Section: '---', Label: '---', Value: '---' },
-      { Section: 'Forecast (Next 30 Days)', Label: 'Date', Value: 'Projected Balance' },
-      ...report.forecast.map(f => ({
-        Section: 'Forecast',
-        Label: f.date,
-        Value: Money.toApi(f.projectedBalance)
-      }))
-    ];
-
-    const parser = new Parser();
-    return parser.parse(csvData);
-  }
-
-  /**
-   * Get Balance Sheet as of a specific date
+   * Get Balance Sheet as of a specific date. The old fields stay; `statement` holds the F-922 lines. Both come from one
+   * ledger read (statementsService.ledgerAccounts), so they agree, retired accounts included.
    */
   async getBalanceSheet(asOfDateValue?: string | Date) {
     // The whole store day is included: a date-only value or any instant moves to the last millisecond of its store day.
@@ -1623,39 +959,7 @@ export class FinancialService {
       asOfDateValue instanceof Date ? asOfDateValue.toISOString() : asOfDateValue || new Date().toISOString(),
       'to', zone, { snapToDay: true });
 
-    // Query all active accounts
-    const accounts = await prisma.account.findMany({
-      where: { isActive: true },
-      select: {
-        id: true,
-        code: true,
-        name: true,
-        accountType: true,
-        normalBalance: true
-      }
-    });
-
-    // Use Prisma groupBy to aggregate transactions for all accounts at once
-    const aggregations = await prisma.accountTransaction.groupBy({
-      by: ['accountId'],
-      where: {
-        journalEntry: { isVoided: false, entryDate: { lte: asOfDate } },
-        },
-      _sum: {
-        debitAmount: true,
-        creditAmount: true
-      }
-    });
-
-    // Create a map for quick lookup
-    const aggregationMap = new Map<number, { debit: Money.Money; credit: Money.Money }>();
-    aggregations.forEach(agg => {
-      aggregationMap.set(agg.accountId, {
-        debit: Money.orZero(agg._sum.debitAmount),
-        credit: Money.orZero(agg._sum.creditAmount)
-      });
-    });
-
+    const rows = await ledgerAccounts({ to: asOfDate });
     const categories: Record<string, { accounts: FinancialStatementAccount[]; total: Money.Money }> = {
       asset: { accounts: [], total: Money.ZERO },
       liability: { accounts: [], total: Money.ZERO },
@@ -1663,35 +967,17 @@ export class FinancialService {
       revenue: { accounts: [], total: Money.ZERO },
       expense: { accounts: [], total: Money.ZERO }
     };
+    for (const a of rows) {
+      // An inactive account is listed only while it still carries a balance
+      if (!a.isActive && !Money.isNonZero(a.balance)) continue;
+      categories[a.type].accounts.push({ id: a.id, code: a.code, name: a.name, balance: a.balance });
+      categories[a.type].total = Money.add(categories[a.type].total, a.balance);
+    }
 
-    // Process accounts using pre-calculated aggregations
-    accounts.forEach(account => {
-      const agg = aggregationMap.get(account.id) || { debit: Money.ZERO, credit: Money.ZERO };
-
-      const balance = account.normalBalance === 'debit'
-        ? Money.sub(agg.debit, agg.credit)
-        : Money.sub(agg.credit, agg.debit);
-
-      const financialAccount = {
-        id: account.id,
-        code: account.code,
-        name: account.name,
-        balance
-      };
-
-      if (categories[account.accountType]) {
-        categories[account.accountType].accounts.push(financialAccount);
-        categories[account.accountType].total = Money.add(categories[account.accountType].total, balance);
-      }
-    });
-
-    // Calculate Retained Earnings: Total Revenue - Total Expense (all time up to asOfDate)
+    // Retained earnings: total revenue less total expense, all time up to asOfDate
     const retainedEarnings = Money.sub(categories.revenue.total, categories.expense.total);
-
-    // Equity: System Equity Accounts + Retained Earnings
     const totalEquity = Money.add(categories.equity.total, retainedEarnings);
     const totalLiabilitiesAndEquity = Money.add(categories.liability.total, totalEquity);
-    const totalAssets = categories.asset.total;
 
     return {
       asOfDate,
@@ -1703,12 +989,14 @@ export class FinancialService {
         total: totalEquity
       },
       totalLiabilitiesAndEquity,
-      isBalanced: Money.sub(totalAssets, totalLiabilitiesAndEquity).abs().lt('0.01')
-    } as BalanceSheetData;
+      isBalanced: Money.sub(categories.asset.total, totalLiabilitiesAndEquity).abs().lt('0.01'),
+      statement: balanceSheetOf(rows, localDate(asOfDate, zone)),
+    };
   }
 
   /**
-   * Get Profit and Loss Statement for a specific period
+   * Get Profit and Loss Statement for a specific period. The old fields stay; `statement` holds the F-922 income statement.
+   * Both come from one ledger read.
    */
   async getProfitLoss(startDateValue: string | Date, endDateValue: string | Date) {
     // Store-zone days: the start is the start of its store day, the end the last millisecond of its store day.
@@ -1717,40 +1005,7 @@ export class FinancialService {
     const startDate = parseInclusiveBound(asString(startDateValue), 'from', zone);
     const endDate = parseInclusiveBound(asString(endDateValue), 'to', zone, { snapToDay: true });
 
-    // Query all revenue and expense accounts
-    const accounts = await prisma.account.findMany({
-      where: {
-        isActive: true,
-        accountType: { in: ['revenue', 'expense'] }
-      },
-      select: {
-        id: true,
-        code: true,
-        name: true,
-        accountType: true,
-        normalBalance: true
-      }
-    });
-
-    const aggregations = await prisma.accountTransaction.groupBy({
-      by: ['accountId'],
-      where: {
-        journalEntry: { isVoided: false, entryDate: { gte: startDate, lte: endDate } },
-        },
-      _sum: {
-        debitAmount: true,
-        creditAmount: true
-      }
-    });
-
-    const aggregationMap = new Map<number, { debit: Money.Money; credit: Money.Money }>();
-    aggregations.forEach(agg => {
-      aggregationMap.set(agg.accountId, {
-        debit: Money.orZero(agg._sum.debitAmount),
-        credit: Money.orZero(agg._sum.creditAmount)
-      });
-    });
-
+    const rows = await ledgerAccounts({ from: startDate, to: endDate });
     const result: ProfitLossData = {
       startDate,
       endDate,
@@ -1760,36 +1015,19 @@ export class FinancialService {
       grossProfit: Money.ZERO,
       grossMarginPercentage: 0,
       netIncome: Money.ZERO,
-      netMarginPercentage: 0
+      netMarginPercentage: 0,
+      statement: incomeStatementOf(rows, localDate(startDate, zone), localDate(endDate, zone)),
     };
 
-    accounts.forEach(account => {
-      const agg = aggregationMap.get(account.id) || { debit: Money.ZERO, credit: Money.ZERO };
-
-      const balance = account.normalBalance === 'debit'
-        ? Money.sub(agg.debit, agg.credit)
-        : Money.sub(agg.credit, agg.debit);
-
-      const financialAccount = {
-        id: account.id,
-        code: account.code,
-        name: account.name,
-        balance
-      };
-
-      if (account.accountType === 'revenue') {
-        result.revenue.accounts.push(financialAccount);
-        result.revenue.total = Money.add(result.revenue.total, balance);
-      } else if (account.accountType === 'expense') {
-        if (account.code === GL_ACCOUNTS.COGS) {
-          result.cogs.accounts.push(financialAccount);
-          result.cogs.total = Money.add(result.cogs.total, balance);
-        } else {
-          result.expenses.accounts.push(financialAccount);
-          result.expenses.total = Money.add(result.expenses.total, balance);
-        }
-      }
-    });
+    for (const a of rows) {
+      if (a.type !== 'revenue' && a.type !== 'expense') continue;
+      // An inactive account is listed only while it still carries a balance
+      if (!a.isActive && !Money.isNonZero(a.balance)) continue;
+      const line = { id: a.id, code: a.code, name: a.name, balance: a.balance };
+      const bucket = a.type === 'revenue' ? result.revenue : a.code === GL_ACCOUNTS.COGS ? result.cogs : result.expenses;
+      bucket.accounts.push(line);
+      bucket.total = Money.add(bucket.total, a.balance);
+    }
 
     result.grossProfit = Money.sub(result.revenue.total, result.cogs.total);
     result.grossMarginPercentage = Money.percent(result.grossProfit, result.revenue.total);
@@ -1797,38 +1035,6 @@ export class FinancialService {
     result.netMarginPercentage = Money.percent(result.netIncome, result.revenue.total);
 
     return result;
-  }
-
-  /**
-   * Get agent aging analysis
-   */
-  async getAgentAgingAnalysis() {
-    const agents = await prisma.user.findMany({
-      where: {
-        role: 'delivery_agent',
-        isActive: true,
-      },
-      include: {
-        agingBucket: true,
-        balance: true,
-      }
-    });
-
-    return agents.map(agent => ({
-      agentId: agent.id,
-      name: `${agent.firstName} ${agent.lastName}`,
-      email: agent.email,
-      balance: Money.orZero(agent.balance?.currentBalance),
-      buckets: {
-        '0-1 days': Money.orZero(agent.agingBucket?.bucket_0_1),
-        '2-3 days': Money.orZero(agent.agingBucket?.bucket_2_3),
-        '4-7 days': Money.orZero(agent.agingBucket?.bucket_4_7),
-        '8+ days': Money.orZero(agent.agingBucket?.bucket_8_plus),
-      },
-      totalBalance: Money.orZero(agent.agingBucket?.totalBalance),
-      oldestCollectionDate: agent.agingBucket?.oldestCollectionDate,
-      isBlocked: agent.balance?.isBlocked || false,
-    }));
   }
 }
 

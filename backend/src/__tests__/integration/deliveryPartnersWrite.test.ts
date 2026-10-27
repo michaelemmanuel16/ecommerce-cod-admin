@@ -168,7 +168,7 @@ describe('GET and PATCH /api/delivery-partners/:id (F-707)', () => {
   });
 
   it('GET returns the profile, the location and the fee rule to a role that may see money', async () => {
-    await prismaBase.feeRule.create({ data: { tenantId, partnerUserId: id, outcome: 'delivered', amount: '25' } });
+    await prismaBase.feeRule.create({ data: { tenantId, partnerUserId: id, outcome: 'delivered', amount: '25', validFrom: new Date('2026-01-01') } });
     const admin = await request(app).get(`/api/delivery-partners/${id}`).set(bearer(U.admin.token));
     expect(admin.status).toBe(200);
     expect(admin.body.partner).toMatchObject({ id, name: 'Kojoedit Mensah', stockLocation: { type: 'agent' }, feeRule: { delivered: '25.00', failed: null, returned: null } });

@@ -1,25 +1,46 @@
 import { useState } from 'react';
 import { Button, Input, Select, useToast } from '../../components/ui-v2';
-import { deliveryPartnersService, type PartnerDataSource, type PartnerDetail } from '../../services/delivery-partners.service';
+import { deliveryPartnersService, type FeeRule, type PartnerDataSource, type PartnerDetail } from '../../services/delivery-partners.service';
 import { apiErrorMessage } from '../../utils/apiError';
-import { formatCurrency } from '../../utils/format';
 import { fieldsOf, type Fields } from './feesFields';
-import { DATA_SOURCES, DATA_SOURCE_LABEL, hasFeeRule, VEHICLE_TYPES } from './model';
+import { FeeRules } from './FeeRules';
+import { DATA_SOURCES, DATA_SOURCE_LABEL, DELIVERY_FEE, feeRuleOf, VEHICLE_TYPES } from './model';
 
 interface DrawerFeesProps {
   partner: PartnerDetail;
   canEdit: boolean;
   /** Called with the partner the API returned after a save. */
   onSaved: (partner: PartnerDetail) => void;
+  /** Delivery fee rules were saved: the drawer and the page's table row take the rules in force (no refetch). */
+  onRulesSaved: (feeRule: FeeRule) => void;
 }
 
+type ProfileFormProps = Pick<DrawerFeesProps, 'partner' | 'canEdit' | 'onSaved'>;
+
 /**
- * Fees tab (F-707): the fee rule read-only (rules are edited in M5), days to pay, data source, trial flag, and the base town
- * and vehicle. A save sends PATCH /api/delivery-partners/:id, which writes an audit row. Only owner and admin edit.
+ * Fees tab (F-707, F-703): delivery fee rules (FeeRules: per outcome, history, weighted fee), then days to pay, data source,
+ * trial flag, base town and vehicle. A profile save sends PATCH /api/delivery-partners/:id, which writes an audit row. Only
+ * owner and admin edit. Only the profile form is keyed on the saved fields, so a profile save does not reload the fee rules.
  */
-export function DrawerFees({ partner, canEdit, onSaved }: DrawerFeesProps) {
+export function DrawerFees({ partner, canEdit, onSaved, onRulesSaved }: DrawerFeesProps) {
+  return (
+    <div className="dfees">
+      {partner.feeRule === undefined ? (
+        <section>
+          <h4>{DELIVERY_FEE}</h4>
+          <p className="mut">{DELIVERY_FEE}s show to roles that can see money.</p>
+        </section>
+      ) : (
+        <FeeRules partnerId={partner.id} canEdit={canEdit} onSaved={(saved) => onRulesSaved(feeRuleOf(saved.current))} />
+      )}
+      <ProfileForm key={JSON.stringify(fieldsOf(partner))} partner={partner} canEdit={canEdit} onSaved={onSaved} />
+    </div>
+  );
+}
+
+/** Days to pay, data source, trial flag, base town and vehicle: the form starts again when the saved partner changes (the key). */
+function ProfileForm({ partner, canEdit, onSaved }: ProfileFormProps) {
   const say = useToast();
-  // The page gives this component a key made of the saved fields, so a new saved partner starts it again
   const base = fieldsOf(partner);
   const [fields, setFields] = useState<Fields>(base);
   const [error, setError] = useState<string | null>(null);
@@ -56,25 +77,9 @@ export function DrawerFees({ partner, canEdit, onSaved }: DrawerFeesProps) {
     }
   };
 
-  const rule = partner.feeRule;
   const dis = !canEdit;
   return (
-    <form className="dfees" noValidate onSubmit={(e) => { e.preventDefault(); void save(); }}>
-      <section>
-        <h4>Delivery fee rule</h4>
-        {rule === undefined ? (
-          <p className="mut">Fee rules show to roles that can see money.</p>
-        ) : !hasFeeRule(rule) ? (
-          <p className="mut">No fee rule yet. Fee rules arrive with the payouts release.</p>
-        ) : (
-          <dl className="kv">
-            <div><dt>Per delivered</dt><dd>{formatCurrency(rule.delivered ?? 0)}</dd></div>
-            <div><dt>Per failed</dt><dd>{formatCurrency(rule.failed ?? 0)}</dd></div>
-            <div><dt>Per returned</dt><dd>{formatCurrency(rule.returned ?? 0)}</dd></div>
-          </dl>
-        )}
-      </section>
-
+    <form noValidate onSubmit={(e) => { e.preventDefault(); void save(); }}>
       <section className="cform">
         <Input label="Days to pay" type="number" min={0} max={365} value={fields.daysToPay} disabled={dis} error={error ?? undefined} onChange={(e) => set('daysToPay', e.target.value)} />
         <Select label="Data source" value={fields.dataSource} disabled={dis} onChange={(e) => set('dataSource', e.target.value as PartnerDataSource)}>

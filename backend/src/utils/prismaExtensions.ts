@@ -13,12 +13,13 @@ export const TENANT_SCOPED_MODELS = new Set([
   'CheckoutForm', 'InventoryShipment', 'InventoryTransfer',
   'AgentBalance', 'AgentStock', 'MessageLog', 'SystemConfig',
   'McpApiKey', 'EmailTemplate', 'EmailCampaign',
-  'AgentCollection', 'AgentDeposit', 'AgentAgingBucket', 'Payout', 'Call',
+  'AgentCollection', 'AgentDeposit', 'Payout', 'Call',
   'OrderHistory', 'AuditLog', 'WebhookLog', 'SmsTemplate', 'DownloadToken',
   'FormSubmission', 'product_cost_entries', 'PendingCheckout', 'WebhookEvent',
   'Target', 'Finding', 'FeeRule', 'FxRate', 'Role', 'RoleAssignment',
   'UserSession', 'PaymentConnection',
   'StockLocation', 'StockLevel', 'StockCount', 'StockCountLine', 'DeliveryPartnerProfile', 'DeliveryAttempt',
+  'PartnerSettlement', 'PartnerSettlementLine', 'CommissionEntry',
 ]);
 
 /**

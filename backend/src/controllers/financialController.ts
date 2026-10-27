@@ -2,21 +2,16 @@ import { Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { AuthRequest } from '../types';
 import { PaymentStatus } from '@prisma/client';
-import financialService from '../services/financialService';
+import financialService, { closedBefore, CLOSED_MONTH_NOTICE } from '../services/financialService';
+import { UPLOAD_MAX_BYTES, UPLOAD_MIME_TYPES } from '../config/multer';
 import agingService from '../services/agingService';
-import { Parser } from 'json2csv';
-import ExcelJS from 'exceljs';
 import logger from '../utils/logger';
-import { GLAccountService } from '../services/glAccountService';
-import { GL_ACCOUNTS } from '../config/glAccounts';
-import prisma from '../utils/prisma';
-import { Decimal } from '@prisma/client/runtime/library';
-import { getTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
-import { addRowsWithMoney } from '../utils/xlsxMoney';
 import { readDateBound } from '../utils/kpiRequest';
+import { parseScenario } from '../services/finance/cashFlowService';
 import { AppError } from '../middleware/errorHandler';
 import { recordPaystackPayout } from '../services/paystackPayoutService';
+import { EXPENSE_CATEGORIES, EXPENSE_PAID_FROM } from '../config/expenseCategories';
 
 export const getFinancialSummary = async (req: AuthRequest, res: Response): Promise<void> => {
   const { startDate, endDate } = req.query;
@@ -29,150 +24,61 @@ export const getFinancialSummary = async (req: AuthRequest, res: Response): Prom
   res.json({ summary });
 };
 
-export const getAllTransactions = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { type, status, page = 1, limit = 20 } = req.query;
-
-  const result = await financialService.getAllTransactions({
-    type: type as string | undefined,
-    status: status as PaymentStatus | undefined,
-    page: Number(page),
-    limit: Number(limit)
-  });
-
-  res.json(result);
-};
-
 export const recordExpense = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { category, amount, description, expenseDate } = req.body;
+    const { category, amount, description, expenseDate, paidFrom, receiptUrl } = req.body;
 
-    const expense = await financialService.recordExpense({
+    const { notice, ...expense } = await financialService.recordExpense({
       category,
       amount,
       description,
       expenseDate: new Date(expenseDate),
-      recordedBy: req.user!.id.toString()
+      recordedBy: req.user!.id.toString(),
+      paidFrom,
+      receiptUrl
     }, req.user);
 
-    res.status(201).json({ expense });
+    res.status(201).json({ expense, notice });
   } catch (error: any) {
     const status = error.statusCode || error.status || 500;
-    res.status(status).json({ error: error.message || 'Failed to record expense' });
+    res.status(status).json({ error: error.message || 'Failed to record expense', code: error.errorCode });
   }
 };
 
-export const getCODCollections = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { agentId, status, page = 1, limit = 20 } = req.query;
-
-  const result = await financialService.getCODCollections({
-    agentId: agentId as string | undefined,
-    status: status as PaymentStatus | undefined,
-    page: Number(page),
-    limit: Number(limit)
+/** GET /api/financial/expense-categories: what the Add expense form needs (list, paid-from choices, closed-month rule, receipt limits). */
+export const getExpenseCategories = async (_req: AuthRequest, res: Response): Promise<void> => {
+  res.json({
+    categories: EXPENSE_CATEGORIES,
+    paidFrom: EXPENSE_PAID_FROM,
+    closedBefore: closedBefore(),
+    closedNotice: CLOSED_MONTH_NOTICE,
+    receipt: { maxBytes: UPLOAD_MAX_BYTES, mimeTypes: UPLOAD_MIME_TYPES },
   });
-
-  res.json(result);
 };
 
 export const getFinancialReports = async (req: AuthRequest, res: Response): Promise<void> => {
   const { period = 'daily', startDate, endDate } = req.query;
 
-  const reports = await financialService.getFinancialReports({
+  const trend = await financialService.getFinancialReports({
     period: period as string,
     startDate: readDateBound(startDate, 'from'),
     endDate: readDateBound(endDate, 'to', { snapToDay: true })
   });
 
-  res.json({ reports });
-};
-
-export const getPipelineRevenue = async (req: AuthRequest, res: Response): Promise<void> => {
-  const pipelineRevenue = await financialService.getPipelineRevenue(req.user);
-  res.json(pipelineRevenue);
-};
-
-export const getProfitabilityAnalysis = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { startDate, endDate, productId } = req.query;
-
-    const analysis = await financialService.getProfitabilityAnalysis({
-      startDate: readDateBound(startDate, 'from'),
-      endDate: readDateBound(endDate, 'to', { snapToDay: true }),
-      productId: productId ? parseInt(productId as string, 10) : undefined
-    });
-
-    res.json(analysis);
-  } catch (error) {
-    logger.error('Failed to fetch profitability analysis', { error });
-    res.status(500).json({ message: 'Failed to fetch profitability analysis' });
-  }
-};
-
-export const exportProfitabilityAnalysis = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { startDate, endDate, productId, format = 'csv' } = req.query;
-
-    const analysis = await financialService.getProfitabilityAnalysis({
-      startDate: readDateBound(startDate, 'from'),
-      endDate: readDateBound(endDate, 'to', { snapToDay: true }),
-      productId: productId ? parseInt(productId as string, 10) : undefined
-    });
-
-    const exportData = analysis.products.map(p => ({
-      'Product Name': p.name,
-      'SKU': p.sku,
-      'Quantity Sold': p.quantity,
-      'Total Revenue': Money.toApi(p.revenue),
-      'Total COGS': Money.toApi(p.cogs),
-      'Gross Profit': Money.toApi(p.grossProfit),
-      'Gross Margin %': p.grossMargin.toFixed(2)
-    }));
-
-    if (format === 'xlsx') {
-      const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet('Profitability');
-
-      worksheet.columns = [
-        { header: 'Product Name', key: 'Product Name', width: 30 },
-        { header: 'SKU', key: 'SKU', width: 15 },
-        { header: 'Quantity Sold', key: 'Quantity Sold', width: 15 },
-        { header: 'Total Revenue', key: 'Total Revenue', width: 15 },
-        { header: 'Total COGS', key: 'Total COGS', width: 15 },
-        { header: 'Gross Profit', key: 'Gross Profit', width: 15 },
-        { header: 'Gross Margin %', key: 'Gross Margin %', width: 15 }
-      ];
-
-      addRowsWithMoney(worksheet, exportData, ['Total Revenue', 'Total COGS', 'Gross Profit']);
-
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.setHeader('Content-Disposition', `attachment; filename=profitability_report_${Date.now()}.xlsx`);
-
-      const buffer = await workbook.xlsx.writeBuffer();
-      res.send(buffer);
-    } else {
-      const json2csvParser = new Parser();
-      const csv = json2csvParser.parse(exportData);
-
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename=profitability_report_${Date.now()}.csv`);
-      res.send(csv);
-    }
-  } catch (error) {
-    logger.error('Export profitability analysis failed', { error });
-    res.status(500).json({ message: 'Export failed' });
-  }
+  res.json({ reports: trend.rows, grouping: trend.grouping });
 };
 
 export const getAllExpenses = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { category, startDate, endDate, page = 1, limit = 20 } = req.query;
+  const { category, search, startDate, endDate, page = 1, limit = 20 } = req.query;
 
   const result = await financialService.getAllExpenses({
     category: category as string | undefined,
+    search: search as string | undefined,
     startDate: readDateBound(startDate, 'from'),
     endDate: readDateBound(endDate, 'to'),
     page: Number(page),
     limit: Number(limit)
-  });
+  }, req.user);
 
   res.json(result);
 };
@@ -183,7 +89,7 @@ export const getExpenseBreakdown = async (req: AuthRequest, res: Response): Prom
   const breakdown = await financialService.getExpenseBreakdown({
     startDate: readDateBound(startDate, 'from'),
     endDate: readDateBound(endDate, 'to')
-  });
+  }, req.user);
 
   res.json({ breakdown });
 };
@@ -191,19 +97,21 @@ export const getExpenseBreakdown = async (req: AuthRequest, res: Response): Prom
 export const updateExpense = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { category, amount, description, expenseDate } = req.body;
+    const { category, amount, description, expenseDate, paidFrom, receiptUrl } = req.body;
 
-    const expense = await financialService.updateExpense(id, {
+    const { notice, ...expense } = await financialService.updateExpense(id, {
       category,
       amount,
       description,
-      expenseDate: expenseDate ? new Date(expenseDate) : undefined
+      expenseDate: expenseDate ? new Date(expenseDate) : undefined,
+      paidFrom,
+      receiptUrl
     }, req.user);
 
-    res.json({ expense });
+    res.json({ expense, notice });
   } catch (error: any) {
     const status = error.statusCode || error.status || 500;
-    res.status(status).json({ error: error.message || 'Failed to update expense' });
+    res.status(status).json({ error: error.message || 'Failed to update expense', code: error.errorCode });
   }
 };
 
@@ -211,31 +119,13 @@ export const deleteExpense = async (req: AuthRequest, res: Response): Promise<vo
   try {
     const { id } = req.params;
 
-    await financialService.deleteExpense(id, req.user);
+    const { message, notice } = await financialService.deleteExpense(id, req.user);
 
-    res.json({ message: 'Expense deleted successfully' });
+    res.json({ message, notice });
   } catch (error: any) {
     const status = error.statusCode || error.status || 500;
-    res.status(status).json({ error: error.message || 'Failed to delete expense' });
+    res.status(status).json({ error: error.message || 'Failed to delete expense', code: error.errorCode });
   }
-};
-
-export const getAgentCashHoldings = async (req: AuthRequest, res: Response): Promise<void> => {
-  const holdings = await financialService.getAgentCashHoldings(req.user);
-
-  res.json({ holdings });
-};
-
-export const getAgentSettlement = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { agentId } = req.params;
-  const { startDate, endDate } = req.query;
-
-  const settlement = await financialService.getAgentSettlement(agentId, {
-    startDate: startDate ? new Date(startDate as string) : undefined,
-    endDate: endDate ? new Date(endDate as string) : undefined
-  });
-
-  res.json(settlement);
 };
 
 export const markCollectionsAsDeposited = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -260,17 +150,10 @@ export const reconcileTransaction = async (req: AuthRequest, res: Response): Pro
   res.json({ transaction });
 };
 
+/** GET /api/financial/cash-flow?scenario=pace|target (M5-T41, F-928) */
 export const getCashFlowReport = async (req: AuthRequest, res: Response): Promise<void> => {
-  const report = await financialService.getCashFlowReport(req.user);
+  const report = await financialService.getCashFlowReport(req.user, parseScenario(req.query.scenario));
   res.json(report);
-};
-
-export const exportCashFlowCSV = async (req: AuthRequest, res: Response): Promise<void> => {
-  const csv = await financialService.exportCashFlowCSV(req.user);
-
-  res.setHeader('Content-Type', 'text/csv');
-  res.setHeader('Content-Disposition', `attachment; filename=cash_flow_report_${Date.now()}.csv`);
-  res.send(csv);
 };
 
 export const getAgentAgingReport = async (_req: AuthRequest, res: Response): Promise<void> => {
@@ -282,15 +165,12 @@ export const getAgentAgingReport = async (_req: AuthRequest, res: Response): Pro
   }
 };
 
-export const exportAgentAgingCSV = async (_req: AuthRequest, res: Response): Promise<void> => {
+export const getUnpaidByAge = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const csv = await agingService.generateAgingCSV();
-
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', `attachment; filename=agent-aging-report-${new Date().toISOString().split('T')[0]}.csv`);
-    res.status(200).send(csv);
+    res.json(await agingService.getUnpaidByAge());
   } catch (error) {
-    res.status(500).json({ error: 'Failed to export agent aging report' });
+    logger.error('Failed to fetch unpaid orders by age', { error });
+    res.status(500).json({ error: 'Failed to fetch unpaid orders by age' });
   }
 };
 
@@ -320,324 +200,24 @@ export const getProfitLoss = async (req: AuthRequest, res: Response): Promise<vo
   }
 };
 
-/**
- * POST /api/financial/refresh-aging
- * Admin-only endpoint to manually trigger aging bucket refresh
- * Use when aging data is stale or after bulk reconciliation
- */
-export const refreshAgingBuckets = async (_req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    await agingService.refreshAll();
-    res.json({ message: 'Aging buckets refreshed successfully' });
-  } catch (error) {
-    logger.error('Failed to refresh aging buckets', { error });
-    res.status(500).json({ message: 'Failed to refresh aging buckets' });
-  }
+/** POST /api/financial/agent-aging/:agentId/remind: a WhatsApp reminder to one partner about its unpaid cash (F-911). */
+export const remindPartner = async (req: AuthRequest, res: Response): Promise<void> => {
+  const agentId = Number(req.params.agentId);
+  if (!Number.isInteger(agentId) || agentId <= 0) throw new AppError('Partner ID must be a positive whole number', 400);
+  res.json(await agingService.remindPartner(agentId));
 };
 
 /**
- * POST /api/financial/backfill-collections
- * Admin-only endpoint to create missing agent_collection records
- * for delivered orders that have no collection tracking
+ * POST /api/financial/sync-cash-findings
+ * Admin-only: opens or closes the "negative cash held" Findings now, without waiting for the daily job.
  */
-export const backfillMissingCollections = async (_req: AuthRequest, res: Response): Promise<void> => {
+export const syncCashFindings = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
-    // SECURITY: raw SQL bypasses the Prisma tenant-isolation extension, so the
-    // tenant filter MUST be explicit here — without it this reads delivered orders
-    // from every tenant and stamps the caller's tenant onto foreign collections
-    // and balances (cross-tenant leak + ledger corruption).
-    const tenantId = getTenantId();
-    if (!tenantId) {
-      res.status(400).json({ error: 'Tenant context required' });
-      return;
-    }
-
-    // Find this tenant's delivered orders without agent_collections
-    const orphanedOrders = await prisma.$queryRaw<any[]>`
-      SELECT o.id, o.delivery_agent_id, o.total_amount, o.created_at
-      FROM orders o
-      WHERE o.status = 'delivered'
-        AND o.deleted_at IS NULL
-        AND o.delivery_agent_id IS NOT NULL
-        AND o.tenant_id = ${tenantId}
-        AND o.id NOT IN (SELECT order_id FROM agent_collections)
-      ORDER BY o.created_at ASC
-    `;
-
-    if (orphanedOrders.length === 0) {
-      res.json({ message: 'No orphaned orders found', created: 0 });
-      return;
-    }
-
-    // Group by agent for balance updates
-    const byAgent = new Map<number, { orders: any[], total: Money.Money }>();
-    for (const order of orphanedOrders) {
-      const agentId = order.delivery_agent_id;
-      if (!byAgent.has(agentId)) {
-        byAgent.set(agentId, { orders: [], total: Money.ZERO });
-      }
-      const group = byAgent.get(agentId)!;
-      group.orders.push(order);
-      group.total = Money.add(group.total, order.total_amount);
-    }
-
-    await prisma.$transaction(async (tx) => {
-      const extTx = tx as any;
-
-      for (const [agentId, { orders, total }] of byAgent) {
-        // Create draft collections for each order
-        for (const order of orders) {
-          await extTx.agentCollection.create({
-            data: {
-              tenantId,
-              orderId: order.id,
-              agentId,
-              amount: Money.parse(order.total_amount),
-              status: 'draft',
-              collectionDate: order.created_at,
-            },
-          });
-        }
-
-        // Update agent balance
-        await extTx.agentBalance.upsert({
-          where: { agentId },
-          create: {
-            agentId,
-            totalCollected: total,
-            totalDeposited: 0,
-            currentBalance: total,
-          },
-          update: {
-            totalCollected: { increment: total },
-            currentBalance: { increment: total },
-          },
-        });
-      }
-    });
-
-    // Refresh aging buckets after backfill
-    await agingService.refreshAll();
-
-    const summary = Array.from(byAgent.entries()).map(([agentId, { orders, total }]) => ({
-      agentId,
-      ordersBackfilled: orders.length,
-      totalAmount: Money.toApi(total),
-    }));
-
-    logger.info('Backfilled missing agent collections', { summary });
-    res.json({
-      message: `Backfilled ${orphanedOrders.length} missing collections`,
-      created: orphanedOrders.length,
-      summary,
-    });
+    await agingService.syncNegativeCashFindings();
+    res.json({ message: 'Cash held Findings synced' });
   } catch (error) {
-    logger.error('Failed to backfill missing collections', { error });
-    res.status(500).json({ message: 'Failed to backfill missing collections' });
-  }
-};
-
-/**
- * POST /api/financial/backfill-delivery-dates
- * Admin-only endpoint to set deliveryDate on delivered orders that are missing it.
- * Uses orderHistory (status = 'delivered') createdAt, falling back to order.updatedAt.
- */
-export const backfillDeliveryDates = async (_req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const orders = await prisma.order.findMany({
-      where: {
-        status: 'delivered',
-        deliveryDate: null,
-        deletedAt: null,
-      },
-      select: {
-        id: true,
-        updatedAt: true,
-        orderHistory: {
-          where: { status: 'delivered' },
-          orderBy: { createdAt: 'desc' },
-          take: 1,
-          select: { createdAt: true },
-        },
-      },
-    });
-
-    if (orders.length === 0) {
-      res.json({ message: 'No orders with missing deliveryDate found', updated: 0 });
-      return;
-    }
-
-    let updated = 0;
-    for (const order of orders) {
-      const deliveryDate = order.orderHistory[0]?.createdAt || order.updatedAt;
-      await prisma.order.update({
-        where: { id: order.id },
-        data: { deliveryDate },
-      });
-      updated++;
-    }
-
-    logger.info(`Backfilled deliveryDate for ${updated} orders`);
-    res.json({
-      message: `Backfilled deliveryDate for ${updated} orders`,
-      updated,
-    });
-  } catch (error) {
-    logger.error('Failed to backfill delivery dates', { error });
-    res.status(500).json({ message: 'Failed to backfill delivery dates' });
-  }
-};
-
-/**
- * POST /api/financial/backfill-commissions
- * Admin-only endpoint to add missing commission lines to order_delivery journal entries.
- * Finds JEs that have revenue but no commission transactions, then adds commission
- * debit + adjusts Cash in Transit based on current agent/rep commissionAmount.
- */
-export const backfillCommissions = async (_req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const commAccountId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION);
-    const repCommAccountId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.SALES_REP_COMMISSION);
-    const commPayableAccountId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.COMMISSIONS_PAYABLE);
-    const cashInTransitAccountId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT);
-
-    // account_transactions.tenant_id is NOT NULL — stamp every created row with
-    // the request's tenant rather than relying on the extension (which covers
-    // only the top-level create, and never nested children).
-    const tenantId = getTenantId();
-    if (!tenantId) {
-      res.status(400).json({ message: 'Cannot backfill commissions without tenant context.' });
-      return;
-    }
-
-    // Find all order_delivery JEs that have NO commission transactions
-    const journalEntries = await prisma.journalEntry.findMany({
-      where: {
-        sourceType: 'order_delivery',
-        isVoided: false,
-        transactions: {
-          none: {
-            accountId: { in: [commAccountId, repCommAccountId] },
-          },
-        },
-      },
-      include: {
-        transactions: true,
-      },
-    });
-
-    if (journalEntries.length === 0) {
-      res.json({ message: 'No journal entries missing commissions', updated: 0 });
-      return;
-    }
-
-    // Get orders with agent/rep commission info
-    const orderIds = journalEntries.map(je => je.sourceId).filter((id): id is number => id !== null);
-    const orders = await prisma.order.findMany({
-      where: { id: { in: orderIds } },
-      include: {
-        deliveryAgent: { select: { id: true, commissionAmount: true } },
-        customerRep: { select: { id: true, commissionAmount: true } },
-      },
-    });
-    const orderMap = new Map(orders.map(o => [o.id, o]));
-
-    let updated = 0;
-    let skipped = 0;
-
-    for (const je of journalEntries) {
-      const order = je.sourceId ? orderMap.get(je.sourceId) : null;
-      if (!order) {
-        skipped++;
-        continue;
-      }
-
-      const agentComm = Money.orZero(order.deliveryAgent?.commissionAmount);
-      const repComm = Money.orZero(order.customerRep?.commissionAmount);
-
-      if (agentComm.equals(0) && repComm.equals(0)) {
-        skipped++;
-        continue;
-      }
-
-      await prisma.$transaction(async (tx) => {
-        // Add agent commission transaction
-        if (agentComm.greaterThan(0)) {
-          await tx.accountTransaction.create({
-            data: {
-              journalEntryId: je.id,
-              accountId: commAccountId,
-              debitAmount: agentComm,
-              creditAmount: new Decimal(0),
-              description: `Backfill: Delivery agent commission - Order #${order.id}`,
-              tenantId,
-            },
-          });
-          // Reduce Cash in Transit (agent keeps commission from collection)
-          const citTxn = je.transactions.find(t => t.accountId === cashInTransitAccountId);
-          if (citTxn) {
-            await tx.accountTransaction.update({
-              where: { id: citTxn.id },
-              data: { debitAmount: new Decimal(citTxn.debitAmount.toString()).minus(agentComm) },
-            });
-          }
-          // Update account running balances
-          await tx.account.update({
-            where: { id: commAccountId },
-            data: { currentBalance: { increment: agentComm } },
-          });
-          await tx.account.update({
-            where: { id: cashInTransitAccountId },
-            data: { currentBalance: { decrement: agentComm } },
-          });
-        }
-
-        // Add rep commission transaction
-        if (repComm.greaterThan(0)) {
-          await tx.accountTransaction.create({
-            data: {
-              journalEntryId: je.id,
-              accountId: repCommAccountId,
-              debitAmount: repComm,
-              creditAmount: new Decimal(0),
-              description: `Backfill: Sales rep commission - Order #${order.id}`,
-              tenantId,
-            },
-          });
-          await tx.accountTransaction.create({
-            data: {
-              journalEntryId: je.id,
-              accountId: commPayableAccountId,
-              debitAmount: new Decimal(0),
-              creditAmount: repComm,
-              description: `Backfill: Commissions payable - Order #${order.id}`,
-              tenantId,
-            },
-          });
-          await tx.account.update({
-            where: { id: repCommAccountId },
-            data: { currentBalance: { increment: repComm } },
-          });
-          await tx.account.update({
-            where: { id: commPayableAccountId },
-            data: { currentBalance: { increment: repComm } },
-          });
-        }
-      });
-
-      updated++;
-    }
-
-    logger.info(`Backfilled commissions for ${updated} journal entries (${skipped} skipped)`);
-    res.json({
-      message: `Backfilled commissions for ${updated} journal entries`,
-      updated,
-      skipped,
-      totalChecked: journalEntries.length,
-    });
-  } catch (error) {
-    logger.error('Failed to backfill commissions', { error });
-    res.status(500).json({ message: 'Failed to backfill commissions' });
+    logger.error('Failed to sync cash held Findings', { error });
+    res.status(500).json({ message: 'Failed to sync cash held Findings' });
   }
 };
 

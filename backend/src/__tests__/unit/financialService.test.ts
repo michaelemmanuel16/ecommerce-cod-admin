@@ -26,10 +26,11 @@ jest.mock('../../services/kpi/revenue', () => ({
 import { prismaMock } from '../mocks/prisma.mock';
 import { useTestTenant, TEST_TENANT_ID } from '../mocks/tenant.mock';
 import { revenueResult } from '../mocks/kpiResults';
-import { deliveredRevenue } from '../../services/kpi/revenue';
+import { deliveredRevenue, deliveredRevenueByDay } from '../../services/kpi/revenue';
 import { FinancialService } from '../../services/financialService';
+import { GLAutomationService } from '../../services/glAutomationService';
 import { AppError } from '../../middleware/errorHandler';
-import { PaymentStatus } from '@prisma/client';
+import { PaymentStatus, Prisma } from '@prisma/client';
 import * as Money from '../../utils/money';
 
 describe('FinancialService', () => {
@@ -139,12 +140,12 @@ describe('FinancialService', () => {
 
   describe('recordExpense', () => {
     const expenseData = {
-      category: 'Delivery',
+      category: 'Transport',
       amount: 500,
       description: 'Fuel costs',
       expenseDate: new Date('2024-01-15'),
       recordedBy: 'user-1',
-      receiptUrl: 'https://example.com/receipt.pdf'
+      receiptUrl: '/uploads/receipt-1761500000000-123456789.pdf'
     };
 
     it('should record expense successfully', async () => {
@@ -156,77 +157,38 @@ describe('FinancialService', () => {
       };
 
       prismaMock.expense.create.mockResolvedValue(mockExpense as any);
+      (GLAutomationService.createExpenseGLEntry as jest.Mock<any>).mockResolvedValue({ id: 1, entryNumber: 'JE-001' });
 
       const expense = await financialService.recordExpense(expenseData);
 
       expect(expense).toBeDefined();
-      expect(expense.category).toBe('Delivery');
+      expect(expense.category).toBe('Transport');
       expect(expense.amount).toBe(500);
       expect(prismaMock.expense.create).toHaveBeenCalled();
     });
   });
 
-  describe('getCODCollectionsByAgent', () => {
-    it('should get COD collections for specific agent', async () => {
-      const mockCollections = [
-        {
-          id: 'trans-1',
-          type: 'cod_collection',
-          amount: 100,
-          status: 'collected',
-          order: {
-            orderNumber: '1001',
-            customer: {
-              firstName: 'John',
-              lastName: 'Doe'
-            }
-          }
-        },
-        {
-          id: 'trans-2',
-          type: 'cod_collection',
-          amount: 200,
-          status: 'collected',
-          order: {
-            orderNumber: '1002',
-            customer: {
-              firstName: 'Jane',
-              lastName: 'Smith'
-            }
-          }
-        }
-      ];
-
-      prismaMock.transaction.findMany.mockResolvedValue(mockCollections as any);
-
-      prismaMock.transaction.aggregate
-        .mockResolvedValueOnce({ _sum: { amount: 300 } } as any) // totalCollected
-        .mockResolvedValueOnce({ _sum: { amount: 0 } } as any) // totalPending
-        .mockResolvedValueOnce({ _sum: { amount: 0 } } as any); // totalDeposited
-
-      const requester = { id: 1, role: 'admin' };
-      const result = await financialService.getCODCollectionsByAgent('1', undefined, requester as any);
-
-      expect(result.collections).toHaveLength(2);
-      expect(Money.toApi(result.summary.totalCollected)).toBe('300.00');
-      expect(result.summary.totalCount).toBe(2);
+  describe('expense rows by role (F-917)', () => {
+    beforeEach(() => {
+      prismaMock.expense.findMany.mockResolvedValue([] as any);
+      prismaMock.expense.count.mockResolvedValue(0 as any);
+      prismaMock.expense.aggregate.mockResolvedValue({ _sum: { amount: null } } as any);
     });
 
-    it('should filter by date range when provided', async () => {
-      prismaMock.transaction.findMany.mockResolvedValue([]);
-      prismaMock.transaction.aggregate.mockResolvedValue({
-        _sum: { amount: 0 }
-      } as any);
+    it('a delivery agent sees only the rows they recorded', async () => {
+      await financialService.getAllExpenses({}, { id: 7, role: 'delivery_agent' } as any);
+      expect(prismaMock.expense.findMany.mock.calls[0][0]).toMatchObject({ where: { recordedBy: 7 } });
+    });
 
-      await financialService.getCODCollectionsByAgent('agent-1', {
-        startDate: new Date('2024-01-01'),
-        endDate: new Date('2024-01-31')
-      });
+    it('the finance clerk sees every row', async () => {
+      await financialService.getAllExpenses({}, { id: 8, role: 'accountant' } as any);
+      expect((prismaMock.expense.findMany.mock.calls[0][0] as any).where.recordedBy).toBeUndefined();
+    });
 
-      const callArgs = (prismaMock.transaction.findMany as any).mock.calls[0][0];
-      expect(callArgs.where.createdAt).toBeDefined();
-      expect(callArgs.where.createdAt.gte).toBeDefined();
-      expect(callArgs.where.createdAt.lte).toBeDefined();
+    it('rejects a category that is not on the list', async () => {
+      await expect(financialService.recordExpense({
+        category: 'Airtime and rewards', amount: 10, description: 'x', expenseDate: new Date(), recordedBy: '1'
+      })).rejects.toThrow('Category must be one of');
     });
   });
 
@@ -313,6 +275,7 @@ describe('FinancialService', () => {
         count: jest.fn().mockResolvedValue(0),
         findMany: jest.fn().mockResolvedValue([])
       };
+      (prismaMock as any).journalEntry = { findMany: jest.fn().mockResolvedValue([]) };
 
       const requester = { id: 1, role: 'admin' };
       const result = await financialService.markCODAsDeposited(
@@ -364,8 +327,10 @@ describe('FinancialService', () => {
         }
       ];
 
-      prismaMock.order.findMany.mockResolvedValue(mockOrders as any);
-      prismaMock.expense.findMany.mockResolvedValue(mockExpenses as any);
+      void mockOrders;
+      // M5-T27: revenue comes from the KPI by delivery date, not from updatedAt
+      (deliveredRevenueByDay as jest.Mock).mockResolvedValue([{ date: '2024-01-01', revenue: '300.00', deliveredOrders: 2 }] as never);
+      prismaMock.expense.groupBy.mockResolvedValue(mockExpenses.map((e) => ({ expenseDate: e.expenseDate, _sum: { amount: e.amount } })) as any);
 
       const reports = await financialService.getFinancialReports({
         period: 'daily',
@@ -373,8 +338,8 @@ describe('FinancialService', () => {
         endDate: new Date('2024-01-31')
       });
 
-      expect(reports).toBeDefined();
-      const jan1Report = reports.find((r) => r.date === '2024-01-01');
+      expect(reports.grouping).toBe('day');
+      const jan1Report = reports.rows.find((r) => r.date === '2024-01-01');
       expect(Money.toApi(jan1Report!.revenue)).toBe('300.00');
       expect(Money.toApi(jan1Report!.expenses)).toBe('50.00');
       expect(Money.toApi(jan1Report!.profit)).toBe('250.00');
@@ -396,8 +361,9 @@ describe('FinancialService', () => {
         }
       ];
 
-      prismaMock.order.findMany.mockResolvedValue(mockOrders as any);
-      prismaMock.expense.findMany.mockResolvedValue(mockExpenses as any);
+      void mockOrders;
+      (deliveredRevenueByDay as jest.Mock).mockResolvedValue([{ date: '2024-01-15', revenue: '100.00', deliveredOrders: 1 }] as never);
+      prismaMock.expense.groupBy.mockResolvedValue(mockExpenses.map((e) => ({ expenseDate: e.expenseDate, _sum: { amount: e.amount } })) as any);
 
       const reports = await financialService.getFinancialReports({
         period: 'monthly',
@@ -405,7 +371,8 @@ describe('FinancialService', () => {
         endDate: new Date('2024-12-31')
       });
 
-      const jan2024 = reports.find((r) => r.date === '2024-01');
+      expect(reports.grouping).toBe('month');
+      const jan2024 = reports.rows.find((r) => r.date === '2024-01');
       expect(Money.toApi(jan2024!.revenue)).toBe('100.00');
       expect(Money.toApi(jan2024!.expenses)).toBe('30.00');
       expect(Money.toApi(jan2024!.profit)).toBe('70.00');
@@ -413,82 +380,46 @@ describe('FinancialService', () => {
   });
 
   describe('getExpenseBreakdown', () => {
-    it('should group expenses by category', async () => {
-      const mockExpenses = [
-        { category: 'Delivery', amount: 200 },
-        { category: 'Delivery', amount: 800 },
-        { category: 'Marketing', amount: 500 },
-        { category: 'Operations', amount: 800 }
-      ];
-
-      prismaMock.expense.findMany.mockResolvedValue(mockExpenses as any);
+    it('groups expenses by category in the database, largest first', async () => {
+      prismaMock.expense.groupBy.mockResolvedValue([
+        { category: 'Transport', _sum: { amount: 1000 }, _count: { _all: 2 } },
+        { category: 'Marketing', _sum: { amount: 500 }, _count: { _all: 1 } },
+        { category: 'Other', _sum: { amount: 800 }, _count: { _all: 1 } },
+      ] as any);
 
       const breakdown = await financialService.getExpenseBreakdown({
         startDate: new Date('2024-01-01'),
         endDate: new Date('2024-01-31')
       });
 
-      expect(breakdown).toHaveLength(3);
-      expect(Money.toApi(breakdown.find(b => b.category === 'Delivery')!.totalAmount)).toBe('1000.00');
-      expect(Money.toApi(breakdown.find(b => b.category === 'Marketing')!.totalAmount)).toBe('500.00');
-      expect(Money.toApi(breakdown.find(b => b.category === 'Operations')!.totalAmount)).toBe('800.00');
-
-      // Should be sorted by amount (descending)
-      expect(Money.toApi(breakdown[0].totalAmount)).toBe('1000.00');
-      expect(Money.toApi(breakdown[1].totalAmount)).toBe('800.00');
+      expect(breakdown.map((b) => [b.category, Money.toApi(b.totalAmount), b.count])).toEqual([
+        ['Transport', '1000.00', 2], ['Other', '800.00', 1], ['Marketing', '500.00', 1]
+      ]);
+      expect((prismaMock.expense.groupBy.mock.calls[0][0] as any).by).toEqual(['category']);
     });
   });
 
   describe('expense totals use exact money arithmetic (F-932)', () => {
-    it('sums 0.1 x 1000 in an expense total to "100.00"', async () => {
-      // 0.1 summed 1000 times as a float is 99.9999999999986
-      const mockExpenses = Array.from({ length: 1000 }, () => ({ category: 'Delivery', amount: 0.1 }));
-      prismaMock.expense.findMany.mockResolvedValue(mockExpenses as any);
+    it('keeps a database sum of 0.1 x 1000 exact: "100.00"', async () => {
+      prismaMock.expense.groupBy.mockResolvedValue([{ category: 'Other', _sum: { amount: new Prisma.Decimal('100') }, _count: { _all: 1000 } }] as any);
 
       const breakdown = await financialService.getExpenseBreakdown({});
 
       expect(Money.toApi(breakdown[0].totalAmount)).toBe('100.00');
-      expect(mockExpenses.reduce((sum, e) => sum + e.amount, 0)).not.toBe(100);
     });
 
-    it('sums 0.1 x 1000 in a daily financial report to "100.00"', async () => {
-      const mockExpenses = Array.from({ length: 1000 }, () => ({ expenseDate: new Date('2024-01-01T10:00:00Z'), amount: 0.1 }));
-      prismaMock.expense.findMany.mockResolvedValue(mockExpenses as any);
-      prismaMock.order.findMany.mockResolvedValue([] as any);
+    it('adds the database sums of one day exactly: "100.00"', async () => {
+      // The database sums each expense date (0.1 x 500 each); the report adds the two sums of the same store day
+      prismaMock.expense.groupBy.mockResolvedValue([
+        { expenseDate: new Date('2024-01-01T10:00:00Z'), _sum: { amount: new Prisma.Decimal('50') } },
+        { expenseDate: new Date('2024-01-01T14:00:00Z'), _sum: { amount: new Prisma.Decimal('50') } },
+      ] as any);
+      (deliveredRevenueByDay as jest.Mock).mockResolvedValue([] as never);
 
       const reports = await financialService.getFinancialReports({ startDate: new Date('2024-01-01'), endDate: new Date('2024-01-31') }, 'daily');
 
-      expect(Money.toApi(reports[0].expenses)).toBe('100.00');
-      expect(Money.toApi(reports[0].profit)).toBe('-100.00');
-    });
-  });
-
-  describe('getAgentSettlement', () => {
-    it('should calculate agent settlement correctly', async () => {
-      const mockCollections = [
-        {
-          id: 'trans-1',
-          amount: 100,
-          order: {
-            orderNumber: '1001',
-            customer: { firstName: 'John', lastName: 'Doe' }
-          }
-        }
-      ];
-
-      prismaMock.transaction.findMany.mockResolvedValue(mockCollections as any);
-      prismaMock.transaction.aggregate
-        .mockResolvedValueOnce({ _sum: { amount: 1000 } } as any) // totalCollected
-        .mockResolvedValueOnce({ _sum: { amount: 0 } } as any) // totalPending
-        .mockResolvedValueOnce({ _sum: { amount: 600 } } as any); // totalDeposited
-
-      const settlement = await financialService.getAgentSettlement('agent-1');
-
-      expect(settlement.agentId).toBe('agent-1');
-      expect(Money.toApi(settlement.totalCollected)).toBe('1000.00');
-      expect(Money.toApi(settlement.totalDeposited)).toBe('600.00');
-      expect(Money.toApi(settlement.pendingSettlement)).toBe('400.00'); // 1000 - 600
-      expect(settlement.collections).toHaveLength(1);
+      expect(Money.toApi(reports.rows[0].expenses)).toBe('100.00');
+      expect(Money.toApi(reports.rows[0].profit)).toBe('-100.00');
     });
   });
 
@@ -523,59 +454,6 @@ describe('FinancialService', () => {
       await expect(
         financialService.markCODAsDeposited([])
       ).rejects.toThrow('No transaction IDs provided');
-    });
-  });
-
-  describe('getAllTransactions', () => {
-    it('should return paginated transactions', async () => {
-      const mockTransactions = [
-        {
-          id: 'trans-1',
-          type: 'cod_collection',
-          amount: 100,
-          order: {
-            orderNumber: '1001',
-            customer: { firstName: 'John', lastName: 'Doe' },
-            deliveryAgent: { firstName: 'Agent', lastName: 'One' }
-          }
-        }
-      ];
-
-      prismaMock.transaction.findMany.mockResolvedValue(mockTransactions as any);
-      prismaMock.transaction.count.mockResolvedValue(1);
-
-      const result = await financialService.getAllTransactions({
-        page: 1,
-        limit: 20
-      });
-
-      expect(result.transactions).toHaveLength(1);
-      expect(result.pagination.total).toBe(1);
-      expect(result.pagination.pages).toBe(1);
-    });
-
-    it('should filter by transaction type', async () => {
-      prismaMock.transaction.findMany.mockResolvedValue([]);
-      prismaMock.transaction.count.mockResolvedValue(0);
-
-      await financialService.getAllTransactions({
-        type: 'cod_collection'
-      });
-
-      const callArgs = (prismaMock.transaction.findMany as any).mock.calls[0][0];
-      expect(callArgs.where.type).toBe('cod_collection');
-    });
-
-    it('should filter by payment status', async () => {
-      prismaMock.transaction.findMany.mockResolvedValue([]);
-      prismaMock.transaction.count.mockResolvedValue(0);
-
-      await financialService.getAllTransactions({
-        status: 'collected' as PaymentStatus
-      });
-
-      const callArgs = (prismaMock.transaction.findMany as any).mock.calls[0][0];
-      expect(callArgs.where.status).toBe('collected');
     });
   });
 

@@ -5,6 +5,7 @@ import { DateRange } from './DateRange';
 import type { Option } from './useFilterOptions';
 import { SEARCH_DEBOUNCE_MS } from '../../utils/urlState';
 import { rangeOf, type ListView } from './urlState';
+import { isViewTab } from './model';
 
 interface FilterBarProps {
   view: ListView;
@@ -76,12 +77,14 @@ export function FilterBar({ view, onChange, products, agents, reps, children }: 
         <Sparkles style={{ color: view.flagged ? undefined : 'var(--violet)' }} />
         Flagged by agent
       </Button>
-      <DateRange
-        range={rangeOf(view)}
-        basis={view.basis}
-        onRange={(r) => change({ from: r.from, to: r.to })}
-        onBasis={(basis) => change({ basis })}
-      />
+      {!isViewTab(view.tab) && (
+        <DateRange
+          range={rangeOf(view)}
+          basis={view.basis}
+          onRange={(r) => change({ from: r.from, to: r.to })}
+          onBasis={(basis) => change({ basis })}
+        />
+      )}
       {children}
     </div>
   );

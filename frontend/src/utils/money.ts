@@ -37,10 +37,13 @@ export const parseMoney = (value: string | number | null | undefined): number =>
   return Number.isFinite(n) ? n : 0;
 };
 
+/** Whole cents of an amount ("2034.00" -> 203400), so amounts are compared and added without float drift. */
+export const toCents = (value: string | number | null | undefined): number => Math.round(parseMoney(value) * 100);
+
 // Keys that carry money in API payloads and socket events. Phone numbers, ids,
 // codes and references are numeric strings too, so those are excluded.
 const MONEY_KEY =
-  /amount|price|cost|revenue|profit|earning|commission|balance|spent|subtotal|total|discount|expense|cogs|receivable|collect|deposit|expected|bucket_|ordervalue|cash|equity|mrr|fee|payout|income|liabilit|pending|paid|outstanding|due|credit|debit|refund|rate|value|sales/i;
+  /amount|price|cost|revenue|profit|earning|commission|balance|spent|subtotal|total|discount|expense|cogs|receivable|collect|deposit|expected|bucket_|ordervalue|cash|equity|mrr|fee|payout|income|liabilit|pending|paid|outstanding|due|credit|debit|refund|rate|value|sales|applied/i;
 // Id is case-sensitive so "depositPaid" is not mistaken for an id.
 const NOT_MONEY_KEY = /code|phone|reference|name|address/i;
 const ID_KEY = /^id$|Id$|_id$/;

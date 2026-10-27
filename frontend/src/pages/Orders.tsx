@@ -16,7 +16,7 @@ import { RowAssignItems } from './orders/AssignItems';
 import { NewOrderSheet } from './orders/NewOrderSheet';
 import { RowStatus } from './orders/RowStatus';
 import { useOrderActions, type FocusSet } from './orders/useOrderActions';
-import { CLOSED, DELETABLE, orderNumber, tabCount, visibleTabs, type StatusTabId } from './orders/model';
+import { CLOSED, DELETABLE, isViewTab, orderNumber, tabCount, visibleTabs, type StatusTabId } from './orders/model';
 import { failureReasonLabel } from './orders/reasons';
 import { readPref, writePref } from './orders/prefs';
 import { DEFAULT_SIZE } from '../utils/urlState';
@@ -115,6 +115,7 @@ export function Orders({ onOpen }: OrdersProps) {
         sort: view.sort,
         onSort,
         onAssign: canAssign ? (row, anchor) => setAssignFor((cur) => (cur?.row.id === row.id ? null : { row, anchor })) : undefined,
+        unpaidView: view.tab === 'unpaid_by_agent',
         renderStatus: canMove ? (row) => <RowStatus row={row} onPick={(target, forced) => actions.moveStatus([row], target, { forced })} /> : undefined,
       }),
     [selected, shownRows, columnPrefs.widthOf, columnPrefs.setWidth, columnPrefs.hidden, view, canAssign, canMove],
@@ -145,7 +146,7 @@ export function Orders({ onOpen }: OrdersProps) {
               Import
             </Button>
           )}
-          <ExportMenu params={params} total={list.pagination.total} />
+          {!isViewTab(view.tab) && <ExportMenu params={params} total={list.pagination.total} />}
           {can('orders', 'create') && (
             <Button variant="primary" onClick={() => setFormOpen(true)}>
               <Plus />

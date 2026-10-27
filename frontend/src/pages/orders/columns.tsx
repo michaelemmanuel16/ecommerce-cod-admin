@@ -1,13 +1,13 @@
 import type { ReactNode } from 'react';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import type { Column } from '../../components/ui-v2';
-import type { OrderListRow } from '../../services/orders.service';
+import type { OrderListRow, UnpaidOrderRow } from '../../services/orders.service';
 import { formatCurrency, formatPhoneLocal } from '../../utils/format';
 import { AVATAR_TONES, initials, personName } from '../../utils/people';
 import { customerName, orderNumber, productSummary, shortDate } from './model';
 import { AssignButton, ResizeHandle } from './ColumnParts';
 import { COLUMN_LABELS } from './labels';
-import { StatusCell } from './StatusCell';
+import { StatusCell, UnpaidTag } from './StatusCell';
 import { FIXED_COLUMNS, type ColumnId } from './useColumnPrefs';
 
 export type SortField = 'id' | 'customer' | 'totalAmount' | 'createdAt';
@@ -30,6 +30,8 @@ export interface ColumnContext {
   onAssign?: (row: OrderListRow, trigger: HTMLElement) => void;
   /** The status tag of a row opens its move menu. Absent: the tag is plain. */
   renderStatus?: (row: OrderListRow) => ReactNode;
+  /** The Unpaid by agent view: the status tag gets a line "Unpaid N days, pays in M" (F-309). It replaces the move menu there. */
+  unpaidView?: boolean;
 }
 
 const SORT_OF: Partial<Record<ColumnId, SortField>> = { order: 'id', customer: 'customer', amount: 'totalAmount', date: 'createdAt' };
@@ -105,7 +107,7 @@ export function buildColumns(ctx: ColumnContext): Column<OrderListRow>[] {
     }],
     ['altPhone', { key: 'altPhone', header: head('altPhone'), render: (r) => (r.customer.alternatePhone ? formatPhoneLocal(r.customer.alternatePhone) : <span className="mut">—</span>) }],
     ['product', { key: 'product', header: head('product'), render: (r) => productSummary(r) }],
-    ['status', { key: 'status', header: head('status'), render: (r) => ctx.renderStatus?.(r) ?? <StatusCell row={r} /> }],
+    ['status', { key: 'status', header: head('status'), render: (r) => (ctx.unpaidView ? <StatusCell row={r} tag={<UnpaidTag row={r as UnpaidOrderRow} />} /> : ctx.renderStatus?.(r) ?? <StatusCell row={r} />) }],
     ['rep', {
       key: 'rep',
       header: head('rep'),

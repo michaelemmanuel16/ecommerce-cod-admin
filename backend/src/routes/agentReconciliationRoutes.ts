@@ -19,6 +19,7 @@ router.get('/',
     [
         query('agentId').optional().isInt().toInt(),
         query('status').optional().isString(),
+        query('recentDecided').optional().isInt({ min: 0, max: 200 }).toInt(),
         query('startDate').optional().isISO8601().toDate(),
         query('endDate').optional().isISO8601().toDate(),
         validate
@@ -32,36 +33,6 @@ router.get('/stats/:agentId',
         validate
     ],
     agentReconciliationController.getAgentStats
-);
-
-// Verification (Accountant only)
-router.post('/:id/verify',
-    requireRole('super_admin', 'admin', 'manager', 'accountant'),
-    [
-        param('id').isInt().toInt(),
-        validate
-    ],
-    agentReconciliationController.verifyCollection
-);
-
-router.post('/bulk-verify',
-    requireRole('super_admin', 'admin', 'manager', 'accountant'),
-    [
-        body('ids').isArray({ min: 1 }),
-        body('ids.*').isInt().toInt(),
-        validate
-    ],
-    agentReconciliationController.bulkVerify
-);
-
-// Approval (Manager/Admin only)
-router.post('/:id/approve',
-    requireRole('super_admin', 'admin', 'manager'),
-    [
-        param('id').isInt().toInt(),
-        validate
-    ],
-    agentReconciliationController.approveCollection
 );
 
 // Balance tracking (Agent, Manager, Admin)
@@ -119,7 +90,9 @@ router.post('/deposits/:id/reject',
     requireRole('super_admin', 'accountant'),
     [
         param('id').isInt().toInt(),
-        body('notes').notEmpty().withMessage('Rejection notes are required').isLength({ min: 5 }),
+        // The reason is required (F-912). `notes` is the old name of the field; the trimmed value lands in `reason`.
+        body('reason').customSanitizer((value, { req }) => String(value ?? req.body.notes ?? '').trim())
+            .isLength({ min: 5 }).withMessage('A reason of at least 5 characters is required to reject a deposit'),
         validate
     ],
     agentReconciliationController.rejectDeposit
@@ -134,17 +107,6 @@ router.post('/deposits/bulk-verify',
         validate
     ],
     agentReconciliationController.bulkVerifyDeposits
-);
-
-// Aging Report
-router.get('/aging',
-    requireRole('super_admin', 'admin', 'manager', 'accountant'),
-    agentReconciliationController.getAgingReport
-);
-
-router.get('/aging/export',
-    requireRole('super_admin', 'admin', 'manager', 'accountant'),
-    agentReconciliationController.exportAgingReport
 );
 
 // Agent Blocking

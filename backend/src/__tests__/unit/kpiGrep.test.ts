@@ -40,11 +40,11 @@ const ALLOWED: Array<{ file: string; match: string; reason: string }> = [
   { file: 'controllers/checkoutFormController.ts', match: '_sum: { totalAmount', reason: 'UNASSIGNED: checkout form revenue' },
   { file: 'controllers/checkoutFormController.ts', match: 'conversionRate', reason: 'UNASSIGNED: checkout form submission conversionRate' },
   { file: 'services/platformService.ts', match: '_sum: { totalAmount', reason: 'not a store KPI: platform admin totals across tenants' },
-  { file: 'controllers/userController.ts', match: 'deliveryRate', reason: 'the User.deliveryRate column (agent pay per delivery), not a KPI' },
   { file: 'controllers/userController.ts', match: '/ total) * 100', reason: 'UNASSIGNED: agent successRate' },
-  { file: 'controllers/authController.ts', match: 'deliveryRate', reason: 'not a KPI: returns the User.deliveryRate column' },
-  { file: 'services/adminService.ts', match: 'deliveryRate', reason: 'not a KPI: User.deliveryRate column (agent pay per delivery)' },
-  { file: 'scripts/seed.ts', match: 'deliveryRate', reason: 'not a KPI: seed data sets User.deliveryRate' },
+  // M5-T25..T27: finance reports. One revenue definition per order is a follow-up ticket (M5 item 11).
+  { file: 'services/finance/cashFlowService.ts', match: '_sum: { totalAmount', reason: 'not delivered revenue: order totals out for delivery (expected cash, not cash)' },
+  { file: 'services/finance/profitService.ts', match: '_sum: { totalAmount', reason: 'cohort profit: delivered totals of orders placed in the period; one revenue definition per order is a follow-up (M5 item 11)' },
+  { file: 'services/adminService.ts', match: 'deliveryRate', reason: 'not a KPI: drops a client-sent deliveryRate (the User.deliveryRate column is no longer written)' },
 ];
 
 function sourceFiles(dir: string, out: string[] = []): string[] {

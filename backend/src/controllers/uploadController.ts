@@ -6,6 +6,7 @@ import { AppError } from '../middleware/errorHandler';
 import { uploadDir } from '../config/multer';
 import { isR2Configured, uploadToR2, buildImageKey } from '../config/r2';
 import logger from '../utils/logger';
+import { fileSignatureError } from '../utils/fileSignature';
 
 export const uploadImage = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -14,6 +15,8 @@ export const uploadImage = async (req: AuthRequest, res: Response): Promise<void
     }
 
     const file = req.file;
+    const signatureError = fileSignatureError(file.mimetype, file.buffer);
+    if (signatureError) throw new AppError(signatureError, 400);
     const tenantId = req.user?.tenantId;
     const key = buildImageKey(file.originalname, tenantId);
 

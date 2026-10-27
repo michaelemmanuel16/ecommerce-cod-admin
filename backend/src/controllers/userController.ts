@@ -4,7 +4,6 @@ import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { getRepPerformanceDetails } from '../services/repPerformanceService';
 import { adminService } from '../services/adminService';
-import * as Money from '../utils/money';
 import { resolveTenantId } from '../utils/tenantContext';
 import { readDateBound, toInvalidRange } from '../utils/kpiRequest';
 import { accountService } from '../services/accountService';
@@ -190,9 +189,6 @@ export const getAgentPerformance = async (req: AuthRequest, res: Response, next:
         isAvailable: true,
         vehicleType: true,
         vehicleId: true,
-        deliveryRate: true,
-        commissionAmount: true,
-        totalEarnings: true,
         location: true,
         country: true,
         assignedOrdersAsAgent: {
@@ -217,9 +213,6 @@ export const getAgentPerformance = async (req: AuthRequest, res: Response, next:
         !['delivered', 'cancelled', 'returned'].includes(o.status)
       ).length;
 
-      const rate = agent.deliveryRate ? Money.fromNumber(agent.deliveryRate) : Money.orZero(agent.commissionAmount);
-      const calculatedEarnings = Money.mul(delivered, rate);
-
       // MTD metrics
       const mtdOrders = orders.filter((o: any) => new Date(o.createdAt) >= startOfMonth);
       const mtdCompleted = mtdOrders.filter((o: any) => o.status === 'delivered').length;
@@ -236,9 +229,6 @@ export const getAgentPerformance = async (req: AuthRequest, res: Response, next:
         successRate: total > 0 ? (delivered / total) * 100 : 0,
         vehicleType: agent.vehicleType,
         vehicleId: agent.vehicleId,
-        deliveryRate: rate,
-        totalEarnings: calculatedEarnings,
-        mtdEarnings: Money.mul(mtdCompleted, rate),
         location: agent.location,
         mtdCompleted,
         mtdTotalAssigned: mtdOrders.length,
@@ -357,7 +347,7 @@ export const getMyPayoutHistory = async (req: AuthRequest, res: Response, next: 
     }
 
     const payouts = await prisma.payout.findMany({
-      where: { repId: userId },
+      where: { payeeId: userId },
       include: {
         _count: {
           select: { orders: true }

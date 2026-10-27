@@ -126,7 +126,7 @@ export interface UpdatePartnerInput {
   vehicleId?: string | null;
 }
 
-async function loadPartner(partnerId: number) {
+export async function loadPartner(partnerId: number) {
   const user = await prisma.user.findFirst({
     where: { id: partnerId, role: 'delivery_agent', kind: { in: ['person', 'company'] } },
     select: {
@@ -145,7 +145,7 @@ export async function getPartner(partnerId: number, opts: { showMoney: boolean; 
   const user = await loadPartner(partnerId);
   const profile = user.partnerProfile;
   const feeRules = !opts.showMoney ? null : opts.isNew ? [] : await prisma.feeRule.findMany({ where: { partnerUserId: partnerId } });
-  const feeRule = feeRules ? feeRuleView(feeRules) : undefined;
+  const feeRule = feeRules ? feeRuleView(feeRules, resolveTenantId()) : undefined;
   return {
     id: user.id,
     name: fullName(user),

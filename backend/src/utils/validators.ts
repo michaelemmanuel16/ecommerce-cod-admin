@@ -164,6 +164,12 @@ export const paginationValidation: ValidationChain[] = [
   query('limit').optional().isInt({ min: 1, max: 100 })
 ];
 
+/** The chart of accounts is small and the Finance screens read all of it in one call, so its list allows a larger page than other lists. */
+export const accountListValidation: ValidationChain[] = [
+  query('page').optional().isInt({ min: 1 }),
+  query('limit').optional().isInt({ min: 1, max: 500 })
+];
+
 export const productIdValidation: ValidationChain[] = [param('id').isInt({ min: 1 }).withMessage('Invalid product ID').toInt()];
 
 /** Products list and summary filters (F-600). */
@@ -191,6 +197,7 @@ export const orderListValidation: ValidationChain[] = [
   query('sortBy').optional().isIn([...ORDER_SORT_FIELDS]).withMessage(`Sort by ${ORDER_SORT_FIELDS.join(', ')}`),
   query('search').optional().isString().isLength({ max: 100 }),
   query('sortOrder').optional().isIn(['asc', 'desc']),
+  query('tab').optional().isIn(['unpaid_by_agent']).withMessage('tab must be unpaid_by_agent'),
   query('dateBasis').optional().isIn(['created', 'delivery']),
   query('flag').optional().isIn([...ORDER_FLAG_CODES, 'any']),
   // The orders an import made (F-319): a comma list of ids, numbers only, at most 2,000
@@ -302,13 +309,6 @@ export const createJournalEntryValidation: ValidationChain[] = [
     .trim()
     .notEmpty().withMessage('Description is required')
     .isLength({ min: 3, max: 500 }).withMessage('Description must be 3-500 characters'),
-  body('sourceType')
-    .notEmpty().withMessage('Source type is required')
-    .isIn(['order_delivery', 'agent_deposit', 'expense', 'payout', 'manual', 'reversal'])
-    .withMessage('Invalid source type'),
-  body('sourceId')
-    .optional()
-    .isInt({ min: 1 }).withMessage('Source ID must be a positive integer'),
   body('transactions')
     .isArray({ min: 2 }).withMessage('At least 2 transactions are required'),
   body('transactions.*.accountId')

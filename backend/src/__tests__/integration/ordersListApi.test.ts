@@ -94,7 +94,7 @@ describe('GET /api/orders/counts', () => {
   it('matches the NUMBERS.md tabs for October (All 1,445)', async () => {
     const res = await counts(tokens.admin);
     expect(res.status).toBe(200);
-    expect(Object.keys(res.body).sort()).toEqual(['all', 'byStatus', 'waitingToDispatch']);
+    expect(Object.keys(res.body).sort()).toEqual(['all', 'byStatus', 'unpaidByAgent', 'waitingToDispatch']);
     expect(res.body.all).toBe(1445);
     expect(res.body.byStatus).toMatchObject({
       pending_confirmation: 64, out_for_delivery: 148, delivered: 376, failed_delivery: 354, returned: 48, cancelled: 355,

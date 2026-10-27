@@ -15,6 +15,8 @@ const orderProof = vi.fn();
 const orderProofs = vi.fn();
 const listOrders = vi.fn();
 const stockLevels = vi.fn();
+const feeRules = vi.fn();
+const addFeeRules = vi.fn();
 vi.mock('../../services/delivery-partners.service', async (orig) => ({
   ...(await orig<typeof import('../../services/delivery-partners.service')>()),
   deliveryPartnersService: {
@@ -24,6 +26,8 @@ vi.mock('../../services/delivery-partners.service', async (orig) => ({
     orderProof: (...a: unknown[]) => orderProof(...a),
     orderProofs: (...a: unknown[]) => orderProofs(...a),
     stockLevels: (...a: unknown[]) => stockLevels(...a),
+    feeRules: (...a: unknown[]) => feeRules(...a),
+    addFeeRules: (...a: unknown[]) => addFeeRules(...a),
   },
 }));
 vi.mock('../../services/orders.service', () => ({ ordersService: { listOrders: (...a: unknown[]) => listOrders(...a) } }));
@@ -42,19 +46,27 @@ const ORDER = {
 };
 
 const onChanged = vi.fn();
+const onFeeRulesSaved = vi.fn();
 function open(props: Partial<React.ComponentProps<typeof PartnerDrawer>> = {}) {
   return render(
     <MemoryRouter>
       <ToastProvider>
-        <PartnerDrawer id={2} row={PARTNERS[1]} target={60} canEdit canSwitch onClose={vi.fn()} onChanged={onChanged} {...props} />
+        <PartnerDrawer id={2} row={PARTNERS[1]} target={60} canEdit canSwitch onClose={vi.fn()} onChanged={onChanged} onFeeRulesSaved={onFeeRulesSaved} {...props} />
       </ToastProvider>
     </MemoryRouter>,
   );
 }
 
 beforeEach(() => {
-  [get, update, setAvailability, orderProof, orderProofs, listOrders, stockLevels, onChanged].forEach((m) => m.mockReset());
+  [get, update, setAvailability, orderProof, orderProofs, listOrders, stockLevels, feeRules, addFeeRules, onChanged, onFeeRulesSaved].forEach((m) => m.mockReset());
   get.mockResolvedValue(KOFI);
+  const rule = (id: number, outcome: string, amount: string) => ({ id, outcome, basis: 'flat', amount, validFrom: '2026-01-01', createdAt: '2026-01-01T00:00:00Z' });
+  feeRules.mockResolvedValue({
+    rules: [rule(1, 'delivered', '25.00'), rule(2, 'failed', '5.00')],
+    current: { delivered: rule(1, 'delivered', '25.00'), failed: rule(2, 'failed', '5.00'), returned: null },
+    weightedFee: null,
+    deliveredOrders: 0,
+  });
   update.mockImplementation((_id: number, patch: { daysToPay: number }) => Promise.resolve({ ...KOFI, profile: { ...KOFI.profile, daysToPay: patch.daysToPay } }));
   setAvailability.mockResolvedValue(undefined);
   stockLevels.mockResolvedValue([
@@ -94,17 +106,39 @@ describe('Partner drawer (M4-T32)', () => {
     expect(within(list).getByText('Recipient', { exact: false })).toBeInTheDocument();
   });
 
-  it('Fees tab: the fee rule is read-only, a save sends the profile fields', async () => {
+  it('Fees tab: the delivery fee rules show, a save sends the profile fields', async () => {
     open();
     await userEvent.click(await screen.findByRole('tab', { name: 'Fees' }));
-    expect(await screen.findByText('Per delivered')).toBeInTheDocument();
-    expect(screen.getByText('GH₵25')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Delivered delivery fee')).toHaveValue(25);
     const days = screen.getByLabelText('Days to pay');
     await userEvent.clear(days);
     await userEvent.type(days, '5');
     await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
     await waitFor(() => expect(update).toHaveBeenCalledWith(2, expect.objectContaining({ daysToPay: 5, dataSource: 'app', isTrial: false, vehicleType: 'Motorbike' })));
     expect(onChanged).toHaveBeenCalled();
+  });
+
+  it('saving delivery fees updates the table row from the response; a profile save does not reload the fee rules', async () => {
+    const rule = (id: number, outcome: string, amount: string) => ({ id, outcome, basis: 'flat', amount, validFrom: '2026-10-26' });
+    addFeeRules.mockResolvedValue({
+      rules: [rule(5, 'returned', '3.00'), rule(1, 'delivered', '25.00')],
+      current: { delivered: rule(1, 'delivered', '25.00'), failed: null, returned: rule(5, 'returned', '3.00') },
+      weightedFee: null, deliveredOrders: 0,
+    });
+    open();
+    await userEvent.click(await screen.findByRole('tab', { name: 'Fees' }));
+    await userEvent.type(await screen.findByLabelText('Returned delivery fee'), '3');
+    await userEvent.click(screen.getByRole('button', { name: 'Save delivery fees' }));
+    await waitFor(() => expect(onFeeRulesSaved).toHaveBeenCalledWith({ delivered: '25.00', failed: null, returned: '3.00' }));
+    expect(onChanged).not.toHaveBeenCalled(); // the page does not refetch its table
+    expect(get).toHaveBeenCalledTimes(1);
+
+    const days = screen.getByLabelText('Days to pay');
+    await userEvent.clear(days);
+    await userEvent.type(days, '5');
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    expect(feeRules).toHaveBeenCalledTimes(1); // the profile save starts the profile form again, not the fee rules
   });
 
   it('refuses days to pay that is not a whole number from 0 to 365', async () => {
@@ -169,5 +203,19 @@ describe('Partner drawer (M4-T32)', () => {
     expect(await screen.findByRole('list', { name: 'Orders of this partner' })).toBeInTheDocument();
     expect(listOrders).toHaveBeenCalledTimes(2); // the Summary tab list, then the Orders tab once
     expect(orderProofs).toHaveBeenCalledTimes(1);
+  });
+
+  it('Edit person opens a dialog above the drawer (in the .mveil portal); Escape closes only the dialog', async () => {
+    const onClose = vi.fn();
+    open({ onClose });
+    await userEvent.click(await screen.findByRole('button', { name: /Edit person/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'Edit delivery agent' });
+    expect(dialog.closest('.mveil')).not.toBeNull();
+    await userEvent.type(within(dialog).getByLabelText(/First name/), 'x');
+    expect(within(dialog).getByLabelText(/First name/)).toHaveValue('Kofix');
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Edit delivery agent' })).not.toBeInTheDocument());
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByText('Kofi Appiah', { selector: 'h2' })).toBeInTheDocument();
   });
 });

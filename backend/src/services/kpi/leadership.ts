@@ -45,6 +45,10 @@ const PLANNED_AOV_DAYS = 30;
 
 export type Period = 'month' | 'quarter' | 'year';
 
+/** The calendar period a tenant-wide target stands for (a north star is the year); null for any other scope. */
+const PERIOD_OF_SCOPE: Record<string, Period> = { month: 'month', quarter: 'quarter', north_star: 'year' };
+export const periodOfTarget = (target: { scope: string }): Period | null => PERIOD_OF_SCOPE[target.scope] ?? null;
+
 export interface Attainment extends KpiResult<number | null> {
   period: Period;
   /** Delivered revenue in the period up to the end of asOf (money string). */
@@ -101,7 +105,7 @@ function periodSpan(day: Ymd, period: Period): { startMonth: number; months: num
 }
 
 /** Pace marker, percent to 1 decimal: days gone in the period / days in the period (straight days). */
-function paceMarker(day: Ymd, period: Period): { percent: number; daysGone: number; daysInPeriod: number } {
+export function paceMarker(day: Ymd, period: Period): { percent: number; daysGone: number; daysInPeriod: number } {
   const { startMonth, months } = periodSpan(day, period);
   let daysInPeriod = 0;
   for (let m = startMonth; m < startMonth + months; m++) daysInPeriod += daysInMonth(day.year, m);

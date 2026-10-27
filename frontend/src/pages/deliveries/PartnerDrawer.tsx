@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Pencil } from 'lucide-react';
+import { Pencil, Wallet } from 'lucide-react';
 import { Button, Drawer, Tabs, Tag } from '../../components/ui-v2';
 import { AgentEditModal } from '../../components/admin/AgentEditModal';
 import type { DeliveryAgent } from '../../services/delivery-agents.service';
-import { deliveryPartnersService, type PartnerDetail, type PartnerRow } from '../../services/delivery-partners.service';
+import { deliveryPartnersService, type FeeRule, type PartnerDetail, type PartnerRow } from '../../services/delivery-partners.service';
 import { apiErrorMessage } from '../../utils/apiError';
+import { GuardedButtonV2 } from '../../components/financial/GuardedButtonV2';
 import { DrawerFees } from './DrawerFees';
-import { fieldsOf } from './feesFields';
 import { DrawerOrders } from './DrawerOrders';
 import { DrawerStock } from './DrawerStock';
 import { ListSkeleton } from './ListSkeleton';
 import { DrawerSummary } from './DrawerSummary';
+import { PartnerPayoutModal } from './PartnerPayoutModal';
 import { AvailabilitySwitch } from './AvailabilitySwitch';
 import { useAvailabilitySwitch } from './useAvailabilitySwitch';
 import { rowTags, TYPE_LABEL, TYPE_TONE } from './model';
@@ -38,6 +39,8 @@ interface PartnerDrawerProps {
   onClose: () => void;
   /** The partner changed (profile, person, availability): the page reloads its table. */
   onChanged: () => void;
+  /** Delivery fee rules were saved: the page sets the rules in force on the partner's table row. */
+  onFeeRulesSaved: (feeRule: FeeRule) => void;
 }
 
 /** The old edit modal wants the user shape of /api/admin/users. */
@@ -51,7 +54,7 @@ const agentOf = (p: PartnerDetail): DeliveryAgent => ({
  * The partner drawer (M4-T32, F-707, F-711, F-713, F-709). Tabs Summary, Orders, Stock, Fees. "Edit person" opens the existing user edit.
  * A save on Fees writes an audit row on the server. The page gives the drawer a `key` per partner, so each partner starts clean.
  */
-export function PartnerDrawer({ id, row, target, canEdit, canSwitch, startTab = 'summary', onClose, onChanged }: PartnerDrawerProps) {
+export function PartnerDrawer({ id, row, target, canEdit, canSwitch, startTab = 'summary', onClose, onChanged, onFeeRulesSaved }: PartnerDrawerProps) {
   const switchAvailability = useAvailabilitySwitch();
   const [tab, setTab] = useState<DrawerTab>(startTab);
   /** The Orders tab stays mounted once opened, so its rows and filter are still there when the user comes back. */
@@ -59,6 +62,7 @@ export function PartnerDrawer({ id, row, target, canEdit, canSwitch, startTab = 
   const [partner, setPartner] = useState<PartnerDetail | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [paying, setPaying] = useState(false);
 
   const load = useCallback(async () => {
     if (id === null) return;
@@ -95,6 +99,10 @@ export function PartnerDrawer({ id, row, target, canEdit, canSwitch, startTab = 
           partner && (
             <div className="dhead">
               {canSwitch && partner.isActive && <AvailabilitySwitch name={partner.name} checked={partner.isAvailable} onChange={(on) => void toggle(on)} />}
+              <GuardedButtonV2 perm="recordPayout" size="mini" onClick={() => setPaying(true)}>
+                <Wallet style={{ width: 13, height: 13 }} />
+                Record payout
+              </GuardedButtonV2>
               {canEdit && (
                 <Button size="mini" onClick={() => setEditing(true)}>
                   <Pencil style={{ width: 13, height: 13 }} />
@@ -118,13 +126,15 @@ export function PartnerDrawer({ id, row, target, canEdit, canSwitch, startTab = 
             {tab === 'summary' && <DrawerSummary partner={partner} row={row} target={target} />}
             {ordersOpened && <div hidden={tab !== 'orders'}><DrawerOrders partnerId={partner.id} /></div>}
             {tab === 'stock' && <DrawerStock location={partner.stockLocation} />}
-            {tab === 'fees' && <DrawerFees key={JSON.stringify(fieldsOf(partner))} partner={partner} canEdit={canEdit} onSaved={(p) => { setPartner(p); onChanged(); }} />}
+            {tab === 'fees' && <DrawerFees partner={partner} canEdit={canEdit} onSaved={(p) => { setPartner(p); onChanged(); }} onRulesSaved={(feeRule) => { setPartner({ ...partner, feeRule }); onFeeRulesSaved(feeRule); }} />}
           </>
         )}
       </Drawer>
+      {paying && partner && (
+        <PartnerPayoutModal partnerId={partner.id} partnerName={partner.name} onClose={() => setPaying(false)} onRecorded={onChanged} />
+      )}
       {editing && partner && (
         <AgentEditModal
-          isOpen
           agent={agentOf(partner)}
           onClose={() => {
             setEditing(false);

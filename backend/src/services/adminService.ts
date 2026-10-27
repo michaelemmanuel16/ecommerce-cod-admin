@@ -27,6 +27,7 @@ import { changeStoreCurrency } from './fxService';
 import { parseOperatingHours } from './kpi/workingTime';
 import { normalizeInternationalPhone } from '../utils/phone';
 import { isValidTimeZone } from '../utils/timeZone';
+import { defaultRolePermissions } from '../config/defaultRolePermissions';
 
 export const adminService = {
   /**
@@ -357,87 +358,7 @@ export const adminService = {
   },
 
   getDefaultPermissions() {
-    return {
-      super_admin: {
-        users: ['create', 'view', 'update', 'delete'],
-        orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign', 'force_status'],
-        customers: ['create', 'view', 'update', 'delete', 'export'],
-        products: ['create', 'view', 'update', 'delete', 'update_stock'],
-        financial: ['view', 'create', 'update', 'delete'],
-        analytics: ['view', 'export'],
-        marketing: ['view'],
-        workflows: ['create', 'view', 'update', 'delete', 'execute'],
-        settings: ['view', 'update'],
-        audit: ['view'],
-      },
-      admin: {
-        users: ['create', 'view', 'update', 'delete'],
-        orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign', 'update_status'],
-        customers: ['create', 'view', 'update', 'delete', 'export'],
-        products: ['create', 'view', 'update', 'delete', 'update_stock'],
-        financial: ['view', 'create'],
-        analytics: ['view', 'export'],
-        marketing: ['view'],
-        workflows: ['create', 'view', 'update', 'delete', 'execute'],
-        settings: ['view'],
-        audit: ['view'],
-      },
-      manager: {
-        users: [],
-        orders: ['view', 'update', 'bulk_import', 'assign'],
-        customers: ['create', 'view', 'update', 'delete', 'export'],
-        products: ['view'],
-        financial: ['view'],
-        analytics: ['view', 'export'],
-        marketing: ['view'],
-        workflows: ['view', 'execute'],
-        settings: [],
-      },
-      sales_rep: {
-        users: [],
-        orders: ['create', 'view', 'update'],
-        customers: ['create', 'view', 'update'],
-        products: ['view'],
-        financial: [],
-        analytics: ['view'],
-        marketing: [],
-        workflows: [],
-        settings: [],
-      },
-      inventory_manager: {
-        users: [],
-        orders: ['view', 'update_status'],
-        customers: ['view'],
-        products: ['create', 'view', 'update', 'delete', 'update_stock'],
-        financial: [],
-        analytics: ['view'],
-        marketing: [],
-        workflows: [],
-        settings: [],
-      },
-      delivery_agent: {
-        users: [],
-        orders: ['view', 'update'],
-        customers: ['view'],
-        products: ['view'],
-        financial: ['create'],
-        analytics: ['view'],
-        marketing: [],
-        workflows: [],
-        settings: [],
-      },
-      accountant: {
-        users: [],
-        orders: ['view'],
-        customers: ['view'],
-        products: ['view'],
-        financial: ['view', 'create'],
-        analytics: ['view', 'export'],
-        marketing: [],
-        workflows: [],
-        settings: [],
-      },
-    };
+    return defaultRolePermissions();
   },
 
   async getUserById(requester: Requester, userId: number) {
@@ -459,7 +380,6 @@ export const adminService = {
         commissionAmount: true,
         vehicleType: true,
         vehicleId: true,
-        deliveryRate: true,
         totalEarnings: true,
         location: true,
         createdAt: true,
@@ -500,7 +420,6 @@ export const adminService = {
           lastLogin: true,
           country: true,
           commissionAmount: true,
-          deliveryRate: true,
           totalEarnings: true,
           createdAt: true,
         } as any,
@@ -530,7 +449,6 @@ export const adminService = {
     phoneNumber?: string;
     role: UserRole;
     commissionAmount?: number;
-    deliveryRate?: number;
     /** A delivery partner company is `company` (M4-T19). Default: person. */
     kind?: UserKind;
     vehicleType?: string;
@@ -552,8 +470,6 @@ export const adminService = {
 
     const hashedPassword = await bcrypt.hash(data.password, 10);
 
-    const commission = data.commissionAmount !== undefined ? data.commissionAmount : data.deliveryRate;
-
     const user = await (data.tx ?? prisma).user.create({
       data: {
         email: data.email,
@@ -562,8 +478,7 @@ export const adminService = {
         phoneNumber: data.phoneNumber,
         role: data.role,
         password: hashedPassword,
-        commissionAmount: commission || 0,
-        deliveryRate: commission || 0,
+        commissionAmount: data.commissionAmount || 0,
         ...(data.kind && { kind: data.kind }),
         ...(data.vehicleType && { vehicleType: data.vehicleType }),
         ...(data.vehicleId && { vehicleId: data.vehicleId }),
@@ -594,7 +509,6 @@ export const adminService = {
     role?: UserRole;
     isActive?: boolean;
     commissionAmount?: number;
-    deliveryRate?: number;
   }) {
     await this.checkAdminPrivilege(requester, 'admin');
 
@@ -628,6 +542,8 @@ export const adminService = {
     }
 
     const updateData: any = { ...data };
+    // A delivery partner has no pay rate any more (F-915): a client that still sends deliveryRate is ignored.
+    delete updateData.deliveryRate;
 
     // If name is provided, split it into firstName and lastName
     if (data.name !== undefined) {
@@ -635,15 +551,6 @@ export const adminService = {
       updateData.firstName = nameParts[0] || 'Unknown';
       updateData.lastName = nameParts.slice(1).join(' ') || '';
       delete updateData.name;
-    }
-
-    // Synchronize commissionAmount and deliveryRate
-    if (data.commissionAmount !== undefined) {
-      updateData.commissionAmount = data.commissionAmount;
-      updateData.deliveryRate = data.commissionAmount;
-    } else if (data.deliveryRate !== undefined) {
-      updateData.commissionAmount = data.deliveryRate;
-      updateData.deliveryRate = data.deliveryRate;
     }
 
     const updatedUser = await prisma.user.update({

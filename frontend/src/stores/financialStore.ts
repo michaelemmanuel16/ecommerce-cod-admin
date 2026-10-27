@@ -1,163 +1,58 @@
 import { create } from 'zustand';
 import {
   financialService,
-  FinancialSummary,
-  Transaction,
-  CODCollection,
-  FinancialReport,
+  Paging,
+  ExpenseInput,
   Expense,
   ExpenseCategory,
-  AgentCashHolding,
-  AgentAgingBucket,
-  AgentAgingReport,
-  PipelineRevenue,
-  ProfitabilityAnalysis,
-  CashFlowReport,
-  BalanceSheetData,
-  ProfitLossData,
-  FinancialStatementAccount,
-  CollectionRecord
 } from '../services/financial.service';
 import { getSocket } from '../services/socket';
 import toast from 'react-hot-toast';
-import { formatCurrency } from '../utils/format';
 
 interface FinancialFilters {
   startDate?: string;
   endDate?: string;
-  type?: string;
-  status?: string;
-  agentId?: string;
   category?: string;
+  search?: string;
   page?: number;
   limit?: number;
 }
 
 interface FinancialState {
-  // Existing state
-  summary: FinancialSummary | null;
-  transactions: Transaction[];
-  codCollections: CODCollection[];
-  reports: FinancialReport[];
-
-  // New state
   expenses: Expense[];
+  /** Sum of every expense the filters match (all pages). */
+  expensesTotal: number;
   expenseBreakdown: ExpenseCategory[];
-  agentCashHoldings: AgentCashHolding[];
-  pipelineRevenue: PipelineRevenue | null;
-  profitabilityAnalysis: ProfitabilityAnalysis | null;
-  agentAging: AgentAgingReport | null;
-  cashFlowReport: CashFlowReport | null;
-  balanceSheet: BalanceSheetData | null;
-  profitLoss: ProfitLossData | null;
 
-  // Filters and UI state
-  filters: FinancialFilters;
   dateRange: { startDate?: string; endDate?: string };
-  isLoading: boolean;
-  error: string | null;
-  currentAgentCollections: CollectionRecord[];
-  currentAgentDeposits: any[];
-  selectedDepositIds: number[];
-  loadingStates: {
-    summary: boolean;
-    collections: boolean;
-    expenses: boolean;
-    agents: boolean;
-    reports: boolean;
-    profitability: boolean;
-    cashFlow: boolean;
-    statements: boolean;
-    deposits: boolean;
-  };
-  pagination: {
-    transactions: { page: number; totalPages: number; total: number } | null;
-    collections: { page: number; totalPages: number; total: number } | null;
-    expenses: { page: number; totalPages: number; total: number } | null;
-  };
+  expensesLoading: boolean;
+  expensesPagination: Paging | null;
 
-  // Existing actions
-  fetchSummary: (startDate?: string, endDate?: string) => Promise<void>;
-  fetchTransactions: (filters?: FinancialFilters) => Promise<void>;
-  fetchCODCollections: (filters?: FinancialFilters) => Promise<void>;
-  fetchReports: (period?: 'daily' | 'monthly', startDate?: string, endDate?: string) => Promise<void>;
-  recordExpense: (expense: {
-    category: string;
-    amount: number;
-    description: string;
-    expenseDate: string;
-  }) => Promise<void>;
-  setFilters: (filters: FinancialFilters) => void;
-  addTransaction: (transaction: Transaction) => void;
-  updateTransaction: (transaction: Transaction) => void;
-
-  // New actions
+  recordExpense: (expense: ExpenseInput) => Promise<void>;
   fetchExpenses: (filters?: FinancialFilters) => Promise<void>;
   fetchExpenseBreakdown: (startDate?: string, endDate?: string) => Promise<void>;
-  fetchAgentCashHoldings: () => Promise<void>;
-  fetchPipelineRevenue: (startDate?: string, endDate?: string) => Promise<void>;
-  fetchProfitabilityAnalysis: (params: { startDate?: string; endDate?: string; productId?: number }) => Promise<void>;
-  exportProfitability: (params: { startDate?: string; endDate?: string; productId?: number; format: 'csv' | 'xlsx' }) => Promise<void>;
-  fetchAgentAging: () => Promise<void>;
-  updateExpense: (id: string, data: {
-    category?: string;
-    amount?: number;
-    description?: string;
-    expenseDate?: string;
-  }) => Promise<void>;
+  updateExpense: (id: string, data: Partial<ExpenseInput>) => Promise<void>;
   deleteExpense: (id: string) => Promise<void>;
-  markAsDeposited: (transactionIds: string[], reference?: string) => Promise<void>;
-  reconcileTransaction: (id: string, data: {
-    status: string;
-    reference?: string;
-    notes?: string;
-  }) => Promise<void>;
-  fetchCashFlowReport: () => Promise<void>;
-  downloadCashFlowCSV: () => Promise<void>;
-  fetchBalanceSheet: (asOfDate?: string) => Promise<void>;
-  fetchProfitLoss: (startDate: string, endDate: string) => Promise<void>;
   setDateRange: (startDate?: string, endDate?: string) => void;
-  fetchAgentCollections: (agentId: number, status?: string) => Promise<void>;
-  verifyCollection: (id: number) => Promise<void>;
-  approveCollection: (id: number) => Promise<void>;
-  bulkVerifyCollections: (ids: number[]) => Promise<void>;
-  fetchAgentDeposits: (params?: { agentId?: number; status?: string }) => Promise<void>;
-  verifyDeposit: (id: number) => Promise<void>;
-  rejectDeposit: (id: number, notes: string) => Promise<void>;
-  bulkVerifyDeposits: (ids: number[]) => Promise<void>;
-  toggleDepositSelection: (id: number) => void;
-  toggleAllDeposits: () => void;
-  clearDepositSelection: () => void;
+}
+
+/** This month to the end of today: the Finance range when nothing is picked. */
+function monthToDate(): { startDate: string; endDate: string } {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const endOfToday = new Date(now);
+  endOfToday.setHours(23, 59, 59, 999);
+  return { startDate: `${now.getFullYear()}-${month}-01`, endDate: endOfToday.toISOString() };
 }
 
 export const useFinancialStore = create<FinancialState>((set, get) => {
-  // Initialize Socket.io listeners
   const socket = getSocket();
   if (socket) {
-    // Existing listeners
-    socket.on('transaction:created', (data: Transaction) => {
-      get().addTransaction(data);
-      get().fetchSummary();
-    });
-
-    socket.on('transaction:updated', (data: Transaction) => {
-      get().updateTransaction(data);
-    });
-
-    socket.on('cod:collected', (data: CODCollection) => {
-      set((state) => ({
-        codCollections: [data, ...state.codCollections],
-      }));
-      get().fetchSummary();
-    });
-
-    // New listeners
     socket.on('expense:created', (data: Expense) => {
       set((state) => ({
         expenses: [data, ...state.expenses],
       }));
       get().fetchExpenseBreakdown();
-      get().fetchSummary();
     });
 
     socket.on('expense:updated', (data: Expense) => {
@@ -165,7 +60,6 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
         expenses: state.expenses.map(e => e.id === data.id ? data : e)
       }));
       get().fetchExpenseBreakdown();
-      get().fetchSummary();
     });
 
     socket.on('expense:deleted', (data: { id: string }) => {
@@ -173,189 +67,43 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
         expenses: state.expenses.filter(e => e.id !== data.id)
       }));
       get().fetchExpenseBreakdown();
-      get().fetchSummary();
-    });
-
-    socket.on('transaction:deposited', () => {
-      get().fetchCODCollections();
-      get().fetchAgentCashHoldings();
-      get().fetchSummary();
-    });
-
-    socket.on('transaction:reconciled', (data: Transaction) => {
-      get().updateTransaction(data);
-      get().fetchSummary();
     });
   }
 
   return {
-    // Existing state
-    summary: null,
-    transactions: [],
-    codCollections: [],
-    reports: [],
-
-    // New state
     expenses: [],
+    expensesTotal: 0,
     expenseBreakdown: [],
-    agentCashHoldings: [],
-    pipelineRevenue: null,
-    profitabilityAnalysis: null,
-    agentAging: null,
-    cashFlowReport: null,
-    balanceSheet: null,
-    profitLoss: null,
 
-    // Filters and UI state
-    filters: {},
-    dateRange: (() => {
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const endOfToday = new Date(now);
-      endOfToday.setHours(23, 59, 59, 999);
-      return {
-        startDate: `${year}-${month}-01`,
-        endDate: endOfToday.toISOString()
-      };
-    })(),
-    isLoading: false,
-    error: null,
-    currentAgentCollections: [],
-    currentAgentDeposits: [],
-    selectedDepositIds: [],
-    loadingStates: {
-      summary: false,
-      collections: false,
-      expenses: false,
-      agents: false,
-      reports: false,
-      profitability: false,
-      cashFlow: false,
-      statements: false,
-      deposits: false,
-    },
-    pagination: {
-      transactions: null,
-      collections: null,
-      expenses: null,
-    },
-
-    fetchSummary: async (startDate?: string, endDate?: string) => {
-      set((state) => ({ loadingStates: { ...state.loadingStates, summary: true }, error: null }));
-      try {
-        const summary = await financialService.getFinancialSummary(startDate, endDate);
-        set((state) => ({ summary, loadingStates: { ...state.loadingStates, summary: false } }));
-      } catch (error: any) {
-        const errorMessage = error.response?.data?.message || 'Failed to fetch financial summary';
-        set((state) => ({ error: errorMessage, loadingStates: { ...state.loadingStates, summary: false } }));
-        toast.error(errorMessage);
-        throw error;
-      }
-    },
-
-    fetchTransactions: async (filters?: FinancialFilters) => {
-      set({ isLoading: true, error: null });
-      try {
-        const response = await financialService.getTransactions(filters);
-        set({
-          transactions: response.transactions,
-          pagination: {
-            ...get().pagination,
-            transactions: response.pagination
-          },
-          isLoading: false
-        });
-      } catch (error: any) {
-        const errorMessage = error.response?.data?.message || 'Failed to fetch transactions';
-        set({ error: errorMessage, isLoading: false });
-        toast.error(errorMessage);
-        throw error;
-      }
-    },
-
-    fetchCODCollections: async (filters?: FinancialFilters) => {
-      set({ isLoading: true, error: null });
-      try {
-        const response = await financialService.getCODCollections(filters);
-        set({
-          codCollections: response.collections,
-          pagination: {
-            ...get().pagination,
-            collections: response.pagination
-          },
-          isLoading: false
-        });
-      } catch (error: any) {
-        const errorMessage = error.response?.data?.message || 'Failed to fetch COD collections';
-        set({ error: errorMessage, isLoading: false });
-        toast.error(errorMessage);
-        throw error;
-      }
-    },
-
-    fetchReports: async (period?: 'daily' | 'monthly', startDate?: string, endDate?: string) => {
-      set((state) => ({ loadingStates: { ...state.loadingStates, reports: true }, error: null }));
-      try {
-        const reports = await financialService.getFinancialReports({ period, startDate, endDate });
-        set((state) => ({ reports, loadingStates: { ...state.loadingStates, reports: false } }));
-      } catch (error: any) {
-        const errorMessage = error.response?.data?.message || 'Failed to fetch financial reports';
-        set((state) => ({ error: errorMessage, loadingStates: { ...state.loadingStates, reports: false } }));
-        toast.error(errorMessage);
-        throw error;
-      }
-    },
+    dateRange: monthToDate(),
+    expensesLoading: false,
+    expensesPagination: null,
 
     recordExpense: async (expense) => {
       try {
-        await financialService.recordExpense(expense);
+        const { notice } = await financialService.recordExpense(expense);
         toast.success('Expense recorded successfully');
-        // Refresh data
-        await Promise.all([
-          get().fetchSummary(),
-          get().fetchTransactions(get().filters)
-        ]);
+        if (notice) toast(notice, { icon: '!' });
       } catch (error: any) {
-        const errorMessage = error.response?.data?.message || 'Failed to record expense';
+        const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to record expense';
         toast.error(errorMessage);
         throw error;
       }
     },
 
-    setFilters: (filters: FinancialFilters) => {
-      set({ filters });
-    },
-
-    addTransaction: (transaction: Transaction) => {
-      set((state) => ({
-        transactions: [transaction, ...state.transactions],
-      }));
-    },
-
-    updateTransaction: (transaction: Transaction) => {
-      set((state) => ({
-        transactions: state.transactions.map((t) =>
-          t.id === transaction.id ? transaction : t
-        ),
-      }));
-    },
-
     fetchExpenses: async (filters?: FinancialFilters) => {
-      set((state) => ({ loadingStates: { ...state.loadingStates, expenses: true }, error: null }));
+      set({ expensesLoading: true });
       try {
         const response = await financialService.getExpenses(filters);
-        set((state) => ({
+        set({
           expenses: response.expenses,
-          pagination: {
-            ...state.pagination,
-            expenses: response.pagination
-          },
-          loadingStates: { ...state.loadingStates, expenses: false }
-        }));
+          expensesTotal: Number(response.totalAmount ?? 0),
+          expensesPagination: response.pagination,
+          expensesLoading: false
+        });
       } catch (error: any) {
         const errorMessage = error.response?.data?.message || 'Failed to fetch expenses';
-        set((state) => ({ error: errorMessage, loadingStates: { ...state.loadingStates, expenses: false } }));
+        set({ expensesLoading: false });
         toast.error(errorMessage);
         throw error;
       }
@@ -372,100 +120,16 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
       }
     },
 
-    fetchAgentCashHoldings: async () => {
-      set((state) => ({ loadingStates: { ...state.loadingStates, agents: true }, error: null }));
+    updateExpense: async (id: string, data: Partial<ExpenseInput>) => {
       try {
-        const holdings = await financialService.getAgentCashHoldings();
-        set((state) => ({
-          agentCashHoldings: holdings,
-          loadingStates: { ...state.loadingStates, agents: false }
-        }));
-      } catch (error: any) {
-        const errorMessage = error.response?.data?.message || 'Failed to fetch agent cash holdings';
-        set((state) => ({ error: errorMessage, loadingStates: { ...state.loadingStates, agents: false } }));
-        toast.error(errorMessage);
-        throw error;
-      }
-    },
-
-    fetchPipelineRevenue: async (startDate?: string, endDate?: string) => {
-      try {
-        const pipelineRevenue = await financialService.getPipelineRevenue(startDate, endDate);
-        set({ pipelineRevenue });
-      } catch (error: any) {
-        const errorMessage = error.response?.data?.message || 'Failed to fetch pipeline revenue';
-        toast.error(errorMessage);
-        throw error;
-      }
-    },
-
-    fetchProfitabilityAnalysis: async (params) => {
-      set((state) => ({ loadingStates: { ...state.loadingStates, profitability: true }, error: null }));
-      try {
-        const profitabilityAnalysis = await financialService.getProfitabilityAnalysis(params);
-        set((state) => ({
-          profitabilityAnalysis,
-          loadingStates: { ...state.loadingStates, profitability: false }
-        }));
-      } catch (error: any) {
-        const errorMessage = error.response?.data?.message || 'Failed to fetch profitability analysis';
-        set((state) => ({ error: errorMessage, loadingStates: { ...state.loadingStates, profitability: false } }));
-        toast.error(errorMessage);
-        throw error;
-      }
-    },
-
-    exportProfitability: async (params) => {
-      try {
-        const data = await financialService.exportProfitability(params);
-        const url = window.URL.createObjectURL(new Blob([data]));
-        const link = document.createElement('a');
-        link.href = url;
-        link.setAttribute('download', `profitability_report_${Date.now()}.${params.format}`);
-        document.body.appendChild(link);
-        link.click();
-        link.parentNode?.removeChild(link);
-        window.URL.revokeObjectURL(url);
-        toast.success(`Exporting profitability analysis as ${params.format.toUpperCase()}`);
-      } catch (error: any) {
-        const errorMessage = error.response?.data?.message || 'Failed to export profitability analysis';
-        toast.error(errorMessage);
-        throw error;
-      }
-    },
-
-    fetchAgentAging: async () => {
-      set((state) => ({ loadingStates: { ...state.loadingStates, agents: true }, error: null }));
-      try {
-        const report = await financialService.getAgentAging();
-        set((state) => ({
-          agentAging: report,
-          loadingStates: { ...state.loadingStates, agents: false }
-        }));
-      } catch (error: any) {
-        const errorMessage = error.response?.data?.message || 'Failed to fetch agent aging data';
-        set((state) => ({ error: errorMessage, loadingStates: { ...state.loadingStates, agents: false } }));
-        toast.error(errorMessage);
-        throw error;
-      }
-    },
-
-    updateExpense: async (id: string, data: {
-      category?: string;
-      amount?: number;
-      description?: string;
-      expenseDate?: string;
-    }) => {
-      try {
-        const updated = await financialService.updateExpense(id, data);
+        const { expense: updated, notice } = await financialService.updateExpense(id, data);
         set((state) => ({
           expenses: state.expenses.map(e => e.id === id ? updated : e)
         }));
         toast.success('Expense updated successfully');
-        await get().fetchExpenseBreakdown();
-        await get().fetchSummary();
+        if (notice) toast(notice, { icon: '!' });
       } catch (error: any) {
-        const errorMessage = error.response?.data?.message || 'Failed to update expense';
+        const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to update expense';
         toast.error(errorMessage);
         throw error;
       }
@@ -473,237 +137,22 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
 
     deleteExpense: async (id: string) => {
       try {
-        await financialService.deleteExpense(id);
+        const { notice } = await financialService.deleteExpense(id);
         set((state) => ({
           expenses: state.expenses.filter(e => e.id !== id)
         }));
         toast.success('Expense deleted successfully');
-        await get().fetchExpenseBreakdown();
-        await get().fetchSummary();
+        if (notice) toast(notice, { icon: '!' });
       } catch (error: any) {
-        const errorMessage = error.response?.data?.message || 'Failed to delete expense';
+        const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to delete expense';
         toast.error(errorMessage);
         throw error;
       }
     },
 
-    markAsDeposited: async (transactionIds: string[], reference?: string) => {
-      try {
-        await financialService.markAsDeposited(transactionIds, reference);
-        toast.success('Collections marked as deposited successfully');
-        await Promise.all([
-          get().fetchCODCollections(),
-          get().fetchAgentCashHoldings(),
-          get().fetchSummary()
-        ]);
-      } catch (error: any) {
-        const errorMessage = error.response?.data?.message || 'Failed to mark as deposited';
-        toast.error(errorMessage);
-        throw error;
-      }
-    },
-
-    reconcileTransaction: async (id: string, data: {
-      status: string;
-      reference?: string;
-      notes?: string;
-    }) => {
-      try {
-        await financialService.reconcileTransaction(id, data);
-        toast.success('Transaction reconciled successfully');
-        await Promise.all([
-          get().fetchTransactions(get().filters),
-          get().fetchSummary()
-        ]);
-      } catch (error: any) {
-        const errorMessage = error.response?.data?.message || 'Failed to reconcile transaction';
-        toast.error(errorMessage);
-        throw error;
-      }
-    },
-
-    fetchCashFlowReport: async () => {
-      set((state) => ({ loadingStates: { ...state.loadingStates, cashFlow: true }, error: null }));
-      try {
-        const report = await financialService.getCashFlowReport();
-        set((state) => ({
-          cashFlowReport: report,
-          loadingStates: { ...state.loadingStates, cashFlow: false }
-        }));
-      } catch (error: any) {
-        const errorMessage = error.response?.data?.message || 'Failed to fetch cash flow report';
-        set((state) => ({ error: errorMessage, loadingStates: { ...state.loadingStates, cashFlow: false } }));
-        toast.error(errorMessage);
-        throw error;
-      }
-    },
-
-    downloadCashFlowCSV: async () => {
-      try {
-        await financialService.downloadCashFlowCSV();
-        toast.success('Cash Flow Report downloaded');
-      } catch (error: any) {
-        const errorMessage = error.response?.data?.message || 'Failed to download CSV';
-        toast.error(errorMessage);
-        throw error;
-      }
-    },
-
-    fetchBalanceSheet: async (asOfDate?: string) => {
-      set((state) => ({ loadingStates: { ...state.loadingStates, statements: true }, error: null }));
-      try {
-        const balanceSheet = await financialService.getBalanceSheet(asOfDate);
-        set((state) => ({ balanceSheet, loadingStates: { ...state.loadingStates, statements: false } }));
-      } catch (error: any) {
-        const errorMessage = error.response?.data?.message || 'Failed to fetch balance sheet';
-        set((state) => ({ error: errorMessage, loadingStates: { ...state.loadingStates, statements: false } }));
-        toast.error(errorMessage);
-        throw error;
-      }
-    },
-
-    fetchProfitLoss: async (startDate: string, endDate: string) => {
-      set((state) => ({ loadingStates: { ...state.loadingStates, statements: true }, error: null }));
-      try {
-        const profitLoss = await financialService.getProfitLoss(startDate, endDate);
-        set((state) => ({ profitLoss, loadingStates: { ...state.loadingStates, statements: false } }));
-      } catch (error: any) {
-        const errorMessage = error.response?.data?.message || 'Failed to fetch profit & loss statement';
-        set((state) => ({ error: errorMessage, loadingStates: { ...state.loadingStates, statements: false } }));
-        toast.error(errorMessage);
-        throw error;
-      }
-    },
-
+    // Clearing the dates goes back to this month to today, the range the Finance header and cards fall back to
     setDateRange: (startDate?: string, endDate?: string) => {
-      set({ dateRange: { startDate, endDate } });
-    },
-
-    fetchAgentCollections: async (agentId: number, status?: string) => {
-      set({ isLoading: true, error: null });
-      try {
-        const collections = await financialService.getAgentCollections(agentId, { status });
-        set({ currentAgentCollections: collections, isLoading: false });
-      } catch (error: any) {
-        set({ isLoading: false, error: error.message });
-        toast.error('Failed to fetch agent collections');
-      }
-    },
-
-    verifyCollection: async (id: number) => {
-      try {
-        await financialService.verifyCollection(id);
-        toast.success('Collection reconciled');
-        const agentId = get().currentAgentCollections[0]?.agentId;
-        if (agentId) await get().fetchAgentCollections(agentId);
-        await get().fetchAgentCashHoldings();
-        await get().fetchAgentAging();
-        await get().fetchSummary();
-      } catch (error: any) {
-        toast.error('Failed to reconcile collection');
-      }
-    },
-
-    approveCollection: async (id: number) => {
-      try {
-        await financialService.approveCollection(id);
-        toast.success('Collection approved');
-        const agentId = get().currentAgentCollections[0]?.agentId;
-        if (agentId) await get().fetchAgentCollections(agentId);
-        await get().fetchAgentCashHoldings();
-        await get().fetchSummary();
-        await get().fetchAgentAging();
-      } catch (error: any) {
-        toast.error('Failed to approve collection');
-      }
-    },
-
-    bulkVerifyCollections: async (ids: number[]) => {
-      try {
-        await financialService.bulkVerifyCollections(ids);
-        toast.success('Collections verified');
-        const agentId = get().currentAgentCollections[0]?.agentId;
-        if (agentId) await get().fetchAgentCollections(agentId);
-        await get().fetchAgentCashHoldings();
-        await get().fetchAgentAging();
-      } catch (error: any) {
-        toast.error('Failed to bulk verify collections');
-      }
-    },
-
-    fetchAgentDeposits: async (params?: { agentId?: number; status?: string }) => {
-      set((state) => ({ loadingStates: { ...state.loadingStates, deposits: true }, error: null }));
-      try {
-        const deposits = await financialService.getAgentDeposits(params);
-        set((state) => ({
-          currentAgentDeposits: deposits,
-          loadingStates: { ...state.loadingStates, deposits: false }
-        }));
-      } catch (error: any) {
-        const errorMessage = error.response?.data?.message || 'Failed to fetch deposits';
-        set((state) => ({ error: errorMessage, loadingStates: { ...state.loadingStates, deposits: false } }));
-        toast.error(errorMessage);
-      }
-    },
-
-    verifyDeposit: async (id: number) => {
-      try {
-        await financialService.verifyDeposit(id);
-        toast.success('Deposit verified successfully');
-        await get().fetchAgentDeposits({ status: 'pending' });
-        await get().fetchAgentCashHoldings();
-        await get().fetchAgentAging();
-        await get().fetchSummary();
-      } catch (error: any) {
-        const errorMessage = error.response?.data?.message || 'Failed to verify deposit';
-        toast.error(errorMessage);
-      }
-    },
-
-    rejectDeposit: async (id: number, notes: string) => {
-      try {
-        await financialService.rejectDeposit(id, notes);
-        toast.success('Deposit rejected');
-        await get().fetchAgentDeposits({ status: 'pending' });
-      } catch (error: any) {
-        const errorMessage = error.response?.data?.message || 'Failed to reject deposit';
-        toast.error(errorMessage);
-      }
-    },
-
-    bulkVerifyDeposits: async (ids: number[]) => {
-      try {
-        const result = await financialService.bulkVerifyDeposits(ids);
-        toast.success(`Successfully verified ${result.verified} deposits (${formatCurrency(result.totalAmount)})`);
-        set({ selectedDepositIds: [] });
-        await get().fetchAgentDeposits({ status: 'pending' });
-        await get().fetchAgentCashHoldings();
-        await get().fetchAgentAging();
-        await get().fetchSummary();
-      } catch (error: any) {
-        const errorMessage = error.response?.data?.message || 'Failed to bulk verify deposits';
-        toast.error(errorMessage);
-      }
-    },
-
-    toggleDepositSelection: (id: number) => {
-      set((state) => ({
-        selectedDepositIds: state.selectedDepositIds.includes(id)
-          ? state.selectedDepositIds.filter(depositId => depositId !== id)
-          : [...state.selectedDepositIds, id]
-      }));
-    },
-
-    toggleAllDeposits: () => {
-      set((state) => ({
-        selectedDepositIds: state.selectedDepositIds.length === state.currentAgentDeposits.length
-          ? []
-          : state.currentAgentDeposits.map(d => d.id)
-      }));
-    },
-
-    clearDepositSelection: () => {
-      set({ selectedDepositIds: [] });
+      set({ dateRange: startDate || endDate ? { startDate, endDate } : monthToDate() });
     }
   };
 });
