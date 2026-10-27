@@ -77,6 +77,17 @@ describe('POST /api/partner-settlements/manual', () => {
     expect(await prismaBase.auditLog.count({ where: { tenantId, resource: 'partner_settlement', resourceId: String(s.id) } })).toBe(1);
   });
 
+  it('the Overview card shows a part payment with every owed order and what is still owed, not Matched (M5 QA)', async () => {
+    const partner = await mkPartner('mpart');
+    for (let i = 0; i < 3; i++) await deliver(partner); // 3 orders, 175 each after the fee: 525 owed
+    expect((await manual(owner.token, { partnerId: partner, amount: 200, payoutDate: '2026-09-15', reference: ref('PART') })).status).toBe(201);
+
+    const res = await request(app).get('/api/financial/overview?from=2026-09-15&to=2026-09-15&asOf=2026-09-15').set(bearer(owner.token));
+    expect(res.status).toBe(200);
+    const row = res.body.reconciliation.rows.find((r: any) => r.partnerId === partner);
+    expect(row).toMatchObject({ paidIn: '200.00', expectedAfterFees: '525.00', orders: 3, stillOwed: '325.00' });
+  });
+
   it('rejects an amount of 0 or below and bad input', async () => {
     const partner = await mkPartner('mbad');
     const before = await prismaBase.partnerSettlement.count({ where: { tenantId } });

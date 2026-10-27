@@ -58,7 +58,8 @@ type SettlementWithLines = PartnerSettlement & { lines: PartnerSettlementLine[] 
 type FindingRef = { id: number; type: string };
 
 /** What the settlement keeps in `payload`: the input as received (a paid list) and the Findings the call opened, so a repeat can return them. */
-interface SettlementPayload { input?: unknown; findings: FindingRef[] }
+/** `owedOrders`: a manual payout keeps how many orders the partner owed for, beside `expectedNet` (what they owed). */
+interface SettlementPayload { input?: unknown; findings: FindingRef[]; owedOrders?: number }
 
 const lineView = (l: PartnerSettlementLine) => ({
   id: l.id,
@@ -165,7 +166,7 @@ async function planPayout(db: Pick<TransactionClient, 'agentCollection'>, partne
   const orderOf = new Map(open.map((c) => [c.id, c.orderId!]));
   const unpaid = Money.sum(open.map((c) => outstandingOf(c)));
   const plan = planCover(open.map((c): OpenCollection => ({ ...c })), amount);
-  return { unpaid, plan, orderOf };
+  return { unpaid, owedOrders: new Set(open.map((c) => c.orderId)).size, plan, orderOf };
 }
 type PayoutPlan = Awaited<ReturnType<typeof planPayout>>;
 
@@ -461,7 +462,7 @@ export async function recordManualPayout(actor: SettlementActor, input: ManualPa
 
     // FIFO over the partner's open collections, read after the lock: the plan the preview shows
     const planned = await planPayout(tx, partnerId, amount);
-    const { unpaid, plan, orderOf } = planned;
+    const { unpaid, owedOrders, plan, orderOf } = planned;
     await tx.partnerSettlementLine.createMany({
       data: plan.covers.map((c) => ({
         tenantId, settlementId: settlement.id, orderId: orderOf.get(c.id)!, externalOrderRef: `#${orderOf.get(c.id)}`,
@@ -474,7 +475,7 @@ export async function recordManualPayout(actor: SettlementActor, input: ManualPa
       planned, lineOfOrder: new Map(lines.map((l) => [l.orderId!, l.id])),
     });
 
-    const payload: SettlementPayload = { findings: excessFindingId === null ? [] : [{ type: 'excess_deposit', id: excessFindingId }] };
+    const payload: SettlementPayload = { findings: excessFindingId === null ? [] : [{ type: 'excess_deposit', id: excessFindingId }], owedOrders };
     const updated = await tx.partnerSettlement.update({
       where: { id: settlement.id },
       data: { expectedNet: unpaid, unappliedAmount: plan.remaining, status: plan.remaining.gt(0) ? 'over' : 'matched', depositId: deposit.id, payload: payload as unknown as Prisma.InputJsonValue },

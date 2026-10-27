@@ -69,6 +69,8 @@ export interface ReconRow {
   paidIn: Amount;
   expectedAfterFees: Amount;
   orders: number;
+  /** A manual part payment: what the partner still owes after it. Null on any other payout. */
+  stillOwed: Amount | null;
   status: SettlementStatus;
   shortAmount: Amount;
   overAmount: Amount;

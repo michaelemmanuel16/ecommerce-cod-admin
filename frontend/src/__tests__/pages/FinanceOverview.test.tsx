@@ -115,6 +115,17 @@ describe('Finance Overview (M5-T34)', () => {
     expect(within(table).getAllByText('Agent')).toHaveLength(2);
   });
 
+  it('a manual part payment says Part payment and what is still owed, not Matched (M5 QA)', async () => {
+    const part = { ...OVERVIEW.reconciliation.rows[1], paidIn: 300, expectedAfterFees: 856, orders: 4, stillOwed: 556 };
+    get.mockResolvedValue({ ...OVERVIEW, reconciliation: { rows: [part] } });
+    renderPage();
+    const table = await screen.findByRole('table', { name: 'Payout reconciliation' });
+    expect(within(table).getByText('Part payment')).toBeInTheDocument();
+    expect(within(table).getByText('GH₵556 still owed')).toBeInTheDocument();
+    expect(within(table).getByText('4 orders')).toBeInTheDocument();
+    expect(within(table).queryByText('Matched')).not.toBeInTheDocument();
+  });
+
   it('a Short row expands to its unpaid orders and collapses again', async () => {
     renderPage();
     const open = await screen.findByRole('button', { name: /Show the 3 orders/ });

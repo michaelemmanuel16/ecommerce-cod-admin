@@ -245,7 +245,7 @@ async function reconciliationOf(from: Date, to: Date) {
     orderBy: [{ payoutDate: 'desc' }, { id: 'desc' }],
     take: SETTLEMENT_ROWS,
     select: {
-      id: true, partnerId: true, payoutDate: true, payoutAmount: true, expectedNet: true, shortAmount: true, status: true,
+      id: true, partnerId: true, payoutDate: true, payoutAmount: true, expectedNet: true, shortAmount: true, status: true, isManual: true, payload: true,
       partner: { select: { firstName: true, lastName: true, kind: true } },
       lines: { select: { matched: true } },
     },
@@ -274,6 +274,9 @@ async function reconciliationOf(from: Date, to: Date) {
   const rows = settlements.map((s) => {
     const gap = Money.roundHalfUp(Money.sub(s.payoutAmount, s.expectedNet), 2);
     const group = s.status === 'short' ? unpaidOf.get(s.partnerId) : undefined;
+    // A manual payout is matched to everything the partner owed: count all those orders and say what is still owed
+    const owedOrders = s.isManual ? (s.payload as { owedOrders?: number } | null)?.owedOrders : undefined;
+    const stillOwed = s.isManual && gap.lt(0) ? Money.toApi(gap.neg()) : null;
     return {
       id: s.id,
       date: ymdOfUtc(s.payoutDate),
@@ -282,7 +285,8 @@ async function reconciliationOf(from: Date, to: Date) {
       partnerKind: s.partner.kind,
       paidIn: Money.toApi(s.payoutAmount),
       expectedAfterFees: Money.toApi(s.expectedNet),
-      orders: s.lines.filter((l) => l.matched).length,
+      orders: owedOrders ?? s.lines.filter((l) => l.matched).length,
+      stillOwed,
       status: s.status,
       shortAmount: Money.toApi(s.shortAmount),
       overAmount: Money.toApi(gap.gt(0) ? gap : Money.ZERO),

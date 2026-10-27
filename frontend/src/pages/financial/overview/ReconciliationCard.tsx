@@ -15,6 +15,15 @@ const COLS = 5;
 const showText = (r: ReconRow) => (r.unpaid && r.unpaid.orders > 0 ? `Show the ${plural(r.unpaid.orders, 'order')}` : 'Show unpaid orders');
 
 function Result({ row, currency }: { row: ReconRow; currency: string }) {
+  // A manual payout smaller than what the partner owed is a part payment, not a match
+  if (row.stillOwed !== null) {
+    return (
+      <>
+        <Tag tone="warn">Part payment</Tag>
+        <small>{money(row.stillOwed, currency)} still owed</small>
+      </>
+    );
+  }
   const tag: Record<SettlementStatus, JSX.Element> = {
     matched: <Tag tone="ok"><Check />Matched</Tag>,
     short: <Tag tone="bad">Short {money(row.shortAmount, currency)}</Tag>,
