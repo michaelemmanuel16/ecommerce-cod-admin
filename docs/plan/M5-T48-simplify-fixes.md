@@ -69,3 +69,9 @@ Two lanes, no shared files:
 
 ## Checks (each lane)
 Backend `prisma generate`, `tsc --noEmit`, lint, build, and every test file of a touched service run alone with `--runInBand --forceExit`. Frontend tsc (no new errors), lint, build, vitest. Commit; report the sha and the grep evidence for each delete. Do not push.
+
+## Owner decisions (2026-10-27)
+- Finance action permissions (backlog item 1): a later milestone, as its own ticket. Every user who can do an action today keeps it after the change.
+- `DEFAULT_PERIOD_NOTES`: stays in code (it shows only on Aug/Sep 2026 before the first commission). Not a ticket.
+- Job queue test path, R2 exports, typed money fields: Phase 7 backlog tickets.
+- Also to the backlog: the unused `/unpaid-by-age` route and `collectionsService.unpaidByAge()`.
