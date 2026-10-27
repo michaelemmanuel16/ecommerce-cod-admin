@@ -5,7 +5,7 @@ import prisma from '../utils/prisma';
 import { readDateBound } from '../utils/kpiRequest';
 import { getSocketInstance } from '../utils/socketInstance';
 import * as Money from '../utils/money';
-import { emitCollectionVerified, emitToTenant, emitToUser } from '../sockets/index';
+import { emitToTenant, emitToUser } from '../sockets/index';
 
 export class AgentReconciliationController {
     /**
@@ -116,52 +116,6 @@ export class AgentReconciliationController {
         });
 
         res.json(stats);
-    }
-
-    /**
-     * Verify a collection (Accountant)
-     */
-    async verifyCollection(req: Request, res: Response) {
-        const { id } = req.params;
-        const userId = (req as any).user.id;
-
-        const parsedId = parseInt(id);
-        if (isNaN(parsedId)) throw new AppError('Invalid collection ID', 400);
-
-        const result = await agentReconciliationService.verifyCollection(parsedId, userId);
-
-        // Emit socket event
-        const io = getSocketInstance();
-        if (io) {
-            emitCollectionVerified(io, result);
-            // Also emit balance update
-            const balance = await agentReconciliationService.getAgentBalance(result.agentId);
-            emitToTenant(io, `agent:balance-updated`, { agentId: result.agentId, balance });
-        }
-
-        res.json(result);
-    }
-
-    /**
-     * Bulk verify collections (Accountant)
-     */
-    async bulkVerify(req: Request, res: Response) {
-        const { ids } = req.body;
-        const userId = (req as any).user.id;
-
-        if (!Array.isArray(ids)) {
-            throw new AppError('IDs must be an array', 400);
-        }
-
-        const results = await agentReconciliationService.bulkVerifyCollections(ids, userId);
-
-        // Emit socket event for the whole batch
-        const io = getSocketInstance();
-        if (io) {
-            emitToTenant(io, 'collections:bulkVerified', { count: results.length });
-        }
-
-        res.json(results);
     }
 
     /**
