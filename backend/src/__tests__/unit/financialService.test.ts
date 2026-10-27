@@ -192,70 +192,6 @@ describe('FinancialService', () => {
     });
   });
 
-  describe('getCODCollectionsByAgent', () => {
-    it('should get COD collections for specific agent', async () => {
-      const mockCollections = [
-        {
-          id: 'trans-1',
-          type: 'cod_collection',
-          amount: 100,
-          status: 'collected',
-          order: {
-            orderNumber: '1001',
-            customer: {
-              firstName: 'John',
-              lastName: 'Doe'
-            }
-          }
-        },
-        {
-          id: 'trans-2',
-          type: 'cod_collection',
-          amount: 200,
-          status: 'collected',
-          order: {
-            orderNumber: '1002',
-            customer: {
-              firstName: 'Jane',
-              lastName: 'Smith'
-            }
-          }
-        }
-      ];
-
-      prismaMock.transaction.findMany.mockResolvedValue(mockCollections as any);
-
-      prismaMock.transaction.aggregate
-        .mockResolvedValueOnce({ _sum: { amount: 300 } } as any) // totalCollected
-        .mockResolvedValueOnce({ _sum: { amount: 0 } } as any) // totalPending
-        .mockResolvedValueOnce({ _sum: { amount: 0 } } as any); // totalDeposited
-
-      const requester = { id: 1, role: 'admin' };
-      const result = await financialService.getCODCollectionsByAgent('1', undefined, requester as any);
-
-      expect(result.collections).toHaveLength(2);
-      expect(Money.toApi(result.summary.totalCollected)).toBe('300.00');
-      expect(result.summary.totalCount).toBe(2);
-    });
-
-    it('should filter by date range when provided', async () => {
-      prismaMock.transaction.findMany.mockResolvedValue([]);
-      prismaMock.transaction.aggregate.mockResolvedValue({
-        _sum: { amount: 0 }
-      } as any);
-
-      await financialService.getCODCollectionsByAgent('agent-1', {
-        startDate: new Date('2024-01-01'),
-        endDate: new Date('2024-01-31')
-      });
-
-      const callArgs = (prismaMock.transaction.findMany as any).mock.calls[0][0];
-      expect(callArgs.where.createdAt).toBeDefined();
-      expect(callArgs.where.createdAt.gte).toBeDefined();
-      expect(callArgs.where.createdAt.lte).toBeDefined();
-    });
-  });
-
   describe('reconcileTransaction', () => {
     const mockTransaction = {
       id: 'trans-1',
@@ -487,35 +423,6 @@ describe('FinancialService', () => {
     });
   });
 
-  describe('getAgentSettlement', () => {
-    it('should calculate agent settlement correctly', async () => {
-      const mockCollections = [
-        {
-          id: 'trans-1',
-          amount: 100,
-          order: {
-            orderNumber: '1001',
-            customer: { firstName: 'John', lastName: 'Doe' }
-          }
-        }
-      ];
-
-      prismaMock.transaction.findMany.mockResolvedValue(mockCollections as any);
-      prismaMock.transaction.aggregate
-        .mockResolvedValueOnce({ _sum: { amount: 1000 } } as any) // totalCollected
-        .mockResolvedValueOnce({ _sum: { amount: 0 } } as any) // totalPending
-        .mockResolvedValueOnce({ _sum: { amount: 600 } } as any); // totalDeposited
-
-      const settlement = await financialService.getAgentSettlement('agent-1');
-
-      expect(settlement.agentId).toBe('agent-1');
-      expect(Money.toApi(settlement.totalCollected)).toBe('1000.00');
-      expect(Money.toApi(settlement.totalDeposited)).toBe('600.00');
-      expect(Money.toApi(settlement.pendingSettlement)).toBe('400.00'); // 1000 - 600
-      expect(settlement.collections).toHaveLength(1);
-    });
-  });
-
   describe('edge cases - negative and zero amounts', () => {
     it('should reject negative expense amount', async () => {
       const expenseData = {
@@ -547,59 +454,6 @@ describe('FinancialService', () => {
       await expect(
         financialService.markCODAsDeposited([])
       ).rejects.toThrow('No transaction IDs provided');
-    });
-  });
-
-  describe('getAllTransactions', () => {
-    it('should return paginated transactions', async () => {
-      const mockTransactions = [
-        {
-          id: 'trans-1',
-          type: 'cod_collection',
-          amount: 100,
-          order: {
-            orderNumber: '1001',
-            customer: { firstName: 'John', lastName: 'Doe' },
-            deliveryAgent: { firstName: 'Agent', lastName: 'One' }
-          }
-        }
-      ];
-
-      prismaMock.transaction.findMany.mockResolvedValue(mockTransactions as any);
-      prismaMock.transaction.count.mockResolvedValue(1);
-
-      const result = await financialService.getAllTransactions({
-        page: 1,
-        limit: 20
-      });
-
-      expect(result.transactions).toHaveLength(1);
-      expect(result.pagination.total).toBe(1);
-      expect(result.pagination.pages).toBe(1);
-    });
-
-    it('should filter by transaction type', async () => {
-      prismaMock.transaction.findMany.mockResolvedValue([]);
-      prismaMock.transaction.count.mockResolvedValue(0);
-
-      await financialService.getAllTransactions({
-        type: 'cod_collection'
-      });
-
-      const callArgs = (prismaMock.transaction.findMany as any).mock.calls[0][0];
-      expect(callArgs.where.type).toBe('cod_collection');
-    });
-
-    it('should filter by payment status', async () => {
-      prismaMock.transaction.findMany.mockResolvedValue([]);
-      prismaMock.transaction.count.mockResolvedValue(0);
-
-      await financialService.getAllTransactions({
-        status: 'collected' as PaymentStatus
-      });
-
-      const callArgs = (prismaMock.transaction.findMany as any).mock.calls[0][0];
-      expect(callArgs.where.status).toBe('collected');
     });
   });
 

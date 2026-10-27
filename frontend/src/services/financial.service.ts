@@ -1,62 +1,6 @@
 import type { ExpenseFormRules, ExpensePaidFrom } from '../utils/expenseRules';
 import apiClient from './api';
 
-export interface FinancialSummary {
-  totalRevenue: number;
-  /** GL 4020 digital product revenue. */
-  digitalRevenue: number;
-  /** GL 5060 Paystack transaction fees. */
-  paystackFees: number;
-  totalExpenses: number;
-  profit: number;
-  codCollected: number;
-  codPending: number;
-  outstandingReceivables: number;
-  profitMargin: number;
-}
-
-export interface Transaction {
-  id: string;
-  type: string;
-  status: string;
-  amount: number;
-  createdAt: string;
-  order?: {
-    orderNumber: string;
-    customer?: {
-      firstName: string;
-      lastName: string;
-    };
-  };
-}
-
-export interface CODCollection {
-  id: string;
-  amount: number;
-  status: string;
-  createdAt: string;
-  order?: {
-    orderNumber: string;
-    deliveryAgent?: {
-      id: string;
-      firstName: string;
-      lastName: string;
-    };
-    customer?: {
-      firstName: string;
-      lastName: string;
-    };
-  };
-}
-
-export interface FinancialReport {
-  date: string;
-  revenue: number;
-  expenses: number;
-  profit: number;
-  orders: number;
-}
-
 export interface Expense {
   id: string;
   category: string;
@@ -142,98 +86,6 @@ export interface ExpenseCategory {
   count: number;
 }
 
-export interface AgentCashHolding {
-  agent: {
-    id: number;
-    firstName: string;
-    lastName: string;
-    email: string;
-  };
-  totalCollected: number;
-  orderCount: number;
-  oldestCollectionDate: string;
-}
-
-export interface PipelineRevenue {
-  totalExpected: number;
-  byStatus: {
-    status: string;
-    amount: number;
-    count: number;
-  }[];
-}
-
-export interface AgingBucketTotal {
-  key: '0-3' | '4-7' | '8-14' | '15+';
-  label: string;
-  orders: number;
-  amount: number;
-}
-
-export interface AgingSummary {
-  totalAgentsWithBalance: number;
-  totalOutstandingAmount: number;
-  outstandingReceivables: number;
-  overdueAgentsCount: number;
-  /** Past the partner's days to pay. */
-  overdueAmount: number;
-  /** Unpaid but not yet past the partner's days to pay. */
-  notYetDueAmount: number;
-  blockedAgentsWithBalance: number;
-  bucketTotals: AgingBucketTotal[];
-}
-
-export interface AgentAgingBucket {
-  agentId: number;
-  agent: {
-    id: number;
-    name: string;
-    email: string;
-  };
-  /** Net unpaid amount of the partner's delivered orders (net of the delivery fee). */
-  totalBalance: number;
-  oldestCollectionDate: string | null;
-  cashHeld: number;
-  daysToPay: number;
-  overdueOrders: number;
-  oldestUnpaidDays: number | null;
-  bucket_0_3: number;
-  bucket_4_7: number;
-  bucket_8_14: number;
-  bucket_15_plus: number;
-  isBlocked: boolean;
-}
-
-export interface AgentAgingReport {
-  summary: AgingSummary;
-  buckets: AgentAgingBucket[];
-}
-
-/** `GET /api/financial/agent-aging` (M5-T14): the page shape above is built from it in `getAgentAging`. */
-interface AgentAgingResponse {
-  summary: {
-    totalOutstandingAmount: string | number;
-    overdueAmount: string | number;
-    overduePartners: number;
-    blockedPartners: number;
-    bucketTotals: Array<{ key: AgingBucketTotal['key']; label: string; orders: number; amount: string | number }>;
-  };
-  partners: Array<{
-    agentId: number;
-    name: string;
-    email: string | null;
-    cashHeld: string | number;
-    daysToPay: number;
-    unpaidOrders: number;
-    unpaidAmount: string | number;
-    buckets: Array<{ key: string; amount: string | number }>;
-    overdueOrders: number;
-    oldestUnpaidDays: number | null;
-    oldestDeliveredOn: string | null;
-    isBlocked: boolean;
-  }>;
-}
-
 export interface CollectionRecord {
   id: number;
   orderId: number;
@@ -254,138 +106,7 @@ export interface CollectionRecord {
   }
 }
 
-export interface CashFlowKPI {
-  cashInHand: number;
-  cashInTransit: number;
-  outstandingReceivables: number;
-  cashExpected: number;
-  cashAvailableNow: number;
-  totalCashPosition: number;
-  totalCashPipeline: number;
-}
-
-export interface CashFlowForecastPoint {
-  date: string;
-  expectedCollection: number;
-  expectedExpense: number;
-  projectedBalance: number;
-}
-
-export interface ProfitabilityAnalysis {
-  summary: {
-    totalRevenue: number;
-    totalCOGS: number;
-    totalShippingCost: number;
-    totalDiscount: number;
-    totalCommissions: number;
-    totalOperatingExpenses: number;
-    grossProfit: number;
-    grossMargin: number;
-    netProfit: number;
-    netMargin: number;
-    orderCount: number;
-    dataSources?: Record<string, string>;
-  };
-  products: {
-    id: number;
-    name: string;
-    sku: string;
-    revenue: number;
-    cogs: number;
-    quantity: number;
-    commission: number;
-    grossProfit: number;
-    grossMargin: number;
-  }[];
-  daily: {
-    date: string;
-    revenue: number;
-    cogs: number;
-    grossProfit: number;
-    grossMargin: number;
-  }[];
-}
-
-export interface CashFlowReport {
-  kpis: CashFlowKPI;
-  forecast: CashFlowForecastPoint[];
-  agentBreakdown: AgentCashHolding[];
-}
-
-export interface FinancialStatementAccount {
-  id: number;
-  code: string;
-  name: string;
-  balance: number;
-}
-
-export interface BalanceSheetData {
-  asOfDate: string;
-  assets: {
-    accounts: FinancialStatementAccount[];
-    total: number;
-  };
-  liabilities: {
-    accounts: FinancialStatementAccount[];
-    total: number;
-  };
-  equity: {
-    accounts: FinancialStatementAccount[];
-    retainedEarnings: number;
-    total: number;
-  };
-  totalLiabilitiesAndEquity: number;
-  isBalanced: boolean;
-}
-
-export interface ProfitLossData {
-  startDate: string;
-  endDate: string;
-  revenue: {
-    accounts: FinancialStatementAccount[];
-    total: number;
-  };
-  cogs: {
-    accounts: FinancialStatementAccount[];
-    total: number;
-  };
-  expenses: {
-    accounts: FinancialStatementAccount[];
-    total: number;
-  };
-  grossProfit: number;
-  grossMarginPercentage: number;
-  netIncome: number;
-  netMarginPercentage: number;
-}
-
 export const financialService = {
-  async getFinancialSummary(startDate?: string, endDate?: string): Promise<FinancialSummary> {
-    const response = await apiClient.get('/api/financial/summary', {
-      params: { startDate, endDate }
-    });
-    return response.data.summary;
-  },
-
-  async getTransactions(params?: {
-    type?: string;
-    status?: string;
-    page?: number;
-    limit?: number;
-  }): Promise<{ transactions: Transaction[]; pagination: any }> {
-    const response = await apiClient.get('/api/financial/transactions', { params });
-    return response.data;
-  },
-
-  async getCODCollections(params?: {
-    agentId?: string;
-    status?: string;
-    page?: number;
-    limit?: number;
-  }): Promise<{ collections: CODCollection[]; pagination: any }> {
-    const response = await apiClient.get('/api/financial/cod-collections', { params });
-    return response.data;
-  },
 
   async recordExpense(expense: ExpenseInput): Promise<{ expense: Expense; notice: string | null }> {
     const response = await apiClient.post('/api/financial/expenses', expense);
@@ -403,15 +124,6 @@ export const financialService = {
     form.append('image', file);
     const response = await apiClient.post('/api/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } });
     return response.data.url;
-  },
-
-  async getFinancialReports(params?: {
-    period?: 'daily' | 'monthly';
-    startDate?: string;
-    endDate?: string;
-  }): Promise<FinancialReport[]> {
-    const response = await apiClient.get('/api/financial/reports', { params });
-    return response.data.reports;
   },
 
   async getExpenses(params?: {
@@ -442,106 +154,6 @@ export const financialService = {
     const response = await apiClient.delete(`/api/financial/expenses/${id}`);
     return { notice: response.data.notice ?? null };
   },
-
-  async getAgentCashHoldings(): Promise<AgentCashHolding[]> {
-    const response = await apiClient.get('/api/financial/agent-cash-holdings');
-    return response.data.holdings;
-  },
-
-  async getPipelineRevenue(startDate?: string, endDate?: string): Promise<PipelineRevenue> {
-    const response = await apiClient.get('/api/financial/pipeline-revenue', {
-      params: { startDate, endDate }
-    });
-    return response.data;
-  },
-
-  async getProfitabilityAnalysis(params: {
-    startDate?: string;
-    endDate?: string;
-    productId?: number;
-  }): Promise<ProfitabilityAnalysis> {
-    const response = await apiClient.get('/api/financial/profitability', { params });
-    return response.data;
-  },
-
-  async exportProfitability(params: {
-    startDate?: string;
-    endDate?: string;
-    productId?: number;
-    format: 'csv' | 'xlsx';
-  }): Promise<any> {
-    const response = await apiClient.get('/api/financial/profitability/export', {
-      params,
-      responseType: 'blob'
-    });
-    return response.data;
-  },
-
-  async markAsDeposited(transactionIds: string[], depositReference?: string): Promise<void> {
-    await apiClient.post('/api/financial/collections/deposit', {
-      transactionIds,
-      depositReference
-    });
-  },
-
-  async reconcileTransaction(
-    id: string,
-    data: {
-      status: string;
-      reference?: string;
-      notes?: string;
-    }
-  ): Promise<void> {
-    await apiClient.post(`/api/financial/transactions/${id}/reconcile`, data);
-  },
-
-  async getAgentSettlement(
-    agentId: string,
-    startDate?: string,
-    endDate?: string
-  ): Promise<any> {
-    const response = await apiClient.get(`/api/financial/agents/settlement/${agentId}`, {
-      params: { startDate, endDate }
-    });
-    return response.data;
-  },
-
-  async getAgentAging(): Promise<AgentAgingReport> {
-    const { data } = await apiClient.get<AgentAgingResponse>('/api/financial/agent-aging');
-    const amountOf = (buckets: Array<{ key: string; amount: string | number }>, key: string) => Number(buckets.find((b) => b.key === key)?.amount ?? 0);
-    const buckets: AgentAgingBucket[] = data.partners.map((p) => ({
-      agentId: p.agentId,
-      agent: { id: p.agentId, name: p.name, email: p.email ?? '' },
-      totalBalance: Number(p.unpaidAmount),
-      oldestCollectionDate: p.oldestDeliveredOn,
-      cashHeld: Number(p.cashHeld),
-      daysToPay: p.daysToPay,
-      overdueOrders: p.overdueOrders,
-      oldestUnpaidDays: p.oldestUnpaidDays,
-      bucket_0_3: amountOf(p.buckets, '0-3'),
-      bucket_4_7: amountOf(p.buckets, '4-7'),
-      bucket_8_14: amountOf(p.buckets, '8-14'),
-      bucket_15_plus: amountOf(p.buckets, '15+'),
-      isBlocked: p.isBlocked,
-    }));
-    const total = Number(data.summary.totalOutstandingAmount);
-    const overdue = Number(data.summary.overdueAmount);
-    return {
-      summary: {
-        totalAgentsWithBalance: buckets.filter((b) => b.totalBalance > 0).length,
-        totalOutstandingAmount: total,
-        outstandingReceivables: total,
-        overdueAgentsCount: data.summary.overduePartners,
-        overdueAmount: overdue,
-        notYetDueAmount: total - overdue,
-        blockedAgentsWithBalance: data.summary.blockedPartners,
-        bucketTotals: data.summary.bucketTotals.map((b) => ({ ...b, amount: Number(b.amount) })),
-      },
-      buckets,
-    };
-  },
-
-
   async downloadAgentAgingCSV(): Promise<void> {
     const response = await apiClient.get('/api/financial/agent-aging/export/csv', {
       responseType: 'blob'
@@ -553,38 +165,6 @@ export const financialService = {
     document.body.appendChild(link);
     link.click();
     link.remove();
-  },
-
-  async getCashFlowReport(): Promise<CashFlowReport> {
-    const response = await apiClient.get('/api/financial/cash-flow');
-    return response.data;
-  },
-
-  async downloadCashFlowCSV(): Promise<void> {
-    const response = await apiClient.get('/api/financial/cash-flow/export/csv', {
-      responseType: 'blob'
-    });
-    const url = window.URL.createObjectURL(new Blob([response.data]));
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `cash_flow_report_${Date.now()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-  },
-
-  async getBalanceSheet(asOfDate?: string): Promise<BalanceSheetData> {
-    const response = await apiClient.get('/api/financial/balance-sheet', {
-      params: { asOfDate }
-    });
-    return response.data;
-  },
-
-  async getProfitLoss(startDate: string, endDate: string): Promise<ProfitLossData> {
-    const response = await apiClient.get('/api/financial/profit-loss', {
-      params: { startDate, endDate }
-    });
-    return response.data;
   },
 
   // General Ledger Methods
@@ -679,45 +259,9 @@ export const financialService = {
     return response.data;
   },
 
-  async verifyCollection(collectionId: number): Promise<void> {
-    await apiClient.post(`/api/agent-reconciliation/${collectionId}/verify`);
-  },
-
-  async bulkVerifyCollections(ids: number[]): Promise<void> {
-    await apiClient.post('/api/agent-reconciliation/bulk-verify', { ids });
-  },
-
-  async bulkVerifyDeposits(ids: number[]): Promise<{
-    verified: number;
-    totalAmount: number;
-  }> {
-    const response = await apiClient.post('/api/agent-reconciliation/deposits/bulk-verify', { ids }, {
-      timeout: 90000, // Verification involves GL entries + FIFO matching — needs more time
-    });
-    return response.data;
-  },
-
   async getAgentDeposits(params?: { agentId?: number; status?: string }): Promise<any[]> {
     const response = await apiClient.get('/api/agent-reconciliation/deposits', { params });
     return response.data;
-  },
-
-  async verifyDeposit(depositId: number): Promise<void> {
-    await apiClient.post(`/api/agent-reconciliation/deposits/${depositId}/verify`, {}, {
-      timeout: 90000, // Verification involves GL entries + FIFO matching
-    });
-  },
-
-  async rejectDeposit(depositId: number, notes: string): Promise<void> {
-    await apiClient.post(`/api/agent-reconciliation/deposits/${depositId}/reject`, { reason: notes });
-  },
-
-  async blockAgent(agentId: number, reason: string): Promise<void> {
-    await apiClient.post(`/api/agent-reconciliation/agents/${agentId}/block`, { reason });
-  },
-
-  async unblockAgent(agentId: number): Promise<void> {
-    await apiClient.post(`/api/agent-reconciliation/agents/${agentId}/unblock`);
   },
 
   async createDeposit(data: {

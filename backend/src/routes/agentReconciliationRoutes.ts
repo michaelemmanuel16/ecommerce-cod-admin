@@ -35,26 +35,6 @@ router.get('/stats/:agentId',
     agentReconciliationController.getAgentStats
 );
 
-// Verify and reconcile in one step (Accountant). There is no separate approve step (F-912).
-router.post('/:id/verify',
-    requireRole('super_admin', 'admin', 'manager', 'accountant'),
-    [
-        param('id').isInt().toInt(),
-        validate
-    ],
-    agentReconciliationController.verifyCollection
-);
-
-router.post('/bulk-verify',
-    requireRole('super_admin', 'admin', 'manager', 'accountant'),
-    [
-        body('ids').isArray({ min: 1, max: 50 }).withMessage('Must provide 1-50 collection IDs'),
-        body('ids.*').isInt().toInt(),
-        validate
-    ],
-    agentReconciliationController.bulkVerify
-);
-
 // Balance tracking (Agent, Manager, Admin)
 router.get('/agents/:id/balance',
     requireRole('super_admin', 'admin', 'manager', 'accountant', 'delivery_agent'),

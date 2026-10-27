@@ -111,11 +111,6 @@ describe('M5-T13: collection status path', () => {
     expect(res.status).toBe(404);
   });
 
-  it('bulk verify of collections is capped at 50 ids', async () => {
-    const res = await request(app).post('/api/agent-reconciliation/bulk-verify').set(auth(owner)).send({ ids: Array.from({ length: 51 }, (_, i) => i + 1) });
-    expect(res.status).toBe(400);
-  });
-
   it('reject needs a reason: refused without one, stored with one', async () => {
     const p = await mkPartner('rej');
     const dep = await prismaBase.agentDeposit.create({ data: { tenantId, agentId: p, amount: 50, depositMethod: 'cash', depositDate: new Date(), referenceNumber: `REJ-${SUFFIX}` } });

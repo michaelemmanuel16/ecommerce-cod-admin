@@ -34,19 +34,13 @@ router.get('/profit-loss/export', requireResourcePermission('financial', 'view')
 router.get('/export/:report', requireResourcePermission('financial', 'view'), financeExport.exportFinanceReport);
 router.get('/jobs/:id', requireResourcePermission('financial', 'view'), financeExport.getFinanceJobStatus);
 router.get('/jobs/:id/download', requireResourcePermission('financial', 'view'), financeExport.downloadFinanceJob);
-router.get('/profitability', requireResourcePermission('financial', 'view'), financialController.getProfitabilityAnalysis);
-router.get('/profitability/export', requireResourcePermission('financial', 'view'), financialController.exportProfitabilityAnalysis);
-router.get('/pipeline-revenue', requireResourcePermission('financial', 'view'), financialController.getPipelineRevenue);
 router.get('/cash-flow', requireResourcePermission('financial', 'view'), financialController.getCashFlowReport);
-router.get('/cash-flow/export/csv', requireResourcePermission('financial', 'view'), financialController.exportCashFlowCSV);
 router.get('/unpaid-by-age', requireResourcePermission('financial', 'view'), financialController.getUnpaidByAge);
 router.get('/agent-aging', requireResourcePermission('financial', 'view'), financialController.getAgentAgingReport);
 router.post('/agent-aging/:agentId(\\d+)/remind', requireResourcePermission('financial', 'update'), financialController.remindPartner);
 router.get('/agent-aging/export/csv', requireResourcePermission('financial', 'view'), financialController.exportAgentAgingCSV);
 
 // Transactions and collections
-router.get('/transactions', requireResourcePermission('financial', 'view'), paginationValidation, validate, financialController.getAllTransactions);
-router.get('/cod-collections', requireResourcePermission('financial', 'view'), paginationValidation, validate, financialController.getCODCollections);
 router.post('/collections/deposit', requireResourcePermission('financial', 'update'), financialController.markCollectionsAsDeposited);
 router.post('/transactions/:id/reconcile', requireResourcePermission('financial', 'update'), financialController.reconcileTransaction);
 
@@ -61,10 +55,6 @@ router.delete('/expenses/:id', requireResourcePermission('expenses', 'delete'), 
 
 // Paystack payout to the bank: DR 1010, CR 1030 (F-934)
 router.post('/paystack-payouts', requirePermission(['super_admin', 'admin']), financialController.postPaystackPayout);
-
-// Agent reconciliation
-router.get('/agent-cash-holdings', requireResourcePermission('financial', 'view'), financialController.getAgentCashHoldings);
-router.get('/agents/settlement/:agentId', requireResourcePermission('financial', 'view'), financialController.getAgentSettlement);
 
 // Financial health: GL balance integrity plus the order-versus-ledger check (M1-T28)
 router.get('/health', requireResourcePermission('financial', 'view'), getFinancialHealth);

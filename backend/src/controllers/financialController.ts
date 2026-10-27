@@ -7,8 +7,6 @@ import { UPLOAD_MAX_BYTES, UPLOAD_MIME_TYPES } from '../config/multer';
 import agingService from '../services/agingService';
 import { buildReport, exportFileName } from '../services/financeExportService';
 import { streamExport } from '../services/exportStream';
-import { Parser } from 'json2csv';
-import ExcelJS from 'exceljs';
 import logger from '../utils/logger';
 import { GLAccountService } from '../services/glAccountService';
 import { GL_ACCOUNTS } from '../config/glAccounts';
@@ -16,7 +14,6 @@ import prisma from '../utils/prisma';
 import { Decimal } from '@prisma/client/runtime/library';
 import { getTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
-import { addRowsWithMoney } from '../utils/xlsxMoney';
 import { readDateBound } from '../utils/kpiRequest';
 import { parseScenario } from '../services/finance/cashFlowService';
 import { AppError } from '../middleware/errorHandler';
@@ -32,19 +29,6 @@ export const getFinancialSummary = async (req: AuthRequest, res: Response): Prom
   }, req.user);
 
   res.json({ summary });
-};
-
-export const getAllTransactions = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { type, status, page = 1, limit = 20 } = req.query;
-
-  const result = await financialService.getAllTransactions({
-    type: type as string | undefined,
-    status: status as PaymentStatus | undefined,
-    page: Number(page),
-    limit: Number(limit)
-  });
-
-  res.json(result);
 };
 
 export const recordExpense = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -79,19 +63,6 @@ export const getExpenseCategories = async (_req: AuthRequest, res: Response): Pr
   });
 };
 
-export const getCODCollections = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { agentId, status, page = 1, limit = 20 } = req.query;
-
-  const result = await financialService.getCODCollections({
-    agentId: agentId as string | undefined,
-    status: status as PaymentStatus | undefined,
-    page: Number(page),
-    limit: Number(limit)
-  });
-
-  res.json(result);
-};
-
 export const getFinancialReports = async (req: AuthRequest, res: Response): Promise<void> => {
   const { period = 'daily', startDate, endDate } = req.query;
 
@@ -102,83 +73,6 @@ export const getFinancialReports = async (req: AuthRequest, res: Response): Prom
   });
 
   res.json({ reports: trend.rows, grouping: trend.grouping });
-};
-
-export const getPipelineRevenue = async (req: AuthRequest, res: Response): Promise<void> => {
-  const pipelineRevenue = await financialService.getPipelineRevenue(req.user);
-  res.json(pipelineRevenue);
-};
-
-export const getProfitabilityAnalysis = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { startDate, endDate, productId } = req.query;
-
-    const analysis = await financialService.getProfitabilityAnalysis({
-      startDate: readDateBound(startDate, 'from'),
-      endDate: readDateBound(endDate, 'to', { snapToDay: true }),
-      productId: productId ? parseInt(productId as string, 10) : undefined
-    });
-
-    res.json(analysis);
-  } catch (error) {
-    logger.error('Failed to fetch profitability analysis', { error });
-    res.status(500).json({ message: 'Failed to fetch profitability analysis' });
-  }
-};
-
-export const exportProfitabilityAnalysis = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { startDate, endDate, productId, format = 'csv' } = req.query;
-
-    const analysis = await financialService.getProfitabilityAnalysis({
-      startDate: readDateBound(startDate, 'from'),
-      endDate: readDateBound(endDate, 'to', { snapToDay: true }),
-      productId: productId ? parseInt(productId as string, 10) : undefined
-    });
-
-    const exportData = analysis.products.map(p => ({
-      'Product Name': p.name,
-      'SKU': p.sku,
-      'Quantity Sold': p.quantity,
-      'Total Revenue': Money.toApi(p.revenue),
-      'Total COGS': Money.toApi(p.cogs),
-      'Gross Profit': Money.toApi(p.grossProfit),
-      'Gross Margin %': p.grossMargin.toFixed(2)
-    }));
-
-    if (format === 'xlsx') {
-      const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet('Profitability');
-
-      worksheet.columns = [
-        { header: 'Product Name', key: 'Product Name', width: 30 },
-        { header: 'SKU', key: 'SKU', width: 15 },
-        { header: 'Quantity Sold', key: 'Quantity Sold', width: 15 },
-        { header: 'Total Revenue', key: 'Total Revenue', width: 15 },
-        { header: 'Total COGS', key: 'Total COGS', width: 15 },
-        { header: 'Gross Profit', key: 'Gross Profit', width: 15 },
-        { header: 'Gross Margin %', key: 'Gross Margin %', width: 15 }
-      ];
-
-      addRowsWithMoney(worksheet, exportData, ['Total Revenue', 'Total COGS', 'Gross Profit']);
-
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.setHeader('Content-Disposition', `attachment; filename=profitability_report_${Date.now()}.xlsx`);
-
-      const buffer = await workbook.xlsx.writeBuffer();
-      res.send(buffer);
-    } else {
-      const json2csvParser = new Parser();
-      const csv = json2csvParser.parse(exportData);
-
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename=profitability_report_${Date.now()}.csv`);
-      res.send(csv);
-    }
-  } catch (error) {
-    logger.error('Export profitability analysis failed', { error });
-    res.status(500).json({ message: 'Export failed' });
-  }
 };
 
 export const getAllExpenses = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -241,24 +135,6 @@ export const deleteExpense = async (req: AuthRequest, res: Response): Promise<vo
   }
 };
 
-export const getAgentCashHoldings = async (req: AuthRequest, res: Response): Promise<void> => {
-  const holdings = await financialService.getAgentCashHoldings(req.user);
-
-  res.json({ holdings });
-};
-
-export const getAgentSettlement = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { agentId } = req.params;
-  const { startDate, endDate } = req.query;
-
-  const settlement = await financialService.getAgentSettlement(agentId, {
-    startDate: startDate ? new Date(startDate as string) : undefined,
-    endDate: endDate ? new Date(endDate as string) : undefined
-  });
-
-  res.json(settlement);
-};
-
 export const markCollectionsAsDeposited = async (req: AuthRequest, res: Response): Promise<void> => {
   const { transactionIds, depositReference } = req.body;
 
@@ -285,14 +161,6 @@ export const reconcileTransaction = async (req: AuthRequest, res: Response): Pro
 export const getCashFlowReport = async (req: AuthRequest, res: Response): Promise<void> => {
   const report = await financialService.getCashFlowReport(req.user, parseScenario(req.query.scenario));
   res.json(report);
-};
-
-export const exportCashFlowCSV = async (req: AuthRequest, res: Response): Promise<void> => {
-  const csv = await financialService.exportCashFlowCSV(req.user);
-
-  res.setHeader('Content-Type', 'text/csv');
-  res.setHeader('Content-Disposition', `attachment; filename=cash_flow_report_${Date.now()}.csv`);
-  res.send(csv);
 };
 
 export const getAgentAgingReport = async (_req: AuthRequest, res: Response): Promise<void> => {

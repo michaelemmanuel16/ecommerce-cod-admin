@@ -329,21 +329,6 @@ export function emitGLEntryCreated(io: SocketServer, entry: any, metadata?: any)
   emitToRoles(io, t, FINANCE_ROLES, 'gl:entry-created', event);
 }
 
-export function emitCollectionVerified(io: SocketServer, collection: any) {
-  const t = emitTenant(collection);
-  if (!t) return;
-  const event = {
-    id: collection.id,
-    orderId: collection.orderId,
-    amount: collection.amount,
-    status: collection.status,
-    timestamp: new Date()
-  };
-
-  emitToRoles(io, t, FINANCE_ROLES, 'collection:verified', event);
-  emitToUser(io, collection.agentId, 'collection:verified', event, t);
-}
-
 export function emitAgentBalanceUpdated(io: SocketServer, userId: number, balance: any) {
   const t = emitTenant(balance);
   if (!t) return;
