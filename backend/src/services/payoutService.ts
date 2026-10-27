@@ -167,11 +167,16 @@ class PayoutService {
       orderBy: [{ firstName: 'asc' }, { id: 'asc' }],
     }));
     const ids = candidates.map((c) => c.id);
-    const [sums, lastPaid, inMonth] = await Promise.all([
+    const [sums, baseOrders, lastPaid, inMonth] = await Promise.all([
       prisma.commissionEntry.groupBy({
         by: ['userId', 'kind', 'status'],
         where: { userId: { in: ids }, status: { in: ['earned', 'paid'] } },
         _sum: { amount: true },
+      }),
+      // Delivered counts orders, not entries: a part payment splits one entry into a paid part and the rest
+      prisma.commissionEntry.groupBy({
+        by: ['userId', 'orderId'],
+        where: { userId: { in: ids }, kind: 'base', status: { in: ['earned', 'paid'] } },
         _count: { _all: true },
       }),
       prisma.payout.groupBy({ by: ['payeeId'], where: { payeeId: { in: ids }, kind: 'rep' }, _max: { payoutDate: true } }),
@@ -180,6 +185,9 @@ class PayoutService {
     // Bucket the grouped rows once, by rep
     const byRep = new Map<number, typeof sums>();
     for (const row of sums) byRep.set(row.userId, [...(byRep.get(row.userId) ?? []), row]);
+    // An entry with no order (none in the app; test fixtures only) counts on its own
+    const delivered = new Map<number, number>();
+    for (const g of baseOrders) delivered.set(g.userId, (delivered.get(g.userId) ?? 0) + (g.orderId === null ? g._count._all : 1));
     const last = new Map(lastPaid.map((p) => [p.payeeId, p._max.payoutDate]));
     const paidIn = new Map(inMonth.map((p) => [p.payeeId, Money.orZero(p._sum.amount)]));
 
@@ -191,7 +199,7 @@ class PayoutService {
           active: isActive,
           row: {
             ...rep,
-            delivered: mine.filter((r) => r.kind === 'base').reduce((n, r) => n + r._count._all, 0),
+            delivered: delivered.get(rep.id) ?? 0,
             commission: total.base,
             upsellReward: total.upsell,
             targetReward: total.reward,

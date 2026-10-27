@@ -211,6 +211,24 @@ describe('recording a payout (F-913, M5-T19)', () => {
     expect(tab.body.reps.find((r: any) => r.id === U.nana.id).owed).toBe('14.00');
   });
 
+  it('a part payment that splits a base entry does not count its order twice in Delivered (M5 QA)', async () => {
+    const kwame = await mkUser('kwame', 'sales_rep');
+    const customerId = (await prismaBase.customer.create({
+      data: { firstName: 'Yaw', lastName: 'Asante', phoneNumber: '+233200000777', address: '3 Test Rd', state: 'Greater Accra', area: 'Accra', tenantId },
+    })).id;
+    const order = () => prismaBase.order.create({ data: { customerId, status: 'delivered', subtotal: 100, totalAmount: 100, codAmount: 100, tenantId } as never });
+    const [o1, o2] = [await order(), await order()];
+    await mkEntry(kwame.id, 'base', 40, 11, { orderId: o1.id });
+    await mkEntry(kwame.id, 'base', 60, 12, { orderId: o2.id });
+    const pay = await request(app).post('/api/payouts').set(bearer(U.admin.token)).send(payoutBody({ payeeId: kwame.id, amount: 70, reference: 'K-1' }));
+    expect(pay.status).toBe(201);
+    // The second entry is split: 30 paid, 30 still earned, both on order o2
+    const entries = await prismaBase.commissionEntry.findMany({ where: { userId: kwame.id }, orderBy: { id: 'asc' } });
+    expect(entries.map((e) => [e.orderId, e.status, Number(e.amount)])).toEqual([[o1.id, 'paid', 40], [o2.id, 'paid', 30], [o2.id, 'earned', 30]]);
+    const tab = await request(app).get('/api/payouts/owed').set(bearer(U.admin.token));
+    expect(tab.body.reps.find((r: any) => r.id === kwame.id)).toMatchObject({ delivered: 2, owed: '30.00' });
+  });
+
   it('keeps a reference unique per payee and method', async () => {
     const same = await request(app).post('/api/payouts').set(bearer(U.admin.token)).send(payoutBody({ payeeId: U.nana.id, amount: 5, reference: 'N-1' }));
     expect(same.status).toBe(409);
