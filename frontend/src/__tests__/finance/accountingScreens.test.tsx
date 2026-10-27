@@ -25,9 +25,9 @@ const storeState = vi.hoisted(() => ({
   expenses: [] as any[],
   expensesTotal: 0,
   expenseBreakdown: [] as any[],
-  pagination: { expenses: { page: 1, pages: 1, total: 0 } },
+  expensesPagination: { page: 1, pages: 1, total: 0 },
   dateRange: {},
-  loadingStates: { expenses: false },
+  expensesLoading: false,
   fetchExpenses: vi.fn(),
   fetchExpenseBreakdown: vi.fn(),
   deleteExpense: vi.fn(),
@@ -149,7 +149,7 @@ describe('Expenses section', () => {
     storeState.expenses = [row('1', 'Transport', 180), row('2', 'Packaging', 620)];
     storeState.expensesTotal = 800;
     storeState.expenseBreakdown = [{ category: 'Transport', totalAmount: 180, count: 1 }, { category: 'Packaging', totalAmount: 620, count: 1 }];
-    storeState.pagination = { expenses: { page: 1, pages: 1, total: 2 } };
+    storeState.expensesPagination = { page: 1, pages: 1, total: 2 };
   });
 
   it('puts the Expenses table beside By category bars, biggest first, with the total in the card title', () => {

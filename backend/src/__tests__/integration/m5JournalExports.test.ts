@@ -8,7 +8,9 @@ import request from 'supertest';
 import '../mocks/logger.mock';
 import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
+import { ymdOfUtc } from '../../services/kpi/dates';
 import { createTenant, deleteTenantRows, mkUser } from './helpers/twoTenants';
+import { bearer } from './helpers/superAdminToken';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 
 const tenantIds: string[] = [];
@@ -19,8 +21,7 @@ let admin: { id: number; token: string };
 let rep: { id: number; token: string };
 const ids: Record<string, number> = {};
 
-const auth = (u: { token: string }) => ({ Authorization: `Bearer ${u.token}` });
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => ymdOfUtc(new Date());
 const entry = (debit: string, credit: string, amount: number | string, over: Record<string, unknown> = {}) => ({
   entryDate: today(), description: 'Owner top-up', sourceType: 'manual',
   transactions: [
@@ -28,8 +29,8 @@ const entry = (debit: string, credit: string, amount: number | string, over: Rec
     { accountId: ids[credit], debitAmount: 0, creditAmount: amount },
   ], ...over,
 });
-const post = (body: unknown, who = owner) => request(app).post('/api/gl/journal-entries').set(auth(who)).send(body as object);
-const get = (url: string, who = owner) => request(app).get(url).set(auth(who));
+const post = (body: unknown, who = owner) => request(app).post('/api/gl/journal-entries').set(bearer(who.token)).send(body as object);
+const get = (url: string, who = owner) => request(app).get(url).set(bearer(who.token));
 const csvOf = (res: request.Response) => (res.text ?? res.body.toString()).replace(/^﻿/, '').trim().split(/\r?\n/);
 const binary = (res: any, cb: (err: Error | null, body: Buffer) => void) => {
   const chunks: Buffer[] = [];
@@ -74,11 +75,11 @@ describe('manual journal permission', () => {
     expect((await post(entry('1010', '3010', 1), rep)).status).toBe(403);
 
     const voidBody = { voidReason: 'Posted twice' };
-    const voidByClerk = await request(app).post(`/api/gl/journal-entries/${byOwner.body.entry.id}/void`).set(auth(clerk)).send(voidBody);
+    const voidByClerk = await request(app).post(`/api/gl/journal-entries/${byOwner.body.entry.id}/void`).set(bearer(clerk.token)).send(voidBody);
     expect(voidByClerk.status).toBe(200);
     expect(voidByClerk.body.entry.isVoided).toBe(true);
-    expect((await request(app).post(`/api/gl/journal-entries/${byClerk.body.entry.id}/void`).set(auth(admin)).send(voidBody)).status).toBe(403);
-    expect((await request(app).post(`/api/gl/journal-entries/${byClerk.body.entry.id}/void`).set(auth(owner)).send(voidBody)).status).toBe(200);
+    expect((await request(app).post(`/api/gl/journal-entries/${byClerk.body.entry.id}/void`).set(bearer(admin.token)).send(voidBody)).status).toBe(403);
+    expect((await request(app).post(`/api/gl/journal-entries/${byClerk.body.entry.id}/void`).set(bearer(owner.token)).send(voidBody)).status).toBe(200);
   });
 
   it('a hand-made entry is always source manual, whatever the body says', async () => {
@@ -111,18 +112,18 @@ describe('POST /api/gl/journal-entries without a source type', () => {
 
 describe('the void route reverses hand-made entries only', () => {
   it('the clerk and the owner both get 400 on an expense entry, and it stays posted', async () => {
-    const exp = await request(app).post('/api/financial/expenses').set(auth(owner))
+    const exp = await request(app).post('/api/financial/expenses').set(bearer(owner.token))
       .send({ category: 'Transport', amount: 33, description: 'Taxi', expenseDate: today(), paidFrom: 'cash' });
     const row = await prismaBase.expense.findUniqueOrThrow({ where: { id: exp.body.expense.id } });
     for (const who of [clerk, owner]) {
-      const res = await request(app).post(`/api/gl/journal-entries/${row.journalEntryId}/void`).set(auth(who)).send({ voidReason: 'Trying' });
+      const res = await request(app).post(`/api/gl/journal-entries/${row.journalEntryId}/void`).set(bearer(who.token)).send({ voidReason: 'Trying' });
       expect(res.status).toBe(400);
       expect(res.body.message ?? res.body.error).toBe('This entry was posted by an expense. Edit or delete the expense instead.');
     }
     const after = await prismaBase.journalEntry.findUniqueOrThrow({ where: { id: row.journalEntryId! } });
     expect(after.isVoided).toBe(false);
     // Deleting the expense is the way to undo it
-    expect((await request(app).delete(`/api/financial/expenses/${row.id}`).set(auth(clerk))).status).toBe(200);
+    expect((await request(app).delete(`/api/financial/expenses/${row.id}`).set(bearer(clerk.token))).status).toBe(200);
   });
 
   it.each(['commission_accrual', 'delivery_fee'] as const)('a %s entry is refused, and the ledger line says it is not voidable by hand', async (sourceType) => {
@@ -133,7 +134,7 @@ describe('the void route reverses hand-made entries only', () => {
       { tenantId, journalEntryId: je.id, accountId: ids['5100'], debitAmount: 1, creditAmount: 0, runningBalance: 0 },
       { tenantId, journalEntryId: je.id, accountId: ids['3010'], debitAmount: 0, creditAmount: 1, runningBalance: 0 },
     ] });
-    const res = await request(app).post(`/api/gl/journal-entries/${je.id}/void`).set(auth(owner)).send({ voidReason: 'Trying' });
+    const res = await request(app).post(`/api/gl/journal-entries/${je.id}/void`).set(bearer(owner.token)).send({ voidReason: 'Trying' });
     expect(res.status).toBe(400);
     expect(res.body.code ?? res.body.errorCode).toBe('GL_ENTRY_NOT_MANUAL');
     expect((await prismaBase.journalEntry.findUniqueOrThrow({ where: { id: je.id } })).isVoided).toBe(false);
@@ -146,9 +147,9 @@ describe('the void route reverses hand-made entries only', () => {
 
   it('a reversal entry cannot be voided either', async () => {
     const made = await post(entry('1010', '3010', 9), clerk);
-    const voided = await request(app).post(`/api/gl/journal-entries/${made.body.entry.id}/void`).set(auth(clerk)).send({ voidReason: 'Oops' });
+    const voided = await request(app).post(`/api/gl/journal-entries/${made.body.entry.id}/void`).set(bearer(clerk.token)).send({ voidReason: 'Oops' });
     const reversal = await prismaBase.journalEntry.findUniqueOrThrow({ where: { id: voided.body.entry.reversingEntryId } });
-    const res = await request(app).post(`/api/gl/journal-entries/${reversal.id}/void`).set(auth(owner)).send({ voidReason: 'Again' });
+    const res = await request(app).post(`/api/gl/journal-entries/${reversal.id}/void`).set(bearer(owner.token)).send({ voidReason: 'Again' });
     expect(res.status).toBe(400);
   });
 });
@@ -204,7 +205,7 @@ describe('ledger order and running balance with back-dated entries', () => {
     for (const a of await prismaBase.account.findMany({ where: { tenantId: t } })) acc[a.code] = a.id;
     who = await mkUser(t, 'ledgerowner', 'super_admin');
     // Posted in this order, dated out of order: Oct 15 +100, Oct 1 +1000, Oct 25 -50 (cash out), Oct 3 +20
-    const dated = (entryDate: string, dr: string, cr: string, amount: number) => request(app).post('/api/gl/journal-entries').set(auth(who))
+    const dated = (entryDate: string, dr: string, cr: string, amount: number) => request(app).post('/api/gl/journal-entries').set(bearer(who.token))
       .send({ entryDate, description: `Entry ${entryDate}`, transactions: [{ accountId: acc[dr], debitAmount: amount, creditAmount: 0 }, { accountId: acc[cr], debitAmount: 0, creditAmount: amount }] });
     for (const [d, dr, cr, n] of [['2026-10-15', '1010', '3010', 100], ['2026-10-01', '1010', '3010', 1000], ['2026-10-25', '5100', '1010', 50], ['2026-10-03', '1010', '3010', 20]] as const) {
       expect((await dated(d, dr, cr, n)).status).toBe(201);
@@ -246,7 +247,7 @@ describe('ledger order and running balance with back-dated entries', () => {
 
 describe('exports', () => {
   beforeAll(async () => {
-    await request(app).post('/api/financial/expenses').set(auth(owner))
+    await request(app).post('/api/financial/expenses').set(bearer(owner.token))
       .send({ category: 'Transport', amount: 1234567.5, description: 'Big truck', expenseDate: today(), paidFrom: 'bank' });
   });
 

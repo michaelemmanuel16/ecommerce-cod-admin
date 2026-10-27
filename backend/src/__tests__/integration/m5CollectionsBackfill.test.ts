@@ -7,10 +7,12 @@ import { describe, it, expect, beforeAll, afterAll, jest } from '@jest/globals';
 import { execFileSync } from 'child_process';
 import path from 'path';
 import '../mocks/logger.mock';
+import { CollectionStatus, OrderStatus } from '@prisma/client';
 import { prismaBase } from '../../utils/prisma';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import { cashHeldCheck, ledgerSnapshot, planDraftReconcile } from '../../services/collectionsBackfillService';
 import { createTenant, deleteTenantRows, mkUser } from './helpers/twoTenants';
+import { mkOrder as mkOrderRow, mkCollection as mkCollectionRow, SettlementWorld } from './helpers/settlementFixtures';
 
 jest.setTimeout(180_000);
 
@@ -22,12 +24,11 @@ let adminId: number;
 let customerId: number;
 const orderIds: Record<string, number> = {};
 
-const mkOrder = async (key: string, status: string, agentId: number, deliveryDate: string | null) =>
-  (orderIds[key] = (await prismaBase.order.create({
-    data: { customerId, status, subtotal: 100, totalAmount: 100, codAmount: 100, deliveryAgentId: agentId, tenantId, deliveryDate: deliveryDate ? new Date(deliveryDate) : null, paymentStatus: 'collected' } as any,
-  })).id);
-const mkCollection = async (key: string, agentId: number, amount: number, status: string, at: string) =>
-  prismaBase.agentCollection.create({ data: { tenantId, orderId: orderIds[key], agentId, amount, status, collectionDate: new Date(at) } as any });
+let world: SettlementWorld;
+const mkOrder = async (key: string, status: OrderStatus, agentId: number, deliveryDate: string | null) =>
+  (orderIds[key] = await mkOrderRow(world, agentId, status, { total: 100, deliveryDate: deliveryDate ? new Date(deliveryDate) : null, paymentStatus: 'collected' }));
+const mkCollection = async (key: string, agentId: number, amount: number, status: CollectionStatus, at: string) =>
+  mkCollectionRow(tenantId, orderIds[key], agentId, amount, status, new Date(at));
 const mkEntry = async (date: string, n: number) => {
   const [cash, rev] = await Promise.all(['1010', '4010'].map((code) => prismaBase.account.findFirstOrThrow({ where: { tenantId, code } })));
   await prismaBase.journalEntry.create({
@@ -66,6 +67,7 @@ beforeAll(async () => {
   customerId = (await prismaBase.customer.create({
     data: { firstName: 'Ama', lastName: 'Mensah', phoneNumber: `+2332${String(Date.now()).slice(-8)}`, address: '3 Test Rd', state: 'Greater Accra', area: 'Accra', tenantId },
   })).id;
+  world = { tenantId, customerId, actorId: adminId };
 
   // Reconciled in August and September: 300. Recorded deposits: 500. So 200 of deposits cover no collection yet.
   await mkOrder('r1', 'delivered', partnerId, '2026-08-10T10:00:00Z'); await mkCollection('r1', partnerId, 200, 'reconciled', '2026-08-10');

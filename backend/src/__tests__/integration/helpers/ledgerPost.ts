@@ -21,3 +21,8 @@ export async function postEntry(
     transactions: lines.map(([code, d, c]) => ({ accountId: id(code), debitAmount: d, creditAmount: c })),
   }, { id: who, role: 'super_admin' }));
 }
+
+/** The running balance of one account of the tenant, as a number. */
+export async function accountBalance(tenantId: string, code: string) {
+  return Number((await prismaBase.account.findUniqueOrThrow({ where: { tenantId_code: { tenantId, code } } })).currentBalance);
+}

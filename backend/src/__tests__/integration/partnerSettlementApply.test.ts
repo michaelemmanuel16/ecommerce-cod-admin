@@ -11,6 +11,7 @@ import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import { recordPartnerPayout, parsePartnerPayout } from '../../services/partnerSettlementService';
 import { createTenant, deleteTenantRows } from './helpers/twoTenants';
 import * as fx from './helpers/settlementFixtures';
+import { accountBalance } from './helpers/ledgerPost';
 
 jest.setTimeout(180_000);
 
@@ -28,8 +29,7 @@ const world = () => ({ tenantId, customerId, actorId: ADMIN.userId! });
 const mkPartner = async (label: string, tid = tenantId) => (await fx.mkPartner(tid, label)).id;
 const mkCustomer = (phone: string) => fx.mkCustomer(tenantId, phone);
 const deliver = (partnerId: number, total = 200, cust = customerId) => fx.mkDeliveredOrder(world(), partnerId, total, cust);
-const balance = async (code: string) =>
-  Number((await prismaBase.account.findUniqueOrThrow({ where: { tenantId_code: { tenantId, code } } })).currentBalance);
+const balance = (code: string) => accountBalance(tenantId, code);
 const collectionOf = (orderId: number) => prismaBase.agentCollection.findUniqueOrThrow({ where: { orderId } });
 const orderOf = (id: number) => prismaBase.order.findUniqueOrThrow({ where: { id } });
 const findings = (type: string) => prismaBase.finding.findMany({ where: { tenantId, type: type as any }, orderBy: { id: 'asc' } });

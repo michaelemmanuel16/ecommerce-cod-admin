@@ -20,6 +20,7 @@ import { postEntry as postCommission } from '../../services/commissionService';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import { createTenant, deleteTenantRows, mkUser } from './helpers/twoTenants';
 import * as fx from './helpers/settlementFixtures';
+import { accountBalance } from './helpers/ledgerPost';
 
 jest.setTimeout(300_000);
 
@@ -42,8 +43,7 @@ const call = (method: 'get' | 'post' | 'put' | 'patch' | 'delete', url: string, 
   const req = request(app)[method](url).set({ Authorization: `Bearer ${who.token}` });
   return body === undefined ? req : req.send(body as object);
 };
-const balance = async (code: string) =>
-  Number((await prismaBase.account.findUniqueOrThrow({ where: { tenantId_code: { tenantId: a, code } } })).currentBalance);
+const balance = (code: string) => accountBalance(a, code);
 
 /** What a replay must leave alone. */
 async function signature() {

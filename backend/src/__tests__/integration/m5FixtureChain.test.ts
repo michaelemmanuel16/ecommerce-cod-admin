@@ -21,9 +21,10 @@ import analyticsService from '../../services/analyticsService';
 import financialService from '../../services/financialService';
 import * as Money from '../../utils/money';
 import { seedFixture, deleteFixtureRows, FIXTURE_SLUG } from '../fixtures/numbersFixture';
-import { postEntry } from './helpers/ledgerPost';
+import { postEntry, accountBalance } from './helpers/ledgerPost';
 import { toolData } from './helpers/callTool';
 import { mkUser } from './helpers/twoTenants';
+import { bearer } from './helpers/superAdminToken';
 
 jest.setTimeout(300_000);
 
@@ -34,10 +35,8 @@ const KOFI_ORDERS = 4;
 
 let tenantId: string;
 let owner: { id: number; token: string };
-const auth = () => ({ Authorization: `Bearer ${owner.token}` });
 const inTenant = <T>(fn: () => Promise<T>) => runInTenant(tenantId, fn);
-const balance = async (code: string) =>
-  Number((await prismaBase.account.findUniqueOrThrow({ where: { tenantId_code: { tenantId, code } } })).currentBalance);
+const balance = (code: string) => accountBalance(tenantId, code);
 const userByFirst = (firstName: string) => prismaBase.user.findFirstOrThrow({ where: { tenantId, firstName } });
 
 beforeAll(async () => {
@@ -60,7 +59,7 @@ afterAll(async () => {
 
 describe('contract: Finance, dashboard, summary and MCP agree on delivered revenue', () => {
   it('all four read 92,000.00 over 376 delivered orders for 1 to 17 October', async () => {
-    const overview = await request(app).get('/api/financial/overview?from=2026-10-01&to=2026-10-17&asOf=2026-10-17').set(auth());
+    const overview = await request(app).get('/api/financial/overview?from=2026-10-01&to=2026-10-17&asOf=2026-10-17').set(bearer(owner.token));
     expect(overview.status).toBe(200);
     const tile = overview.body.tiles.find((t: any) => t.key === 'deliveredRevenue');
 
@@ -110,21 +109,21 @@ describe('rep commission and the October margin', () => {
   });
 
   it('Adwoa is owed 2,034 and Nana 134, and 2020 holds the payable 2,168', async () => {
-    const a = await request(app).get(`/api/payouts/owed/${adwoa.id}`).set(auth());
+    const a = await request(app).get(`/api/payouts/owed/${adwoa.id}`).set(bearer(owner.token));
     expect(a.body).toMatchObject({ commission: '2024.00', upsellReward: '610.00', earned: '2634.00', paid: '600.00', owed: '2034.00' });
-    const n = await request(app).get(`/api/payouts/owed/${nana.id}`).set(auth());
+    const n = await request(app).get(`/api/payouts/owed/${nana.id}`).set(bearer(owner.token));
     expect(n.body).toMatchObject({ commission: '104.00', upsellReward: '30.00', owed: '134.00' });
     expect(Number(a.body.owed) + Number(n.body.owed)).toBe(2168);
     expect(await balance('2020')).toBe(2168);
   });
 
   it('the October margin is about -16%, read by Finance and by the income statement', async () => {
-    const overview = await request(app).get('/api/financial/overview?from=2026-10-01&to=2026-10-17&asOf=2026-10-17').set(auth());
+    const overview = await request(app).get('/api/financial/overview?from=2026-10-01&to=2026-10-17&asOf=2026-10-17').set(bearer(owner.token));
     const margin = overview.body.tiles.find((t: any) => t.key === 'netMargin');
     expect(margin.value).toBeCloseTo(-15.5, 1);
     expect(-Math.round(-margin.value)).toBe(-16);
 
-    const pl = await request(app).get('/api/financial/profit-loss?startDate=2026-10-01&endDate=2026-10-17').set(auth());
+    const pl = await request(app).get('/api/financial/profit-loss?startDate=2026-10-01&endDate=2026-10-17').set(bearer(owner.token));
     expect(pl.body.statement.revenue).toBe(REVENUE);
     expect(pl.body.statement.repCommission).toBe('2768.00');
     expect(pl.body.statement.netProfit).toBe(margin.detail.netProfit);

@@ -16,6 +16,8 @@ import financialService from '../../services/financialService';
 import { GLAccountService } from '../../services/glAccountService';
 import { checkLedgerForTenant } from '../../services/ledgerCheckService';
 import { createTenant, deleteTenantRows } from './helpers/twoTenants';
+import { accountBalance } from './helpers/ledgerPost';
+import { mkPartner } from './helpers/settlementFixtures';
 
 jest.setTimeout(120_000);
 
@@ -28,10 +30,6 @@ let esiId: number;
 let kwesiId: number;
 
 const inTenant = <T>(fn: () => Promise<T>) => runInTenant(tenantId, fn);
-const mkPartner = async (label: string) =>
-  (await prismaBase.user.create({
-    data: { email: `cc-${label}-${SUFFIX}@codadmin.test`, password: 'x', firstName: label, lastName: 'P', role: 'delivery_agent', kind: 'person', tenantId },
-  })).id;
 /** An order delivered through the state machine, then synced the way the post-delivery queue does (transaction and draft collection). */
 const deliver = async (partnerId: number, total = 200) => {
   const id = (await prismaBase.order.create({
@@ -41,8 +39,7 @@ const deliver = async (partnerId: number, total = 200) => {
   return id;
 };
 const sync = (ids: number[]) => inTenant(() => FinancialSyncService.batchSyncOrders(ids, ADMIN.userId));
-const balance = async (code: string) =>
-  Number((await prismaBase.account.findUniqueOrThrow({ where: { tenantId_code: { tenantId, code } } })).currentBalance);
+const balance = (code: string) => accountBalance(tenantId, code);
 const linesOn = (code: string) => prismaBase.accountTransaction.findMany({ where: { tenantId, account: { code } } });
 const entryCount = () => prismaBase.journalEntry.count({ where: { tenantId } });
 const depositEntries = (depositId: number) =>
@@ -63,9 +60,9 @@ beforeAll(async () => {
   ADMIN.userId = (await prismaBase.user.create({
     data: { email: `cc-admin-${SUFFIX}@codadmin.test`, password: 'x', firstName: 'Ada', lastName: 'Admin', role: 'super_admin', tenantId },
   })).id;
-  kofiId = await mkPartner('kofi');
-  esiId = await mkPartner('esi');
-  kwesiId = await mkPartner('kwesi');
+  kofiId = (await mkPartner(tenantId, 'kofi')).id;
+  esiId = (await mkPartner(tenantId, 'esi')).id;
+  kwesiId = (await mkPartner(tenantId, 'kwesi')).id;
   await prismaBase.feeRule.create({ data: { tenantId, partnerUserId: kofiId, outcome: 'delivered', amount: 25, validFrom: new Date('2026-01-01') } });
   await prismaBase.feeRule.create({ data: { tenantId, partnerUserId: kwesiId, outcome: 'delivered', amount: 30, validFrom: new Date('2026-01-01') } });
 }, 60000);
@@ -188,7 +185,7 @@ describe('excess deposit and rejection', () => {
 
 describe('reject reverses only its own allocations (ledger integrity)', () => {
   it('two deposits verified, the first rejected: the second keeps its collections', async () => {
-    const partner = await mkPartner('ama');
+    const partner = (await mkPartner(tenantId, 'ama')).id;
     await prismaBase.feeRule.create({ data: { tenantId, partnerUserId: partner, outcome: 'delivered', amount: 25, validFrom: new Date('2026-01-01') } });
     const orders = [await deliver(partner), await deliver(partner), await deliver(partner)];
     await sync(orders);
@@ -212,7 +209,7 @@ describe('reject reverses only its own allocations (ledger integrity)', () => {
   });
 
   it('two parallel rejects: one wins, the other gets 409, the ledger is voided and restored once', async () => {
-    const partner = await mkPartner('yaw');
+    const partner = (await mkPartner(tenantId, 'yaw')).id;
     await prismaBase.feeRule.create({ data: { tenantId, partnerUserId: partner, outcome: 'delivered', amount: 25, validFrom: new Date('2026-01-01') } });
     const orders = [await deliver(partner)];
     await sync(orders);
@@ -234,7 +231,7 @@ describe('reject reverses only its own allocations (ledger integrity)', () => {
   });
 
   it('two parallel verifies of one deposit: one wins, the other gets 409, 1015 is credited once', async () => {
-    const partner = await mkPartner('kojo');
+    const partner = (await mkPartner(tenantId, 'kojo')).id;
     const orders = [await deliver(partner)];
     await sync(orders);
     const created = await deposit(partner, 200, 'REF-KOJO-1');
@@ -251,7 +248,7 @@ describe('reject reverses only its own allocations (ledger integrity)', () => {
 
 describe('a deposit verified before allocation tracking', () => {
   it('cannot be rejected: 409, and nothing changes', async () => {
-    const partner = await mkPartner('old');
+    const partner = (await mkPartner(tenantId, 'old')).id;
     await sync([await deliver(partner)]);
     const created = await deposit(partner, 200, 'REF-OLD-1');
     await inTenant(() => agentReconciliationService.verifyDeposit(created.id, ADMIN.userId!));
@@ -268,7 +265,7 @@ describe('a deposit verified before allocation tracking', () => {
 
 describe('two parallel "mark COD deposited" calls for the same transactions', () => {
   it('one wins, the other gets 409, 1015 is credited once and the balance drops once', async () => {
-    const partner = await mkPartner('twin');
+    const partner = (await mkPartner(tenantId, 'twin')).id;
     await prismaBase.feeRule.create({ data: { tenantId, partnerUserId: partner, outcome: 'delivered', amount: 25, validFrom: new Date('2026-01-01') } });
     const orders = [await deliver(partner), await deliver(partner)];
     await sync(orders);
@@ -288,7 +285,7 @@ describe('two parallel "mark COD deposited" calls for the same transactions', ()
 
 describe('old route then a deposit for the same agent', () => {
   it('1015 is credited once in total', async () => {
-    const partner = await mkPartner('efua');
+    const partner = (await mkPartner(tenantId, 'efua')).id;
     await prismaBase.feeRule.create({ data: { tenantId, partnerUserId: partner, outcome: 'delivered', amount: 25, validFrom: new Date('2026-01-01') } });
     const orders = [await deliver(partner), await deliver(partner), await deliver(partner)];
     await sync(orders);

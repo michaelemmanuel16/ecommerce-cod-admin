@@ -10,7 +10,9 @@ import request from 'supertest';
 import '../mocks/logger.mock';
 import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
+import { ymdOfUtc } from '../../services/kpi/dates';
 import { createTenant, deleteTenantRows, mkUser } from './helpers/twoTenants';
+import { bearer } from './helpers/superAdminToken';
 import { migrationStatements } from './helpers/migrationSql';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import { EXPENSE_CATEGORIES } from '../../config/expenseCategories';
@@ -25,15 +27,14 @@ let admin: { id: number; token: string };
 let agent: { id: number; token: string };
 let rep: { id: number; token: string };
 
-const auth = (u: { token: string }) => ({ Authorization: `Bearer ${u.token}` });
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => ymdOfUtc(new Date());
 const balance = async (code: string) =>
   (await prismaBase.account.findFirstOrThrow({ where: { tenantId, code } })).currentBalance.toFixed(2);
 const body = (over: Record<string, unknown> = {}) => ({
   category: 'Transport', amount: 120.5, description: 'Fuel run', expenseDate: today(), paidFrom: 'momo', ...over,
 });
 const add = (over: Record<string, unknown> = {}, who = owner) =>
-  request(app).post('/api/financial/expenses').set(auth(who)).send(body(over));
+  request(app).post('/api/financial/expenses').set(bearer(who.token)).send(body(over));
 /** Journal lines of the not-voided entries of one expense, by account code. */
 const liveLines = async (expenseId: number) => {
   const lines = await prismaBase.accountTransaction.findMany({
@@ -101,7 +102,7 @@ describe('add expense', () => {
 
 describe('categories', () => {
   it('lists one category list with no "Airtime and rewards"', async () => {
-    const res = await request(app).get('/api/financial/expense-categories').set(auth(owner));
+    const res = await request(app).get('/api/financial/expense-categories').set(bearer(owner.token));
     expect(res.status).toBe(200);
     expect(res.body.categories).toEqual([...EXPENSE_CATEGORIES]);
     expect(res.body.categories).not.toContain('Airtime and rewards');
@@ -156,7 +157,7 @@ describe('edit and delete keep the ledger right', () => {
     const id = created.body.expense.id;
     expect([await balance('5100'), await balance('1010')]).not.toEqual(before);
 
-    const edited = await request(app).put(`/api/financial/expenses/${id}`).set(auth(owner)).send({ amount: 450 });
+    const edited = await request(app).put(`/api/financial/expenses/${id}`).set(bearer(owner.token)).send({ amount: 450 });
     expect(edited.status).toBe(200);
     expect(edited.body.expense.amount).toBe('450.00');
     const live = await liveLines(id);
@@ -167,7 +168,7 @@ describe('edit and delete keep the ledger right', () => {
     const voided = await prismaBase.journalEntry.findMany({ where: { tenantId, sourceType: { in: ['expense', 'reversal'] }, sourceId: id, isVoided: true } });
     expect(voided).toHaveLength(2); // the old entry and its reversal
 
-    const del = await request(app).delete(`/api/financial/expenses/${id}`).set(auth(owner));
+    const del = await request(app).delete(`/api/financial/expenses/${id}`).set(bearer(owner.token));
     expect(del.status).toBe(200);
     expect(await liveLines(id)).toEqual([]);
     expect([await balance('5100'), await balance('1010')]).toEqual(before);
@@ -179,12 +180,12 @@ describe('edit and delete keep the ledger right', () => {
     const id = created.body.expense.id;
     const first = (await prismaBase.expense.findUniqueOrThrow({ where: { id } })).journalEntryId;
 
-    const cat = await request(app).put(`/api/financial/expenses/${id}`).set(auth(owner)).send({ category: 'Software', paidFrom: 'bank', receiptUrl: '/uploads/receipt-1761500000000-123456789.pdf' });
+    const cat = await request(app).put(`/api/financial/expenses/${id}`).set(bearer(owner.token)).send({ category: 'Software', paidFrom: 'bank', receiptUrl: '/uploads/receipt-1761500000000-123456789.pdf' });
     expect(cat.status).toBe(200);
     expect(cat.body.expense.category).toBe('Software');
     expect((await prismaBase.expense.findUniqueOrThrow({ where: { id } })).journalEntryId).toBe(first);
 
-    const moved = await request(app).put(`/api/financial/expenses/${id}`).set(auth(owner)).send({ expenseDate: '2026-09-03' });
+    const moved = await request(app).put(`/api/financial/expenses/${id}`).set(bearer(owner.token)).send({ expenseDate: '2026-09-03' });
     expect(moved.body.notice).toBe('This month is closed; the P&L changes');
     const live = await liveLines(id);
     expect(live).toHaveLength(2);
@@ -195,7 +196,7 @@ describe('edit and delete keep the ledger right', () => {
   it('rejects a negative edit and leaves the ledger as it was', async () => {
     const created = await add({ amount: 15 });
     const id = created.body.expense.id;
-    const res = await request(app).put(`/api/financial/expenses/${id}`).set(auth(owner)).send({ amount: -1 });
+    const res = await request(app).put(`/api/financial/expenses/${id}`).set(bearer(owner.token)).send({ amount: -1 });
     expect(res.status).toBe(400);
     expect((await liveLines(id)).find((l) => l.code === '5100')!.dr).toBe('15.00');
   });
@@ -222,7 +223,7 @@ describe('receiptUrl check (stored XSS guard)', () => {
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('EXPENSE_RECEIPT_INVALID');
       const ok = await add({ amount: 2 });
-      const put = await request(app).put(`/api/financial/expenses/${ok.body.expense.id}`).set(auth(owner)).send({ receiptUrl });
+      const put = await request(app).put(`/api/financial/expenses/${ok.body.expense.id}`).set(bearer(owner.token)).send({ receiptUrl });
       expect(put.status).toBe(400);
     });
 });
@@ -231,13 +232,13 @@ describe('list total and breakdown agree', () => {
   it('the list totalAmount equals the sum of the breakdown for the same range, and for one category', async () => {
     await add({ category: 'Software', amount: 19.99, description: 'Tool A' });
     await add({ category: 'Software', amount: 0.01, description: 'Tool B' });
-    const list = await request(app).get('/api/financial/expenses?limit=5').set(auth(owner));
-    const breakdown = await request(app).get('/api/financial/expenses/breakdown').set(auth(owner));
+    const list = await request(app).get('/api/financial/expenses?limit=5').set(bearer(owner.token));
+    const breakdown = await request(app).get('/api/financial/expenses/breakdown').set(bearer(owner.token));
     const sum = breakdown.body.breakdown.reduce((n: number, b: any) => n + Number(b.totalAmount), 0);
     expect(Number(list.body.totalAmount)).toBeCloseTo(sum, 2);
     expect(list.body.pagination.total).toBeGreaterThan(5); // the total covers every page, not the 5 rows shown
 
-    const soft = await request(app).get('/api/financial/expenses?category=Software').set(auth(owner));
+    const soft = await request(app).get('/api/financial/expenses?category=Software').set(bearer(owner.token));
     expect(soft.body.totalAmount).toBe(breakdown.body.breakdown.find((b: any) => b.category === 'Software').totalAmount);
   });
 });
@@ -247,13 +248,13 @@ describe('system rows and permissions', () => {
     const row = await prismaBase.expense.create({
       data: { tenantId, category: 'Marketing', amount: 99, description: 'Meta daily spend', expenseDate: new Date(), source: 'meta' },
     });
-    const list = await request(app).get('/api/financial/expenses?limit=100').set(auth(owner));
+    const list = await request(app).get('/api/financial/expenses?limit=100').set(bearer(owner.token));
     expect(list.body.expenses.find((e: any) => e.id === row.id).locked).toBe(true);
     expect(list.body.expenses.find((e: any) => e.source === 'manual').locked).toBe(false);
-    const put = await request(app).put(`/api/financial/expenses/${row.id}`).set(auth(owner)).send({ amount: 1 });
+    const put = await request(app).put(`/api/financial/expenses/${row.id}`).set(bearer(owner.token)).send({ amount: 1 });
     expect(put.status).toBe(403);
     expect(put.body.code).toBe('EXPENSE_LOCKED');
-    expect((await request(app).delete(`/api/financial/expenses/${row.id}`).set(auth(owner))).status).toBe(403);
+    expect((await request(app).delete(`/api/financial/expenses/${row.id}`).set(bearer(owner.token))).status).toBe(403);
     expect(await prismaBase.expense.findUnique({ where: { id: row.id } })).not.toBeNull();
   });
 
@@ -262,21 +263,21 @@ describe('system rows and permissions', () => {
     expect(mine.status).toBe(201);
     const others = await add({ amount: 12 }, owner);
     // The agent default holds financial:create only, so the list is closed to them (the own-rows rule is in the service)
-    expect((await request(app).get('/api/financial/expenses').set(auth(agent))).status).toBe(403);
-    expect((await request(app).put(`/api/financial/expenses/${mine.body.expense.id}`).set(auth(agent)).send({ amount: 13 })).status).toBe(403);
-    expect((await request(app).delete(`/api/financial/expenses/${others.body.expense.id}`).set(auth(agent))).status).toBe(403);
+    expect((await request(app).get('/api/financial/expenses').set(bearer(agent.token))).status).toBe(403);
+    expect((await request(app).put(`/api/financial/expenses/${mine.body.expense.id}`).set(bearer(agent.token)).send({ amount: 13 })).status).toBe(403);
+    expect((await request(app).delete(`/api/financial/expenses/${others.body.expense.id}`).set(bearer(agent.token))).status).toBe(403);
 
-    expect((await request(app).put(`/api/financial/expenses/${mine.body.expense.id}`).set(auth(clerk)).send({ amount: 14 })).status).toBe(200);
-    expect((await request(app).delete(`/api/financial/expenses/${others.body.expense.id}`).set(auth(admin))).status).toBe(200);
-    expect((await request(app).delete(`/api/financial/expenses/${mine.body.expense.id}`).set(auth(clerk))).status).toBe(200);
+    expect((await request(app).put(`/api/financial/expenses/${mine.body.expense.id}`).set(bearer(clerk.token)).send({ amount: 14 })).status).toBe(200);
+    expect((await request(app).delete(`/api/financial/expenses/${others.body.expense.id}`).set(bearer(admin.token))).status).toBe(200);
+    expect((await request(app).delete(`/api/financial/expenses/${mine.body.expense.id}`).set(bearer(clerk.token))).status).toBe(200);
     expect((await add({}, rep)).status).toBe(403);
   });
 
   it('search matches the description or the category', async () => {
     await add({ description: 'Zebra stickers', category: 'Packaging', amount: 3 });
-    const res = await request(app).get('/api/financial/expenses?search=zebra').set(auth(owner));
+    const res = await request(app).get('/api/financial/expenses?search=zebra').set(bearer(owner.token));
     expect(res.body.expenses.map((e: any) => e.description)).toEqual(['Zebra stickers']);
-    const byCat = await request(app).get('/api/financial/expenses?search=packag').set(auth(owner));
+    const byCat = await request(app).get('/api/financial/expenses?search=packag').set(bearer(owner.token));
     expect(byCat.body.expenses.length).toBeGreaterThan(0);
   });
 
@@ -285,16 +286,16 @@ describe('system rows and permissions', () => {
     tenantIds.push(other);
     await seedTenantDefaults(other);
     const b = await mkUser(other, 'ownerb', 'super_admin');
-    const res = await request(app).get('/api/financial/expenses?limit=100').set(auth(b));
+    const res = await request(app).get('/api/financial/expenses?limit=100').set(bearer(b.token));
     expect(res.body.expenses).toEqual([]);
     const a = await add({ amount: 5 });
-    expect((await request(app).delete(`/api/financial/expenses/${a.body.expense.id}`).set(auth(b))).status).toBe(404);
+    expect((await request(app).delete(`/api/financial/expenses/${a.body.expense.id}`).set(bearer(b.token))).status).toBe(404);
   });
 });
 
 describe('POST /api/upload accepts a PDF receipt', () => {
   const upload = (buf: Buffer, name: string, type: string) =>
-    request(app).post('/api/upload').set(auth(owner)).attach('image', buf, { filename: name, contentType: type });
+    request(app).post('/api/upload').set(bearer(owner.token)).attach('image', buf, { filename: name, contentType: type });
 
   it('stores a PDF', async () => {
     const res = await upload(Buffer.from('%PDF-1.4\n%receipt\n'), 'receipt.pdf', 'application/pdf');
