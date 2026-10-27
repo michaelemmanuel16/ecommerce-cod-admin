@@ -112,6 +112,9 @@ describe('the owed preview (F-913)', () => {
     expect(byId.get(U.adwoa.id).paidInMonth).toBe('600.00');
     expect(byId.has(U.kofi.id)).toBe(false);
     expect(byId.has(U.bot.id)).toBe(false);
+    // The tab count is the same number from one group by
+    expect((await request(app).get('/api/payouts/owed/count').set(auth(U.manager))).body).toEqual({ repsOwed: res.body.totals.repsOwed });
+    expect((await request(app).get('/api/payouts/owed/count').set(auth(U.rep))).status).toBe(403);
     expect((await request(app).get('/api/payouts/owed').set(auth(U.rep))).status).toBe(403);
     expect((await request(app).get('/api/payouts/owed').set(auth(U.otherAdmin))).body.reps.map((r: any) => r.id)).not.toContain(U.adwoa.id);
   });

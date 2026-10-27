@@ -12,6 +12,7 @@ import { AppError } from '../middleware/errorHandler';
 import { Requester } from '../utils/authUtils';
 import { resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
+import { OPEN_COLLECTION_STATUSES } from '../utils/collectionCash';
 import { getStoreTimeZone, localDate, parseYmd, utcDateOfYmd, ymdOfUtc } from './kpi/dates';
 import { auditService } from './auditService';
 import { openFindingOnce } from './findingService';
@@ -195,6 +196,25 @@ interface ResolvedFee {
   hasRule: boolean;
 }
 
+/** A rule as `pickFee` reads it. */
+export interface PickableRule { outcome: FeeOutcome; basis: FeeBasis; amount: Money.MoneyInput; validFrom: Date }
+
+/**
+ * The fee for one outcome from a partner's rules, the one place the rule is applied: the latest rule of the outcome on or
+ * before `day` (the rule DATE, 00:00 UTC of the store day); a percent rule applies to the order total. No rule for the
+ * outcome gives 0, and `hasRule` says whether the partner has any rule at all in force on `day`.
+ */
+export function pickFee(rules: PickableRule[], outcome: FeeOutcome, day: Date, orderTotal: Money.MoneyInput): ResolvedFee {
+  const inForce = rules.filter((r) => r.validFrom <= day);
+  const rule = currentFeeRules(inForce, day)[outcome];
+  if (!rule) return { fee: Money.ZERO, hasRule: inForce.length > 0 };
+  const fee = rule.basis === 'percent' ? Money.roundHalfUp(Money.mul(orderTotal, Money.div(rule.amount, 100)), 2) : Money.parse(rule.amount);
+  return { fee, hasRule: true };
+}
+
+/** The rule date of an instant: the store day it falls on, as the DATE value `validFrom` is compared with. */
+export const ruleDayOf = (on: Date, tenantId?: string | null): Date => utcDateOfYmd(localDate(on, getStoreTimeZone(tenantId)));
+
 /** The fee for one outcome on one date: the latest rule on or before the date; a percent rule applies to the order total. */
 export async function resolveFee(
   db: Pick<TransactionClient, 'feeRule'>,
@@ -204,14 +224,26 @@ export async function resolveFee(
   orderTotal: Money.MoneyInput,
   tenantId?: string | null,
 ): Promise<ResolvedFee> {
-  const scope = { partnerUserId: partnerId, validFrom: { lte: utcDateOfYmd(localDate(on, getStoreTimeZone(tenantId))) }, ...(tenantId ? { tenantId } : {}) };
-  const rule = await db.feeRule.findFirst({ where: { ...scope, outcome }, orderBy: { validFrom: 'desc' }, select: { basis: true, amount: true } });
-  if (rule) {
-    const fee = rule.basis === 'percent' ? Money.roundHalfUp(Money.mul(orderTotal, Money.div(rule.amount, 100)), 2) : Money.parse(rule.amount);
-    return { fee, hasRule: true };
-  }
-  // No rule for this outcome: it is only "missing" when the partner has no rule in force at all
-  return { fee: Money.ZERO, hasRule: !!(await db.feeRule.findFirst({ where: scope, select: { id: true } })) };
+  const day = ruleDayOf(on, tenantId);
+  const rules = await db.feeRule.findMany({
+    where: { partnerUserId: partnerId, validFrom: { lte: day }, ...(tenantId ? { tenantId } : {}) },
+    select: { outcome: true, basis: true, amount: true, validFrom: true },
+  });
+  return pickFee(rules, outcome, day, orderTotal);
+}
+
+/**
+ * The partner keeps the fee from the cash: an open collection is held net of it, like a new one. The collection goes down
+ * to `max(amount - fee, 0)`, and the partner's `totalCollected` and cash held go down by the cut. Runs in the caller's
+ * transaction. No open collection on the order, no change.
+ */
+export async function netOpenCollectionByFee(tx: TransactionClient, orderId: number, agentId: number, fee: Money.MoneyInput): Promise<void> {
+  const coll = await tx.agentCollection.findFirst({ where: { orderId, status: { in: [...OPEN_COLLECTION_STATUSES] } }, select: { id: true, amount: true } });
+  if (!coll) return;
+  const net = Prisma.Decimal.max(Money.sub(coll.amount, fee), Money.ZERO);
+  const cut = Money.sub(coll.amount, net);
+  await tx.agentCollection.update({ where: { id: coll.id }, data: { amount: net } });
+  await tx.agentBalance.updateMany({ where: { agentId }, data: { totalCollected: { decrement: cut }, currentBalance: { decrement: cut } } });
 }
 
 export interface DeliveryFeeStamp { outcome: FeeOutcome; fee: Money.Money; on: Date }

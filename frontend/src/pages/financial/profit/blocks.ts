@@ -16,4 +16,4 @@ export const useProfitTrend = () => useBlock('profit-trend|3', () => financeRepo
 // Shared by the tabs, the tab counts and the header: each key lives here once, so they share one call.
 export const useAging = () => useBlock('collections:aging', () => collectionsService.aging());
 export const useDeposits = () => useBlock('collections:deposits', () => collectionsService.deposits());
-export const useRepsOwed = (enabled = true) => useBlock('reps:owed', () => payoutsService.repsOwed(), enabled);
+export const useRepsOwedCount = (enabled = true) => useBlock('reps:owed-count', () => payoutsService.repsOwedCount(), enabled);

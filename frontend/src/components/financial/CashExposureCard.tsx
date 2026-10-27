@@ -1,12 +1,12 @@
 import { Bar, BarChart, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Card, EmptyState } from '../ui-v2';
-import type { AgingBucket, AgingReport, BucketKey } from '../../services/collections.service';
+import type { AgingBucket, AgingReport } from '../../services/collections.service';
 import { formatCurrency } from '../../utils/format';
 import { AXIS, ChartTip } from '../../pages/reports/charts';
 import { bucketColor, lateOf } from '../../pages/financial/collections/model';
 
 /** The 15+ bucket is violet in the mockup's legend; the late 8-14 bucket stays coral like the table. */
-const colorOf = (key: BucketKey): string => (key === '15+' ? 'var(--violet)' : bucketColor(key));
+const colorOf = (b: AgingBucket): string => (b.key === '15+' ? 'var(--violet)' : bucketColor(b));
 const short = (name: string): string => (name.length > 16 ? `${name.slice(0, 15)}…` : name);
 
 interface Row { name: string; total: number; [bucket: string]: number | string }
@@ -41,7 +41,7 @@ export function CashExposureCard({ report }: { report: AgingReport }) {
       ) : (
         <>
           <div className="lgrow legend">
-            {buckets.map((b) => <span key={b.key}><i style={{ background: colorOf(b.key) }} />{b.label}</span>)}
+            {buckets.map((b) => <span key={b.key}><i style={{ background: colorOf(b) }} />{b.label}</span>)}
           </div>
           <div role="img" aria-label="Unpaid delivered orders of each partner, split by age" className="chartbox exposure">
             <ResponsiveContainer width="100%" height={rows.length * 34 + 12}>
@@ -49,7 +49,7 @@ export function CashExposureCard({ report }: { report: AgingReport }) {
                 <XAxis type="number" hide domain={[0, 'dataMax']} />
                 <YAxis type="category" dataKey="name" width={118} axisLine={false} tickLine={false} tick={{ ...AXIS, fill: 'var(--ink)', fontWeight: 600 }} tickFormatter={short} />
                 <Tooltip content={<Hover buckets={buckets} />} cursor={{ fill: 'var(--hover)' }} />
-                {buckets.map((b) => <Bar key={b.key} dataKey={b.key} stackId="age" fill={colorOf(b.key)} isAnimationActive={false} />)}
+                {buckets.map((b) => <Bar key={b.key} dataKey={b.key} stackId="age" fill={colorOf(b)} isAnimationActive={false} />)}
                 {/* a bar with no width at the end of the stack, only to carry the partner's total */}
                 <Bar dataKey="none" stackId="age" fill="transparent" isAnimationActive={false}>
                   <LabelList dataKey="total" position="right" formatter={(v: number) => formatCurrency(v)} style={{ ...AXIS, fill: 'var(--ink)', fontWeight: 700 }} />
@@ -59,7 +59,7 @@ export function CashExposureCard({ report }: { report: AgingReport }) {
           </div>
           {top && total > 0 && (
             <p className="note flat">
-              {top.name} holds {Math.round((top.unpaidAmount / total) * 100)}% of the unpaid orders. Its 8 days or older orders are {formatCurrency(lateOf(top.buckets).amount)}.
+              {top.name} holds {Math.round((top.unpaidAmount / total) * 100)}% of the unpaid orders. Its late orders ({buckets.filter((b) => b.late).map((b) => b.label).join(' and ')}) are {formatCurrency(lateOf(top.buckets).amount)}.
             </p>
           )}
         </>

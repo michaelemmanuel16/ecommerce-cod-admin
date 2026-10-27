@@ -12,7 +12,7 @@ import type { Prisma } from '@prisma/client';
 import { getStoreTimeZone, localDate, parseBound } from '../kpi/dates';
 import { getTenantId, resolveTenantId } from '../../utils/tenantContext';
 import { rates } from '../kpi/rates';
-import { resolveFee } from '../feeRuleService';
+import { resolveFee, storeToday } from '../feeRuleService';
 import { incomeStatementOver, monthWindows, TARGET_NET_MARGIN } from './statementsService';
 
 const COST_MISSING = 'Cost missing';
@@ -196,6 +196,31 @@ export async function profitByProduct(from: Date, to: Date): Promise<ProfitByPro
     profitPerDeliveredOrder: delivered > 0 ? Money.toApi(Money.roundHalfUp(Money.div(statement.netProfit, delivered), 2)) : null,
     costMissingProducts: rows.filter((r) => r.costMissing).length,
   };
+}
+
+/**
+ * The product on the most delivered orders of [from, to) and its profit per delivered order, as `profitByProduct` gives
+ * them (the Finance overview tile). One group by finds the product (ties go to the lower id); only the orders that hold it
+ * are read to work out its profit. Null when nothing was delivered or the top product has no cost.
+ */
+export async function topProductByDelivered(from: Date, to: Date): Promise<{ name: string; profitPerOrder: string } | null> {
+  const where = deliveredWhere(from, to);
+  // One row per product and order, so an order that holds the product twice counts once. A free bundled digital item is not a sale.
+  const pairs = await prisma.orderItem.groupBy({
+    by: ['productId', 'orderId'],
+    where: { order: where, NOT: { totalPrice: 0, product: { productType: 'digital' } } },
+  });
+  const delivered = new Map<number, number>();
+  for (const { productId } of pairs) delivered.set(productId, (delivered.get(productId) ?? 0) + 1);
+  const top = [...delivered].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0];
+  if (!top) return null;
+
+  const [orders, paystackByOrder] = await Promise.all([
+    prisma.order.findMany({ where: { ...where, orderItems: { some: { productId: top[0] } } }, select: PRODUCT_ORDER_SELECT }),
+    paystackFeesByOrder(from, to),
+  ]);
+  const row = productRows(allocateToProducts(orders, paystackByOrder)).find((r) => r.productId === top[0]);
+  return row && row.profitPerDeliveredOrder !== null ? { name: row.name, profitPerOrder: row.profitPerDeliveredOrder } : null;
 }
 
 export interface ProfitTrend {
@@ -406,11 +431,17 @@ export async function failedDeliveryCost(from: Date, to: Date): Promise<FailedDe
   for (const h of histories) row(h.order.deliveryAgent).orders.add(h.orderId);
   for (const t of transfers) row(t.fromLocation?.user ?? t.order?.deliveryAgent).transfers.push(t);
 
-  const today = new Date();
-  const partners: FailedCostPartner[] = await Promise.all([...byPartner.values()].map(async (r) => {
+  // A partner has a rule when any rule is in force today (what `resolveFee(...).hasRule` says): one read for all of them
+  const partnerIds = [...byPartner.values()].flatMap((r) => (r.partner ? [r.partner.id] : []));
+  const ruled = new Set((await prisma.feeRule.findMany({
+    where: { tenantId, partnerUserId: { in: partnerIds }, validFrom: { lte: storeToday(tenantId) } },
+    distinct: ['partnerUserId'],
+    select: { partnerUserId: true },
+  })).map((r) => r.partnerUserId));
+  const partners: FailedCostPartner[] = [...byPartner.values()].map((r) => {
     const fees = Money.sum(r.fees);
     const lost = lostUnits(r.transfers);
-    const noRule = r.partner !== null && !(await resolveFee(prisma, r.partner.id, 'failed', today, 0, tenantId)).hasRule;
+    const noRule = r.partner !== null && !ruled.has(r.partner.id);
     return {
       partnerId: r.partner?.id ?? null,
       name: r.partner ? `${r.partner.firstName} ${r.partner.lastName}`.trim() : 'No partner',
@@ -421,7 +452,7 @@ export async function failedDeliveryCost(from: Date, to: Date): Promise<FailedDe
       total: Money.toApi(Money.add(fees, lost.value)),
       hint: noRule ? 'No fee rule for this partner. The failed fee is 0.' : null,
     };
-  }));
+  });
   partners.sort((a, b) => Money.compare(b.total, a.total) || (a.partnerId ?? 0) - (b.partnerId ?? 0));
 
   const sum = (pick: (p: FailedCostPartner) => string) => Money.sum(partners.map(pick));

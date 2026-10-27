@@ -1,4 +1,5 @@
 import type { FinanceOverview, Tile } from '../../services/finance-overview.service';
+import { CARD } from './collections';
 
 /** The NUMBERS.md overview: revenue 92,000 over 376 orders, margin -16%, runway 9 days, Logiswift 840 short. */
 const TILES: Tile[] = [
@@ -22,6 +23,7 @@ const TILES: Tile[] = [
 export const OVERVIEW: FinanceOverview = {
   from: '2026-10-01', to: '2026-10-17', currency: 'GHS',
   tiles: TILES,
+  unpaidByAge: CARD,
   reconciliation: {
     rows: [
       { id: 1, date: '2026-10-11', partnerId: 11, partnerName: 'Logiswift 3PL', partnerKind: 'company', paidIn: 9880, expectedAfterFees: 10720, orders: 44,

@@ -8,7 +8,7 @@ import { BarList } from './BarList';
 import { bucketColor, ordersText } from '../../pages/financial/collections/model';
 
 interface Props {
-  /** null while it loads. Build it from the aging report (`unpaidByAgeOf`) or `collectionsService.unpaidByAge()`. */
+  /** null while it loads. The Finance overview sends it with the tiles. */
   data: UnpaidByAge | null;
   failed?: boolean;
   onRetry?: () => void;
@@ -49,7 +49,7 @@ export function UnpaidByAgeCard({ data, failed, onRetry }: Props) {
     <Card title={title} aside={aside} className="agecard">
       <BarList
         label="Unpaid delivered orders by age"
-        rows={data.buckets.map((b) => ({ key: b.key, label: b.label, sub: ordersText(b.orders), value: formatCurrency(b.amount), width: (b.amount / top) * 100, color: bucketColor(b.key) }))}
+        rows={data.buckets.map((b) => ({ key: b.key, label: b.label, sub: ordersText(b.orders), value: formatCurrency(b.amount), width: (b.amount / top) * 100, color: bucketColor(b) }))}
       />
       <p className="note">
         <b className="num ink">{formatCurrency(data.total.amount)}</b> across {ordersText(data.total.orders)}, net of the delivery fee.{' '}

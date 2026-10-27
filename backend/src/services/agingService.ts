@@ -4,7 +4,7 @@ import logger from '../utils/logger';
 import { resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 import { fullName } from '../utils/nameUtils';
-import { OPEN_COLLECTION_STATUSES } from '../utils/collectionCash';
+import { OPEN_COLLECTION_STATUSES, outstandingOf } from '../utils/collectionCash';
 import { DAY_MS, getStoreTimeZone, localDate, shiftYmd, startOfDay, utcDateOfYmd } from './kpi/dates';
 import { openFindingOnce } from './findingService';
 import { resolveDaysToPay } from './orderPaymentTag';
@@ -12,12 +12,15 @@ import { getCurrency } from '../utils/currency';
 import { AppError } from '../middleware/errorHandler';
 import whatsappService from './whatsappService';
 
-/** The four age buckets (F-910): days since delivery. A delivery of today is 0 days, so it falls in the first. */
+/**
+ * The four age buckets (F-910): days since delivery. A delivery of today is 0 days, so it falls in the first. `late` marks
+ * the buckets of 8 days and older: the screens draw them coral, and the critical amount of the daily job counts them.
+ */
 export const AGE_BUCKETS = [
-  { key: '0-3', label: '0-3 days', from: 0, to: 3 },
-  { key: '4-7', label: '4-7 days', from: 4, to: 7 },
-  { key: '8-14', label: '8-14 days', from: 8, to: 14 },
-  { key: '15+', label: '15+ days', from: 15, to: Infinity },
+  { key: '0-3', label: '0-3 days', from: 0, to: 3, late: false },
+  { key: '4-7', label: '4-7 days', from: 4, to: 7, late: false },
+  { key: '8-14', label: '8-14 days', from: 8, to: 14, late: true },
+  { key: '15+', label: '15+ days', from: 15, to: Infinity, late: true },
 ] as const;
 
 export const bucketIndexOf = (days: number): number => AGE_BUCKETS.findIndex((b) => days <= b.to);
@@ -53,18 +56,18 @@ export function summarize(rows: UnpaidOrder[]) {
   return { buckets, total, overdue, oldest };
 }
 
-const bucketView = (buckets: Tally[]) => AGE_BUCKETS.map((b, i) => ({ key: b.key, label: b.label, orders: buckets[i].orders, amount: Money.toApi(buckets[i].amount) }));
+const bucketView = (buckets: Tally[]) => AGE_BUCKETS.map((b, i) => ({ key: b.key, label: b.label, late: b.late, orders: buckets[i].orders, amount: Money.toApi(buckets[i].amount) }));
 
 /** Whole days between the store-local calendar day of `at` and today. */
 const ageInDays = (at: Date, zone: string, todayMs: number): number =>
   Math.max(Math.round((todayMs - utcDateOfYmd(localDate(at, zone)).getTime()) / DAY_MS), 0);
 
 export class AgingService {
-  /** Days to pay per partner profile of the tenant; a partner with no profile or no value gets the default. */
-  private async daysToPayOf(): Promise<(agentId: number) => number> {
+  /** Days to pay per partner profile of the tenant (`own`, keyed by partner); a partner with no profile or no value gets the default. */
+  private async loadDaysToPay() {
     const profiles = await prisma.deliveryPartnerProfile.findMany({ select: { userId: true, daysToPay: true } });
     const own = new Map(profiles.map((p) => [p.userId, resolveDaysToPay(p)]));
-    return (agentId) => own.get(agentId) ?? resolveDaysToPay();
+    return { own, daysToPayOf: (agentId: number): number => own.get(agentId) ?? resolveDaysToPay() };
   }
 
   /**
@@ -78,7 +81,7 @@ export class AgingService {
     const zone = getStoreTimeZone(tenantId);
     const todayMs = utcDateOfYmd(localDate(new Date(), zone)).getTime();
 
-    const [collections, daysToPayOf, balances] = await Promise.all([
+    const [collections, { daysToPayOf }, balances] = await Promise.all([
       prisma.agentCollection.findMany({
         where: {
           status: { in: [...OPEN_COLLECTION_STATUSES] }, order: { status: 'delivered', deletedAt: null, deliveryDate: { not: null } },
@@ -86,13 +89,13 @@ export class AgingService {
         },
         select: { agentId: true, amount: true, allocatedAmount: true, orderId: true, order: { select: { deliveryDate: true } } },
       }),
-      this.daysToPayOf(),
+      this.loadDaysToPay(),
       prisma.agentBalance.findMany({ where: agentIds ? { agentId: { in: agentIds } } : undefined, select: { agentId: true, currentBalance: true, isBlocked: true } }),
     ]);
 
     const unpaid: UnpaidOrder[] = [];
     for (const c of collections) {
-      const amount = Money.sub(c.amount, Money.orZero(c.allocatedAmount));
+      const amount = outstandingOf(c);
       if (amount.lte(0)) continue;
       const ageDays = ageInDays(c.order.deliveryDate!, zone, todayMs);
       const daysToPay = daysToPayOf(c.agentId);
@@ -117,8 +120,7 @@ export class AgingService {
     // Delivered before the start of (today - days to pay) means more than that many days old
     const cutoff = (days: number) => startOfDay(shiftYmd(todayYmd, -days), zone);
 
-    const profiles = await prisma.deliveryPartnerProfile.findMany({ select: { userId: true, daysToPay: true } });
-    const own = new Map(profiles.map((p) => [p.userId, resolveDaysToPay(p)]));
+    const { own, daysToPayOf } = await this.loadDaysToPay();
     const late = (agentId: Prisma.AgentCollectionWhereInput['agentId'], days: number): Prisma.AgentCollectionWhereInput =>
       ({ agentId, order: { deliveryDate: { lt: cutoff(days) } } });
 
@@ -134,7 +136,7 @@ export class AgingService {
     };
     return {
       where,
-      daysToPayOf: (agentId: number) => own.get(agentId) ?? resolveDaysToPay(),
+      daysToPayOf,
       ageOf: (deliveredAt: Date) => ageInDays(deliveredAt, zone, todayMs),
     };
   }
@@ -287,7 +289,7 @@ export class AgingService {
       if (!o.overdue) continue;
       const t = byPartner.get(o.agentId) ?? { total: Money.ZERO, critical: Money.ZERO };
       t.total = t.total.plus(o.amount);
-      if (o.ageDays >= 8) t.critical = t.critical.plus(o.amount);
+      if (AGE_BUCKETS[o.bucket].late) t.critical = t.critical.plus(o.amount);
       byPartner.set(o.agentId, t);
     }
     if (byPartner.size === 0) return [];

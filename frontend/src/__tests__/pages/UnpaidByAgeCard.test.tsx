@@ -5,9 +5,6 @@ import { UnpaidByAgeCard } from '../../components/financial/UnpaidByAgeCard';
 import { useConfigStore } from '../../stores/configStore';
 import { CARD } from '../fixtures/collections';
 
-import { unpaidByAgeOf } from '../../services/collections.service';
-import { REPORT } from '../fixtures/collections';
-
 const open = (data: Parameters<typeof UnpaidByAgeCard>[0]['data']) => render(<MemoryRouter><UnpaidByAgeCard data={data} /></MemoryRouter>);
 beforeEach(() => { useConfigStore.setState({ currency: 'GHS' }); });
 
@@ -20,10 +17,6 @@ describe('Unpaid by age card (M5-T35, F-910)', () => {
     expect(screen.getByText('By age')).toBeInTheDocument();
     expect(screen.getByTestId('overdue-count')).toHaveTextContent('3 orders');
     expect(screen.getByRole('link', { name: 'Show them in Orders' })).toHaveAttribute('href', '/orders?status=unpaid_by_agent');
-  });
-
-  it('is built from the aging report: same totals, so the page needs one request', () => {
-    expect(unpaidByAgeOf(REPORT)).toEqual(CARD);
   });
 
   it('shows an empty state when nothing is unpaid, and a loading state before the data', () => {

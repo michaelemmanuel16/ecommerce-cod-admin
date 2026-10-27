@@ -19,6 +19,8 @@ import { parseYmd, utcDateOfYmd } from '../services/kpi/dates';
  * Money is a number or a plain decimal string.
  */
 export const MAX_PAYOUT_LINES = 500;
+/** Entries one payout to a person (rep or delivery agent) may tick: `entryIds` of POST /api/payouts. */
+export const MAX_PAYOUT_ENTRIES = 1000;
 
 const money = (label: string, opts: { min: 'positive' | 'zero' }) =>
   z.union([z.number(), z.string()]).transform((v, ctx) => {

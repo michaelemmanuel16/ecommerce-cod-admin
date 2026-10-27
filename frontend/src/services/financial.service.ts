@@ -154,18 +154,6 @@ export const financialService = {
     const response = await apiClient.delete(`/api/financial/expenses/${id}`);
     return { notice: response.data.notice ?? null };
   },
-  async downloadAgentAgingCSV(): Promise<void> {
-    const response = await apiClient.get('/api/financial/agent-aging/export/csv', {
-      responseType: 'blob'
-    });
-    const url = window.URL.createObjectURL(new Blob([response.data]));
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `agent-aging-report-${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-  },
 
   // General Ledger Methods
   async getAllGLAccounts(params?: {

@@ -222,13 +222,6 @@ export function emitOrderAssigned(io: SocketServer, order: any, userId: string, 
   safeEmit(io, roomNames.order(t, order.id), 'order:assigned', event);
 }
 
-export function emitDeliveryUpdated(io: SocketServer, delivery: any) {
-  const t = emitTenant(delivery);
-  if (!t) return;
-  emitToUser(io, delivery.agentId, 'delivery:updated', delivery, t);
-  safeEmit(io, roomNames.order(t, delivery.orderId), 'delivery:updated', delivery);
-}
-
 export function emitOrdersDeleted(io: SocketServer, orderIds: number[]) {
   const t = emitTenant();
   if (!t) return;
@@ -329,32 +322,3 @@ export function emitGLEntryCreated(io: SocketServer, entry: any, metadata?: any)
   emitToRoles(io, t, FINANCE_ROLES, 'gl:entry-created', event);
 }
 
-export function emitAgentBalanceUpdated(io: SocketServer, userId: number, balance: any) {
-  const t = emitTenant(balance);
-  if (!t) return;
-  const event = {
-    userId,
-    totalCollected: balance.totalCollected,
-    totalDeposited: balance.totalDeposited,
-    currentBalance: balance.currentBalance,
-    timestamp: new Date()
-  };
-
-  emitToUser(io, userId, 'agent:balance-updated', event, t);
-  emitToRoles(io, t, FINANCE_ROLES, 'agent:balance-updated', event);
-}
-
-export function emitDepositVerified(io: SocketServer, deposit: any) {
-  const t = emitTenant(deposit);
-  if (!t) return;
-  const event = {
-    id: deposit.id,
-    agentId: deposit.agentId,
-    amount: deposit.amount,
-    status: 'verified',
-    timestamp: new Date()
-  };
-
-  emitToUser(io, deposit.agentId, 'deposit:verified', event, t);
-  emitToRoles(io, t, FINANCE_ROLES, 'deposit:verified', event);
-}

@@ -1,4 +1,4 @@
-import type { AgingBucket, BucketKey, PartnerDeposit } from '../../../services/collections.service';
+import type { AgingBucket, PartnerDeposit } from '../../../services/collections.service';
 import type { TagTone } from '../../../components/ui-v2';
 import { AVATAR_TONES } from '../../../utils/people';
 import { plural } from '../../dashboard/format';
@@ -6,16 +6,12 @@ import { plural } from '../../dashboard/format';
 export const daysText = (n: number): string => plural(n, 'day');
 export const ordersText = (n: number): string => `${n.toLocaleString('en-GB')} ${n === 1 ? 'order' : 'orders'}`;
 
-/** The buckets that count as late: 8 days and older are coral in the card bars and in the partner table. */
-const LATE_KEYS: readonly BucketKey[] = ['8-14', '15+'];
-export const isLateBucket = (key: BucketKey): boolean => LATE_KEYS.includes(key);
-
-/** What the 8 days and older buckets of a bucket list hold: a partner's `buckets` or the summary's `bucketTotals`. */
+/** What the late buckets (the server's `late` flag: 8 days and older) of a bucket list hold: a partner's `buckets` or the summary's `bucketTotals`. */
 export const lateOf = (buckets: AgingBucket[]): { amount: number; orders: number } =>
-  buckets.filter((b) => isLateBucket(b.key)).reduce((t, b) => ({ amount: t.amount + b.amount, orders: t.orders + b.orders }), { amount: 0, orders: 0 });
+  buckets.filter((b) => b.late).reduce((t, b) => ({ amount: t.amount + b.amount, orders: t.orders + b.orders }), { amount: 0, orders: 0 });
 
 /** Bar colour per age bucket, as the mockup: fresh is mint, then gold, the late ones coral. */
-export const bucketColor = (key: BucketKey): string => (isLateBucket(key) ? 'var(--coral)' : key === '4-7' ? 'var(--gold)' : 'var(--mint)');
+export const bucketColor = (b: Pick<AgingBucket, 'key' | 'late'>): string => (b.late ? 'var(--coral)' : b.key === '4-7' ? 'var(--gold)' : 'var(--mint)');
 
 export const toneOf = (id: number): (typeof AVATAR_TONES)[number] => AVATAR_TONES[id % AVATAR_TONES.length];
 

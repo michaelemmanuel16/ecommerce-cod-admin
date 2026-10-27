@@ -174,7 +174,7 @@ describe('GET /api/financial/overview on the NUMBERS fixture', () => {
     const body = (await overview(owner)).body;
     const out = tileOf(body, 'cashOutstanding');
     const aging = await runInTenant(a, () => agingService.getUnpaidByAge());
-    expect(body.unpaidByAge).toBeUndefined(); // the aging card has its own endpoint
+    expect(body.unpaidByAge).toEqual(aging); // the card reads the same answer: the page makes one aging scan
     expect(out.value).toBe(aging.total.amount);
     expect(out.detail).toEqual({ orders: aging.total.orders, overdueOrders: aging.overdue.orders });
     expect(out.dateBasis).toBe('today');

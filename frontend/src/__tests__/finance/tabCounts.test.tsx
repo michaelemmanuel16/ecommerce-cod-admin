@@ -5,14 +5,14 @@ import { useTabCounts } from '../../pages/financial/tabCounts';
 import { useDeposits } from '../../pages/financial/profit/blocks';
 import { clearBlockCache } from '../../pages/financial/profit/useBlock';
 
-const svc = vi.hoisted(() => ({ deposits: vi.fn(), repsOwed: vi.fn() }));
+const svc = vi.hoisted(() => ({ deposits: vi.fn(), repsOwedCount: vi.fn() }));
 vi.mock('../../services/collections.service', async (orig) => ({ ...(await orig<typeof import('../../services/collections.service')>()), collectionsService: { deposits: svc.deposits } }));
-vi.mock('../../services/payouts.service', () => ({ payoutsService: { repsOwed: svc.repsOwed } }));
+vi.mock('../../services/payouts.service', () => ({ payoutsService: { repsOwedCount: svc.repsOwedCount } }));
 
 beforeEach(() => {
   clearBlockCache();
   svc.deposits.mockReset().mockResolvedValue([{ id: 1, status: 'pending' }, { id: 2, status: 'pending' }, { id: 3, status: 'rejected' }]);
-  svc.repsOwed.mockReset().mockResolvedValue({ totals: { repsOwed: 3 } });
+  svc.repsOwedCount.mockReset().mockResolvedValue(3);
 });
 
 describe('useTabCounts', () => {
@@ -28,7 +28,7 @@ describe('useTabCounts', () => {
     const { result } = renderHook(() => useTabCounts(false));
     await waitFor(() => expect(result.current.collections).toBe(2));
     expect(result.current.reps).toBeUndefined();
-    expect(svc.repsOwed).not.toHaveBeenCalled();
+    expect(svc.repsOwedCount).not.toHaveBeenCalled();
   });
 
   it('leaves a count out when its call fails, never 0', async () => {

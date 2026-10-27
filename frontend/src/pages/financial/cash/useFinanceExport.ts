@@ -14,6 +14,7 @@ export const ITEMS: Array<{ id: string; report: ExportReport; format: ExportForm
 
 export type ExportItem = (typeof ITEMS)[number];
 export const PROFIT_LOSS_CSV = ITEMS.find((i) => i.id === 'profit-loss-csv')!;
+export const AGENT_AGING_CSV = ITEMS.find((i) => i.id === 'agent-aging-csv')!;
 
 /** Runs one Finance export as a real file: the ranged ones take the Finance dates. Shared by the header menu and the P&L card. */
 export function useFinanceExport() {

@@ -35,6 +35,7 @@ import {
   ManualPayoutInput, ManualPreviewInput, manualPayoutSchema, manualPreviewSchema, PartnerPayoutInput, partnerPayoutSchema,
 } from '../validators/partnerPayoutSchema';
 import { formatIssues } from '../tools/shared';
+import { ymdOfUtc } from './kpi/dates';
 
 /**
  * Who records the payout. `auditChannel` is set by the API route, which writes the one audit row of the call here;
@@ -80,7 +81,7 @@ export function settlementView(s: SettlementWithLines, extra: { replayed?: boole
     id: s.id,
     partnerId: s.partnerId,
     reference: s.reference,
-    payoutDate: s.payoutDate.toISOString().slice(0, 10),
+    payoutDate: ymdOfUtc(s.payoutDate),
     payoutAmount: Money.toApi(s.payoutAmount),
     expectedNet: Money.toApi(s.expectedNet),
     shortAmount: Money.toApi(s.shortAmount),
@@ -111,6 +112,12 @@ function replayView(s: SettlementWithLines, currency: string) {
 
 // ---- Reading the candidate orders ----
 
+/** Add `value` to the list under `key`, starting the list when there is none. */
+function pushTo<V>(map: Map<string, V[]>, key: string, value: V): void {
+  const list = map.get(key);
+  if (list) list.push(value); else map.set(key, [value]);
+}
+
 /** The partner's orders the lines may point at, in the shape the pure matcher wants. */
 async function loadMatchIndex(tx: TransactionClient, partnerId: number, lines: PartnerPayoutInput['lines']): Promise<MatchIndex> {
   const ids = new Set<number>();
@@ -139,9 +146,9 @@ async function loadMatchIndex(tx: TransactionClient, partnerId: number, lines: P
       collection: c ? { id: c.id, status: c.status, amount: Money.parse(c.amount), allocatedAmount: Money.orZero(c.allocatedAmount), collectionDate: c.collectionDate } : null,
     };
     index.byId.set(o.id, candidate);
-    if (o.externalOrderId) index.byExternalId.set(o.externalOrderId, [...(index.byExternalId.get(o.externalOrderId) ?? []), candidate]);
+    if (o.externalOrderId) pushTo(index.byExternalId, o.externalOrderId, candidate);
     if (candidate.phone) {
-      for (const v of phoneLookupVariants(candidate.phone)) index.byPhone.set(v, [...(index.byPhone.get(v) ?? []), candidate]);
+      for (const v of phoneLookupVariants(candidate.phone)) pushTo(index.byPhone, v, candidate);
     }
   }
   return index;
@@ -475,7 +482,7 @@ export async function recordManualPayout(actor: SettlementActor, input: ManualPa
     });
     return settlementView(updated, { warnings: plan.remaining.gt(0) ? [unappliedWarning(currency, plan.remaining, 'will be')] : [] });
   }, (winner) => {
-    throw new AppError(`This reference was used on ${winner.payoutDate.toISOString().slice(0, 10)}`, 409, 'REFERENCE_USED');
+    throw new AppError(`This reference was used on ${ymdOfUtc(winner.payoutDate)}`, 409, 'REFERENCE_USED');
   });
 
   await auditService.record({

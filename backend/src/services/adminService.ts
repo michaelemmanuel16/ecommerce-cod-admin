@@ -27,6 +27,7 @@ import { changeStoreCurrency } from './fxService';
 import { parseOperatingHours } from './kpi/workingTime';
 import { normalizeInternationalPhone } from '../utils/phone';
 import { isValidTimeZone } from '../utils/timeZone';
+import { defaultRolePermissions } from '../config/defaultRolePermissions';
 
 export const adminService = {
   /**
@@ -357,87 +358,7 @@ export const adminService = {
   },
 
   getDefaultPermissions() {
-    return {
-      super_admin: {
-        users: ['create', 'view', 'update', 'delete'],
-        orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign', 'force_status'],
-        customers: ['create', 'view', 'update', 'delete', 'export'],
-        products: ['create', 'view', 'update', 'delete', 'update_stock'],
-        financial: ['view', 'create', 'update', 'delete'],
-        analytics: ['view', 'export'],
-        marketing: ['view'],
-        workflows: ['create', 'view', 'update', 'delete', 'execute'],
-        settings: ['view', 'update'],
-        audit: ['view'],
-      },
-      admin: {
-        users: ['create', 'view', 'update', 'delete'],
-        orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign', 'update_status'],
-        customers: ['create', 'view', 'update', 'delete', 'export'],
-        products: ['create', 'view', 'update', 'delete', 'update_stock'],
-        financial: ['view', 'create'],
-        analytics: ['view', 'export'],
-        marketing: ['view'],
-        workflows: ['create', 'view', 'update', 'delete', 'execute'],
-        settings: ['view'],
-        audit: ['view'],
-      },
-      manager: {
-        users: [],
-        orders: ['view', 'update', 'bulk_import', 'assign'],
-        customers: ['create', 'view', 'update', 'delete', 'export'],
-        products: ['view'],
-        financial: ['view'],
-        analytics: ['view', 'export'],
-        marketing: ['view'],
-        workflows: ['view', 'execute'],
-        settings: [],
-      },
-      sales_rep: {
-        users: [],
-        orders: ['create', 'view', 'update'],
-        customers: ['create', 'view', 'update'],
-        products: ['view'],
-        financial: [],
-        analytics: ['view'],
-        marketing: [],
-        workflows: [],
-        settings: [],
-      },
-      inventory_manager: {
-        users: [],
-        orders: ['view', 'update_status'],
-        customers: ['view'],
-        products: ['create', 'view', 'update', 'delete', 'update_stock'],
-        financial: [],
-        analytics: ['view'],
-        marketing: [],
-        workflows: [],
-        settings: [],
-      },
-      delivery_agent: {
-        users: [],
-        orders: ['view', 'update'],
-        customers: ['view'],
-        products: ['view'],
-        financial: ['create'],
-        analytics: ['view'],
-        marketing: [],
-        workflows: [],
-        settings: [],
-      },
-      accountant: {
-        users: [],
-        orders: ['view'],
-        customers: ['view'],
-        products: ['view'],
-        financial: ['view', 'create'],
-        analytics: ['view', 'export'],
-        marketing: [],
-        workflows: [],
-        settings: [],
-      },
-    };
+    return defaultRolePermissions();
   },
 
   async getUserById(requester: Requester, userId: number) {

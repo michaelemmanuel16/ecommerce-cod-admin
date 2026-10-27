@@ -82,6 +82,12 @@ export const payoutsService = {
     return response.data;
   },
 
+  /** GET /api/payouts/owed/count: how many reps are owed something, for the tab count (no table). */
+  async repsOwedCount(): Promise<number> {
+    const response = await apiClient.get('/api/payouts/owed/count', { skipCache: true, quiet: true });
+    return response.data.repsOwed;
+  },
+
   async owed(payeeId: number): Promise<OwedPreview> {
     const response = await apiClient.get(`/api/payouts/owed/${payeeId}`, { skipCache: true, quiet: true });
     return response.data;
