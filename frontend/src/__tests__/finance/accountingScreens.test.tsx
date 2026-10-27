@@ -13,6 +13,7 @@ const svc = vi.hoisted(() => ({
   getAccountLedger: vi.fn(),
   getTrialBalance: vi.fn(),
   getExpenseCategories: vi.fn(),
+  voidJournalEntry: vi.fn(),
 }));
 vi.mock('../../services/financial.service', async (orig) => ({
   ...(await orig<typeof import('../../services/financial.service')>()),
@@ -108,6 +109,24 @@ describe('Accounting tab', () => {
     await screen.findByTestId('trial-balance');
     expect(svc.getAllGLAccounts).toHaveBeenCalledTimes(1);
     expect(svc.getTrialBalance).toHaveBeenCalledTimes(1);
+  });
+
+  it('a void loads the chart balances and the trial balance again, not only the ledger (M5 QA)', async () => {
+    svc.voidJournalEntry.mockResolvedValue({});
+    render(<AccountingAnalysis />);
+    const ledger = await screen.findByRole('table', { name: 'Account ledger' });
+    await waitFor(() => expect(within(ledger).getAllByRole('button', { name: 'Void' })).toHaveLength(2));
+    expect(svc.getAllGLAccounts).toHaveBeenCalledTimes(1);
+    expect(svc.getTrialBalance).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(within(ledger).getAllByRole('button', { name: 'Void' })[0]);
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Reason'), { target: { value: 'wrong account' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Void entry' }));
+
+    await waitFor(() => expect(svc.voidJournalEntry).toHaveBeenCalledWith(101, 'wrong account'));
+    await waitFor(() => expect(svc.getAllGLAccounts).toHaveBeenCalledTimes(2));
+    expect(svc.getTrialBalance).toHaveBeenCalledTimes(2);
   });
 
   it('asks for the whole chart in one request, within what the endpoint allows (M5 UI fix V1)', async () => {

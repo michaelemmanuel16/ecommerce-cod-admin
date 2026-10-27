@@ -14,13 +14,15 @@ interface AccountLedgerProps {
     /** From the chart of accounts: the ledger answer does not carry it. */
     accountType?: string;
     refreshKey?: number;
+    /** After a void; the parent changes refreshKey, which loads this ledger again. */
+    onVoided?: () => void;
 }
 
 const PAGE_SIZE = 20;
 const TYPE_NAMES: Record<string, string> = { asset: 'Asset', liability: 'Liability', equity: 'Equity', revenue: 'Revenue', expense: 'Expense' };
 
 /** The ledger of one account (finance.html #ledBody): date, entry, description, debit, credit and the running balance. */
-export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, accountType, refreshKey = 0 }) => {
+export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, accountType, refreshKey = 0, onVoided }) => {
     const [data, setData] = useState<LedgerLine[]>([]);
     const [account, setAccount] = useState<AccountLedgerResponse['account'] | null>(null);
     const [loading, setLoading] = useState(true);
@@ -143,7 +145,7 @@ export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, account
             <VoidJournalModal
                 entry={voiding}
                 onClose={() => setVoiding(null)}
-                onVoided={() => { setVoiding(null); fetchLedger(); }}
+                onVoided={() => { setVoiding(null); if (onVoided) onVoided(); else fetchLedger(); }}
             />
         </Card>
     );

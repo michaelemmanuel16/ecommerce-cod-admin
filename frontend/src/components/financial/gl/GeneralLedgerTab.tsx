@@ -10,12 +10,15 @@ interface GeneralLedgerTabProps {
 /** General ledger (finance.html #a-gl): the chart of accounts beside the ledger of the picked account. */
 export const GeneralLedgerTab: React.FC<GeneralLedgerTabProps> = ({ refreshKey = 0 }) => {
     const [selected, setSelected] = useState<{ id: number; accountType: string } | null>(null);
+    // A void from the ledger changes balances too, so it reloads the chart and the trial balance like a posted entry
+    const [voids, setVoids] = useState(0);
+    const key = refreshKey + voids;
 
     return (
         <div className="grid glgrid">
-            <AccountsList selectedId={selected?.id ?? null} onSelectAccount={setSelected} refreshKey={refreshKey} />
+            <AccountsList selectedId={selected?.id ?? null} onSelectAccount={setSelected} refreshKey={key} />
             {/* keyed by account: a pick starts a fresh ledger on page 1, so it makes one request */}
-            {selected && <AccountLedger key={selected.id} accountId={selected.id} accountType={selected.accountType} refreshKey={refreshKey} />}
+            {selected && <AccountLedger key={selected.id} accountId={selected.id} accountType={selected.accountType} refreshKey={key} onVoided={() => setVoids((v) => v + 1)} />}
         </div>
     );
 };
