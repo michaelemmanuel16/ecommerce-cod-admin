@@ -50,3 +50,9 @@ The two gaps (330 and 170) equal how far `AgentBalance.totalCollected` sits abov
 - October fees: the copy has no fee rule (`fee_rules` is empty), so 562 company-1 outcomes since 1 October are left unstamped (442 delivered, 45 returned, the rest failed). Stamping 0 would lock them. Enter the rules first, then run `--apply`.
 - The fixture tenant (`fixture-numbers`, 376 drafts, GH₵92,000) shows cash held above collected for four partners (seed data). The limit check fails there. It is not a real tenant.
 - 8 drafts sit on cancelled, returned or failed orders (GH₵1,200.00). They are not in aging. There is no void status, so they are left for an owner decision.
+
+## Owner decisions (2026-10-27)
+
+1. Fee rules come first. The owner enters the real fee rules in production. Then the script runs as a dry run on production, the owner checks the counts and approves, and only then does it run with `--apply`. A run before the rules exist stamps nothing; a later run stamps only what is still missing.
+2. Orders whose partner has no fee rule are left alone. The script never stamps a fee of 0, because 0 locks the order and understates costs.
+3. The 1,315 drafts on delivered orders stay unpaid. They clear only when a partner payout is recorded (Record payout screen, or later from portal exports). No bulk clear.
