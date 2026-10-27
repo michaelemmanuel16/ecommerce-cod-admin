@@ -36,6 +36,15 @@ interface FinancialState {
   setDateRange: (startDate?: string, endDate?: string) => void;
 }
 
+/** This month to the end of today: the Finance range when nothing is picked. */
+function monthToDate(): { startDate: string; endDate: string } {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const endOfToday = new Date(now);
+  endOfToday.setHours(23, 59, 59, 999);
+  return { startDate: `${now.getFullYear()}-${month}-01`, endDate: endOfToday.toISOString() };
+}
+
 export const useFinancialStore = create<FinancialState>((set, get) => {
   const socket = getSocket();
   if (socket) {
@@ -66,17 +75,7 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
     expensesTotal: 0,
     expenseBreakdown: [],
 
-    dateRange: (() => {
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const endOfToday = new Date(now);
-      endOfToday.setHours(23, 59, 59, 999);
-      return {
-        startDate: `${year}-${month}-01`,
-        endDate: endOfToday.toISOString()
-      };
-    })(),
+    dateRange: monthToDate(),
     expensesLoading: false,
     expensesPagination: null,
 
@@ -151,8 +150,9 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
       }
     },
 
+    // Clearing the dates goes back to this month to today, the range the Finance header and cards fall back to
     setDateRange: (startDate?: string, endDate?: string) => {
-      set({ dateRange: { startDate, endDate } });
+      set({ dateRange: startDate || endDate ? { startDate, endDate } : monthToDate() });
     }
   };
 });

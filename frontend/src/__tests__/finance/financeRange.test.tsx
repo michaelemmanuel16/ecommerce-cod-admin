@@ -24,3 +24,14 @@ describe('useFinanceRange', () => {
     expect(to).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 });
+
+describe('setDateRange', () => {
+  it('clearing the dates goes back to this month to today, so the ledger and the header use the same days (M5 QA)', () => {
+    useFinancialStore.getState().setDateRange('2026-09-03', '2026-09-09');
+    useFinancialStore.getState().setDateRange(undefined, undefined);
+    const { startDate, endDate } = useFinancialStore.getState().dateRange;
+    expect(startDate).toMatch(/^\d{4}-\d{2}-01$/);
+    expect(endDate).toBeTruthy();
+    expect(renderHook(() => useFinanceRange()).result.current.from).toBe(startDate);
+  });
+});
