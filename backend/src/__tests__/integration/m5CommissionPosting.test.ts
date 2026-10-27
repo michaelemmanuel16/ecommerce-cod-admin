@@ -12,6 +12,7 @@ import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import { postEntry } from '../../services/commissionService';
 import { applyCommissionBackfill, commissionLedgerCheck, planCommissionBackfill } from '../../services/commissionBackfillService';
 import { createTenant, deleteTenantRows } from './helpers/twoTenants';
+import { accountBalance } from './helpers/ledgerPost';
 
 jest.mock('../../services/workflowService', () => ({
   __esModule: true,
@@ -35,7 +36,7 @@ const mkOrder = async (status: any, extra: Record<string, unknown> = {}) =>
   })).id;
 const mkEntry = (orderId: number | null, userId: number, amount: number, extra: Record<string, unknown> = {}) =>
   prismaBase.commissionEntry.create({ data: { tenantId, orderId, userId, kind: 'base', status: 'earned', amount, earnedAt: new Date('2026-10-05T10:00:00Z'), ...extra } as any });
-const balance = async (code: string) => Number((await prismaBase.account.findFirstOrThrow({ where: { tenantId, code } })).currentBalance);
+const balance = (code: string) => accountBalance(tenantId, code);
 const post = (entryId: number) => inTenant(() => prisma.$transaction((tx) => postEntry(tx, entryId, ADMIN.userId!)));
 const jeFor = (entryId: number) => prismaBase.journalEntry.findMany({
   where: { tenantId, sourceType: 'commission_accrual', sourceId: entryId },

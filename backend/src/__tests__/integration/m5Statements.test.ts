@@ -10,6 +10,7 @@ import { prismaBase } from '../../utils/prisma';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import { postEntry } from './helpers/ledgerPost';
 import { createTenant, deleteTenantRows, mkUser } from './helpers/twoTenants';
+import { bearer } from './helpers/superAdminToken';
 
 jest.setTimeout(120_000);
 
@@ -20,7 +21,6 @@ let ownerB: { id: number; token: string };
 let c: string;
 let ownerC: { id: number; token: string };
 let agentA: { id: number; token: string };
-const auth = (u: { token: string }) => ({ Authorization: `Bearer ${u.token}` });
 
 beforeAll(async () => {
   a = (await createTenant('Statements A')).id;
@@ -65,7 +65,7 @@ afterAll(async () => {
   await prismaBase.$disconnect();
 });
 
-const pl = (who: { token: string }, q = 'asOf=2026-10-17') => request(app).get(`/api/financial/monthly-pl?${q}`).set(auth(who));
+const pl = (who: { token: string }, q = 'asOf=2026-10-17') => request(app).get(`/api/financial/monthly-pl?${q}`).set(bearer(who.token));
 
 describe('GET /api/financial/monthly-pl', () => {
   it('returns Aug, Sep, same days last month and to-date', async () => {
@@ -142,7 +142,7 @@ describe('GET /api/financial/monthly-pl', () => {
 
 describe('statements on /profit-loss and /balance-sheet', () => {
   it('income statement lines for 1-17 Oct', async () => {
-    const res = await request(app).get('/api/financial/profit-loss?startDate=2026-10-01&endDate=2026-10-17').set(auth(ownerA));
+    const res = await request(app).get('/api/financial/profit-loss?startDate=2026-10-01&endDate=2026-10-17').set(bearer(ownerA.token));
     expect(res.status).toBe(200);
     expect(res.body.statement).toMatchObject({
       revenue: '3000.00', productCost: '900.00', grossProfit: '2100.00', grossMarginPct: 70,
@@ -153,7 +153,7 @@ describe('statements on /profit-loss and /balance-sheet', () => {
   });
 
   it('balance sheet balances with 3010 and Result to date', async () => {
-    const res = await request(app).get('/api/financial/balance-sheet?asOfDate=2026-10-17').set(auth(ownerA));
+    const res = await request(app).get('/api/financial/balance-sheet?asOfDate=2026-10-17').set(bearer(ownerA.token));
     const s = res.body.statement;
     expect(s.equity.ownersEquity).toBe('5000.00');
     expect(s.equity.resultToDate).toBe('-398.00'); // 6000 - 480 - 850 - 5068
@@ -165,13 +165,13 @@ describe('statements on /profit-loss and /balance-sheet', () => {
       });
 
   it('a date with no entries returns zeros', async () => {
-    const res = await request(app).get('/api/financial/balance-sheet?asOfDate=2020-01-01').set(auth(ownerA));
+    const res = await request(app).get('/api/financial/balance-sheet?asOfDate=2020-01-01').set(bearer(ownerA.token));
     const s = res.body.statement;
     expect(s.assets.total).toBe('0.00');
     expect(s.equity.total).toBe('0.00');
     expect(s.equity.hint).not.toBeNull();
     expect(s.isBalanced).toBe(true);
-    const is = await request(app).get('/api/financial/profit-loss?startDate=2020-01-01&endDate=2020-01-31').set(auth(ownerA));
+    const is = await request(app).get('/api/financial/profit-loss?startDate=2020-01-01&endDate=2020-01-31').set(bearer(ownerA.token));
     expect(is.body.statement.revenue).toBe('0.00');
     expect(is.body.statement.netMarginPct).toBeNull();
   });
@@ -179,7 +179,7 @@ describe('statements on /profit-loss and /balance-sheet', () => {
 
 describe('one ledger reader and the "not split out" rule', () => {
   it('old and new numbers of one response agree, retired 1020 and 5040 included', async () => {
-    const res = await request(app).get('/api/financial/balance-sheet?asOfDate=2026-10-17').set(auth(ownerA));
+    const res = await request(app).get('/api/financial/balance-sheet?asOfDate=2026-10-17').set(bearer(ownerA.token));
     const old = res.body;
     const s = res.body.statement;
     expect(Number(old.assets.total)).toBe(Number(s.assets.total));
@@ -189,7 +189,7 @@ describe('one ledger reader and the "not split out" rule', () => {
     expect(old.isBalanced).toBe(true);
     expect(s.isBalanced).toBe(true);
 
-    const pl = (await request(app).get('/api/financial/profit-loss?startDate=2026-08-01&endDate=2026-08-31').set(auth(ownerA))).body;
+    const pl = (await request(app).get('/api/financial/profit-loss?startDate=2026-08-01&endDate=2026-08-31').set(bearer(ownerA.token))).body;
     expect(Number(pl.netIncome)).toBe(Number(pl.statement.netProfit));
     expect(pl.expenses.accounts.map((x: any) => x.code)).toContain('5040');
     expect(pl.statement.deliveryFees).toBe('80.00');

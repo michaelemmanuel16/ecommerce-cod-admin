@@ -9,12 +9,12 @@ import { formatCurrency, formatDate } from '../../utils/format';
 import { toCents } from '../../utils/money';
 import { initials } from '../../utils/people';
 import { ListSkeleton } from '../deliveries/ListSkeleton';
+import { monthName } from '../dashboard/format';
 import { toneOf } from './collections/model';
 import { repTiles } from './repModel';
 
 const HISTORY_ROWS = 10;
 const repName = (r: { firstName: string; lastName: string }): string => `${r.firstName} ${r.lastName}`;
-const monthName = (ym: string): string => new Date(`${ym}-01T12:00:00`).toLocaleString('en-GB', { month: 'long' });
 
 /**
  * Rep commissions tab (F-914, M5-T38), laid out as the v2 mockup: four tiles, a table of every rep with what was earned, paid
@@ -39,7 +39,7 @@ export function RepCommissions() {
 
   const reps = data?.reps ?? [];
   const totals = data?.totals;
-  const month = data ? monthName(data.month) : '';
+  const month = data ? monthName(`${data.month}-01`) : '';
   const { perOrder, targetRewards, repsPaid } = repTiles(reps);
   const skel = <Skeleton width={90} height={28} />;
 

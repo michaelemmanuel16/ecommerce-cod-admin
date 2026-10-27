@@ -13,6 +13,7 @@ import { runInTenant } from '../../utils/tenantContext';
 import * as fx from './helpers/settlementFixtures';
 import { createTenant, deleteTenantRows, mkUser } from './helpers/twoTenants';
 import { bearer } from './helpers/superAdminToken';
+import { accountBalance } from './helpers/ledgerPost';
 
 jest.setTimeout(180_000);
 
@@ -26,8 +27,7 @@ let refSeq = 0;
 const world = () => ({ tenantId, customerId, actorId: owner.id });
 const mkPartner = async (label: string) => (await fx.mkPartner(tenantId, label, { fees: { delivered: 25 } })).id;
 const deliver = (partnerId: number, total = 200) => fx.mkDeliveredOrder(world(), partnerId, total);
-const balance = async (code: string) =>
-  Number((await prismaBase.account.findUniqueOrThrow({ where: { tenantId_code: { tenantId, code } } })).currentBalance);
+const balance = (code: string) => accountBalance(tenantId, code);
 const collectionOf = (orderId: number) => prismaBase.agentCollection.findUniqueOrThrow({ where: { orderId } });
 const ref = (label: string) => `${label}-${++refSeq}`;
 const manual = (token: string, body: Record<string, unknown>) => request(app).post('/api/partner-settlements/manual').set(bearer(token)).send(body);

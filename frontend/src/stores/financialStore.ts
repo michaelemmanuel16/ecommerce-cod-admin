@@ -12,9 +12,6 @@ import toast from 'react-hot-toast';
 interface FinancialFilters {
   startDate?: string;
   endDate?: string;
-  type?: string;
-  status?: string;
-  agentId?: string;
   category?: string;
   search?: string;
   page?: number;
@@ -28,13 +25,8 @@ interface FinancialState {
   expenseBreakdown: ExpenseCategory[];
 
   dateRange: { startDate?: string; endDate?: string };
-  error: string | null;
-  loadingStates: {
-    expenses: boolean;
-  };
-  pagination: {
-    expenses: Paging | null;
-  };
+  expensesLoading: boolean;
+  expensesPagination: Paging | null;
 
   recordExpense: (expense: ExpenseInput) => Promise<void>;
   fetchExpenses: (filters?: FinancialFilters) => Promise<void>;
@@ -85,13 +77,8 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
         endDate: endOfToday.toISOString()
       };
     })(),
-    error: null,
-    loadingStates: {
-      expenses: false,
-    },
-    pagination: {
-      expenses: null,
-    },
+    expensesLoading: false,
+    expensesPagination: null,
 
     recordExpense: async (expense) => {
       try {
@@ -106,21 +93,18 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
     },
 
     fetchExpenses: async (filters?: FinancialFilters) => {
-      set((state) => ({ loadingStates: { ...state.loadingStates, expenses: true }, error: null }));
+      set({ expensesLoading: true });
       try {
         const response = await financialService.getExpenses(filters);
-        set((state) => ({
+        set({
           expenses: response.expenses,
           expensesTotal: Number(response.totalAmount ?? 0),
-          pagination: {
-            ...state.pagination,
-            expenses: response.pagination
-          },
-          loadingStates: { ...state.loadingStates, expenses: false }
-        }));
+          expensesPagination: response.pagination,
+          expensesLoading: false
+        });
       } catch (error: any) {
         const errorMessage = error.response?.data?.message || 'Failed to fetch expenses';
-        set((state) => ({ error: errorMessage, loadingStates: { ...state.loadingStates, expenses: false } }));
+        set({ expensesLoading: false });
         toast.error(errorMessage);
         throw error;
       }

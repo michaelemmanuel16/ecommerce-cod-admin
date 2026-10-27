@@ -23,9 +23,9 @@ const storeState = vi.hoisted(() => ({
   expenses: [] as any[],
   expensesTotal: 0,
   expenseBreakdown: [] as any[],
-  pagination: { expenses: { page: 1, totalPages: 1, total: 0 } },
+  expensesPagination: { page: 1, totalPages: 1, total: 0 },
   dateRange: {},
-  loadingStates: { expenses: false },
+  expensesLoading: false,
   fetchExpenses: vi.fn(),
   fetchExpenseBreakdown: vi.fn(),
   deleteExpense: vi.fn(),
@@ -153,7 +153,7 @@ describe('expenses tab', () => {
     storeState.expenses = [row({}), row({ id: '2', description: 'Meta daily spend', source: 'meta', locked: true, paidFrom: null })];
     storeState.expensesTotal = 100;
     storeState.expenseBreakdown = [{ category: 'Transport', totalAmount: 100, count: 2 }];
-    storeState.pagination = { expenses: { page: 1, totalPages: 1, total: 2 } };
+    storeState.expensesPagination = { page: 1, totalPages: 1, total: 2 };
   });
 
   it('a locked system row has no edit or delete, and a lock instead', () => {

@@ -23,13 +23,17 @@ export const mkCustomer = async (tenantId: string, phoneNumber: string) =>
     data: { firstName: 'Ama', lastName: 'Mensah', phoneNumber, address: '3 Test Rd', state: 'Greater Accra', area: 'Accra', tenantId },
   })).id;
 
-/** A delivery partner of the tenant, with a flat fee rule per outcome when `fees` says so. Returns its id (and its API token). */
+/**
+ * A delivery partner of the tenant, with a flat fee rule per outcome when `fees` says so, a profile with `daysToPay` and
+ * a `phone` number when given. Returns its id (and its API token).
+ */
 export async function mkPartner(
   tenantId: string,
   label: string,
-  opts: { kind?: 'person' | 'company'; fees?: { delivered?: number; failed?: number } } = {},
+  opts: { kind?: 'person' | 'company'; fees?: { delivered?: number; failed?: number }; daysToPay?: number; phone?: string | null } = {},
 ) {
-  const partner = await mkUser(tenantId, label, 'delivery_agent', { kind: opts.kind ?? 'person' });
+  const partner = await mkUser(tenantId, label, 'delivery_agent', { kind: opts.kind ?? 'person', ...(opts.phone !== undefined && { phoneNumber: opts.phone }) });
+  if (opts.daysToPay !== undefined) await prismaBase.deliveryPartnerProfile.create({ data: { tenantId, userId: partner.id, daysToPay: opts.daysToPay } });
   const validFrom = new Date('2026-01-01');
   if (opts.fees?.delivered !== undefined) await prismaBase.feeRule.create({ data: { tenantId, partnerUserId: partner.id, outcome: 'delivered', amount: opts.fees.delivered, validFrom } });
   if (opts.fees?.failed !== undefined) await prismaBase.feeRule.create({ data: { tenantId, partnerUserId: partner.id, outcome: 'failed', amount: opts.fees.failed, validFrom } });

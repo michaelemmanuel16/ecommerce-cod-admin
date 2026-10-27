@@ -10,6 +10,7 @@ import { transitionOrder, TransitionActor } from '../../services/orderStateMachi
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import { GL_ACCOUNTS } from '../../config/glAccounts';
 import { createTenant, deleteTenantRows } from './helpers/twoTenants';
+import { accountBalance } from './helpers/ledgerPost';
 
 jest.setTimeout(120_000);
 
@@ -31,8 +32,7 @@ const feeEntries = (orderId: number) =>
     orderBy: { id: 'asc' },
     include: { transactions: { include: { account: true } } },
   });
-const balance = async (code: string) =>
-  Number((await prismaBase.account.findUniqueOrThrow({ where: { tenantId_code: { tenantId, code } } })).currentBalance);
+const balance = (code: string) => accountBalance(tenantId, code);
 const linesOn = async (code: string) =>
   prismaBase.accountTransaction.findMany({ where: { tenantId, account: { code } } });
 

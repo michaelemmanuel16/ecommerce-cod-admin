@@ -13,7 +13,9 @@ import { transitionOrder, TransitionActor } from '../../services/orderStateMachi
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import { refusalCost } from '../../services/finance/profitService';
 import { postEntry } from './helpers/ledgerPost';
+import { ymdOfUtc } from '../../services/kpi/dates';
 import { createTenant, deleteTenantRows, mkUser } from './helpers/twoTenants';
+import { bearer } from './helpers/superAdminToken';
 import { mkCustomer, mkOrder, mkPartner, SettlementWorld } from './helpers/settlementFixtures';
 
 jest.setTimeout(240_000);
@@ -30,11 +32,10 @@ let noRule: number;
 let copybookId: number;
 let pensId: number;
 let guideId: number;
-const auth = (u: { token: string }) => ({ Authorization: `Bearer ${u.token}` });
 const ADMIN: TransitionActor = { kind: 'user', userId: undefined, role: 'super_admin' };
 
 const get = (path: string, who: { token: string }, from: string, to: string) =>
-  request(app).get(`/api/financial/${path}?from=${from}&to=${to}`).set(auth(who));
+  request(app).get(`/api/financial/${path}?from=${from}&to=${to}`).set(bearer(who.token));
 const mkProduct = (tenantId: string, sku: string, cogs: number, productType = 'physical') =>
   prismaBase.product.create({ data: { tenantId, sku, name: sku, category: 'test', price: 100, stockQuantity: 0, cogs, productType } }).then((p) => p.id);
 
@@ -102,7 +103,7 @@ describe('F-924 profit by product', () => {
 
   it('table total equals the income statement', async () => {
     const table = (await get('profit-by-product', ownerA, '2026-10-01', '2026-10-17')).body;
-    const statement = (await request(app).get('/api/financial/profit-loss?startDate=2026-10-01&endDate=2026-10-17').set(auth(ownerA))).body.statement;
+    const statement = (await request(app).get('/api/financial/profit-loss?startDate=2026-10-01&endDate=2026-10-17').set(bearer(ownerA.token))).body.statement;
     expect(table.totals.revenue).toBe(statement.revenue);
     expect(table.totals.productCost).toBe(statement.productCost);
     expect(table.netProfit).toBe(statement.netProfit);
@@ -143,11 +144,11 @@ describe('F-924 profit by product', () => {
   });
 
   it('needs from and to', async () => {
-    expect((await request(app).get('/api/financial/profit-by-product').set(auth(ownerA))).status).toBe(400);
+    expect((await request(app).get('/api/financial/profit-by-product').set(bearer(ownerA.token))).status).toBe(400);
   });
 
   it('trend: profit of each product for the last 3 months equals the table, the current month to date', async () => {
-    const res = await request(app).get('/api/financial/profit-by-product/trend?months=3&asOf=2026-10-17').set(auth(ownerA));
+    const res = await request(app).get('/api/financial/profit-by-product/trend?months=3&asOf=2026-10-17').set(bearer(ownerA.token));
     expect(res.status).toBe(200);
     expect(res.body.months.map((m: any) => [m.label, m.from, m.to])).toEqual([
       ['Aug', '2026-08-01', '2026-08-31'], ['Sep', '2026-09-01', '2026-09-30'], ['Oct', '2026-10-01', '2026-10-17'],
@@ -161,10 +162,10 @@ describe('F-924 profit by product', () => {
   });
 
   it('trend: a month with a missing cost has null profit; bad months or asOf is a 400', async () => {
-    const nov = (await request(app).get('/api/financial/profit-by-product/trend?months=1&asOf=2026-11-30').set(auth(ownerA))).body;
+    const nov = (await request(app).get('/api/financial/profit-by-product/trend?months=1&asOf=2026-11-30').set(bearer(ownerA.token))).body;
     expect(nov.products.find((p: any) => p.name === 'PENS').profits).toEqual([null]);
-    expect((await request(app).get('/api/financial/profit-by-product/trend?months=0').set(auth(ownerA))).status).toBe(400);
-    expect((await request(app).get('/api/financial/profit-by-product/trend?asOf=nope').set(auth(ownerA))).status).toBe(400);
+    expect((await request(app).get('/api/financial/profit-by-product/trend?months=0').set(bearer(ownerA.token))).status).toBe(400);
+    expect((await request(app).get('/api/financial/profit-by-product/trend?asOf=nope').set(bearer(ownerA.token))).status).toBe(400);
   });
 });
 
@@ -193,7 +194,7 @@ describe('F-925 order cohort card', () => {
 
   it('no closed cohort gives "Not enough closed orders" and no number', async () => {
     await mkOrder(worldA, logiswift, 'pending_confirmation', { total: 100, createdAt: new Date() });
-    const now = new Date().toISOString().slice(0, 10);
+    const now = ymdOfUtc(new Date());
     const open = await get('cohort-profit', ownerA, now, now);
     expect(open.body).toMatchObject({ available: false, message: 'Not enough closed orders' });
     expect(open.body.revenue).toBeUndefined();

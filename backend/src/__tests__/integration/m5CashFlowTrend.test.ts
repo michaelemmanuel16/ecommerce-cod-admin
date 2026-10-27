@@ -10,6 +10,7 @@ import { prismaBase } from '../../utils/prisma';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import { postEntry } from './helpers/ledgerPost';
 import { createTenant, deleteTenantRows, mkUser } from './helpers/twoTenants';
+import { bearer } from './helpers/superAdminToken';
 import { mkCustomer, mkOrder, mkPartner, mkCollection, SettlementWorld } from './helpers/settlementFixtures';
 
 jest.setTimeout(120_000);
@@ -20,9 +21,8 @@ let ownerA: { id: number; token: string };
 let ownerB: { id: number; token: string };
 let worldA: SettlementWorld;
 let partner: number;
-const auth = (u: { token: string }) => ({ Authorization: `Bearer ${u.token}` });
 
-const cash = (who: { token: string }) => request(app).get('/api/financial/cash-flow').set(auth(who));
+const cash = (who: { token: string }) => request(app).get('/api/financial/cash-flow').set(bearer(who.token));
 
 beforeAll(async () => {
   a = (await createTenant('Cash A')).id;
@@ -108,7 +108,7 @@ describe('days to pay from settlement history', () => {
 });
 
 describe('F-929 trend by delivery date', () => {
-  const reports = (who: { token: string }, q: string) => request(app).get(`/api/financial/reports?period=daily&${q}`).set(auth(who));
+  const reports = (who: { token: string }, q: string) => request(app).get(`/api/financial/reports?period=daily&${q}`).set(bearer(who.token));
 
   beforeAll(async () => {
     const mk = (day: string, total: number, extra: Record<string, unknown> = {}) =>
@@ -152,7 +152,7 @@ describe('F-929 trend by delivery date', () => {
 describe('F-928 scenario switch, tiles and week by week (M5-T41)', () => {
   let c: string;
   let ownerC: { id: number; token: string };
-  const scenario = (q: string) => request(app).get(`/api/financial/cash-flow${q}`).set(auth(ownerC));
+  const scenario = (q: string) => request(app).get(`/api/financial/cash-flow${q}`).set(bearer(ownerC.token));
 
   beforeAll(async () => {
     c = (await createTenant('Cash C')).id;
@@ -209,11 +209,11 @@ describe('F-928 scenario switch, tiles and week by week (M5-T41)', () => {
 
   it('an unknown scenario is a 400', async () => {
     expect((await scenario('?scenario=wild')).status).toBe(400);
-    expect((await request(app).get('/api/financial/export/cash-flow?scenario=wild').set(auth(ownerC))).status).toBe(400);
+    expect((await request(app).get('/api/financial/export/cash-flow?scenario=wild').set(bearer(ownerC.token))).status).toBe(400);
   });
 
   it('the cash-flow export follows the scenario on screen: same 30 rows, a higher balance at the target', async () => {
-    const file = (q: string) => request(app).get(`/api/financial/export/cash-flow?format=csv${q}`).set(auth(ownerC)).buffer(true).parse((res, cb) => {
+    const file = (q: string) => request(app).get(`/api/financial/export/cash-flow?format=csv${q}`).set(bearer(ownerC.token)).buffer(true).parse((res, cb) => {
       let data = ''; res.setEncoding('utf8'); res.on('data', (c) => (data += c)); res.on('end', () => cb(null, data));
     });
     const last = (text: string) => text.trim().split('\n').pop()!.split(',').pop()!.replace(/"/g, '');

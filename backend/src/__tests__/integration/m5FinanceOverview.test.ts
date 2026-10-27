@@ -17,6 +17,7 @@ import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import { seedFixture, deleteFixtureRows, FIXTURE_SLUG } from '../fixtures/numbersFixture';
 import { postEntry } from './helpers/ledgerPost';
 import { createTenant, deleteTenantRows, mkUser } from './helpers/twoTenants';
+import { bearer } from './helpers/superAdminToken';
 import { mkCustomer, mkOrder, SettlementWorld } from './helpers/settlementFixtures';
 
 jest.setTimeout(300_000);
@@ -28,8 +29,7 @@ let owner: { id: number; token: string };
 let ownerB: { id: number; token: string };
 let agent: { id: number; token: string };
 let partnerIds: Record<string, number>;
-const auth = (u: { token: string }) => ({ Authorization: `Bearer ${u.token}` });
-const overview = (who: { token: string }, q = RANGE) => request(app).get(`/api/financial/overview?${q}`).set(auth(who));
+const overview = (who: { token: string }, q = RANGE) => request(app).get(`/api/financial/overview?${q}`).set(bearer(who.token));
 const tileOf = (body: any, key: string) => body.tiles.find((t: any) => t.key === key);
 
 beforeAll(async () => {

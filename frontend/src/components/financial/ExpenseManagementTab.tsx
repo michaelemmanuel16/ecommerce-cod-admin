@@ -23,9 +23,9 @@ export const ExpenseManagementTab: React.FC = () => {
     expenses,
     expensesTotal,
     expenseBreakdown,
-    pagination,
+    expensesPagination,
     dateRange,
-    loadingStates,
+    expensesLoading,
     fetchExpenses,
     fetchExpenseBreakdown,
     deleteExpense
@@ -68,7 +68,7 @@ export const ExpenseManagementTab: React.FC = () => {
       total: rows.reduce((sum, r) => sum + r.amount, 0),
     };
   }, [expenseBreakdown]);
-  const count = pagination.expenses?.total ?? expenses.length;
+  const count = expensesPagination?.total ?? expenses.length;
 
   const confirmDelete = async () => {
     const expense = deleting;
@@ -83,7 +83,7 @@ export const ExpenseManagementTab: React.FC = () => {
   };
 
   // Skeleton only for the first load: a reload while typing in the search box must keep the box mounted
-  if (loadingStates.expenses && expenses.length === 0 && !search && !categoryFilter) {
+  if (expensesLoading && expenses.length === 0 && !search && !categoryFilter) {
     return (
       <div className="grid two expgrid" aria-busy="true" aria-label="Loading Expenses">
         <Skeleton height={380} className="skelcard" />
