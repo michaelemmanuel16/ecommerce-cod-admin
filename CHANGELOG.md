@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **[Finance]**: Finance Overview with six tiles, payout reconciliation, unpaid by age and cash runway from one call, with a date range and a short-row expansion. (COD-52, COD-53)
+- **[Finance]**: Findings page, Orders "Unpaid by agent" tab with a count, and Agent collections with four aging buckets, a review modal, WhatsApp reminder, block and unblock. (COD-53)
+- **[Finance]**: Profit by product, last 3 months chart (`GET /api/financial/profit-by-product/trend`); the deposits route takes `recentDecided` to stay bounded. (COD-54)
 - **[Finance]**: Finance report screens: income statement, balance sheet, monthly P&L, profit by product, order cohort and failed-delivery cost cards; cash flow tab with pace or target scenario, trend chart and Export menu; Reports "Products and profit" tab; one cached loader cleared on sign-in and sign-out. (COD-54)
 - **[Finance]**: Delivery fee rules per partner and outcome, one fee posted per outcome to 5070 against cash in transit 1015, deposits move 1015 to 1010 once with first-in first-out matching stored for exact rejects, excess to 2040, and the old deposit route on the same path. (COD-48)
 - **[Finance]**: Rep commission entries post DR 5050 / CR 2020 once when earned and reverse on return, with a backfill for open delivered orders; one payout service and API for reps and agents that pays open entries oldest first, rejects above owed and double payment, and adds the payouts permission. (COD-51)
@@ -95,6 +98,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **[CI/CD]**: Sentry DSN injected into staging and production deployments (MAN-16)
 
 ### Fixed
+- **[Finance]**: The General ledger did not load because the accounts call asked for 200 and was refused; the list now allows up to 500. (COD-52)
+- **[Finance]**: The Expenses card title read "1–NaN Oct 2026"; it now shows the real range. (COD-52)
+- **[Finance]**: Figures did not reload after saving an expense or a payout, because a 60 s cache returned the old data; saving now clears the affected blocks. (COD-54)
+- **[Finance]**: A button sat inside a button in the date-range picker, which gave a console warning; removed. (COD-54)
+- **[UI]**: In long dialogs only the body scrolls, so the footer buttons stay in view. (COD-53)
 - **[Deliveries]**: Edit person in the partner drawer opened behind the drawer and could not be used; it now opens on top and Escape closes only the form. (M5)
 - **[Analytics]**: A `yyyy-MM-dd` end date now includes the whole store day on calls, agent inventory and reconciliation, checkout form submissions, GL journal entries, WhatsApp messages and financial reports. (COD-15)
 - **[Security]**: Public `POST /api/auth/register` removed (it made users with no tenant and a body-chosen role); delivery routes check role and ownership; `GET /api/admin/config` needs a tenant or form slug; `/metrics` and `/health/detailed` need `METRICS_TOKEN`; legacy Paystack webhook route removed. (COD-3)
@@ -114,6 +122,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **[Financial]**: Deposit verification timeout by extending API timeouts (MAN-28)
 
 ### Changed
+- **[Finance]**: All Finance tabs follow the v2 mockup: header actions, pill tabs with counts, Overview, Agent collections (cash exposure, collections to verify), Rep commissions, Accounting (ledger, statements, profit, expenses) and the cash forecast. (COD-52, COD-53, COD-54)
+- **[Finance]**: Per-order collection verify is replaced by pay-in verify; the cash forecast `pace` answer carries `currentRate`; Overview reconciliation rows carry `partnerId`. (COD-53)
 - **[Money]**: Money maths in orders, finance, analytics, MCP tools and exports uses `Money` (Decimal) instead of `number`. API money is a 2-decimal string; the frontend parses it once in `utils/money.ts`. Deposit and balance are stored in major units. (COD-6)
 - **[CI]**: Jest coverage gate set at the current level (lines 62, branches 49, functions 60, statements 62); backend and frontend suites run on every PR; a docs guard fails on stale UI names or retired KPI wording. M0-wide simplify pass and 22 frontend type errors cleared. (COD-8)
 - **[Financial]**: Deposit reference format improved to date-based DEP-YYYYMMDD-XXXX (MAN-28)

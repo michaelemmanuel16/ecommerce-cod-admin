@@ -250,3 +250,102 @@ The finance report screens. Plan tasks: M5-T40 (statements, monthly P&L and prof
 - Follow-ups: `DateRangePicker` nested button warning (backlog); "% of revenue" sub-lines; cash-forecast outflows leave out daily Meta spend.
 
 ---
+
+## COD-52 (part 3) — Finance overview service (T24)
+**Date:** 2026-10-27 | **Type:** feat | **Branch:** feature/m5-settlement-and-finance (lane A `m5/cod-52-t24-overview`, merge e466c09e) | **Commits:** e3b8e47d, b170cc7f, 03bf1a52, 8206bfe3, cd5ed357
+
+### Summary
+One call gives the Finance Overview its numbers. Plan task: M5-T24 (F-902, F-907, F-910, F-927). T30 (backfill) is still to do, so COD-52 stays In Progress.
+
+### Changes
+- **Overview service:** `finance/overviewService.ts` builds six tiles, the payout reconciliation list, unpaid by age and cash runway. It reuses `services/kpi`, `statementsService`, the cash buckets and `agingService`. Nothing is counted twice.
+- **Date basis:** revenue, cash received, margin and profit per order use the range the caller picks. Cash outstanding and cash runway are as of today. Each tile says so in its tooltip.
+- **Safe failure:** a tile that fails returns `{ status: 'error' }`. The other tiles still load. A figure with no basis reads "n/a".
+- **Fixes after review:** cash received counts settlement payouts; the revenue tile shows the target tag; profit per order reads "before ads and rep commission"; the tile badges and details are typed; one aging read.
+- **API:** `GET /api/financial/overview` (permission `financial:view`).
+- **Orders counts:** `GET /api/orders/counts` now also returns `unpaidByAgent` (the overdue number from the same filter as the card; `null` without `financial:view`) (cd5ed357).
+- **Later in the mockup pass:** overview reconciliation rows carry `partnerId`, so a row can open the payout and reminder actions.
+
+### Verification
+- Merged tree (e466c09e): backend generate, typecheck, lint, build clean; jest 275 suites pass (3570 tests); frontend lint, build clean; vitest 167 files / 1371 tests pass.
+- Tests: `m5FinanceOverview` (new, 319 lines), `collectionsAging`, `ordersListApi`.
+
+### Open points
+- T30 backfill and dry run: not run. Nothing runs on production before the owner approves.
+- Key files: `backend/src/services/finance/overviewService.ts`, `backend/src/controllers/financeReportsController.ts`, `backend/src/routes/financialRoutes.ts`, `backend/src/services/agingService.ts`, `backend/src/__tests__/integration/m5FinanceOverview.test.ts`.
+
+---
+
+## COD-53 (part 2) — Finance Overview page, Findings and agent collections (T34, T35, T36)
+**Date:** 2026-10-27 | **Type:** feat | **Branch:** feature/m5-settlement-and-finance (lane A merge e466c09e, lane B merge a75825e3) | **Commits:** 7f0b8302, 4cfcaeb8, cd63dab1, 6f8abc21, ef644fc0, 4fab0823, ed64b0f3
+
+### Summary
+The Overview page, the Findings page, the Orders "Unpaid by agent" tab and the Agent collections screen. Plan tasks: M5-T34 (Overview), M5-T35 (Findings, Unpaid by agent tab), M5-T36 (agent collections). With T32 and T37 from before, all five COD-53 tasks are built.
+
+### Changes
+- **Overview (T34, lane A):** six tiles, payout reconciliation with a short-row expansion, a date-range control, cash runway. Files in `pages/financial/overview/`.
+- **Findings (T35, lane B):** a Findings page with assign, explain and owner write-off; a tested "Unpaid by age" card; an "Unpaid by agent" tab on Orders (F-309) with a count from `/api/orders/counts`.
+- **Agent collections (T36, lane B):** four aging buckets, a review modal, WhatsApp reminder, block and unblock partner. `AgentCollections.tsx` and `CollectionActionModal.tsx` are rewritten on the v2 UI.
+- **Backend:** `POST /api/financial/agent-aging/:agentId/remind` (permission `financial:update`).
+- **Simplify pass:** `useBlock` loads, one counts call, a view tab.
+
+### Verification
+- Lane B merge (a75825e3) and lane A merge (e466c09e) were each checked alone, then the merged tree: jest 275 suites pass; vitest 167 files / 1371 tests pass; lint and builds clean.
+- Tests: `AgentCollections`, `CollectionActionModal`, `Findings`, `OrdersUnpaidTab`, `UnpaidByAgeCard`, `FinanceOverview`, `collectionsReminder`.
+
+### Open points
+- The per-order verify route is replaced by the pay-in verify (F-912) in the mockup pass below. The old routes are removed in T45.
+- Key files: `frontend/src/pages/financial/AgentCollections.tsx`, `pages/financial/Findings.tsx`, `pages/financial/overview/FinanceOverview.tsx`, `frontend/src/services/collections.service.ts`, `backend/src/services/agingService.ts`.
+
+---
+
+## COD-54 (part 3) — Report screens on the v2 look (T39, T40, T41, T42, T38)
+**Date:** 2026-10-27 | **Type:** feat/fix | **Branch:** feature/m5-settlement-and-finance (lanes A, B, C in the mockup pass, merges 9a89be51, af2786e5, 797355f0, fix merge b0f57a69) | **Commits:** 983a4f38, 35272c17, d7b070c3, b2d63680, c91392d3
+
+### Summary
+The Expenses, Statements, Profit by product, General ledger, Rep commissions and Cash-flow forecast screens were restyled to the v2 mockup, with a new "Profit by product, last 3 months" chart. T45 (remove orphaned code) is still to do.
+
+### Changes
+- **Accounting (lane C):** sub-nav as `.seg` (General ledger, Statements, Profit by product, Expenses); chart of accounts and ledger side by side; "New journal entry" button in the toolbar; Expenses table with "By category" bars; per-card Export on Statements.
+- **Rep commissions (lane B):** four tiles, full table as in the mockup, payout history card, rep payout modal. Fields with no data source show "—".
+- **Cash-flow forecast:** one "Cash at bank and MoMo today" tile; the Revenue and expenses trend card is removed.
+- **Open for T45:** components with no caller are deleted in the fix pass (`DepositActionModal`, `AgentSettlementChart`, `AgentReconciliationTab`); T45 still needs to remove the old routes.
+
+### Verification
+- See "Finance screens match the v2 mockup" below.
+
+### Open points
+- T45 cleanup: not done.
+- Key files: `frontend/src/pages/financial/RepCommissions.tsx`, `components/financial/ExpenseManagementTab.tsx`, `components/financial/gl/*`, `pages/financial/profit/*`, `pages/financial/cash/*`.
+
+---
+
+## Finance screens match the v2 mockup (COD-52, COD-53, COD-54)
+**Date:** 2026-10-27 | **Type:** feat/fix | **Branch:** feature/m5-settlement-and-finance | **Commits:** 983a4f38, 35272c17, d7b070c3 (lanes A, B, C), merges 9a89be51, 797355f0, af2786e5, fix pass b2d63680 (merge b0f57a69), dialog scroll c91392d3
+
+### Summary
+Every Finance tab now follows `docs/mockups/v2/finance.html` in the v2 tokens (M5-T34 asks for this). Specs: `docs/plan/M5-mockup-gaps.md` (what to match) and `docs/plan/M5-ui-simplify-fixes.md` (/simplify fixes and 16 visual gaps found in a headless compare).
+
+### Changes
+- **Lane A (header, tabs, Overview, header modals):** header with Add expense, Record payout and an Export menu; pill tab bar with counts (hidden at 0); Overview with six tiles (3 per row), reconciliation and "By age" side by side; Add expense and Record payout modals. The subtitle reads "for October" for a whole month.
+- **Lane B (Agent collections, Rep commissions):** four tiles, "Cash exposure by partner", "Collections to verify" card, "All partners" total row, Review collection modal, Rep commissions restyle.
+- **Lane C (Accounting, Forecast):** see COD-54 entry above.
+- **Decisions:** "Agent found" cards are M11 and left out. The date-range picker stays (T34 needs it), placed after Export. Per-order collection verify is replaced by pay-in verify (F-912). Statements Export opens print (PDF). Journal Reference is read-only because the server numbers entries.
+- **Fixes:** the GL accounts did not load (limit 200 was refused); the Expenses title read "1–NaN Oct 2026"; figures did not reload after a save (the 60 s cache; now `refreshBlocks`); a button sat inside a button; dialog body scrolls alone so the footer stays in view (c91392d3).
+- **Shared code (fix pass):** one `BarList`, one `ChartTip`, `Modal` `size` prop, one modal footer note, `currencySymbol()`, shared tab-count hooks, dead code removed.
+- **Backend (read-only, no schema change):**
+  - `GET /api/financial/profit-by-product/trend?months=3&asOf=` (new; 1 to 12 months; one order read for the span).
+  - `GET /api/gl/accounts` now allows `limit` up to 500 (the chart is small).
+  - `GET` deposits route takes `recentDecided=N`: all pending rows plus the N newest decided rows.
+  - The cash forecast `pace` answer carries `currentRate`.
+  - Overview reconciliation rows carry `partnerId`.
+
+### Verification
+- Merged tree (b0f57a69 + c91392d3): backend generate, typecheck, lint, build clean; jest 3571 tests pass; `mcpAudit` returned 403 under load and passes alone (12 / 12). Frontend lint, build clean; vitest 173 files / 1396 tests pass.
+- Browser (headless compare against the mockup; light and dark at 1440, light at 760): 15 of 16 visual gaps fixed; no console errors; no sideways scroll at 760. V16 is partly fixed: the rep payout modal close button still shows a focus ring on open, because its content loads late and autofocus broke a test.
+- New tests: `accountingScreens`, `financeSaveReload`, `tabCounts`, `repModel`, `financeRange`, `currencySymbol`, `m5ProfitReports` (trend), `m5ChartOfAccounts` (limit 500), `collectionsAging` (recentDecided).
+
+### Open points
+- Left as is (no data): 3PL/Agent tag, AI-agent row in Rep commissions, "% of target", Payout history description.
+- Demo data: the margin moved 76% to 84% during the compare. No code wrote data; the likely cause is the stored date range (to 26 Oct vs 27 Oct).
+- Key files: `frontend/src/pages/Financial.tsx`, `pages/financial/AgentCollections.tsx`, `RepCommissions.tsx`, `profit/ProfitTrendCard.tsx`, `components/financial/BarList.tsx`, `CashExposureCard.tsx`, `ui-v2/Modal.tsx`, `backend/src/services/finance/profitService.ts`, `backend/src/routes/glRoutes.ts`.
