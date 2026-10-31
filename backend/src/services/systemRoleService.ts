@@ -3,6 +3,8 @@ import prisma, { TransactionClient } from '../utils/prisma';
 import { withSoftDeleted } from '../utils/prismaExtensions';
 import { startOfUtcDay } from '../utils/startOfUtcDay';
 import logger from '../utils/logger';
+import { resolveTenantId } from '../utils/tenantContext';
+import { AppError } from '../middleware/errorHandler';
 import { PermissionGrid } from '../config/defaultRolePermissions';
 import { ROLE_NAME_BY_USER_ROLE, defaultRoleRows } from '../config/defaultRoles';
 
@@ -103,4 +105,39 @@ export async function positionRoleId(db: Pick<TransactionClient, 'role'>, userRo
   const role = await db.role.findFirst({ where: { name }, select: { id: true } });
   if (!role) logger.warn(`Position role "${name}" is missing; new ${userRole} users get no role assignment yet`);
   return role?.id ?? null;
+}
+
+/**
+ * Keep the position role of a person in step with their UserRole (F-1155, M6-T05). Ends the open assignments to any other
+ * position role (the roles mapped from a UserRole) and holds the one mapped from `userRole`. Custom roles and Marketing are
+ * left alone. A tenant that has not seeded its roles yet is a no-op with a warning. Call inside the tenant context.
+ */
+export async function assignPositionRole(db: Pick<TransactionClient, 'role' | 'roleAssignment'>, userId: number, userRole: UserRole): Promise<void> {
+  const target = await positionRoleId(db, userRole);
+  if (target === null) return;
+  const today = startOfUtcDay();
+  await db.roleAssignment.updateMany({
+    where: { holderId: userId, toDate: null, roleId: { not: target }, role: { name: { in: Object.values(ROLE_NAME_BY_USER_ROLE) } } },
+    data: { toDate: today },
+  });
+  if ((await db.roleAssignment.count({ where: { holderId: userId, roleId: target, toDate: null } })) === 0) {
+    await db.roleAssignment.create({ data: { tenantId: resolveTenantId(), roleId: target, holderId: userId, fromDate: today } });
+  }
+}
+
+/**
+ * The last active Owner (super_admin person) cannot be deactivated, deleted, demoted or erased (M6-T05). No-op for anyone else.
+ * Call inside the transaction that makes the change: it locks the tenant's active Owner rows first, so two Owners ending each
+ * other at once run one after the other and the second sees one Owner left. Raw SQL on purpose: the lock needs `FOR UPDATE`,
+ * and the tenant is named here so it also works on the un-extended client. `verb` completes "The last Owner cannot be ...".
+ */
+export async function assertNotLastOwner(
+  tx: Pick<Prisma.TransactionClient, '$queryRaw'>,
+  target: { id: number; role: UserRole },
+  verb: string,
+): Promise<void> {
+  if (target.role !== 'super_admin') return;
+  const owners = await tx.$queryRaw<Array<{ id: number }>>`
+    SELECT id FROM users WHERE tenant_id = ${resolveTenantId()} AND role = 'super_admin' AND kind = 'person' AND is_active FOR UPDATE`;
+  if (owners.every((o) => o.id === target.id)) throw new AppError(`The last Owner cannot be ${verb}`, 409, 'LAST_OWNER');
 }
