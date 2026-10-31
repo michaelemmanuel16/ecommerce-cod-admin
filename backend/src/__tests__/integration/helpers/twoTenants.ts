@@ -303,6 +303,16 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
     seed('commissionEntry', prismaBase.commissionEntry.create({
       data: { tenantId, orderId: order.id, userId: salesRep.id, kind: 'base', status: 'earned', amount: '8', earnedAt: new Date('2026-10-20') },
     })),
+    // M6 models: one reward tier on the Owner role, one badge and one cursor.
+    seed('rewardTier', prismaBase.rewardTier.create({
+      data: { tenantId, roleId: ownerRole.id, threshold: 100, amount: '300', dayOff: false, payout: true },
+    })),
+    seed('badgeAward', prismaBase.badgeAward.create({
+      data: { tenantId, userId: admin.id, key: 'top_of_month', period: '2026-10' },
+    })),
+    seed('assignmentCursor', prismaBase.assignmentCursor.create({
+      data: { tenantId, scope: `scope-${tag}`, role: 'sales_rep', position: 1 },
+    })),
   ]);
 
   // The MCP key acts as an ai_agent user. admin holds every cell the 14 tools need and the Legacy role lists all
@@ -347,6 +357,9 @@ export async function deleteTenantRows(tenantIds: string[]): Promise<void> {
     db.call.deleteMany({ where: t }),
     db.orderHistory.deleteMany({ where: t }),
     db.commissionEntry.deleteMany({ where: t }),
+    db.rewardTier.deleteMany({ where: t }),
+    db.badgeAward.deleteMany({ where: t }),
+    db.assignmentCursor.deleteMany({ where: t }),
     db.agentCollection.deleteMany({ where: t }),
     db.partnerSettlementLine.deleteMany({ where: t }),
     db.partnerSettlement.deleteMany({ where: t }),
