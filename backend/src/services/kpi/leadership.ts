@@ -33,7 +33,7 @@ import * as Money from '../../utils/money';
 import { getCurrency } from '../../utils/currency';
 import { Prisma } from '@prisma/client';
 import { addDays, DAY_MS, daysInMonth, endOfDay, getStoreTimeZone, localDate, monthRange, parseYmd, utcDate } from './dates';
-import { deliveredRevenue, revenueScope } from './revenue';
+import { deliveredRevenue, revenueScope, type DeliveredRevenue } from './revenue';
 import { rates, ratePercent } from './rates';
 import { kpiMeta, type KpiResult } from './types';
 
@@ -162,6 +162,14 @@ export function quarterTargetsOf(rows: Array<{ periodStart: Date; value: Prisma.
   return [1, 4, 7, 10].map((m) => byStart.get(utcDate(year, m).getTime()) ?? null)
 }
 
+/** The default planned AOV: delivered revenue over delivered orders of the last 30 days, a whole unit. Null when nothing was delivered. */
+export const autoPlannedAov = (window: DeliveredRevenue): Money.Money | null =>
+  window.deliveredOrders.value > 0 ? Money.roundHalfUp(Money.div(window.total.value, window.deliveredOrders.value), 0) : null;
+
+/** The 30 days of orders the default planned AOV is taken from, ending with the end of `asOfDate`. */
+export const plannedAovWindow = (tenantId: string, asOfDate: string) =>
+  deliveredRevenue(tenantId, addDays(endOfDay(asOfDate, getStoreTimeZone(tenantId)), -PLANNED_AOV_DAYS), endOfDay(asOfDate, getStoreTimeZone(tenantId)));
+
 /** The year plan of a tenant for `year`: its quarter targets and the given annual target (one read). */
 export async function loadYearPlan(tenantId: string, year: number, annualTarget: Money.MoneyInput | null): Promise<YearPlan> {
   return { quarterTargets: quarterTargetsOf(await yearQuarterRows(tenantId, year), year), annualTarget };
@@ -248,9 +256,7 @@ export async function leadership(tenantId: string, asOf?: string, options: Leade
 
     // Planned AOV
     const aovDelivered = aovWindow.deliveredOrders.value;
-    const aovAuto = aovDelivered > 0
-      ? Money.roundHalfUp(Money.div(aovWindow.total.value, aovDelivered), 0)
-      : null;
+    const aovAuto = autoPlannedAov(aovWindow);
     const aovManual = aovTarget && Money.parse(aovTarget.value).gt(0) ? Money.parse(aovTarget.value) : null;
     const plannedAovValue = aovManual ?? aovAuto;
     const plannedAov: PlannedAov = {

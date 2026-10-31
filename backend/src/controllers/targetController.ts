@@ -1,0 +1,92 @@
+import { AuthRequest } from '../types';
+import { auditService } from '../services/auditService';
+import * as targetService from '../services/targetService';
+import * as northStar from '../services/northStarService';
+import { handler, idParam, parse } from './helpers';
+import {
+  calculatorsQuerySchema, childrenSchema, dailyQuerySchema, driversQuerySchema, driversSchema, northStarSchema, poolQuerySchema,
+  saveTargetSchema, treeQuerySchema, updateTargetSchema,
+} from '../validators/targetSchema';
+
+/** M6-T08: the target API. Routes -> this file -> targetService / northStarService. */
+
+const audit = (req: AuthRequest, action: string, resourceId: string, metadata: Record<string, unknown> = {}) =>
+  auditService.recordFromRequest(req, { action, resource: 'target', resourceId, metadata });
+
+/** GET /api/targets/tree?year&month&metric */
+export const tree = handler(async (req, res) => {
+  const q = parse(treeQuerySchema, req.query, 'query');
+  res.json(await northStar.getTree(q.year, q.month, q.metric));
+});
+
+/** GET /api/targets/roles/:roleId/pool?month: the role target, what persons hold, the pool, each holder (or "Set a target"). */
+export const pool = handler(async (req, res) => {
+  const roleId = idParam(req.params.roleId);
+  const { month } = parse(poolQuerySchema, req.query, 'query');
+  const [rolePool, holders] = await Promise.all([targetService.rolePool(roleId, month), targetService.roleHolderTargets(roleId, month)]);
+  res.json({ roleId, month, pool: rolePool && { metric: rolePool.metric, unit: rolePool.unit, total: rolePool.total, allocated: rolePool.allocated, pool: rolePool.pool }, holders });
+});
+
+/** GET /api/targets/daily?metric&date&userId */
+export const daily = handler(async (req, res) => {
+  const q = parse(dailyQuerySchema, req.query, 'query');
+  res.json(await targetService.dailyTargetProgress(q.metric, q.date, q.userId));
+});
+
+/** POST /api/targets: save a North Star, role, person or daily target. */
+export const save = handler(async (req, res) => {
+  const target = await targetService.saveTarget(parse(saveTargetSchema, req.body));
+  await audit(req, 'target_save', String(target.id), { scope: target.scope, metric: target.metric, value: target.value.toString() });
+  res.status(201).json({ target });
+});
+
+/** PUT /api/targets/:id: change the value of a saved target. */
+export const update = handler(async (req, res) => {
+  const id = idParam(req.params.id, 'target');
+  const body = parse(updateTargetSchema, req.body);
+  const target = await northStar.updateTargetValue(id, body.value, body.unit);
+  await audit(req, 'target_update', String(id), { value: target.value.toString() });
+  res.json({ target });
+});
+
+/** PUT /api/targets/:id/children: the quarters of a North Star or the months of a quarter, as a whole set. */
+export const children = handler(async (req, res) => {
+  const id = idParam(req.params.id, 'target');
+  const saved = await targetService.setChildren(id, parse(childrenSchema, req.body).children);
+  await audit(req, 'target_set_children', String(id), { count: saved.length });
+  res.json({ children: saved });
+});
+
+/** DELETE /api/targets/:id */
+export const remove = handler(async (req, res) => {
+  const id = idParam(req.params.id, 'target');
+  await targetService.deleteTarget(id);
+  await audit(req, 'target_delete', String(id));
+  res.json({ message: 'Target deleted' });
+});
+
+/** POST /api/targets/north-star: create or re-plan the year's tree. */
+export const saveNorthStar = handler(async (req, res) => {
+  const input = parse(northStarSchema, req.body);
+  const result = await northStar.saveNorthStar(input);
+  await audit(req, 'north_star_save', String(result.northStar?.id ?? input.year), { year: input.year, annual: input.annual, mode: input.mode, pastMonthsKept: result.pastMonthsKept });
+  res.status(201).json(result);
+});
+
+/** GET /api/targets/drivers?year */
+export const drivers = handler(async (req, res) => {
+  res.json(await northStar.getDrivers(parse(driversQuerySchema, req.query, 'query').year));
+});
+
+/** PUT /api/targets/drivers: planned AOV (null resets it), rates, margin. */
+export const saveDrivers = handler(async (req, res) => {
+  const { year, ...input } = parse(driversSchema, req.body);
+  const result = await northStar.saveDrivers(year, input);
+  await audit(req, 'drivers_save', String(year), { fields: Object.keys(input) });
+  res.json(result);
+});
+
+/** GET /api/targets/calculators?month&aov&confirmationRate&deliverySuccessRate&revenueTarget&profitPerOrder: a preview, nothing is saved. */
+export const calculators = handler(async (req, res) => {
+  res.json(await northStar.calculators(parse(calculatorsQuerySchema, req.query, 'query')));
+});
