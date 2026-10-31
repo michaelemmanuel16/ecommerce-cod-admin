@@ -3,7 +3,7 @@ import { describe, it, expect } from '@jest/globals';
 import { yearPace } from '../../services/kpi/yearPace';
 import { paceChip } from '../../services/kpi/status';
 
-const GROW: [number, number, number, number] = [360_000, 420_000, 480_000, 540_000];
+const GROW = [360_000, 420_000, 480_000, 540_000];
 
 describe('yearPace', () => {
   it('17 Oct fixture: 1,260,000 + 17/92 x 540,000 = 1,359,783 = 75.5%', () => {

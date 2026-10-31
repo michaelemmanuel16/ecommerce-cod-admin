@@ -5,13 +5,13 @@
  *   expected year to date = sum of the quarters already gone + (days gone in this quarter / days in it) x this quarter's target
  *   pace (percent)        = expected year to date / annual target
  *
- * Quarter and month pace stay straight days inside their period (`paceMarker` in leadership.ts). Pure: no database.
+ * Quarter and month pace stay straight days inside their period (`paceMarker` in leadership.ts, which calls this for a year). Pure: no database.
  */
 import * as Money from '../../utils/money';
 
 export interface YearPaceInput {
-  /** The four quarter targets, Q1 first (money). A quarter with no target counts as 0. */
-  quarterTargets: [Money.MoneyInput, Money.MoneyInput, Money.MoneyInput, Money.MoneyInput];
+  /** The four quarter targets, Q1 first (money). */
+  quarterTargets: Money.MoneyInput[];
   /** 0 to 3: the quarter that holds the day. */
   quarterIndex: number;
   /** Days gone in the current quarter, today included (17 on 17 October). */

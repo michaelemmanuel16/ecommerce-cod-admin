@@ -32,7 +32,7 @@ import { yearPace } from './yearPace';
 import * as Money from '../../utils/money';
 import { getCurrency } from '../../utils/currency';
 import { Prisma } from '@prisma/client';
-import { addDays, DAY_MS, daysInMonth, endOfDay, getStoreTimeZone, localDate, monthRange, parseYmd } from './dates';
+import { addDays, DAY_MS, daysInMonth, endOfDay, getStoreTimeZone, localDate, monthRange, parseYmd, utcDate } from './dates';
 import { deliveredRevenue, revenueScope } from './revenue';
 import { rates, ratePercent } from './rates';
 import { kpiMeta, type KpiResult } from './types';
@@ -58,6 +58,8 @@ export interface Attainment extends KpiResult<number | null> {
   target: string | null;
   /** Pace marker of the period, percent. */
   pace: number;
+  /** 'quarter_plan' for a year paced on its quarter targets (M6-T07); 'days' is straight days. */
+  paceBasis: PaceBasis;
 }
 
 export interface PlannedAov extends KpiResult<string | null> {
@@ -105,16 +107,65 @@ function periodSpan(day: Ymd, period: Period): { startMonth: number; months: num
   return { startMonth: 1, months: 12 };
 }
 
-/** Pace marker, percent to 1 decimal: days gone in the period / days in the period (straight days). */
-export function paceMarker(day: Ymd, period: Period): { percent: number; daysGone: number; daysInPeriod: number } {
+export type PaceBasis = 'quarter_plan' | 'days';
+
+/** What a year needs to follow its quarter plan: the four quarter targets (null = not set) and the annual target. */
+export interface YearPlan {
+  quarterTargets: Array<Money.MoneyInput | null>;
+  annualTarget: Money.MoneyInput | null;
+}
+
+export interface PaceMarker {
+  percent: number;
+  /** Straight-day facts of the period. For `quarter_plan` the percent is NOT daysGone / daysInPeriod: see `plan`. */
+  daysGone: number;
+  daysInPeriod: number;
+  paceBasis: PaceBasis;
+  /** Present when `paceBasis` is 'quarter_plan': the quarter the plan percent was taken in. */
+  plan?: { quarterIndex: number; daysGone: number; daysInQuarter: number };
+}
+
+/**
+ * Pace marker, percent to 1 decimal. Straight days (days gone / days in the period) for a month and a quarter. A year with a
+ * complete `plan` (annual target, and every quarter target up to the current quarter) follows the quarter plan instead
+ * (M6-T07, owner decision); without one it stays on straight days. This is the one place year pace is decided.
+ */
+export function paceMarker(day: Ymd, period: Period, plan?: YearPlan): PaceMarker {
   const { startMonth, months } = periodSpan(day, period);
   let daysInPeriod = 0;
   for (let m = startMonth; m < startMonth + months; m++) daysInPeriod += daysInMonth(day.year, m);
   const daysGone = Math.round((utcDay(day) - Date.UTC(day.year, startMonth - 1, 1)) / DAY_MS) + 1;
-  return { percent: ratePercent(daysGone, daysInPeriod) as number, daysGone, daysInPeriod };
+  const straight: PaceMarker = { percent: ratePercent(daysGone, daysInPeriod) as number, daysGone, daysInPeriod, paceBasis: 'days' };
+  if (period !== 'year' || !plan?.annualTarget || !Money.parse(plan.annualTarget).gt(0)) return straight;
+  const quarterIndex = Math.floor((day.month - 1) / 3);
+  if (plan.quarterTargets.slice(0, quarterIndex + 1).some((v) => v === null)) return straight;
+  const quarter = paceMarker(day, 'quarter');
+  const { percent } = yearPace({
+    quarterTargets: plan.quarterTargets.map((v) => v ?? 0), quarterIndex,
+    daysGone: quarter.daysGone, daysInQuarter: quarter.daysInPeriod, annualTarget: plan.annualTarget,
+  });
+  if (percent === null) return straight;
+  return { ...straight, percent, paceBasis: 'quarter_plan', plan: { quarterIndex, daysGone: quarter.daysGone, daysInQuarter: quarter.daysInPeriod } };
 }
 
-const dayStart = (year: number, month: number) => new Date(Date.UTC(year, month - 1, 1));
+/** The tenant-wide revenue quarter targets of a year (one read; a newer row replaces an older one for the same quarter). */
+export const yearQuarterRows = (tenantId: string, year: number) =>
+  prisma.target.findMany({
+    where: { tenantId, roleId: null, userId: null, scope: 'quarter', metric: 'revenue', periodStart: { gte: utcDate(year, 1), lte: utcDate(year, 10) } },
+    select: { periodStart: true, value: true },
+    orderBy: { createdAt: 'asc' },
+  });
+
+/** The four quarter targets of `year` from `yearQuarterRows`, Q1 first; null for a quarter with no target. */
+export function quarterTargetsOf(rows: Array<{ periodStart: Date; value: Prisma.Decimal }>, year: number): Array<Prisma.Decimal | null> {
+  const byStart = new Map(rows.map((r) => [r.periodStart.getTime(), r.value]));
+  return [1, 4, 7, 10].map((m) => byStart.get(utcDate(year, m).getTime()) ?? null)
+}
+
+/** The year plan of a tenant for `year`: its quarter targets and the given annual target (one read). */
+export async function loadYearPlan(tenantId: string, year: number, annualTarget: Money.MoneyInput | null): Promise<YearPlan> {
+  return { quarterTargets: quarterTargetsOf(await yearQuarterRows(tenantId, year), year), annualTarget };
+}
 
 /** The tenant-wide target of `metric` whose period covers `day`: the latest period start, then the newest row. */
 export const coveringTarget = (tenantId: string, metric: string, day: Date) =>
@@ -143,16 +194,15 @@ export async function leadership(tenantId: string, asOf?: string, options: Leade
   return runInTenant(tenantId, async () => {
     const asOfDay = new Date(utcDay(day));
     const targetBase = { tenantId, roleId: null, userId: null };
-    const periodRevenueTarget = (scope: 'month' | 'quarter' | 'north_star', startMonth: number) =>
+    const periodRevenueTarget = (scope: 'month' | 'north_star', startMonth: number) =>
       prisma.target.findFirst({
-        where: { ...targetBase, scope, metric: 'revenue', periodStart: dayStart(day.year, startMonth) },
+        where: { ...targetBase, scope, metric: 'revenue', periodStart: utcDate(day.year, startMonth) },
         orderBy: { createdAt: 'desc' },
       });
 
-    const [currency, quarterTarget, monthTarget, yearTarget, confTarget, successTarget, aovTarget,
+    const [currency, monthTarget, yearTarget, confTarget, successTarget, aovTarget,
       monthRevenue, quarterRevenue, yearRevenue, aovWindow, monthRates, yearQuarters] = await Promise.all([
       getCurrency(),
-      periodRevenueTarget('quarter', spans[1].startMonth),
       periodRevenueTarget('month', month.startMonth),
       periodRevenueTarget('north_star', 1),
       coveringTarget(tenantId, 'confirmation_rate', asOfDay),
@@ -163,23 +213,13 @@ export async function leadership(tenantId: string, asOf?: string, options: Leade
       deliveredRevenue(tenantId, spans[2].from, to, revScope),
       deliveredRevenue(tenantId, thirtyDaysFrom, to, revScope),
       rates(tenantId, month.from, to, { basis: 'cohort', repId: options.scope?.repId, partnerId: options.scope?.partnerId }),
-      prisma.target.findMany({
-        where: { ...targetBase, scope: 'quarter', metric: 'revenue', periodStart: { gte: dayStart(day.year, 1), lte: dayStart(day.year, 12) } },
-        orderBy: { createdAt: 'asc' },
-      }),
+      yearQuarterRows(tenantId, day.year),
     ]);
 
-    // Year pace follows the quarter plan (M6-T07, owner decision), not straight days. Without the quarter targets up to the
-    // current quarter, or without the annual target, it stays on straight days.
-    const quarterIndex = Math.floor((day.month - 1) / 3);
-    const quarterValues = [0, 1, 2, 3].map((q) => yearQuarters.find((t) => t.periodStart.getTime() === dayStart(day.year, q * 3 + 1).getTime())?.value ?? null);
-    const planned = yearTarget && quarterValues.slice(0, quarterIndex + 1).every((v) => v !== null)
-      ? yearPace({
-        quarterTargets: quarterValues.map((v) => v ?? 0) as Parameters<typeof yearPace>[0]['quarterTargets'],
-        quarterIndex, daysGone: spans[1].pace.daysGone, daysInQuarter: spans[1].pace.daysInPeriod, annualTarget: yearTarget.value,
-      }).percent
-      : null;
-    const yearSpan = planned === null ? spans[2] : { ...spans[2], pace: { ...spans[2].pace, percent: planned } };
+    // Year pace follows the quarter plan (M6-T07). The quarter target and the year pace come from the same rows.
+    const quarterTargets = quarterTargetsOf(yearQuarters, day.year);
+    const quarterTarget = quarterTargets[Math.floor((day.month - 1) / 3)];
+    const yearSpan = { ...spans[2], pace: paceMarker(day, 'year', { quarterTargets, annualTarget: yearTarget?.value ?? null }) };
 
     const meta = (basis: KpiResult<unknown>['dateBasis'], from: Date, formulaId: string) =>
       kpiMeta(from, to, { dateBasis: basis, formulaId, asOf: computedAt });
@@ -236,7 +276,7 @@ export async function leadership(tenantId: string, asOf?: string, options: Leade
       return {
         name: `Target attainment, ${s.period}`,
         value: t && t.gt(0) ? ratePercent(Money.parse(revenue.total.value).toNumber(), t.toNumber()) : null,
-        unit: 'percent', period: s.period, actual: revenue.total.value, target: money(target), pace: s.pace.percent,
+        unit: 'percent', period: s.period, actual: revenue.total.value, target: money(target), pace: s.pace.percent, paceBasis: s.pace.paceBasis,
         ...meta('deliveryDate', s.from, 'leadership.attainment.v1'),
       };
     };
@@ -278,7 +318,7 @@ export async function leadership(tenantId: string, asOf?: string, options: Leade
       plannedAov,
       attainment: {
         month: attain(month, monthRevenue, monthTarget),
-        quarter: attain(spans[1], quarterRevenue, quarterTarget),
+        quarter: attain(spans[1], quarterRevenue, quarterTarget ? { value: quarterTarget } : null),
         year: attain(yearSpan, yearRevenue, yearTarget),
       },
       lever: {

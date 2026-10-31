@@ -50,7 +50,7 @@ export async function notifyOrderAssigned(
 }
 
 /** Admins of the current tenant only (the scoped query adds tenantId); not the system user. */
-const findTenantAdmins = () => prisma.user.findMany({
+export const findTenantAdmins = () => prisma.user.findMany({
   where: { role: { in: ['admin', 'super_admin'] }, isActive: true, ...HUMAN_USERS_WHERE },
   select: { id: true }
 });
