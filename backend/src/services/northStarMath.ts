@@ -92,12 +92,12 @@ export const ordersDelivered = (revenueTarget: Money.MoneyInput, aov: Money.Mone
   Money.div(positive(revenueTarget, 'The revenue target'), positive(aov, 'The planned AOV')).ceil().toNumber();
 
 /** Orders to take in so that enough are delivered: delivered / (confirmation x delivery success), to the nearest whole order. */
-export const ordersToTakeIn = (delivered: number, confirmationRate: Money.MoneyInput, deliveryRate: Money.MoneyInput): number =>
-  Money.roundHalfUp(Money.div(delivered, Money.mul(assertRate(confirmationRate), assertRate(deliveryRate))), 0).toNumber();
+export const ordersToTakeIn = (delivered: number, confirmationRate: Money.MoneyInput, deliverySuccessRate: Money.MoneyInput): number =>
+  Money.roundHalfUp(Money.div(delivered, Money.mul(assertRate(confirmationRate), assertRate(deliverySuccessRate))), 0).toNumber();
 
 /** Orders to take in a day over the real days of the month, rounded up. */
 export const ordersPerDay = (takeIn: number, daysInMonth: number): number => Money.div(takeIn, daysInMonth).ceil().toNumber();
 
 /** The most to pay for one order taken in: profit per delivered order before ads x planned yield (confirmation x delivery). */
-export const maxCostPerOrder = (profitPerDelivered: Money.MoneyInput, confirmationRate: Money.MoneyInput, deliveryRate: Money.MoneyInput): string =>
-  Money.toApi(Money.mul(Money.parse(profitPerDelivered), Money.mul(assertRate(confirmationRate), assertRate(deliveryRate))));
+export const maxCostPerOrder = (profitPerDelivered: Money.MoneyInput, confirmationRate: Money.MoneyInput, deliverySuccessRate: Money.MoneyInput): string =>
+  Money.toApi(Money.mul(Money.parse(profitPerDelivered), Money.mul(assertRate(confirmationRate), assertRate(deliverySuccessRate))));
