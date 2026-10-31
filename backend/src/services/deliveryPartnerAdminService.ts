@@ -18,6 +18,7 @@ import { auditService } from './auditService';
 import { DEFAULT_DAYS_TO_PAY } from './orderPaymentTag';
 import { defaultDataSource, feeRuleView, partnerTypeOf, type PartnerType } from './deliveryPartnerService';
 import { fullName } from '../utils/nameUtils';
+import { emailConflictOf } from '../utils/prismaErrors';
 
 /** Vehicle types the Staff person modal offers (F-707). */
 export const VEHICLE_TYPES = ['Motorbike', 'Car', 'Tricycle', 'Bicycle', 'On foot'] as const;
@@ -59,7 +60,8 @@ const clean = (v: string | undefined) => (v ?? '').trim();
 function conflictOf(error: unknown): unknown {
   if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
     const target = String(error.meta?.target ?? '');
-    if (target.includes('email')) return new AppError('A user with this email already exists', 409, 'EMAIL_EXISTS');
+    const email = emailConflictOf(error);
+    if (email) return email;
     if (target.includes('name')) return new AppError('A stock location with this name already exists', 409, 'LOCATION_EXISTS');
     return new AppError('This partner already exists', 409, 'PARTNER_EXISTS');
   }

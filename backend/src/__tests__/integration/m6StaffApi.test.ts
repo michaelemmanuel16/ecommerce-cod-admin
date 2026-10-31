@@ -71,8 +71,8 @@ describe('who may call', () => {
     expect((await api.get(pair.a.users.salesRep.token, '/api/staff')).status).toBe(403);
     expect((await api.get(pair.a.users.salesRep.token, '/api/staff/workload')).status).toBe(403);
     expect((await api.get(pair.a.users.admin.token, '/api/staff')).status).toBe(200);
-    const gone = await mkPerson('gone', 'sales_rep', { isActive: false, preferences: { deletedAt: new Date().toISOString() } });
-    expect((await api.del(pair.a.users.admin.token, `/api/staff/${gone.id}/permanent`, { confirm: 'DELETE' })).status).toBe(403);
+    const gone = await mkPerson('gone', 'sales_rep', { isActive: false, deletedAt: new Date() });
+    expect((await api.del(pair.a.users.admin.token, `/api/staff/${gone.id}/permanent`, { confirm: gone.email })).status).toBe(403);
   });
 });
 
@@ -82,7 +82,7 @@ describe('GET /api/staff', () => {
     const rep = await mkPerson(`${tag}rep`, 'sales_rep');
     const invited = await mkPerson(`${tag}inv`, 'sales_rep', { isActive: false, invitedAt: new Date(), password: '!' });
     const off = await mkPerson(`${tag}off`, 'accountant', { isActive: false });
-    const deleted = await mkPerson(`${tag}del`, 'sales_rep', { isActive: false, preferences: { deletedAt: new Date().toISOString() } });
+    const deleted = await mkPerson(`${tag}del`, 'sales_rep', { isActive: false, deletedAt: new Date() });
     await mkPerson(`${tag}agent`, 'admin', { kind: 'ai_agent', password: '!' });
     await mkPerson(`${tag}other`, 'sales_rep', {}, pair.b.id);
 
@@ -252,6 +252,10 @@ describe('deactivate and reactivate', () => {
       await api.del(one.token, `/api/staff/${two.id}`),
       await api.put(one.token, `/api/staff/${two.id}`, { role: 'admin' }),
       await api.put(one.token, `/api/admin/users/${two.id}`, { isActive: false }),
+      // the old routes had no guard
+      await api.del(one.token, `/api/admin/users/${two.id}`),
+      await api.del(one.token, `/api/users/${two.id}`),
+      await api.del(one.token, `/api/admin/users/${two.id}/permanent`),
     ]) {
       expect(res.status).toBe(409);
       expect(JSON.stringify(res.body)).toContain('last Owner');
@@ -262,17 +266,56 @@ describe('deactivate and reactivate', () => {
     expect((await api.post(two.token, `/api/staff/${one.id}/reactivate`)).status).toBe(200);
     expect((await api.post(one.token, `/api/staff/${two.id}/deactivate`)).status).toBe(200);
   });
+
+  it('two Owners deactivating each other at once: one wins, one gets 409 (the Owner rows are locked)', async () => {
+    const tenant = await createTenant('m6staffrace');
+    extraTenants.push(tenant.id);
+    const one = await mkPerson('race1', 'super_admin', {}, tenant.id);
+    const two = await mkPerson('race2', 'super_admin', {}, tenant.id);
+    for (const [verb, call] of [
+      ['deactivate', (by: { token: string }, of: { id: number }) => api.post(by.token, `/api/staff/${of.id}/deactivate`)],
+      ['delete', (by: { token: string }, of: { id: number }) => api.del(by.token, `/api/staff/${of.id}`)],
+    ] as const) {
+      const results = await Promise.all([call(one, two), call(two, one)]);
+      expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
+      expect(await prismaBase.user.count({ where: { tenantId: tenant.id, role: 'super_admin', isActive: true } })).toBe(1);
+      // put both back for the next round
+      await prismaBase.user.updateMany({ where: { tenantId: tenant.id }, data: { isActive: true, deletedAt: null } });
+      expect(verb).toBeTruthy();
+    }
+  });
+
+  it('PUT /api/admin/users/:id keeps to its field list: tenant, password, kind, invite and delete fields are dropped', async () => {
+    const p = await mkPerson('white', 'sales_rep');
+    const before = await prismaBase.user.findUniqueOrThrow({ where: { id: p.id } });
+    const res = await api.put(ownerA, `/api/admin/users/${p.id}`, {
+      firstName: 'Kept', commissionAmount: '3', tenantId: pair.b.id, password: 'hacked-password', kind: 'company', invitedAt: new Date(),
+      deletedAt: new Date(), inviteTokenHash: 'abc', refreshToken: 'abc', totalEarnings: 99999, id: 1,
+    });
+    expect(res.status).toBe(200);
+    const after = await prismaBase.user.findUniqueOrThrow({ where: { id: p.id } });
+    expect(after).toMatchObject({ id: p.id, firstName: 'Kept', tenantId: pair.a.id, password: before.password, kind: 'person', invitedAt: null, deletedAt: null, inviteTokenHash: null, refreshToken: null });
+    expect(after.commissionAmount?.toString()).toBe('3');
+    expect(after.totalEarnings?.toString()).toBe(before.totalEarnings?.toString());
+    // a value of the wrong type is refused, not passed on
+    expect((await api.put(ownerA, `/api/admin/users/${p.id}`, { role: 'emperor' })).status).toBe(400);
+    // an admin cannot deactivate the Owner through the old route either
+    expect((await api.put(pair.a.users.admin.token, `/api/admin/users/${ownerAId}`, { isActive: false })).status).toBe(403);
+    expect((await prismaBase.user.findUniqueOrThrow({ where: { id: ownerAId } })).isActive).toBe(true);
+  });
 });
 
 describe('delete and permanent delete', () => {
   it('soft delete: Deleted tab, no login, restore with reactivate; a person deleted while invited is restored as invited', async () => {
     const p = await mkPerson('sdel', 'sales_rep', { preferences: { onboardingCompleted: true } });
+    const dbRow = () => prismaBase.user.findUniqueOrThrow({ where: { id: p.id } });
     const session = await login(p.email);
     const res = await api.del(ownerA, `/api/staff/${p.id}`);
     expect(res.status).toBe(200);
     expect(res.body.staff.status).toBe('deleted');
     expect(res.body.staff.deletedAt).toBeTruthy();
-    expect((await prismaBase.user.findUniqueOrThrow({ where: { id: p.id } })).preferences).toMatchObject({ onboardingCompleted: true });
+    expect(await dbRow()).toMatchObject({ isActive: false, preferences: { onboardingCompleted: true } });
+    expect((await dbRow()).deletedAt).toBeInstanceOf(Date);
     expect((await rowOf(p.name, 'deleted')).length).toBe(1);
     expect((await rowOf(p.name)).length).toBe(0);
     expect((await login(p.email)).status).toBe(401); // the login lookup skips inactive users: same answer as a wrong password
@@ -282,7 +325,7 @@ describe('delete and permanent delete', () => {
 
     const back = await api.post(ownerA, `/api/staff/${p.id}/reactivate`);
     expect(back.body.staff.status).toBe('active');
-    expect((await prismaBase.user.findUniqueOrThrow({ where: { id: p.id } })).preferences).toEqual({ onboardingCompleted: true });
+    expect(await dbRow()).toMatchObject({ isActive: true, deletedAt: null, preferences: { onboardingCompleted: true } });
 
     const inv = await mkPerson('sinv', 'sales_rep', { isActive: false, invitedAt: new Date(), password: '!', inviteTokenHash: uniq('hash') });
     expect((await api.del(ownerA, `/api/staff/${inv.id}`)).body.staff.status).toBe('deleted');
@@ -301,17 +344,18 @@ describe('delete and permanent delete', () => {
       },
     });
 
-    expect((await api.del(ownerA, `/api/staff/${rep.id}/permanent`, { confirm: 'DELETE' })).status).toBe(409); // not deleted yet
+    expect((await api.del(ownerA, `/api/staff/${rep.id}/permanent`, { confirm: rep.email })).status).toBe(409); // not deleted yet
     await api.del(ownerA, `/api/staff/${rep.id}`);
     expect((await api.del(ownerA, `/api/staff/${rep.id}/permanent`)).status).toBe(400);
-    expect((await api.del(ownerA, `/api/staff/${rep.id}/permanent`, { confirm: 'delete' })).status).toBe(400);
+    expect((await api.del(ownerA, `/api/staff/${rep.id}/permanent`, { confirm: 'DELETE' })).status).toBe(400); // the old word
+    expect((await api.del(ownerA, `/api/staff/${rep.id}/permanent`, { confirm: pair.a.users.admin.email })).status).toBe(400); // someone else's email
     expect(await prismaBase.user.count({ where: { id: rep.id } })).toBe(1);
 
-    const res = await api.del(ownerA, `/api/staff/${rep.id}/permanent`, { confirm: 'DELETE' });
+    const res = await api.del(ownerA, `/api/staff/${rep.id}/permanent`, { confirm: ` ${rep.email.toUpperCase()} ` }); // case does not matter
     expect(res.status).toBe(200);
     expect(await prismaBase.user.count({ where: { id: rep.id } })).toBe(0);
     expect((await prismaBase.order.findUniqueOrThrow({ where: { id: mine.id } })).customerRepId).toBeNull();
-    expect((await api.del(ownerA, `/api/staff/${rep.id}/permanent`, { confirm: 'DELETE' })).status).toBe(404);
+    expect((await api.del(ownerA, `/api/staff/${rep.id}/permanent`, { confirm: rep.email })).status).toBe(404);
     const audit = await prismaBase.auditLog.findFirst({ where: { tenantId: pair.a.id, action: 'staff_permanent_delete', resourceId: String(rep.id) } });
     expect(audit).toBeTruthy();
   });
@@ -327,11 +371,31 @@ describe('delete and permanent delete', () => {
     });
     await prismaBase.commissionEntry.create({ data: { tenantId: pair.a.id, userId: rep.id, kind: 'base', amount: '5', status: 'pending', orderId: mine.id } });
     await api.del(ownerA, `/api/staff/${rep.id}`);
-    const res = await api.del(ownerA, `/api/staff/${rep.id}/permanent`, { confirm: 'DELETE' });
+    const res = await api.del(ownerA, `/api/staff/${rep.id}/permanent`, { confirm: rep.email });
     expect(res.status).toBe(409);
     expect(JSON.stringify(res.body)).toContain('HAS_RECORDS');
     expect(await prismaBase.user.count({ where: { id: rep.id } })).toBe(1);
     expect((await prismaBase.order.findUniqueOrThrow({ where: { id: mine.id } })).customerRepId).toBe(rep.id); // rolled back
+  });
+  it('the old erase route goes through the same erase: a person is gone, orders keep going without them', async () => {
+    const rep = await mkPerson('oldperm', 'sales_rep');
+    const order = await prismaBase.order.findFirstOrThrow({ where: { tenantId: pair.a.id } });
+    const mine = await prismaBase.order.create({
+      data: {
+        customerId: order.customerId, customerRepId: rep.id, status: 'confirmed', subtotal: '10', totalAmount: '10', codAmount: '10',
+        deliveryAddress: 'x', deliveryState: 'Greater Accra', deliveryArea: 'Accra', tenantId: pair.a.id,
+      },
+    });
+    expect((await api.del(ownerA, `/api/admin/users/${rep.id}/permanent`)).status).toBe(200);
+    expect(await prismaBase.user.count({ where: { id: rep.id } })).toBe(0);
+    expect((await prismaBase.order.findUniqueOrThrow({ where: { id: mine.id } })).customerRepId).toBeNull();
+    // another tenant's user is not found, and with records the erase is a 409
+    const foreign = await mkPerson('oldforeign', 'sales_rep', {}, pair.b.id);
+    expect((await api.del(ownerA, `/api/admin/users/${foreign.id}/permanent`)).status).toBe(404);
+    const keep = await mkPerson('oldkeep', 'sales_rep');
+    await prismaBase.commissionEntry.create({ data: { tenantId: pair.a.id, userId: keep.id, kind: 'base', amount: '5', status: 'pending' } });
+    expect((await api.del(ownerA, `/api/admin/users/${keep.id}/permanent`)).status).toBe(409);
+    expect(await prismaBase.user.count({ where: { id: keep.id } })).toBe(1);
   });
 });
 

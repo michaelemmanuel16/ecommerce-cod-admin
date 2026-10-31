@@ -126,12 +126,18 @@ export async function assignPositionRole(db: Pick<TransactionClient, 'role' | 'r
 }
 
 /**
- * The last active Owner (super_admin person) cannot be deactivated, deleted or demoted (M6-T05). No-op for anyone else.
- * `what` completes "The last Owner cannot be ...".
+ * The last active Owner (super_admin person) cannot be deactivated, deleted, demoted or erased (M6-T05). No-op for anyone else.
+ * Call inside the transaction that makes the change: it locks the tenant's active Owner rows first, so two Owners ending each
+ * other at once run one after the other and the second sees one Owner left. Raw SQL on purpose: the lock needs `FOR UPDATE`,
+ * and the tenant is named here so it also works on the un-extended client. `verb` completes "The last Owner cannot be ...".
  */
-export async function assertNotLastOwner(db: Pick<TransactionClient, 'user'>, userId: number, what = 'deactivated or deleted'): Promise<void> {
-  const target = await withSoftDeleted(() => db.user.findFirst({ where: { id: userId }, select: { role: true } }));
-  if (target?.role !== 'super_admin') return;
-  const others = await db.user.count({ where: { id: { not: userId }, role: 'super_admin', kind: 'person', isActive: true } });
-  if (others === 0) throw new AppError(`The last Owner cannot be ${what}`, 409, 'LAST_OWNER');
+export async function assertNotLastOwner(
+  tx: Pick<Prisma.TransactionClient, '$queryRaw'>,
+  target: { id: number; role: UserRole },
+  verb: string,
+): Promise<void> {
+  if (target.role !== 'super_admin') return;
+  const owners = await tx.$queryRaw<Array<{ id: number }>>`
+    SELECT id FROM users WHERE tenant_id = ${resolveTenantId()} AND role = 'super_admin' AND kind = 'person' AND is_active FOR UPDATE`;
+  if (owners.every((o) => o.id === target.id)) throw new AppError(`The last Owner cannot be ${verb}`, 409, 'LAST_OWNER');
 }

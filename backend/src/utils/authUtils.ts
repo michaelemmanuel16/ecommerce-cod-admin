@@ -1,4 +1,5 @@
 import { Prisma, UserRole } from '@prisma/client';
+import { AppError } from '../middleware/errorHandler';
 
 export interface Requester {
     id: number;
@@ -111,4 +112,19 @@ export const canManageRole = (requesterRole: UserRole, targetRole: UserRole): bo
     const requesterWeight = getRoleWeight(requesterRole);
     const targetWeight = getRoleWeight(targetRole);
     return requesterWeight > targetWeight;
+};
+
+/**
+ * The actor may act on `target`: not on themselves (when `self` gives the message) and only on a lower rank, the Owner on anyone.
+ * Throws 403 with `higher` (default message) for a rank failure.
+ */
+export const assertMayManage = (
+    actor: Requester,
+    target: { id: number; role: UserRole },
+    messages: { self?: string; higher?: string } = {},
+): void => {
+    if (messages.self && actor.id === target.id) throw new AppError(messages.self, 403);
+    if (!canManageRole(actor.role, target.role)) {
+        throw new AppError(messages.higher ?? 'Access denied: Cannot manage a user with a higher role.', 403);
+    }
 };

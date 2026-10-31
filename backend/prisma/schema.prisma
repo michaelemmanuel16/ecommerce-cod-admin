@@ -145,6 +145,8 @@ model User {
   invitedAt             DateTime?               @map("invited_at")
   inviteTokenHash       String?                 @unique @map("invite_token_hash")
   inviteExpiresAt       DateTime?               @map("invite_expires_at")
+  /// M6 (F-1160): set when staff soft-delete a person (also isActive=false); cleared on restore. Not set by a plain deactivate.
+  deletedAt             DateTime?               @map("deleted_at")
   country               String?
   preferences           Json?
   vehicleType           String?                 @map("vehicle_type")
