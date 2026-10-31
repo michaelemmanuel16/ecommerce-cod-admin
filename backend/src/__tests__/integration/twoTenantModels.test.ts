@@ -75,6 +75,10 @@ const MODELS: Array<[string, string, string, string]> = [
   ['partner settlements', 'partnerSettlement', 'partnerSettlement', 'PartnerSettlement'],
   ['partner settlement lines', 'partnerSettlementLine', 'partnerSettlementLine', 'PartnerSettlementLine'],
   ['commission entries', 'commissionEntry', 'commissionEntry', 'CommissionEntry'],
+  // M6 models
+  ['reward tiers', 'rewardTier', 'rewardTier', 'RewardTier'],
+  ['badge awards', 'badgeAward', 'badgeAward', 'BadgeAward'],
+  ['assignment cursors', 'assignmentCursor', 'assignmentCursor', 'AssignmentCursor'],
 ];
 
 describe('tenant B data never shows for tenant A', () => {
