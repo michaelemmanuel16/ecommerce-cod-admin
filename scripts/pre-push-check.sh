@@ -40,28 +40,28 @@ run_check() {
     fi
 }
 
+# Fast checks only (about a minute): lint, type check, backend unit tests, workflow lint.
+# Not run here, on purpose: the backend integration suite (serial, ~15 min; CI runs it sharded),
+# frontend tests/builds (CI runs them). `npm test` is not used: its script already sets --maxWorkers,
+# so extra Jest flags such as --runInBand are refused. For integration tests locally:
+#   cd backend && npm run test:integration:parallel
+
 # 1. Backend Lint
 run_check "Backend ESLint" "cd backend && npm run lint"
 
 # 2. Frontend Lint
 run_check "Frontend ESLint" "cd frontend && npm run lint"
 
-# 3. Backend Tests
-run_check "Backend Tests" "cd backend && npm test -- --passWithNoTests --forceExit"
+# 3. Backend type check
+run_check "Backend tsc" "cd backend && npx tsc --noEmit"
 
-# 4. Frontend Tests
-run_check "Frontend Tests" "cd frontend && npm test -- --run"
+# 4. Frontend type check
+run_check "Frontend tsc" "cd frontend && npx tsc --noEmit"
 
-# 5. Backend Build
-run_check "Backend Build" "cd backend && npm run build"
+# 5. Backend unit tests
+run_check "Backend unit tests" "cd backend && npm run test:unit -- --passWithNoTests --forceExit"
 
-# 6. Frontend Build
-run_check "Frontend Build" "cd frontend && npm run build"
-
-# 6b. Embed Widget Build
-run_check "Embed Widget Build" "cd frontend && npm run build:embed"
-
-# 7. Validate GitHub Workflows
+# 6. Validate GitHub Workflows
 if [ -f "./scripts/validate-workflows.sh" ]; then
     run_check "GitHub Workflows Validation" "./scripts/validate-workflows.sh"
 else

@@ -8,6 +8,16 @@ dotenv.config({ path: path.join(__dirname, '../../.env.test') });
 // Fallback to .env if .env.test is missing
 dotenv.config({ path: path.join(__dirname, '../../.env') });
 
+// Parallel local runs (`npm run test:integration:parallel`): every Jest worker gets its own database,
+// <name>_w<JEST_WORKER_ID>, made by scripts/test-dbs.sh. This runs before any test file imports Prisma.
+// A smaller pool keeps N workers under the Postgres connection limit.
+if (process.env.TEST_DB_PER_WORKER === '1' && process.env.DATABASE_URL) {
+  const url = new URL(process.env.DATABASE_URL);
+  url.pathname = `${url.pathname}_w${process.env.JEST_WORKER_ID || '1'}`;
+  if (!url.searchParams.has('connection_limit')) url.searchParams.set('connection_limit', '10');
+  process.env.DATABASE_URL = url.toString();
+}
+
 // Mock environment variables for testing
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-that-is-at-least-32-characters-long';
