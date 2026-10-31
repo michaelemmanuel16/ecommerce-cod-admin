@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **[Roles]**: M6 schema (reward tiers, badge awards, assignment cursors, role permission grid, preset role and target metric, invite fields) and system roles: one `DEFAULT_ROLES` table with Admin, Manager and Marketing, `mergeRolePermissions` shared by auth and the seed, Owner role cannot be deleted, and `migrate-users-to-roles.ts` (`--dry-run`, `--tenant`) that gives each person and company user a position role without changing the permission matrix. (COD-56)
+- **[Assignment]**: Persistent smooth weighted round robin cursor in the database (one locked row per pick, survives restart), away users skipped without a reset, and an owner alert once per scope per hour when nobody is available. (COD-58)
 - **[Finance]**: Finance Overview with six tiles, payout reconciliation, unpaid by age and cash runway from one call, with a date range and a short-row expansion. (COD-52, COD-53)
 - **[Finance]**: Findings page, Orders "Unpaid by agent" tab with a count, and Agent collections with four aging buckets, a review modal, WhatsApp reminder, block and unblock. (COD-53)
 - **[Finance]**: Profit by product, last 3 months chart (`GET /api/financial/profit-by-product/trend`); the deposits route takes `recentDecided` to stay bounded. (COD-54)
