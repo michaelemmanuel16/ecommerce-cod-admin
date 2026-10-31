@@ -5,7 +5,8 @@ import { AppError } from '../middleware/errorHandler';
 import { resolveTenantId } from '../utils/tenantContext';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderAssigned, emitOrderUpdated } from '../sockets';
-import { createNotification } from './notificationService';
+import { createNotification, notifyAdminsNoAssigneeAvailable } from './notificationService';
+import { pickWithCursor } from './assignmentCursor';
 
 /**
  * Assignment weights for weighted user selection
@@ -13,14 +14,6 @@ import { createNotification } from './notificationService';
  */
 export interface AssignmentWeights {
   [userId: string]: number;
-}
-
-/**
- * User with optional weight for assignment
- */
-interface UserWithWeight {
-  user: User;
-  weight?: number;
 }
 
 /** Who made the assignment: a signed-in user (manual path) or the tenant's system user (workflows). */
@@ -52,128 +45,69 @@ const ASSIGN_KINDS: Record<AssignRole, { relation: string; short: string; label:
  * Handles user assignment logic for workflows (round-robin and weighted)
  */
 export class AssignmentService {
-  // In-memory storage for round-robin state
-  // In production, this should be stored in Redis or database
-  private roundRobinIndices: Map<string, number> = new Map();
-
   /**
-   * Select a user using round-robin algorithm
+   * Select a user using smooth round robin. The cursor lives in Redis with a database fallback (F-513),
+   * so the sequence continues after a restart. Every user counts the same.
    *
    * @param users - Array of users to select from
-   * @param contextKey - Optional key to maintain separate round-robin states (e.g., 'delivery_agent', 'sales_rep')
+   * @param contextKey - Optional key to maintain separate cursors (e.g., 'delivery_agent', 'sales_rep')
    * @returns Selected user or null if no users available
    */
-  selectUserRoundRobin(users: User[], contextKey: string = 'default'): User | null {
-    if (!users || users.length === 0) {
-      logger.warn('No users available for round-robin selection');
-      return null;
-    }
-
-    // Filter only active and available users
-    const availableUsers = users.filter(user => user.isActive && user.isAvailable);
-
-    if (availableUsers.length === 0) {
-      logger.warn('No active and available users for round-robin selection');
-      return null;
-    }
-
-    // Get current index for this context
-    const currentIndex = this.roundRobinIndices.get(contextKey) || 0;
-
-    // Select user at current index
-    const selectedUser = availableUsers[currentIndex % availableUsers.length];
-
-    // Update index for next selection
-    this.roundRobinIndices.set(contextKey, (currentIndex + 1) % availableUsers.length);
-
-    logger.info('User selected via round-robin', {
-      userId: selectedUser.id,
-      userName: `${selectedUser.firstName} ${selectedUser.lastName}`,
-      contextKey,
-      nextIndex: this.roundRobinIndices.get(contextKey)
-    });
-
-    return selectedUser;
+  async selectUserRoundRobin(users: User[], contextKey: string = 'default'): Promise<User | null> {
+    return this.selectWithCursor(users, contextKey, () => 1);
   }
 
   /**
-   * Select a user using weighted random selection
-   *
-   * Users with higher weights have proportionally higher chance of being selected
-   * Weights should be between 0 and 1, and sum up to approximately 1.0
+   * Select a user using smooth weighted round robin: shares are exact over one cycle, not only in the long run.
+   * The weights come from the caller (the workflow's `assignments[].weight`). A user with no weight gets none;
+   * if no available user has a weight, everyone counts the same.
    *
    * @param users - Array of users to select from
    * @param weights - Object mapping userId to weight (percentage as decimal, e.g., 0.5 = 50%)
+   * @param contextKey - Key of the cursor
    * @returns Selected user or null if no users available
    */
-  selectUserWeighted(users: User[], weights: AssignmentWeights): User | null {
+  async selectUserWeighted(users: User[], weights: AssignmentWeights, contextKey: string = 'default'): Promise<User | null> {
+    // Integer shares keep the running totals exact (0.6 + 0.4 would drift).
+    const shareOf = (user: User) => Math.round((weights[user.id] || 0) * 1000);
+    const anyWeight = (users || []).some((user) => user.isActive && user.isAvailable && shareOf(user) > 0);
+    if (!anyWeight && users?.length) logger.info('No valid weights found, using equal distribution');
+    return this.selectWithCursor(users, contextKey, anyWeight ? shareOf : () => 1);
+  }
+
+  private async selectWithCursor(users: User[], contextKey: string, shareOf: (user: User) => number): Promise<User | null> {
     if (!users || users.length === 0) {
-      logger.warn('No users available for weighted selection');
+      logger.warn('No users available for cursor selection', { contextKey });
       return null;
     }
-
-    // Filter only active and available users
-    const availableUsers = users.filter(user => user.isActive && user.isAvailable);
-
-    if (availableUsers.length === 0) {
-      logger.warn('No active and available users for weighted selection');
+    const candidates = users.filter((user) => shareOf(user) > 0).map((user) => ({ id: user.id, weight: shareOf(user) }));
+    // Only active and available users may take an order; the others stay in the list so the cursor does not reset.
+    const usable = new Set(users.filter((user) => user.isActive && user.isAvailable).map((user) => user.id));
+    const available = candidates.filter((c) => usable.has(c.id));
+    if (available.length === 0) {
+      logger.warn('No active and available users for cursor selection', { contextKey });
+      await this.alertNoneAvailable(contextKey, users[0].role);
       return null;
     }
-
-    // Build weighted array
-    const weightedUsers: UserWithWeight[] = [];
-    let totalWeight = 0;
-
-    for (const user of availableUsers) {
-      const userWeight = weights[user.id] || 0;
-
-      if (userWeight > 0) {
-        weightedUsers.push({ user, weight: userWeight });
-        totalWeight += userWeight;
-      }
-    }
-
-    // If no valid weights, fall back to equal distribution
-    if (weightedUsers.length === 0 || totalWeight === 0) {
-      logger.info('No valid weights found, using equal distribution');
-      const randomIndex = Math.floor(Math.random() * availableUsers.length);
-      return availableUsers[randomIndex];
-    }
-
-    // Normalize weights to sum to 1.0 if they don't
-    if (Math.abs(totalWeight - 1.0) > 0.01) {
-      logger.info('Normalizing weights', { originalTotal: totalWeight });
-      weightedUsers.forEach(item => {
-        if (item.weight) {
-          item.weight = item.weight / totalWeight;
-        }
+    const pickedId = await pickWithCursor(contextKey, users[0].role, candidates, available);
+    const selectedUser = users.find((user) => user.id === pickedId) ?? null;
+    if (selectedUser) {
+      logger.info('User selected via assignment cursor', {
+        userId: selectedUser.id,
+        userName: `${selectedUser.firstName} ${selectedUser.lastName}`,
+        contextKey
       });
-      totalWeight = 1.0;
     }
+    return selectedUser;
+  }
 
-    // Select user based on weighted random selection
-    const random = Math.random();
-    let cumulativeWeight = 0;
-
-    for (const item of weightedUsers) {
-      cumulativeWeight += item.weight || 0;
-      if (random <= cumulativeWeight) {
-        logger.info('User selected via weighted distribution', {
-          userId: item.user.id,
-          userName: `${item.user.firstName} ${item.user.lastName}`,
-          weight: item.weight,
-          random
-        });
-        return item.user;
-      }
+  /** The owner is told once per scope per hour; an alert that fails must not stop the caller, the order just waits. */
+  private async alertNoneAvailable(scope: string, role: string): Promise<void> {
+    try {
+      await notifyAdminsNoAssigneeAvailable(scope, role);
+    } catch (error) {
+      logger.warn('No-assignee alert failed', { scope, error: (error as Error).message });
     }
-
-    // Fallback to last user (should rarely happen due to floating point precision)
-    const fallbackUser = weightedUsers[weightedUsers.length - 1].user;
-    logger.warn('Weighted selection fallback to last user', {
-      userId: fallbackUser.id
-    });
-    return fallbackUser;
   }
 
   /**
@@ -214,13 +148,14 @@ export class AssignmentService {
     // Get all delivery agents
     const agents = await this.getUsersByRole('delivery_agent');
 
+    // Use area-specific round-robin context
+    const contextKey = `delivery_agent_${area}`;
     if (agents.length === 0) {
       logger.warn('No delivery agents available', { area });
+      await this.alertNoneAvailable(contextKey, 'delivery_agent');
       return null;
     }
 
-    // Use area-specific round-robin context
-    const contextKey = `delivery_agent_${area}`;
     return this.selectUserRoundRobin(agents, contextKey);
   }
 
@@ -235,31 +170,11 @@ export class AssignmentService {
 
     if (salesReps.length === 0) {
       logger.warn('No sales representatives available');
+      await this.alertNoneAvailable('sales_rep', 'sales_rep');
       return null;
     }
 
-    return this.selectUserWeighted(salesReps, weights);
-  }
-
-  /**
-   * Reset round-robin state for a specific context
-   * Useful for testing or when you want to restart the cycle
-   *
-   * @param contextKey - Context key to reset
-   */
-  resetRoundRobin(contextKey: string = 'default'): void {
-    this.roundRobinIndices.delete(contextKey);
-    logger.info('Round-robin state reset', { contextKey });
-  }
-
-  /**
-   * Get current round-robin index for debugging
-   *
-   * @param contextKey - Context key to check
-   * @returns Current index or 0 if not set
-   */
-  getRoundRobinIndex(contextKey: string = 'default'): number {
-    return this.roundRobinIndices.get(contextKey) || 0;
+    return this.selectUserWeighted(salesReps, weights, 'sales_rep');
   }
 
   /**

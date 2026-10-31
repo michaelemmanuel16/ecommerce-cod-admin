@@ -261,9 +261,11 @@ describe('assignment skips an unavailable partner (F-709)', () => {
   it('round robin and weighted selection never return the away partner', async () => {
     const all = await prismaBase.user.findMany({ where: { tenantId, role: 'delivery_agent' } });
     expect(all.map((u) => u.id)).toContain(U.away.id);
-    for (let i = 0; i < 6; i++) expect(assignmentService.selectUserRoundRobin(all, 'dpw')!.id).not.toBe(U.away.id);
-    for (let i = 0; i < 6; i++) expect(assignmentService.selectUserWeighted(all, { [U.away.id]: 1 })!.id).not.toBe(U.away.id);
-    expect(assignmentService.selectUserRoundRobin(all.filter((u) => u.id === U.away.id), 'dpw-only-away')).toBeNull();
+    await runInTenant(tenantId, async () => {
+      for (let i = 0; i < 6; i++) expect((await assignmentService.selectUserRoundRobin(all, 'dpw'))!.id).not.toBe(U.away.id);
+      for (let i = 0; i < 6; i++) expect((await assignmentService.selectUserWeighted(all, { [U.away.id]: 1 }, 'dpw-w'))!.id).not.toBe(U.away.id);
+      expect(await assignmentService.selectUserRoundRobin(all.filter((u) => u.id === U.away.id), 'dpw-only-away')).toBeNull();
+    });
   });
 
   it('manual assign refuses the away partner with PARTNER_UNAVAILABLE', async () => {

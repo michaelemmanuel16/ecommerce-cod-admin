@@ -21,9 +21,9 @@ async function exampleRoundRobinAssignment() {
   const agents = await assignmentService.getUsersByRole('delivery_agent');
 
   // Select agents in round-robin fashion
-  const agent1 = assignmentService.selectUserRoundRobin(agents, 'downtown_delivery');
-  const agent2 = assignmentService.selectUserRoundRobin(agents, 'downtown_delivery');
-  const agent3 = assignmentService.selectUserRoundRobin(agents, 'downtown_delivery');
+  const agent1 = await assignmentService.selectUserRoundRobin(agents, 'downtown_delivery');
+  const agent2 = await assignmentService.selectUserRoundRobin(agents, 'downtown_delivery');
+  const agent3 = await assignmentService.selectUserRoundRobin(agents, 'downtown_delivery');
 
   console.log('Selected agents:', [
     agent1?.firstName,
@@ -32,11 +32,8 @@ async function exampleRoundRobinAssignment() {
   ]);
 
   // Different context = different round-robin cycle
-  const suburbAgent = assignmentService.selectUserRoundRobin(agents, 'suburb_delivery');
+  const suburbAgent = await assignmentService.selectUserRoundRobin(agents, 'suburb_delivery');
   console.log('Suburb agent:', suburbAgent?.firstName);
-
-  // Reset round-robin for a context
-  assignmentService.resetRoundRobin('downtown_delivery');
 }
 
 // ============================================================================
@@ -64,13 +61,13 @@ async function exampleWeightedAssignment() {
   }
 
   // Select rep using weighted distribution
-  const selectedRep = assignmentService.selectUserWeighted(salesReps, weights);
+  const selectedRep = await assignmentService.selectUserWeighted(salesReps, weights);
   console.log('Selected sales rep:', selectedRep?.firstName);
 
   // Over multiple selections, distribution should match weights
   const selections: { [key: string]: number } = {};
   for (let i = 0; i < 1000; i++) {
-    const rep = assignmentService.selectUserWeighted(salesReps, weights);
+    const rep = await assignmentService.selectUserWeighted(salesReps, weights);
     if (rep) {
       selections[rep.id] = (selections[rep.id] || 0) + 1;
     }
