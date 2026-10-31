@@ -571,13 +571,21 @@ export const adminService = {
     // can find inactive users — admins must be able to reactivate them.
     const targetUser = await withSoftDeleted(() => prisma.user.findUnique({
       where: { id: userId },
-      select: { role: true }
+      select: { role: true, isActive: true, invitedAt: true, deletedAt: true }
     }));
 
     if (!targetUser) {
       throw new AppError('User not found', 404);
     }
     const target = { id: userId, role: targetUser.role };
+
+    // Any edit of another person (name, email, phone, ...) needs rank over them; an email change would otherwise be an account takeover.
+    if (requester.id !== userId) assertMayManage(requester, target, { higher: 'Access denied: Cannot modify a user with a higher role.' });
+    // Coming back from a soft delete or a pending invite has its own rules (reactivateStaff); this route does not restore.
+    if (input.isActive === true) {
+      if (targetUser.deletedAt) throw new AppError('Restore this person from the Deleted tab', 409, 'STAFF_DELETED');
+      if (!targetUser.isActive && targetUser.invitedAt) throw new AppError('This person has not accepted the invite yet', 409, 'STAFF_INVITED');
+    }
 
     // Role management protection
     if (input.role) {
@@ -589,11 +597,7 @@ export const adminService = {
       if (!canManageRole(requester.role, input.role)) {
         throw new AppError(`Access denied: Cannot promote user to ${input.role} role.`, 403);
       }
-      // Cannot modify a user with a higher role than your own
-      assertMayManage(requester, target, { higher: 'Access denied: Cannot modify a user with a higher role.' });
     }
-    // Deactivating needs rank over the person (a person may still deactivate themselves here).
-    if (input.isActive === false && requester.id !== userId) assertMayManage(requester, target);
 
     const roleChanged = input.role !== undefined && input.role !== targetUser.role;
     const deactivating = input.isActive === false;
@@ -602,8 +606,6 @@ export const adminService = {
       ...input,
       // "First Last" in one field: the first word is the first name.
       ...(name !== undefined && { firstName: firstName || 'Unknown', lastName: rest.join(' ') }),
-      // Active again clears the staff soft delete (M6-T05).
-      ...(input.isActive === true && { deletedAt: null }),
     };
     const select = options.select ?? USER_UPDATE_SELECT;
 

@@ -303,6 +303,33 @@ describe('deactivate and reactivate', () => {
     expect((await api.put(pair.a.users.admin.token, `/api/admin/users/${ownerAId}`, { isActive: false })).status).toBe(403);
     expect((await prismaBase.user.findUniqueOrThrow({ where: { id: ownerAId } })).isActive).toBe(true);
   });
+
+  it('rank is checked on every edit: an admin cannot change a super_admin email or name; a lower rank is fine', async () => {
+    const admin = pair.a.users.admin.token;
+    const ownerBefore = await prismaBase.user.findUniqueOrThrow({ where: { id: ownerAId } });
+    for (const url of [`/api/admin/users/${ownerAId}`, `/api/staff/${ownerAId}`]) {
+      expect((await api.put(admin, url, { email: `takeover${uniq('x')}@codadmin.test` })).status).toBe(403);
+      expect((await api.put(admin, url, { firstName: 'Hijack' })).status).toBe(403);
+    }
+    const ownerAfter = await prismaBase.user.findUniqueOrThrow({ where: { id: ownerAId } });
+    expect(ownerAfter).toMatchObject({ email: ownerBefore.email, firstName: ownerBefore.firstName });
+    const rep = await mkPerson('lowrank', 'sales_rep');
+    const email = `${uniq('moved')}@codadmin.test`;
+    expect((await api.put(admin, `/api/staff/${rep.id}`, { email })).status).toBe(200);
+    expect((await prismaBase.user.findUniqueOrThrow({ where: { id: rep.id } })).email).toBe(email);
+  });
+
+  it('isActive true does not restore a deleted or an invited person', async () => {
+    const gone = await mkPerson('nogo', 'sales_rep', { isActive: false, deletedAt: new Date() });
+    const invited = await mkPerson('noinv', 'sales_rep', { isActive: false, invitedAt: new Date(), password: '!' });
+    const back = await api.put(ownerA, `/api/admin/users/${gone.id}`, { isActive: true });
+    expect(back.status).toBe(409);
+    expect(back.body.code).toBe('STAFF_DELETED');
+    const res = await api.put(ownerA, `/api/admin/users/${invited.id}`, { isActive: true });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('STAFF_INVITED');
+    expect(await prismaBase.user.findMany({ where: { id: { in: [gone.id, invited.id] } }, select: { isActive: true } })).toEqual([{ isActive: false }, { isActive: false }]);
+  });
 });
 
 describe('delete and permanent delete', () => {
