@@ -240,8 +240,8 @@ export const forgotPasswordValidation: ValidationChain[] = [
 export const resetPasswordValidation: ValidationChain[] = [
   body('token').notEmpty(),
   body('password')
-    .isLength({ min: 8 })
-    .withMessage('Password must be at least 8 characters long')
+    .isLength({ min: 8, max: 72 })
+    .withMessage('Password must be 8 to 72 characters long')
     .matches(/[A-Z]/)
     .withMessage('Password must contain at least one uppercase letter')
     .matches(/[a-z]/)

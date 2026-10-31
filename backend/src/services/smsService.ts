@@ -79,13 +79,15 @@ export const SMS_TEMPLATES: Record<string, {
 interface SendSmsOptions {
   to: string;
   body: string;
+  /** What the message log keeps instead of `body` (a text with a secret link). The provider still gets `body`. */
+  logBody?: string;
   orderId?: number;
   customerId?: number;
 }
 
 class SmsService {
   async sendSms(options: SendSmsOptions): Promise<{ messageLogId: number; providerMessageId?: string }> {
-    const { to, body, orderId, customerId } = options;
+    const { to, body, logBody, orderId, customerId } = options;
     const formattedPhone = formatPhoneNumber(to);
 
     const messageLog = await prisma.messageLog.create({
@@ -94,7 +96,7 @@ class SmsService {
         customerId,
         channel: MessageChannel.sms,
         direction: MessageDirection.outbound,
-        messageBody: body,
+        messageBody: logBody ?? body,
         status: MessageStatus.pending,
         metadata: { to: formattedPhone },
       },

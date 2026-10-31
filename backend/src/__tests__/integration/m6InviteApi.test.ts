@@ -12,6 +12,7 @@ import { bearer } from './helpers/superAdminToken';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
 import { hashInviteToken } from '../../utils/inviteToken';
 import { superAdminToken } from './helpers/superAdminToken';
+import { smsService } from '../../services/smsService';
 
 jest.mock('../../services/emailService', () => ({
   ...jest.requireActual('../../services/emailService'),
@@ -190,6 +191,21 @@ describe('channels', () => {
     }
   });
 
+  it('with a provider, the provider gets the real link and the message log never holds the token', async () => {
+    const dispatch = jest.spyOn(smsService as unknown as { dispatch: (...a: unknown[]) => Promise<string> }, 'dispatch').mockResolvedValue('provider-msg-1');
+    try {
+      const res = await invite({ channel: 'sms', phoneNumber: '0244000333' });
+      expect(res.body.delivery).toEqual({ channel: 'sms', sent: true });
+      const raw = tokenOf(res.body.link);
+      expect(dispatch).toHaveBeenCalledWith(expect.any(Number), expect.any(String), expect.stringContaining(raw));
+      expect(await prismaBase.messageLog.count({ where: { messageBody: { contains: raw } } })).toBe(0);
+      const row = await prismaBase.messageLog.findFirstOrThrow({ where: { tenantId: pair.a.id, channel: 'sms' }, orderBy: { id: 'desc' } });
+      expect(row.messageBody).toContain('[invite link]');
+    } finally {
+      dispatch.mockRestore();
+    }
+  });
+
   it('an email that fails to send still keeps the invite and returns the link; SMS needs a phone', async () => {
     sendInviteEmailMock.mockRejectedValueOnce(new Error('Email provider not configured'));
     const res = await invite();
@@ -244,7 +260,46 @@ describe('resend and revoke', () => {
   });
 });
 
+describe('a link dies when the person is deactivated, deleted or no longer Invited', () => {
+  it('deactivating or deleting an invited person through any route kills the link; the person stays inactive', async () => {
+    const routes: Array<[string, (id: number) => Promise<{ status: number }>]> = [
+      ['admin PUT isActive false', (id) => request(app).put(`/api/admin/users/${id}`).set(bearer(ownerA)).send({ isActive: false })],
+      ['staff DELETE', (id) => request(app).delete(`/api/staff/${id}`).set(bearer(ownerA))],
+    ];
+    for (const [label, run] of routes) {
+      const res = await invite();
+      const id = res.body.staff.id;
+      expect([label, (await run(id)).status]).toEqual([label, 200]);
+      const row = await dbUser(id);
+      expect([label, row.inviteTokenHash, row.inviteExpiresAt]).toEqual([label, null, null]);
+      const out = await accept(tokenOf(res.body.link));
+      expect([label, out.status, out.body.code]).toEqual([label, 400, 'INVITE_INVALID']);
+      expect((await dbUser(id)).isActive).toBe(false);
+    }
+  });
+
+  it('even a token that survived somehow cannot be spent by a deleted person or one with no invite date', async () => {
+    const [a, b] = [await invite(), await invite()];
+    await prismaBase.user.update({ where: { id: a.body.staff.id }, data: { deletedAt: new Date() } });
+    await prismaBase.user.update({ where: { id: b.body.staff.id }, data: { invitedAt: null } });
+    for (const res of [a, b]) {
+      const out = await accept(tokenOf(res.body.link));
+      expect(out.status).toBe(400);
+      expect(out.body.code).toBe('INVITE_INVALID');
+      expect((await dbUser(res.body.staff.id)).isActive).toBe(false);
+    }
+  });
+});
+
 describe('the old create with a password', () => {
+  it('POST /api/users is refused too', async () => {
+    const email = mail('old2');
+    const res = await api.post(ownerA, '/api/users', { email, password: PASSWORD, firstName: 'Old', lastName: 'Way', role: 'sales_rep' });
+    expect(res.status).toBe(410);
+    expect(res.body.code).toBe('USE_INVITE');
+    expect(await prismaBase.user.count({ where: { email } })).toBe(0);
+  });
+
   it('POST /api/admin/users is refused, with or without a password, and creates nobody', async () => {
     const email = mail('old');
     for (const body of [{ email, password: PASSWORD, firstName: 'Old', lastName: 'Way', role: 'sales_rep' }, { email, firstName: 'Old', lastName: 'Way', role: 'sales_rep' }]) {

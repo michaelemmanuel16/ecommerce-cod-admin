@@ -1,10 +1,10 @@
 import React from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { Check, Circle } from 'lucide-react';
 import { authService } from '../services/auth.service';
-import { Button, Input } from '../components/ui-v2';
+import { Button } from '../components/ui-v2';
 import { AuthLayout } from '../components/auth/AuthLayout';
-import { RULES } from '../lib/passwordRules';
+import { validateNewPassword, type NewPasswordErrors } from '../lib/passwordRules';
+import { NewPasswordFields } from '../components/auth/NewPasswordFields';
 
 const EXPIRED_LINK = 'This reset link has expired or was already used.';
 
@@ -19,7 +19,7 @@ export const ResetPassword: React.FC = () => {
 
   const [password, setPassword] = React.useState('');
   const [confirm, setConfirm] = React.useState('');
-  const [errors, setErrors] = React.useState<{ password?: string; confirm?: string }>({});
+  const [errors, setErrors] = React.useState<NewPasswordErrors>({});
 
   if (!token || expired) {
     return (
@@ -33,10 +33,7 @@ export const ResetPassword: React.FC = () => {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
-    const next = {
-      password: RULES.every((r) => r.test(password)) ? undefined : 'The password does not meet the rules below',
-      confirm: password === confirm ? undefined : 'Passwords do not match',
-    };
+    const next = validateNewPassword(password, confirm);
     setErrors(next);
     if (next.password || next.confirm) return;
     setIsLoading(true);
@@ -57,34 +54,12 @@ export const ResetPassword: React.FC = () => {
     <AuthLayout title="Set a new password">
       <form onSubmit={onSubmit} noValidate>
         {errorMessage && <div className="authnote bad" role="alert">{errorMessage}</div>}
-        <Input
-          label="New password"
-          type="password"
-          autoComplete="new-password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          error={errors.password}
-          placeholder="Enter new password"
-        />
-        <ul className="rules" aria-label="Password rules">
-          {RULES.map((r) => {
-            const met = r.test(password);
-            return (
-              <li key={r.id} className={met ? 'met' : undefined}>
-                {met ? <Check aria-hidden="true" /> : <Circle aria-hidden="true" />}
-                {r.text}
-              </li>
-            );
-          })}
-        </ul>
-        <Input
-          label="Confirm password"
-          type="password"
-          autoComplete="new-password"
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-          error={errors.confirm}
-          placeholder="Confirm new password"
+        <NewPasswordFields
+          password={password}
+          confirm={confirm}
+          onPasswordChange={setPassword}
+          onConfirmChange={setConfirm}
+          errors={errors}
         />
         <Button type="submit" variant="primary" disabled={isLoading}>
           {isLoading ? 'Saving…' : 'Reset password'}

@@ -10,6 +10,7 @@ import { AppError } from '../middleware/errorHandler';
 import { adminService } from './adminService';
 import { holderStatus } from './roleService';
 import { assertNotLastOwner } from './systemRoleService';
+import { PAY_METHODS } from '../validators/staffSchema';
 import type { StaffStatus, staffQuerySchema, updateStaffSchema } from '../validators/staffSchema';
 
 /**
@@ -38,7 +39,7 @@ export const staffSelect = {
   roleAssignments: { where: { toDate: null }, select: { role: { select: { id: true, name: true } } } },
 } satisfies Prisma.UserSelect;
 
-type StaffRow = Prisma.UserGetPayload<{ select: typeof staffSelect }>;
+export type StaffRow = Prisma.UserGetPayload<{ select: typeof staffSelect }>;
 
 export const staffStatus = (u: { isActive: boolean; invitedAt: Date | null; deletedAt: Date | null }): StaffStatus =>
   !u.isActive && u.deletedAt ? 'deleted' : holderStatus(u);
@@ -51,9 +52,19 @@ const STATUS_WHERE: Record<StaffStatus, Prisma.UserWhereInput> = {
   deleted: { isActive: false, deletedAt: { not: null } },
 };
 
-/** A delivery partner's fee is a fee rule (M5), not a field of the person (F-1161). */
+/**
+ * How a role of person can be paid (F-1158, F-1161). A delivery partner's fee is a fee rule (M5), not a field of the person,
+ * so there is no amount to set. One rule for the invite, the staff edit and the fee-rule link.
+ */
+export const payPolicyFor = (role: UserRole) => role === 'delivery_agent'
+  ? { methods: ['fee_rule', 'none'] as const, defaultMethod: 'fee_rule' as const, amountEditable: false }
+  : { methods: PAY_METHODS, defaultMethod: 'none' as const, amountEditable: true };
+
+export const feeNotEditable = () =>
+  new AppError('A delivery partner has no per-order amount here. Their fee is set in the partner fee rule.', 400, 'FEE_NOT_EDITABLE');
+
 const feeRuleOf = (u: { id: number; role: UserRole }) =>
-  u.role === 'delivery_agent' ? { editable: false, url: `/api/delivery-partners/${u.id}/fee-rules` } : null;
+  payPolicyFor(u.role).amountEditable ? null : { editable: false, url: `/api/delivery-partners/${u.id}/fee-rules` };
 
 export const staffView = ({ roleAssignments, commissionAmount, ...u }: StaffRow) => ({
   ...u,
@@ -124,9 +135,7 @@ export async function listStaff(query: StaffQuery) {
 export async function updateStaff(actor: Requester, id: number, input: UpdateStaffInput): Promise<StaffView> {
   const target = await findStaff(id);
   if (staffStatus(target) === 'deleted') throw new AppError('Restore this person before editing', 409, 'STAFF_DELETED');
-  if ((input.role ?? target.role) === 'delivery_agent' && input.commissionAmount !== undefined) {
-    throw new AppError('A delivery partner has no commission here. Their fee is set in the partner fee rule.', 400, 'FEE_NOT_EDITABLE');
-  }
+  if (!payPolicyFor(input.role ?? target.role).amountEditable && input.commissionAmount !== undefined) throw feeNotEditable();
   return staffView(await adminService.updateUser(actor, id, input, { select: staffSelect }) as StaffRow);
 }
 
@@ -148,7 +157,7 @@ export const deactivateStaff = (actor: Requester, id: number) =>
     if (status !== 'active') throw new AppError(`This person is already ${status}`, 409, 'NOT_ACTIVE');
     // invitedAt goes: an accepted invite must not read as "invited" once the person is inactive (the T03 status rule).
     return adminService.writeWithOwnerGuard(target, 'deactivated', (tx) =>
-      tx.user.update({ where: { id: target.id }, data: { isActive: false, invitedAt: null }, select: staffSelect }), true);
+      tx.user.update({ where: { id: target.id }, data: { isActive: false, invitedAt: null, inviteTokenHash: null, inviteExpiresAt: null }, select: staffSelect }), true);
   });
 
 /** Deactivated or deleted back to active. A person deleted before they accepted an invite goes back to invited. */
@@ -167,7 +176,7 @@ export const deleteStaff = (actor: Requester, id: number) =>
     if (status === 'deleted') throw new AppError('This person is already deleted', 409, 'ALREADY_DELETED');
     // The invite link dies with the delete.
     return adminService.writeWithOwnerGuard(target, 'deleted', (tx) =>
-      tx.user.update({ where: { id: target.id }, data: { isActive: false, deletedAt: new Date(), inviteTokenHash: null }, select: staffSelect }), true);
+      tx.user.update({ where: { id: target.id }, data: { isActive: false, deletedAt: new Date(), inviteTokenHash: null, inviteExpiresAt: null }, select: staffSelect }), true);
   });
 
 /**

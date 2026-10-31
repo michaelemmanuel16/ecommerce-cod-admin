@@ -10,7 +10,7 @@ vi.mock('../../config/features', () => ({ features: { saasSignup: false }, roleA
 vi.mock('../../services/socket', () => ({ connectSocket: vi.fn(), disconnectSocket: vi.fn(), getSocket: vi.fn() }));
 vi.mock('../../services/auth.service', () => ({ authService: { acceptInvite: vi.fn() } }));
 
-const refusal = (status: number) => Object.assign(new Error('x'), { response: { status, data: { message: 'x' } } });
+const refusal = (status: number, message = 'x') => Object.assign(new Error(message), { response: { status, data: { message } } });
 const SIGNED_IN = {
   user: { id: 5, firstName: 'Ama', lastName: 'Mensah', email: 'ama@x.test', role: 'sales_rep' },
   tokens: { accessToken: 'a', refreshToken: 'r' },
@@ -65,19 +65,26 @@ describe('AcceptInvite (M6-T06)', () => {
     expect(useAuthStore.getState().isAuthenticated).toBe(true);
   });
 
-  it('an expired link (410) says to ask for a new invite', async () => {
-    vi.mocked(authService.acceptInvite).mockRejectedValue(refusal(410));
+  it('an expired link (410) shows the API text', async () => {
+    vi.mocked(authService.acceptInvite).mockRejectedValue(refusal(410, 'This invite link has expired. Ask for a new invite.'));
     renderAt('/accept-invite?token=abc');
     await fill('Abcdef1!', 'Abcdef1!');
     expect(await screen.findByText('This invite link has expired. Ask for a new invite.')).toBeInTheDocument();
     expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
   });
 
-  it('a used or unknown link (400) and a link with no token show the not-valid text', async () => {
-    vi.mocked(authService.acceptInvite).mockRejectedValue(refusal(400));
+  it('a used or unknown link (400) shows the API text', async () => {
+    vi.mocked(authService.acceptInvite).mockRejectedValue(refusal(400, 'This invite link is not valid or was already used. Ask for a new invite.'));
     renderAt('/accept-invite?token=abc');
     await fill('Abcdef1!', 'Abcdef1!');
     expect(await screen.findByText(/not valid or was already used\. Ask for a new invite/)).toBeInTheDocument();
+  });
+
+  it('a 400 with no text falls back to the not-valid text', async () => {
+    vi.mocked(authService.acceptInvite).mockRejectedValue(Object.assign(new Error('x'), { response: { status: 400, data: {} } }));
+    renderAt('/accept-invite?token=abc');
+    await fill('Abcdef1!', 'Abcdef1!');
+    expect(await screen.findByText('This invite link is not valid. Ask for a new invite.')).toBeInTheDocument();
   });
 
   it('no token in the link shows the not-valid text at once', () => {

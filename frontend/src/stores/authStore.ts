@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { User, LoginCredentials, UserPreferences, Permissions } from '../types';
-import { authService } from '../services/auth.service';
+import { authService, type LoginResponse } from '../services/auth.service';
 import { usersService } from '../services/users.service';
 import { connectSocket, disconnectSocket, getSocket } from '../services/socket';
 import { useAnalyticsStore } from './analyticsStore';
@@ -40,7 +40,31 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set, get) => ({
+    (set, get) => {
+      /** Sign in with the answer of a login-shaped call (login, accept-invite): store the session, greet, connect. */
+      const applySession = async (call: () => Promise<LoginResponse>, greeting: (user: User) => string) => {
+        set({ isLoading: true });
+        try {
+          const { user, tokens, permissions } = await call();
+          clearBlockCache(); // a new person signing in must not see the last person's cached Finance answers
+          set({
+            user,
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken,
+            permissions: permissions || null,
+            isAuthenticated: true,
+            isLoading: false,
+          });
+          toast.success(greeting(user));
+          connectSocket();
+          get().initSocket();
+        } catch (error) {
+          set({ isLoading: false });
+          throw error;
+        }
+      };
+
+      return ({
       user: null,
       accessToken: null,
       refreshToken: null,
@@ -52,47 +76,11 @@ export const useAuthStore = create<AuthState>()(
       isLoading: false,  // This should not be persisted
 
       login: async (credentials: LoginCredentials) => {
-        set({ isLoading: true });
-        try {
-          const { user, tokens, permissions } = await authService.login(credentials);
-          clearBlockCache(); // a new person signing in must not see the last person's cached Finance answers
-          set({
-            user,
-            accessToken: tokens.accessToken,
-            refreshToken: tokens.refreshToken,
-            permissions: permissions || null,
-            isAuthenticated: true,
-            isLoading: false,
-          });
-          toast.success(`Welcome back, ${user.firstName} ${user.lastName}!`);
-          connectSocket();
-          get().initSocket();
-        } catch (error) {
-          set({ isLoading: false });
-          throw error;
-        }
+        await applySession(() => authService.login(credentials), (user) => `Welcome back, ${user.firstName} ${user.lastName}!`);
       },
 
       acceptInvite: async (token: string, password: string) => {
-        set({ isLoading: true });
-        try {
-          const { user, tokens, permissions } = await authService.acceptInvite(token, password);
-          clearBlockCache();
-          set({
-            user,
-            accessToken: tokens.accessToken,
-            refreshToken: tokens.refreshToken,
-            permissions: permissions || null,
-            isAuthenticated: true,
-            isLoading: false,
-          });
-          toast.success(`Welcome, ${user.firstName}!`);
-          connectSocket();
-          get().initSocket();
-        } catch (error) {
-          set({ isLoading: false });
-          throw error;
-        }
+        await applySession(() => authService.acceptInvite(token, password), (user) => `Welcome, ${user.firstName}!`);
       },
 
       registerTenant: async (data) => {
@@ -246,7 +234,8 @@ export const useAuthStore = create<AuthState>()(
 
         console.log('[AuthStore] All socket listeners initialized');
       },
-    }),
+      });
+    },
     {
       name: 'auth-storage',
       partialize: (state) => ({

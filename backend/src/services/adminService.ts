@@ -26,6 +26,7 @@ import { updateUserSchema } from '../validators/staffSchema';
 import { formatIssues } from '../tools/shared';
 import { assignmentSelect } from './roleService';
 import { emailConflictOf } from '../utils/prismaErrors';
+import { newInviteToken } from '../utils/inviteToken';
 import { startOfUtcDay } from '../utils/startOfUtcDay';
 import { formTenantBySlug } from './tenantLookupService';
 import { clearCheckoutFormConfigCache } from './checkoutFormService';
@@ -39,6 +40,11 @@ import { defaultRolePermissions } from '../config/defaultRolePermissions';
 const USER_UPDATE_SELECT = {
   id: true, email: true, firstName: true, lastName: true, phoneNumber: true, role: true, isActive: true,
   country: true, commissionAmount: true, createdAt: true,
+} satisfies Prisma.UserSelect;
+
+const USER_CREATE_SELECT = {
+  id: true, email: true, firstName: true, lastName: true, phoneNumber: true, role: true, kind: true, isActive: true, invitedAt: true,
+  country: true, commissionAmount: true, createdAt: true, roleAssignments: { select: assignmentSelect },
 } satisfies Prisma.UserSelect;
 
 export const adminService = {
@@ -467,12 +473,14 @@ export const adminService = {
     vehicleType?: string;
     vehicleId?: string;
     /**
-     * No password at creation (M6-T03). `invite`: a person who has not accepted yet (inactive, invite date set; the invite flow sends the
-     * link and accept-invite activates them). `none`: a company that never signs in (active). Login refuses both: the stored password is not a hash.
+     * No password at creation (M6-T03). `invite`: a person who has not accepted yet (inactive, invite date set, a 7-day token whose
+     * raw value comes back as `inviteToken` with `inviteExpiresAt`, shown once; accept-invite activates them). `none`: a company that never signs in (active). Login refuses both: the stored password is not a hash.
      */
     access?: 'invite' | 'none';
-    /** With `access: 'invite'` (M6-T06): the hash of the invite token and its expiry, saved with the user in one write. */
-    invite?: { tokenHash: string; expiresAt: Date };
+    /** Pick the returned fields (default: `USER_CREATE_SELECT`). */
+    select?: Prisma.UserSelect;
+    /** The caller writes its own audit row (the invite does: `staff_invite`). */
+    skipAudit?: boolean;
     /** City (delivery) and free preferences, e.g. how the person is paid (M6-T06). */
     location?: string;
     preferences?: Prisma.InputJsonObject;
@@ -495,6 +503,7 @@ export const adminService = {
 
     const password = data.access ? SYSTEM_USER_PASSWORD : await bcrypt.hash(data.password!, 10);
     const db = data.tx ?? prisma;
+    const invite = data.access === 'invite' ? newInviteToken() : undefined;
     // The user and the role they hold are one write (F-1155). A tenant with no roles yet gets the user and no assignment.
     const roleId = data.roleId ?? await positionRoleId(db, data.role);
 
@@ -514,37 +523,20 @@ export const adminService = {
           ...(data.vehicleId && { vehicleId: data.vehicleId }),
           ...(data.location && { location: data.location }),
           ...(data.preferences && { preferences: data.preferences }),
-          ...(data.access === 'invite' && {
-            isActive: false,
-            invitedAt: new Date(),
-            ...(data.invite && { inviteTokenHash: data.invite.tokenHash, inviteExpiresAt: data.invite.expiresAt }),
-          }),
+          ...(invite && { isActive: false, invitedAt: new Date(), inviteTokenHash: invite.hash, inviteExpiresAt: invite.expiresAt }),
           ...(roleId !== null && { roleAssignments: { create: { tenantId: resolveTenantId(), roleId, fromDate: startOfUtcDay() } } }),
         },
-        select: {
-          id: true,
-          email: true,
-          firstName: true,
-          lastName: true,
-          phoneNumber: true,
-          role: true,
-          kind: true,
-          isActive: true,
-          invitedAt: true,
-          country: true,
-          commissionAmount: true,
-          createdAt: true,
-          roleAssignments: { select: assignmentSelect },
-        },
-      });
+        select: (data.select ?? USER_CREATE_SELECT) as typeof USER_CREATE_SELECT,
+      }) as Prisma.UserGetPayload<{ select: typeof USER_CREATE_SELECT }>;
     } catch (error) {
       // Email is unique across all tenants.
       throw emailConflictOf(error) ?? error;
     }
 
-    if (!data.tx) await this.createAuditLog(requester, 'create', 'user', user.id.toString(), { email: user.email, role: user.role });
+    if (!data.tx && !data.skipAudit) await this.createAuditLog(requester, 'create', 'user', user.id.toString(), { email: user.email, role: user.role });
 
-    return user;
+    // The raw invite token: only here, never stored. The caller builds the link.
+    return invite ? { ...user, inviteToken: invite.raw, inviteExpiresAt: invite.expiresAt } : user;
   },
 
   /**
@@ -615,6 +607,8 @@ export const adminService = {
     const [firstName, ...rest] = name?.split(' ') ?? [];
     const updateData: Prisma.UserUncheckedUpdateInput = {
       ...input,
+      // An inactive person cannot accept an invite: the link dies with the deactivation.
+      ...(deactivating && { inviteTokenHash: null, inviteExpiresAt: null }),
       // "First Last" in one field: the first word is the first name.
       ...(name !== undefined && { firstName: firstName || 'Unknown', lastName: rest.join(' ') }),
     };
@@ -686,7 +680,7 @@ export const adminService = {
     assertMayManage(requester, { id: userId, role: targetUser.role }, { higher: 'Access denied: Cannot deactivate a user with a higher role.' });
 
     const result = await this.writeWithOwnerGuard({ id: userId, role: targetUser.role }, 'deactivated', (tx) =>
-      tx.user.update({ where: { id: userId }, data: { isActive: false } }), true);
+      tx.user.update({ where: { id: userId }, data: { isActive: false, inviteTokenHash: null, inviteExpiresAt: null } }), true);
 
     await this.createAuditLog(requester, 'deactivate', 'user', userId.toString());
 

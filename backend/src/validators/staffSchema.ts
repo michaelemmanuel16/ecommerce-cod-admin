@@ -70,7 +70,8 @@ export const inviteStaffSchema = z.object({
   roleId: z.number().int().positive().optional(),
   role: userRole.optional(),
   channel: z.enum(INVITE_CHANNELS).default('email'),
-  payMethod: z.enum(PAY_METHODS).default('none'),
+  /** Default: the fee rule for a delivery role, otherwise no pay through the app. */
+  payMethod: z.enum(PAY_METHODS).optional(),
   /** Per order. Default 8 when paid per order. */
   amount: personFields.commissionAmount.optional(),
   vehicleType: text(50).optional(),

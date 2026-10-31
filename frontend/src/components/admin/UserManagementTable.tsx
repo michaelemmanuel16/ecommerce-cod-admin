@@ -4,6 +4,7 @@ import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { adminService, AdminUser, CreateUserData } from '../../services/admin.service';
 import { Loading } from '../ui/Loading';
+import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 
 const USER_ROLES = [
   { value: 'super_admin', label: 'Super Admin' },
@@ -39,8 +40,9 @@ export const UserManagementTable: React.FC = () => {
     phoneNumber: '',
     role: 'sales_rep',
     commissionAmount: 0,
-    deliveryRate: 0,
   });
+  const [unsentInvite, setUnsentInvite] = useState<{ email: string; reason?: string; link: string } | null>(null);
+  const { copied, copy } = useCopyToClipboard();
 
   const [newPassword, setNewPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -74,17 +76,15 @@ export const UserManagementTable: React.FC = () => {
       // No password here: the person gets a link and chooses their own (F-1158).
       const result = await adminService.inviteUser(formData);
       setShowCreateModal(false);
-      alert(result.delivery.sent
-        ? `Invite sent to ${formData.email}`
-        : `The invite was saved but not sent (${result.delivery.reason ?? 'no provider'}). Copy this link and send it yourself:\n${result.link}`);
+      // Not sent (no provider set up, or it refused): the link is shown once so it can be copied and sent by hand.
+      if (!result.delivery.sent) setUnsentInvite({ email: formData.email, reason: result.delivery.reason, link: result.link });
       setFormData({
         email: '',
-            firstName: '',
+        firstName: '',
         lastName: '',
         phoneNumber: '',
         role: 'sales_rep',
         commissionAmount: 0,
-        deliveryRate: 0,
       });
       fetchUsers();
     } catch (error) {
@@ -455,7 +455,7 @@ export const UserManagementTable: React.FC = () => {
                   value={formData.commissionAmount}
                   onChange={(e) => {
                     const val = parseFloat(e.target.value) || 0;
-                    setFormData({ ...formData, commissionAmount: val, deliveryRate: val });
+                    setFormData({ ...formData, commissionAmount: val });
                   }}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
@@ -469,6 +469,30 @@ export const UserManagementTable: React.FC = () => {
                 </Button>
               </div>
             </form>
+          </Card>
+        </div>
+      )}
+
+      {/* The invite was saved but not sent: show the link once */}
+      {unsentInvite && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-md p-6">
+            <h3 className="text-lg font-semibold mb-2">Invite saved, not sent</h3>
+            <p className="text-sm text-gray-600 mb-3">
+              {unsentInvite.reason ?? 'No provider is set up.'} Copy this link and send it to {unsentInvite.email} yourself. It is shown only once.
+            </p>
+            <input
+              type="text"
+              readOnly
+              value={unsentInvite.link}
+              onFocus={(e) => e.currentTarget.select()}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm"
+              aria-label="Invite link"
+            />
+            <div className="flex justify-end gap-2 mt-4">
+              <Button variant="secondary" type="button" onClick={() => setUnsentInvite(null)}>Close</Button>
+              <Button variant="primary" type="button" onClick={() => copy(unsentInvite.link)}>{copied ? 'Copied' : 'Copy link'}</Button>
+            </div>
           </Card>
         </div>
       )}

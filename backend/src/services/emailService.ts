@@ -12,6 +12,7 @@ import { renderEmailTemplate } from './emailTemplateService';
 import { ensureUnsubscribeToken, buildUnsubscribeUrl, applyUnsubscribe } from './unsubscribeService';
 import * as Money from '../utils/money';
 import { getCurrency } from '../utils/currency';
+import { INVITE_TTL_DAYS } from '../utils/inviteToken';
 
 // ---------- Types ----------
 
@@ -290,7 +291,7 @@ export async function sendInviteEmail(
       <p>Hi ${escapeHtml(firstName)},</p>
       <p>${escapeHtml(inviterName)} invited you to join their team. Click the link below to choose your password:</p>
       <p><a href="${inviteUrl}">Accept the invite</a></p>
-      <p>This link works once and expires in 7 days.</p>
+      <p>This link works once and expires in ${INVITE_TTL_DAYS} days.</p>
     `,
   });
 }
