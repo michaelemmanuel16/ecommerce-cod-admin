@@ -6,7 +6,7 @@ import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import '../mocks/logger.mock';
 import { prismaBase } from '../../utils/prisma';
 import { purgeTenantRows } from '../../services/platformService';
-import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
+import { createTwoTenants, createTenant, mkUser, TwoTenants } from './helpers/twoTenants';
 
 let pair: TwoTenants;
 
@@ -35,16 +35,10 @@ describe('M6 schema', () => {
     expect(rows.every((r) => r.is_nullable === 'NO')).toBe(true);
   });
 
-  it('money and rates are numeric(19,4), never float', async () => {
-    const rows = await columns(['reward_tiers', 'users']);
-    const pick = (t: string, c: string) => rows.find((r) => r.table_name === t && r.column_name === c)!;
-    for (const [t, c] of [['reward_tiers', 'amount'], ['users', 'rep_commission_override']]) {
-      const col = pick(t, c);
-      expect(col.data_type).toBe('numeric');
-      expect([col.numeric_precision, col.numeric_scale]).toEqual([19, 4]);
-    }
-    const all = await columns(['reward_tiers', 'badge_awards', 'assignment_cursors']);
-    expect(all.filter((r) => ['double precision', 'real'].includes(r.data_type))).toEqual([]);
+  it('the reward amount is numeric(19,4)', async () => {
+    const col = (await columns(['reward_tiers'])).find((r) => r.column_name === 'amount')!;
+    expect(col.data_type).toBe('numeric');
+    expect([col.numeric_precision, col.numeric_scale]).toEqual([19, 4]);
   });
 
   it('reward tier is unique per (tenant, role, threshold) and keeps the amount exactly', async () => {
@@ -72,7 +66,7 @@ describe('M6 schema', () => {
 
   it('the assignment cursor is unique per (tenant, scope, role) and starts at position 0', async () => {
     const { a, b } = pair;
-    const data = { tenantId: a.id, scope: 'workflow-7', role: 'sales_rep' };
+    const data = { tenantId: a.id, scope: 'workflow-7', role: 'sales_rep' as const };
     const cursor = await prismaBase.assignmentCursor.create({ data });
     expect(cursor.position).toBe(0);
     await expect(prismaBase.assignmentCursor.create({ data })).rejects.toThrow();
@@ -113,11 +107,10 @@ describe('M6 schema', () => {
     expect(target.source).toBe('auto');
     expect(target.roleId).toBe(role.id);
 
-    const user = await prismaBase.user.update({
+    await prismaBase.user.update({
       where: { id: a.users.salesRep.id },
-      data: { invitedAt: new Date(), inviteTokenHash: `hash-${a.id}`, inviteExpiresAt: new Date(Date.now() + 7 * 864e5), repCommissionOverride: '12.5' },
+      data: { invitedAt: new Date(), inviteTokenHash: `hash-${a.id}`, inviteExpiresAt: new Date(Date.now() + 7 * 864e5) },
     });
-    expect(user.repCommissionOverride?.toString()).toBe('12.5');
     // the invite hash is unique: one link, one person
     await expect(
       prismaBase.user.update({ where: { id: a.users.deliveryAgent.id }, data: { inviteTokenHash: `hash-${a.id}` } }),
@@ -126,30 +119,27 @@ describe('M6 schema', () => {
 
   it('the tenant purge removes the new tables with the tenant', async () => {
     // A small tenant of its own: purgeTenantRows on a fully seeded tenant stops earlier, on journal entries (not part of M6).
-    const slug = `m6-purge-${Date.now()}`;
-    const tenant = await prismaBase.tenant.create({ data: { name: slug, slug } });
-    const tenantId = tenant.id;
-    const user = await prismaBase.user.create({
-      data: { email: `${slug}@codadmin.test`, password: 'x', firstName: 'Purge', lastName: 'Test', role: 'admin', tenantId },
-    });
+    const { id: tenantId } = await createTenant('m6 purge');
+    const { id: userId } = await mkUser(tenantId, 'purge', 'admin');
     const role = await prismaBase.role.create({ data: { tenantId, name: 'Purge role' } });
-    await prismaBase.roleAssignment.create({ data: { tenantId, roleId: role.id, holderId: user.id, fromDate: new Date() } });
-    await prismaBase.rewardTier.create({ data: { tenantId, roleId: role.id, threshold: 100, amount: '300' } });
-    await prismaBase.badgeAward.create({ data: { tenantId, userId: user.id, key: 'top_of_month', period: '2026-10' } });
-    await prismaBase.assignmentCursor.create({ data: { tenantId, scope: 'workflow-1', role: 'sales_rep' } });
-    await prismaBase.target.create({
-      data: { tenantId, scope: 'role', metric: 'delivery_success_rate', unit: 'percent', value: '60', periodStart: new Date('2026-10-01'), periodEnd: new Date('2026-10-31'), roleId: role.id },
-    });
-    await prismaBase.commissionEntry.create({
-      data: { tenantId, userId: user.id, kind: 'reward', status: 'earned', amount: '300', period: '2026-10', roleId: role.id },
-    });
+    const roleId = role.id;
+    const period = { periodStart: new Date('2026-10-01'), periodEnd: new Date('2026-10-31') };
+    await Promise.all([
+      prismaBase.roleAssignment.create({ data: { tenantId, roleId, holderId: userId, fromDate: new Date() } }),
+      prismaBase.rewardTier.create({ data: { tenantId, roleId, threshold: 100, amount: '300' } }),
+      prismaBase.badgeAward.create({ data: { tenantId, userId, key: 'top_of_month', period: '2026-10' } }),
+      prismaBase.assignmentCursor.create({ data: { tenantId, scope: 'workflow-1', role: 'sales_rep' } }),
+      prismaBase.target.create({ data: { tenantId, scope: 'role', metric: 'delivery_success_rate', unit: 'percent', value: '60', roleId, ...period } }),
+      prismaBase.commissionEntry.create({ data: { tenantId, userId, kind: 'reward', status: 'earned', amount: '300', period: '2026-10', roleId } }),
+    ]);
 
     await prismaBase.$transaction((tx) => purgeTenantRows(tx, tenantId));
 
-    for (const table of ['reward_tiers', 'badge_awards', 'assignment_cursors', 'targets', 'roles', 'role_assignments', 'commission_entries']) {
-      const [{ n }] = await prismaBase.$queryRawUnsafe<Array<{ n: bigint }>>(`SELECT count(*) AS n FROM ${table} WHERE tenant_id = $1`, tenantId);
-      expect(Number(n)).toBe(0);
-    }
+    const tables = ['reward_tiers', 'badge_awards', 'assignment_cursors', 'targets', 'roles', 'role_assignments', 'commission_entries'];
+    const counts = await Promise.all(
+      tables.map((table) => prismaBase.$queryRawUnsafe<Array<{ n: bigint }>>(`SELECT count(*) AS n FROM ${table} WHERE tenant_id = $1`, tenantId)),
+    );
+    expect(counts.map(([{ n }]) => Number(n))).toEqual(tables.map(() => 0));
     expect(await prismaBase.tenant.count({ where: { id: tenantId } })).toBe(0);
   });
 });

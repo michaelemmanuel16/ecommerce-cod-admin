@@ -1,5 +1,8 @@
 -- M6-T01 (COD-56): reward tiers, badge awards, assignment cursors; role grid and invite fields; month-close reward key.
--- Additive only. No data changes (the role data migration is M6-T02).
+-- Additive except one index that the new (holder_id, to_date) index covers. No data changes (the role data migration is M6-T02).
+
+-- DropIndex
+DROP INDEX "role_assignments_holder_id_idx";
 
 -- AlterTable
 ALTER TABLE "commission_entries" ADD COLUMN     "period" VARCHAR(7),
@@ -16,8 +19,7 @@ ALTER TABLE "targets" ADD COLUMN     "source" TEXT NOT NULL DEFAULT 'auto';
 -- AlterTable
 ALTER TABLE "users" ADD COLUMN     "invite_expires_at" TIMESTAMP(3),
 ADD COLUMN     "invite_token_hash" TEXT,
-ADD COLUMN     "invited_at" TIMESTAMP(3),
-ADD COLUMN     "rep_commission_override" DECIMAL(19,4);
+ADD COLUMN     "invited_at" TIMESTAMP(3);
 
 -- CreateTable
 CREATE TABLE "reward_tiers" (
@@ -51,7 +53,7 @@ CREATE TABLE "assignment_cursors" (
     "id" SERIAL NOT NULL,
     "tenant_id" TEXT NOT NULL,
     "scope" TEXT NOT NULL,
-    "role" TEXT NOT NULL,
+    "role" "UserRole" NOT NULL,
     "position" INTEGER NOT NULL DEFAULT 0,
     "state" JSONB,
     "updated_at" TIMESTAMP(3) NOT NULL,
@@ -60,22 +62,22 @@ CREATE TABLE "assignment_cursors" (
 );
 
 -- CreateIndex
-CREATE INDEX "reward_tiers_tenant_id_idx" ON "reward_tiers"("tenant_id");
-
--- CreateIndex
 CREATE UNIQUE INDEX "reward_tiers_tenant_id_role_id_threshold_key" ON "reward_tiers"("tenant_id", "role_id", "threshold");
 
 -- CreateIndex
 CREATE INDEX "badge_awards_tenant_id_period_idx" ON "badge_awards"("tenant_id", "period");
 
 -- CreateIndex
+CREATE INDEX "badge_awards_user_id_idx" ON "badge_awards"("user_id");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "badge_awards_tenant_id_user_id_key_period_key" ON "badge_awards"("tenant_id", "user_id", "key", "period");
 
 -- CreateIndex
-CREATE INDEX "assignment_cursors_tenant_id_idx" ON "assignment_cursors"("tenant_id");
+CREATE UNIQUE INDEX "assignment_cursors_tenant_id_scope_role_key" ON "assignment_cursors"("tenant_id", "scope", "role");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "assignment_cursors_tenant_id_scope_role_key" ON "assignment_cursors"("tenant_id", "scope", "role");
+CREATE INDEX "commission_entries_role_id_idx" ON "commission_entries"("role_id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "commission_entries_tenant_id_user_id_kind_period_role_id_key" ON "commission_entries"("tenant_id", "user_id", "kind", "period", "role_id");
