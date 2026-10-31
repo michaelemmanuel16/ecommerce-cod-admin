@@ -4,15 +4,7 @@ import { Check, Circle } from 'lucide-react';
 import { authService } from '../services/auth.service';
 import { Button, Input } from '../components/ui-v2';
 import { AuthLayout } from '../components/auth/AuthLayout';
-
-// F-121: at least 8 characters with upper case, lower case, a digit and a special character.
-const RULES = [
-  { id: 'len', text: 'At least 8 characters', test: (v: string) => v.length >= 8 },
-  { id: 'upper', text: 'One upper case letter', test: (v: string) => /[A-Z]/.test(v) },
-  { id: 'lower', text: 'One lower case letter', test: (v: string) => /[a-z]/.test(v) },
-  { id: 'digit', text: 'One number', test: (v: string) => /[0-9]/.test(v) },
-  { id: 'special', text: 'One special character', test: (v: string) => /[!@#$%^&*(),.?":{}|<>]/.test(v) },
-];
+import { RULES } from '../lib/passwordRules';
 
 const EXPIRED_LINK = 'This reset link has expired or was already used.';
 

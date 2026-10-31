@@ -4,6 +4,7 @@ import { safeEqual } from '../utils/crypto';
 import bcrypt from 'bcrypt';
 import { AuthRequest } from '../types';
 import prisma from '../utils/prisma';
+import type { User } from '@prisma/client';
 import { withSoftDeleted } from '../utils/prismaExtensions';
 import { runInTenant, runInTenantOf, withoutTenant } from '../utils/tenantContext';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt';
@@ -11,6 +12,7 @@ import { AppError } from '../middleware/errorHandler';
 import navService from '../services/navService';
 import { adminService } from '../services/adminService';
 import { sendPasswordResetEmail } from '../services/emailService';
+import { acceptInvite as acceptInviteToken } from '../services/inviteService';
 import { SUBSCRIPTION_STATUS, SELF_SERVE_PLAN_NAMES } from '../config/billing';
 import { seedTenantDefaults } from '../services/tenantDefaultsService';
 import logger from '../utils/logger';
@@ -20,6 +22,48 @@ import { accountService } from '../services/accountService';
 import { sessionService, hashToken, requestMeta } from '../services/sessionService';
 import { slugify } from '../utils/slugify';
 import { purgeTenantRows } from '../services/platformService';
+
+/** Start a session for a verified user and answer like a login (login and accept-invite share it). */
+async function signIn(req: AuthRequest, res: Response, user: User): Promise<void> {
+  await runInTenantOf(user.tenantId, 'auth-login', async () => {
+    let accessToken: string;
+    let refreshToken: string;
+    if (user.tenantId) {
+      // One session per login (M3-T23)
+      ({ accessToken, refreshToken } = await sessionService.start({ ...user, tenantId: user.tenantId }, requestMeta(req)));
+      await prisma.user.update({ where: { id: user.id }, data: { lastLogin: new Date() } });
+    } else {
+      // A user without a tenant cannot own a session row: old single-token flow
+      const claims = { id: user.id, email: user.email, role: user.role, tenantId: null };
+      accessToken = generateAccessToken(claims);
+      refreshToken = generateRefreshToken(claims);
+      await prisma.user.update({ where: { id: user.id }, data: { refreshToken, lastLogin: new Date() } });
+    }
+
+    // Get user permissions from system config
+    const allPermissions = await adminService.getRolePermissions(req.user as any) as Record<string, any>;
+    const userPermissions = allPermissions[user.role] || {};
+
+    res.json({
+      message: 'Login successful',
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role,
+        isPlatformAdmin: user.isPlatformAdmin || false,
+        commissionAmount: Money.orZero(user.commissionAmount),
+        preferences: user.preferences,
+      },
+      tokens: {
+        accessToken,
+        refreshToken
+      },
+      permissions: userPermissions
+    });
+  });
+}
 
 export const login = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -42,44 +86,7 @@ export const login = async (req: AuthRequest, res: Response, next: NextFunction)
       throw new AppError('Invalid credentials', 401);
     }
 
-    await runInTenantOf(user.tenantId, 'auth-login', async () => {
-      let accessToken: string;
-      let refreshToken: string;
-      if (user.tenantId) {
-        // One session per login (M3-T23)
-        ({ accessToken, refreshToken } = await sessionService.start({ ...user, tenantId: user.tenantId }, requestMeta(req)));
-        await prisma.user.update({ where: { id: user.id }, data: { lastLogin: new Date() } });
-      } else {
-        // A user without a tenant cannot own a session row: old single-token flow
-        const claims = { id: user.id, email: user.email, role: user.role, tenantId: null };
-        accessToken = generateAccessToken(claims);
-        refreshToken = generateRefreshToken(claims);
-        await prisma.user.update({ where: { id: user.id }, data: { refreshToken, lastLogin: new Date() } });
-      }
-
-      // Get user permissions from system config
-      const allPermissions = await adminService.getRolePermissions(req.user as any) as Record<string, any>;
-      const userPermissions = allPermissions[user.role] || {};
-
-      res.json({
-        message: 'Login successful',
-        user: {
-          id: user.id,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          role: user.role,
-          isPlatformAdmin: user.isPlatformAdmin || false,
-          commissionAmount: Money.orZero(user.commissionAmount),
-          preferences: user.preferences,
-        },
-        tokens: {
-          accessToken,
-          refreshToken
-        },
-        permissions: userPermissions
-      });
-    });
+    await signIn(req, res, user);
   } catch (error) {
     next(error);
   }
@@ -298,6 +305,20 @@ export const resetPassword = async (req: AuthRequest, res: Response, next: NextF
     });
 
     res.json({ message: 'Password reset successful. Please log in with your new password.' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/** POST /api/auth/accept-invite (public): the invited person chooses a password, becomes active and is signed in. */
+export const acceptInvite = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { token, password } = req.body;
+    if (!password || password.length > 72) {
+      throw new AppError('Password is required and must be 72 characters or fewer', 400);
+    }
+    const user = await acceptInviteToken(token, password);
+    await signIn(req, res, user);
   } catch (error) {
     next(error);
   }

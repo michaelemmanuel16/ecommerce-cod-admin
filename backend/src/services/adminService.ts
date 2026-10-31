@@ -467,10 +467,15 @@ export const adminService = {
     vehicleType?: string;
     vehicleId?: string;
     /**
-     * No password at creation (M6-T03). `invite`: a person who has not accepted yet (inactive, invite date set; T06 sends the
-     * link and activates them). `none`: a company that never signs in (active). Login refuses both: the stored password is not a hash.
+     * No password at creation (M6-T03). `invite`: a person who has not accepted yet (inactive, invite date set; the invite flow sends the
+     * link and accept-invite activates them). `none`: a company that never signs in (active). Login refuses both: the stored password is not a hash.
      */
     access?: 'invite' | 'none';
+    /** With `access: 'invite'` (M6-T06): the hash of the invite token and its expiry, saved with the user in one write. */
+    invite?: { tokenHash: string; expiresAt: Date };
+    /** City (delivery) and free preferences, e.g. how the person is paid (M6-T06). */
+    location?: string;
+    preferences?: Prisma.InputJsonObject;
     /** The role the new user holds from today. Default: the position role mapped from `role` (F-1155). */
     roleId?: number;
     /** Create inside the caller's transaction (M4-T19). The caller writes the audit row for the whole unit of work. */
@@ -507,7 +512,13 @@ export const adminService = {
           ...(data.kind && { kind: data.kind }),
           ...(data.vehicleType && { vehicleType: data.vehicleType }),
           ...(data.vehicleId && { vehicleId: data.vehicleId }),
-          ...(data.access === 'invite' && { isActive: false, invitedAt: new Date() }),
+          ...(data.location && { location: data.location }),
+          ...(data.preferences && { preferences: data.preferences }),
+          ...(data.access === 'invite' && {
+            isActive: false,
+            invitedAt: new Date(),
+            ...(data.invite && { inviteTokenHash: data.invite.tokenHash, inviteExpiresAt: data.invite.expiresAt }),
+          }),
           ...(roleId !== null && { roleAssignments: { create: { tenantId: resolveTenantId(), roleId, fromDate: startOfUtcDay() } } }),
         },
         select: {

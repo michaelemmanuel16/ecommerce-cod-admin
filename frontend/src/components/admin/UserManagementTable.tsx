@@ -34,7 +34,6 @@ export const UserManagementTable: React.FC = () => {
 
   const [formData, setFormData] = useState<CreateUserData>({
     email: '',
-    password: '',
     firstName: '',
     lastName: '',
     phoneNumber: '',
@@ -44,7 +43,6 @@ export const UserManagementTable: React.FC = () => {
   });
 
   const [newPassword, setNewPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
 
   useEffect(() => {
@@ -73,12 +71,15 @@ export const UserManagementTable: React.FC = () => {
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await adminService.createUser(formData);
+      // No password here: the person gets a link and chooses their own (F-1158).
+      const result = await adminService.inviteUser(formData);
       setShowCreateModal(false);
+      alert(result.delivery.sent
+        ? `Invite sent to ${formData.email}`
+        : `The invite was saved but not sent (${result.delivery.reason ?? 'no provider'}). Copy this link and send it yourself:\n${result.link}`);
       setFormData({
         email: '',
-        password: '',
-        firstName: '',
+            firstName: '',
         lastName: '',
         phoneNumber: '',
         role: 'sales_rep',
@@ -165,8 +166,7 @@ export const UserManagementTable: React.FC = () => {
     setSelectedUser(user);
     setFormData({
       email: user.email,
-      password: '',
-      firstName: user.firstName,
+        firstName: user.firstName,
       lastName: user.lastName,
       phoneNumber: user.phoneNumber || '',
       role: user.role,
@@ -392,7 +392,7 @@ export const UserManagementTable: React.FC = () => {
       {showCreateModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <Card className="w-full max-w-md p-6">
-            <h3 className="text-lg font-semibold mb-4">Create New User</h3>
+            <h3 className="text-lg font-semibold mb-4">Invite a person</h3>
             <form onSubmit={handleCreateUser} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">First Name</label>
@@ -425,26 +425,6 @@ export const UserManagementTable: React.FC = () => {
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    required
-                    minLength={8}
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    className="w-full px-4 py-2 pr-12 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                  >
-                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                  </button>
-                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
@@ -485,7 +465,7 @@ export const UserManagementTable: React.FC = () => {
                   Cancel
                 </Button>
                 <Button variant="primary" type="submit">
-                  Create User
+                  Send invite
                 </Button>
               </div>
             </form>

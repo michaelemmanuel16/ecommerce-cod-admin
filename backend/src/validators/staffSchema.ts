@@ -56,3 +56,27 @@ export const resetPasswordSchema = z.object({
 
 /** Permanent delete: the person's email, typed. Compared in the service (case-insensitive). */
 export const permanentDeleteSchema = z.object({ confirm: z.string().trim().min(1, "Type the person's email to confirm") }).strict();
+
+export const INVITE_CHANNELS = ['email', 'whatsapp', 'sms'] as const;
+export type InviteChannel = (typeof INVITE_CHANNELS)[number];
+/** How a person is paid (F-1158): a fixed amount per order, the delivery fee rule (M5), or nothing through the app. */
+export const PAY_METHODS = ['per_order', 'fee_rule', 'none'] as const;
+
+/** POST /api/staff/invite. Give `roleId` (a role of the tenant) or `role` (a UserRole: its position role). */
+export const inviteStaffSchema = z.object({
+  name: text(200).min(1, 'Name is required'),
+  email: personFields.email,
+  phoneNumber: text(30).optional(),
+  roleId: z.number().int().positive().optional(),
+  role: userRole.optional(),
+  channel: z.enum(INVITE_CHANNELS).default('email'),
+  payMethod: z.enum(PAY_METHODS).default('none'),
+  /** Per order. Default 8 when paid per order. */
+  amount: personFields.commissionAmount.optional(),
+  vehicleType: text(50).optional(),
+  vehicleId: text(50).optional(),
+  /** Orders in this city can be assigned to the person. */
+  city: text(100).optional(),
+}).strict().refine((v) => (v.roleId === undefined) !== (v.role === undefined), 'Give either roleId or role');
+
+export const resendInviteSchema = z.object({ channel: z.enum(INVITE_CHANNELS).default('email') }).strict();

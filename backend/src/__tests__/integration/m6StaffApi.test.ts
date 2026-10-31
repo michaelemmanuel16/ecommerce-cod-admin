@@ -154,11 +154,11 @@ describe('PUT /api/staff/:id', () => {
   });
 
   it('a UserRole change moves the position role too (T03 gap), and keeps a custom role', async () => {
-    const created = await api.post(ownerA, '/api/admin/users', {
-      email: `${uniq('sync')}@codadmin.test`, password: PASSWORD, firstName: 'Sync', lastName: 'Rep', role: 'sales_rep',
+    const created = await api.post(ownerA, '/api/staff/invite', {
+      email: `${uniq('sync')}@codadmin.test`, name: 'Sync Rep', role: 'sales_rep',
     });
     expect(created.status).toBe(201);
-    const id = created.body.user?.id ?? created.body.id;
+    const id = created.body.staff.id;
     expect(await heldRoles(id)).toEqual([ROLE_NAME_BY_USER_ROLE.sales_rep]);
     const custom = await prismaBase.role.create({ data: { tenantId: pair.a.id, name: uniq('Custom'), isSystem: false } });
     await prismaBase.roleAssignment.create({ data: { tenantId: pair.a.id, roleId: custom.id, holderId: id, fromDate: new Date() } });

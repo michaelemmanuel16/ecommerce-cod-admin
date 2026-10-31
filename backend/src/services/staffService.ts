@@ -14,7 +14,7 @@ import type { StaffStatus, staffQuerySchema, updateStaffSchema } from '../valida
 
 /**
  * M6-T05 (F-1157, F-1159 to F-1162, F-1165): the team table. Staff are the people and companies of the tenant (the system
- * user and AI agents are not staff). Call inside the tenant context. The invite and accept-invite flow is M6-T06.
+ * user and AI agents are not staff). Call inside the tenant context. The invite flow is in inviteService (M6-T06).
  *
  * Status of a person:
  * - active: `isActive`.
@@ -32,7 +32,7 @@ const STAFF_KINDS: Prisma.UserWhereInput = { kind: { in: ['person', 'company'] }
 /** Orders in these statuses are done; every other order is open work for its rep or partner. */
 const CLOSED_ORDER_STATUSES: OrderStatus[] = ['delivered', 'digital_delivered', 'cancelled', 'returned'];
 
-const staffSelect = {
+export const staffSelect = {
   id: true, firstName: true, lastName: true, email: true, phoneNumber: true, kind: true, role: true, isActive: true,
   invitedAt: true, deletedAt: true, lastLogin: true, createdAt: true, commissionAmount: true, vehicleType: true, vehicleId: true,
   roleAssignments: { where: { toDate: null }, select: { role: { select: { id: true, name: true } } } },
@@ -55,7 +55,7 @@ const STATUS_WHERE: Record<StaffStatus, Prisma.UserWhereInput> = {
 const feeRuleOf = (u: { id: number; role: UserRole }) =>
   u.role === 'delivery_agent' ? { editable: false, url: `/api/delivery-partners/${u.id}/fee-rules` } : null;
 
-const staffView = ({ roleAssignments, commissionAmount, ...u }: StaffRow) => ({
+export const staffView = ({ roleAssignments, commissionAmount, ...u }: StaffRow) => ({
   ...u,
   name: fullName(u),
   status: staffStatus(u),
@@ -67,7 +67,7 @@ const staffView = ({ roleAssignments, commissionAmount, ...u }: StaffRow) => ({
 export type StaffView = ReturnType<typeof staffView>;
 
 /** A person of the tenant (any status), or 404. */
-async function findStaff(id: number): Promise<StaffRow> {
+export async function findStaff(id: number): Promise<StaffRow> {
   const row = await withSoftDeleted(() => prisma.user.findFirst({ where: { id, ...STAFF_KINDS }, select: staffSelect }));
   if (!row) throw new AppError('Staff member not found', 404);
   return row;

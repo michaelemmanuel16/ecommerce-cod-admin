@@ -277,6 +277,24 @@ export async function sendPasswordResetEmail(
   });
 }
 
+export async function sendInviteEmail(
+  email: string,
+  firstName: string,
+  inviterName: string,
+  inviteUrl: string
+): Promise<void> {
+  await sendEmail({
+    to: email,
+    subject: 'You are invited to join the team - COD Admin',
+    html: `
+      <p>Hi ${escapeHtml(firstName)},</p>
+      <p>${escapeHtml(inviterName)} invited you to join their team. Click the link below to choose your password:</p>
+      <p><a href="${inviteUrl}">Accept the invite</a></p>
+      <p>This link works once and expires in 7 days.</p>
+    `,
+  });
+}
+
 export async function sendEmailChangedNotice(
   oldEmail: string,
   firstName: string,

@@ -1,0 +1,96 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { AcceptInvite } from '../../pages/AcceptInvite';
+import { useAuthStore } from '../../stores/authStore';
+import { authService } from '../../services/auth.service';
+
+vi.mock('../../config/features', () => ({ features: { saasSignup: false }, roleAppRoute: () => null }));
+vi.mock('../../services/socket', () => ({ connectSocket: vi.fn(), disconnectSocket: vi.fn(), getSocket: vi.fn() }));
+vi.mock('../../services/auth.service', () => ({ authService: { acceptInvite: vi.fn() } }));
+
+const refusal = (status: number) => Object.assign(new Error('x'), { response: { status, data: { message: 'x' } } });
+const SIGNED_IN = {
+  user: { id: 5, firstName: 'Ama', lastName: 'Mensah', email: 'ama@x.test', role: 'sales_rep' },
+  tokens: { accessToken: 'a', refreshToken: 'r' },
+  permissions: {},
+};
+
+beforeEach(() => {
+  vi.mocked(authService.acceptInvite).mockReset();
+  useAuthStore.setState({ user: null, isAuthenticated: false, isLoading: false });
+});
+
+const renderAt = (url: string) =>
+  render(
+    <MemoryRouter initialEntries={[url]}>
+      <Routes>
+        <Route path="/accept-invite" element={<AcceptInvite />} />
+        <Route path="/" element={<p>HOME</p>} />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+async function fill(password: string, confirm: string) {
+  const user = userEvent.setup();
+  await user.type(screen.getByLabelText('Password'), password);
+  await user.type(screen.getByLabelText('Confirm password'), confirm);
+  await user.click(screen.getByRole('button', { name: 'Set password and continue' }));
+}
+
+describe('AcceptInvite (M6-T06)', () => {
+  it('ticks the password rules as the password grows', async () => {
+    renderAt('/accept-invite?token=abc');
+    const rules = screen.getByRole('list', { name: 'Password rules' });
+    expect(rules.querySelectorAll('li.met')).toHaveLength(0);
+    await userEvent.setup().type(screen.getByLabelText('Password'), 'Abcdef1!');
+    expect(rules.querySelectorAll('li.met')).toHaveLength(5);
+  });
+
+  it('blocks a weak password and a mismatch without calling the API', async () => {
+    renderAt('/accept-invite?token=abc');
+    await fill('weak', 'other');
+    expect(await screen.findByText('The password does not meet the rules below')).toBeInTheDocument();
+    expect(screen.getByText('Passwords do not match')).toBeInTheDocument();
+    expect(authService.acceptInvite).not.toHaveBeenCalled();
+  });
+
+  it('saves a good password, signs in and goes into the app', async () => {
+    vi.mocked(authService.acceptInvite).mockResolvedValue(SIGNED_IN as never);
+    renderAt('/accept-invite?token=abc');
+    await fill('Abcdef1!', 'Abcdef1!');
+    expect(await screen.findByText('HOME')).toBeInTheDocument();
+    expect(authService.acceptInvite).toHaveBeenCalledWith('abc', 'Abcdef1!');
+    expect(useAuthStore.getState().isAuthenticated).toBe(true);
+  });
+
+  it('an expired link (410) says to ask for a new invite', async () => {
+    vi.mocked(authService.acceptInvite).mockRejectedValue(refusal(410));
+    renderAt('/accept-invite?token=abc');
+    await fill('Abcdef1!', 'Abcdef1!');
+    expect(await screen.findByText('This invite link has expired. Ask for a new invite.')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
+  });
+
+  it('a used or unknown link (400) and a link with no token show the not-valid text', async () => {
+    vi.mocked(authService.acceptInvite).mockRejectedValue(refusal(400));
+    renderAt('/accept-invite?token=abc');
+    await fill('Abcdef1!', 'Abcdef1!');
+    expect(await screen.findByText(/not valid or was already used\. Ask for a new invite/)).toBeInTheDocument();
+  });
+
+  it('no token in the link shows the not-valid text at once', () => {
+    renderAt('/accept-invite');
+    expect(screen.getByText(/Ask for a new invite/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
+  });
+
+  it('a server error keeps the form and says to try again', async () => {
+    vi.mocked(authService.acceptInvite).mockRejectedValue(refusal(500));
+    renderAt('/accept-invite?token=abc');
+    await fill('Abcdef1!', 'Abcdef1!');
+    expect(await screen.findByText('Something went wrong. Try again.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Password')).toBeInTheDocument();
+  });
+});
