@@ -28,6 +28,7 @@
  */
 import prisma from '../../utils/prisma';
 import { runInTenant } from '../../utils/tenantContext';
+import { yearPace } from './yearPace';
 import * as Money from '../../utils/money';
 import { getCurrency } from '../../utils/currency';
 import { Prisma } from '@prisma/client';
@@ -149,7 +150,7 @@ export async function leadership(tenantId: string, asOf?: string, options: Leade
       });
 
     const [currency, quarterTarget, monthTarget, yearTarget, confTarget, successTarget, aovTarget,
-      monthRevenue, quarterRevenue, yearRevenue, aovWindow, monthRates] = await Promise.all([
+      monthRevenue, quarterRevenue, yearRevenue, aovWindow, monthRates, yearQuarters] = await Promise.all([
       getCurrency(),
       periodRevenueTarget('quarter', spans[1].startMonth),
       periodRevenueTarget('month', month.startMonth),
@@ -162,7 +163,23 @@ export async function leadership(tenantId: string, asOf?: string, options: Leade
       deliveredRevenue(tenantId, spans[2].from, to, revScope),
       deliveredRevenue(tenantId, thirtyDaysFrom, to, revScope),
       rates(tenantId, month.from, to, { basis: 'cohort', repId: options.scope?.repId, partnerId: options.scope?.partnerId }),
+      prisma.target.findMany({
+        where: { ...targetBase, scope: 'quarter', metric: 'revenue', periodStart: { gte: dayStart(day.year, 1), lte: dayStart(day.year, 12) } },
+        orderBy: { createdAt: 'asc' },
+      }),
     ]);
+
+    // Year pace follows the quarter plan (M6-T07, owner decision), not straight days. Without the quarter targets up to the
+    // current quarter, or without the annual target, it stays on straight days.
+    const quarterIndex = Math.floor((day.month - 1) / 3);
+    const quarterValues = [0, 1, 2, 3].map((q) => yearQuarters.find((t) => t.periodStart.getTime() === dayStart(day.year, q * 3 + 1).getTime())?.value ?? null);
+    const planned = yearTarget && quarterValues.slice(0, quarterIndex + 1).every((v) => v !== null)
+      ? yearPace({
+        quarterTargets: quarterValues.map((v) => v ?? 0) as Parameters<typeof yearPace>[0]['quarterTargets'],
+        quarterIndex, daysGone: spans[1].pace.daysGone, daysInQuarter: spans[1].pace.daysInPeriod, annualTarget: yearTarget.value,
+      }).percent
+      : null;
+    const yearSpan = planned === null ? spans[2] : { ...spans[2], pace: { ...spans[2].pace, percent: planned } };
 
     const meta = (basis: KpiResult<unknown>['dateBasis'], from: Date, formulaId: string) =>
       kpiMeta(from, to, { dateBasis: basis, formulaId, asOf: computedAt });
@@ -177,7 +194,7 @@ export async function leadership(tenantId: string, asOf?: string, options: Leade
       ...meta('deliveryDate', s.from, `leadership.pace.${s.period}.v1`),
       detail: { daysGone: s.pace.daysGone, daysInPeriod: s.pace.daysInPeriod },
     });
-    const pace: Leadership['pace'] = { month: paceResult(spans[0]), quarter: paceResult(spans[1]), year: paceResult(spans[2]) };
+    const pace: Leadership['pace'] = { month: paceResult(spans[0]), quarter: paceResult(spans[1]), year: paceResult(yearSpan) };
 
     // Revenue so far, projection, needed a day
     const soFar = Money.parse(monthRevenue.total.value);
@@ -262,7 +279,7 @@ export async function leadership(tenantId: string, asOf?: string, options: Leade
       attainment: {
         month: attain(month, monthRevenue, monthTarget),
         quarter: attain(spans[1], quarterRevenue, quarterTarget),
-        year: attain(spans[2], yearRevenue, yearTarget),
+        year: attain(yearSpan, yearRevenue, yearTarget),
       },
       lever: {
         ...lever({

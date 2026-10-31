@@ -41,10 +41,10 @@ export function leadershipFixtureChecks(getTenantId: () => string): void {
       expect(Number(l.lever.value)).toBeLessThan(24_000);
     });
 
-    it('has the pace markers: month 54.8, quarter 18.5, year 79.5', () => {
+    it('has the pace markers: month 54.8, quarter 18.5, year 75.5 (quarter plan)', () => {
       expect(l.pace.month.value).toBe(54.8);
       expect(l.pace.quarter.value).toBe(18.5);
-      expect(l.pace.year.value).toBe(79.5);
+      expect(l.pace.year.value).toBe(75.5);
     });
 
     it('has the attainment: month 92k of 180k, quarter 92k of 540k, year 1,382k of 1,800k', () => {

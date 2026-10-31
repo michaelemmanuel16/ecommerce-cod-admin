@@ -10,6 +10,7 @@ import { AppError } from '../middleware/errorHandler';
 import { isOwnerRole } from '../config/defaultRoles';
 import { adminService } from './adminService';
 import { createKeyIn, evictKeys, revokeKeysIn } from './mcpKeyService';
+import { returnPersonTargetsToPool } from './targetService';
 import { assertMayTouchRole, assignmentSelect, findRole, holderSelect, holderStatus, holderView } from './roleService';
 import type { AssignInput } from '../validators/roleSchema';
 
@@ -124,5 +125,7 @@ export async function unassign(actor: Requester, roleId: number, assignmentId: n
     keys: await revokeKeysIn(tx, { tenantId, userId: current.holderId, roleId }),
   }));
   evictKeys(keys);
-  return { assignment, revokedKeys: keys.length };
+  // M6-T07: the person's open target goes back to the role pool, with a notice (null when they had none).
+  const targetReturned = await returnPersonTargetsToPool(actor.id, roleId, current.holderId);
+  return { assignment, revokedKeys: keys.length, targetReturned };
 }
