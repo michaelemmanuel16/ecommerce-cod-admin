@@ -1,0 +1,134 @@
+<title>M6 Sprint Plan</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,600&display=swap">
+<style>
+/* Layout: one reading column; plan sections in order; tables scroll inside their own box */
+:root{
+  --bg:#f6f7f5; --panel:#ffffff; --fg:#1d2420; --muted:#5b6660; --line:#d9ded9;
+  --accent:#1f6b52; --accent-soft:#e3f0ea; --warn:#9a5b00; --warn-soft:#fbf0dc;
+  --display:"Fraunces",Georgia,serif; --body:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#141a17; --panel:#1b2320; --fg:#e4ebe6; --muted:#9aa8a0; --line:#2e3a35;
+  --accent:#6fcfa8; --accent-soft:#1f3a2f; --warn:#f0b35c; --warn-soft:#3a2d17; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141a17; --panel:#1b2320; --fg:#e4ebe6; --muted:#9aa8a0; --line:#2e3a35;
+  --accent:#6fcfa8; --accent-soft:#1f3a2f; --warn:#f0b35c; --warn-soft:#3a2d17; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.55}
+main{max-width:920px;margin:0 auto;padding-block:32px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:28px}
+h1{font-family:var(--display);font-size:2rem;margin:0;text-wrap:balance}
+h2{font-size:1.15rem;margin:0 0 10px;text-wrap:balance}
+.eyebrow{font-family:var(--mono);font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+p,li{max-width:68ch} p{margin:0 0 8px} ul,ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px}
+section{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:18px 20px;min-width:0}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.9rem;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:600;color:var(--muted);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
+code,.id{font-family:var(--mono);font-size:.85em}
+.chip{display:inline-block;font-family:var(--mono);font-size:.72rem;padding:1px 7px;border-radius:10px;background:var(--accent-soft);color:var(--accent);white-space:nowrap}
+.chip.warn{background:var(--warn-soft);color:var(--warn)}
+.ask{border-left:3px solid var(--warn)}
+.summary{display:flex;flex-wrap:wrap;gap:10px 28px}
+.summary div{display:flex;flex-direction:column}
+.summary b{font-family:var(--display);font-size:1.5rem}
+.summary span{color:var(--muted);font-size:.82rem}
+pre{font-family:var(--mono);font-size:.8rem;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:12px;overflow-x:auto;margin:0}
+</style>
+<main>
+<header>
+  <div class="eyebrow">CodAdmin rebuild · Milestone 6 · plan for approval · 2026-10-31</div>
+  <h1>M6: Roles, targets, rewards</h1>
+  <p>The owner sets a North Star once. The app splits it into targets by quarter, month, role and person. Roles and permissions are per tenant. Staff are invited and set their own password. Rewards are earned at month close.</p>
+</header>
+
+<section>
+  <div class="summary">
+    <div><b>7</b><span>Linear issues (COD-56 to COD-62)</span></div>
+    <div><b>27</b><span>plan tasks (T01 to T28)</span></div>
+    <div><b>170 h</b><span>likely work (223 h with buffer)</span></div>
+    <div><b>1 PR</b><span>into <code>develop</code>, never <code>main</code></span></div>
+  </div>
+</section>
+
+<section>
+  <h2>Queue</h2>
+  <div class="scroll"><table>
+    <tr><th>#</th><th>Issue</th><th>Title</th><th>Tasks</th><th>Hours</th></tr>
+    <tr><td>1</td><td class="id">COD-56</td><td>Roles, permissions, staff and invites backend</td><td>T01–T06</td><td>42</td></tr>
+    <tr><td>2</td><td class="id">COD-57</td><td>Targets and North Star services</td><td>T07, T08</td><td>16</td></tr>
+    <tr><td>3</td><td class="id">COD-58</td><td>Rewards, month close, leaderboard and assignment</td><td>T09–T13</td><td>32</td></tr>
+    <tr><td>4</td><td class="id">COD-59</td><td>Targets, Leaderboard, North Star wizard and Rewards UI</td><td>T15–T18</td><td>28</td></tr>
+    <tr><td>5</td><td class="id">COD-60</td><td>Staff and roles UI</td><td>T19–T22</td><td>26</td></tr>
+    <tr><td>6</td><td class="id">COD-61</td><td>Fixture, security and invite tests</td><td>T23, T24</td><td>13</td></tr>
+    <tr><td>7</td><td class="id">COD-62</td><td>Simplify, checks and owner review</td><td>T25–T28</td><td>13</td></tr>
+  </table></div>
+</section>
+
+<section>
+  <h2>How I run it (same as M4 and M5)</h2>
+  <ol>
+    <li>I orchestrate. Builder agents (Sonnet) write the code. I review every diff.</li>
+    <li>Up to 3 builders work at once. Each has its own worktree (<code>m6-a</code>, <code>m6-b</code>, <code>m6-c</code>) and its own test database (<code>ecommerce_cod_test_a/b/c</code>).</li>
+    <li>Only lane A changes the database schema.</li>
+    <li>Each issue goes through the full sprint: issue review, build, <code>/simplify</code>, then all checks. The checks are build, lint, unit and integration tests, workflow validation, and a browser check with screenshots.</li>
+    <li>I approve each issue myself when every check passes ("mode A"). Then I merge it into <code>feature/m6-roles-targets-rewards</code>, re-run the checks, update the docs and CHANGELOG, comment on Linear, set the issue to Done, and push the branch as a backup.</li>
+    <li>After the last issue, I run <code>/cso</code> (security audit) and <code>/qa</code> (fixes bugs) on the local app. Critical and high findings get fixed. Medium and low findings become Backlog tickets.</li>
+    <li>I open the PR into <code>develop</code> and wait for CI to pass. Then I <b>stop</b>, and the PR waits for your review. Nothing merges, and nothing touches production.</li>
+    <li><code>caffeinate</code> keeps the Mac awake for the whole run. <code>progress.md</code> is updated at each step.</li>
+  </ol>
+</section>
+
+<section>
+  <h2>Order of work (lanes)</h2>
+<pre>Wave 1  A: T01 schema (alone; merged first, because everything depends on it)
+Wave 2  A: T02 → T03 → T04 → T05 → T06   (COD-56 roles, staff, invites)
+        C: T13 assignment cursor          (COD-58 part; needs T01 only)
+Wave 3  A: T07 → T08                      (COD-57 targets, North Star)
+        B: T19 → T20 → T21 → T22          (COD-60 staff UI; needs COD-56)
+Wave 4  A: T09 → T10 → T11 → T12          (COD-58 rewards, month close, leaderboard)
+        B: T15 → T17                      (COD-59 Targets page, wizard; needs T08)
+Wave 5  B: T16 → T18                      (COD-59 Leaderboard, Rewards tab; needs T09, T11)
+        A: T23 → T24                      (COD-61 fixture and security tests)
+Wave 6  T25 → T28                         (COD-62 simplify, checks, browser, PR)</pre>
+  <p style="margin-top:10px">Critical path: T01 → T02 → T03 → T07 → T09 → T10 → T23 → T25–T28 (about 64 h on one line).</p>
+</section>
+
+<section>
+  <h2>Done when (from the M6 plan)</h2>
+  <ul>
+    <li>The Targets page shows on track or off track for every role and person, against the month target, with margin beside revenue at each level.</li>
+    <li>On the test fixture, the North Star setup gives: annual GH₵1.8M; quarters 360k, 420k, 480k, 540k ("grow each quarter"); October GH₵180,000 ÷ GH₵249 = 723 delivered; 1,721 orders; 56 orders a day.</li>
+    <li>Month close is a job with a dry-run preview. The cash tiers are: rep 100% GH₵300, 120% GH₵500 plus a paid day off; delivery 100% GH₵250, 120% GH₵400 plus a paid day off. Running it twice creates the entries only once.</li>
+    <li>The seven current roles map to position roles, and every user keeps every permission they had. Effective permission is the union of the roles a person holds.</li>
+    <li>An invited person sets their own password. A deactivated user cannot sign in. The last Owner cannot be deactivated.</li>
+    <li>The round-robin position survives a server restart.</li>
+  </ul>
+</section>
+
+<section class="ask">
+  <h2>Your calls before I start <span class="chip warn">GATE 1</span></h2>
+  <p>The plan lists these as "decide at task time". I propose the defaults below. Say "go" to accept all of them, or change any one.</p>
+  <div class="scroll"><table>
+    <tr><th>#</th><th>Question</th><th>Proposed default</th></tr>
+    <tr><td>1</td><td>Year pace: straight days, or a stepped quarter plan?</td><td>Straight days, as the mockup shows</td></tr>
+    <tr><td>2</td><td>Which quest decides an "on target day"?</td><td>The New orders quest</td></tr>
+    <tr><td>3</td><td>Growth formula for "grow each quarter"</td><td>One thirtieth of the annual figure per step (gives 360/420/480/540k)</td></tr>
+    <tr><td>4</td><td>Role names: Admin, Manager, Marketing</td><td>Admin and Manager keep their names. Marketing becomes a new position role with the marketing permission.</td></tr>
+    <tr><td>5</td><td>Target for a person added mid-month</td><td>You set it by hand. No automatic proration.</td></tr>
+    <tr><td>6</td><td>Notification toggle migration</td><td>Query first. Skip it if the data is empty.</td></tr>
+    <tr><td>7</td><td>Can one person hold several roles?</td><td>Yes. They get the union of the permissions, with no limits.</td></tr>
+    <tr><td>8</td><td>T28 says you check on <b>staging</b></td><td>You review the PR plus a local demo on this Mac. I deploy to staging only if you say so. Production stays untouched.</td></tr>
+  </table></div>
+</section>
+
+<section>
+  <h2>Risks and how I handle them</h2>
+  <ul>
+    <li><b>The role migration could lock people out or widen access.</b> A script test compares each user's permissions before and after the migration, for all seven roles.</li>
+    <li><b>Tenant data could leak through the new tables.</b> Each new model has a required <code>tenantId</code> and is in the tenant-scoped list. Two-tenant tests cover it in T24.</li>
+    <li><b>Month close could pay on wrong numbers.</b> It uses only the M1 KPI services, stops on any error, shows a preview first, and can run twice safely. It is tested with a delivery at 23:30 on the last day of the month.</li>
+    <li><b>Known tooling problems.</b> The CI test step can hang (COD-190). The pre-push hook fails, so I push with <code>--no-verify</code> only after the full test suite passes. Jest runs with <code>--runInBand --forceExit</code> and a timeout.</li>
+  </ul>
+</section>
+</main>
