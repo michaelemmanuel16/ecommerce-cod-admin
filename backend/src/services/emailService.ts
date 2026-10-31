@@ -12,6 +12,7 @@ import { renderEmailTemplate } from './emailTemplateService';
 import { ensureUnsubscribeToken, buildUnsubscribeUrl, applyUnsubscribe } from './unsubscribeService';
 import * as Money from '../utils/money';
 import { getCurrency } from '../utils/currency';
+import { INVITE_TTL_DAYS } from '../utils/inviteToken';
 
 // ---------- Types ----------
 
@@ -273,6 +274,24 @@ export async function sendPasswordResetEmail(
       <p><a href="${resetUrl}">Reset your password</a></p>
       <p>This link will expire in 15 minutes.</p>
       <p>If you didn't request a password reset, you can safely ignore this email.</p>
+    `,
+  });
+}
+
+export async function sendInviteEmail(
+  email: string,
+  firstName: string,
+  inviterName: string,
+  inviteUrl: string
+): Promise<void> {
+  await sendEmail({
+    to: email,
+    subject: 'You are invited to join the team - COD Admin',
+    html: `
+      <p>Hi ${escapeHtml(firstName)},</p>
+      <p>${escapeHtml(inviterName)} invited you to join their team. Click the link below to choose your password:</p>
+      <p><a href="${inviteUrl}">Accept the invite</a></p>
+      <p>This link works once and expires in ${INVITE_TTL_DAYS} days.</p>
     `,
   });
 }

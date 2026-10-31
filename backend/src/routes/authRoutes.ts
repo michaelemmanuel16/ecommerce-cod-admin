@@ -13,6 +13,8 @@ router.post('/login', authLimiter, loginValidation, validate, authController.log
 router.post('/refresh', authLimiter, authController.refresh);
 router.post('/forgot-password', authLimiter, forgotPasswordValidation, validate, authController.forgotPassword);
 router.post('/reset-password', authLimiter, resetPasswordValidation, validate, authController.resetPassword);
+// M6-T06: public, same limit and password rules as reset-password.
+router.post('/accept-invite', authLimiter, resetPasswordValidation, validate, authController.acceptInvite);
 router.post('/logout', apiLimiter, authenticate, authController.logout);
 router.post('/change-password', authenticate, changePasswordLimiter, authController.changePassword);
 router.get('/sessions', apiLimiter, authenticate, authController.listSessions);

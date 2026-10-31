@@ -79,13 +79,18 @@ export interface AdminUser {
 
 export interface CreateUserData {
   email: string;
-  password: string;
   firstName: string;
   lastName: string;
   phoneNumber?: string;
   role: string;
   commissionAmount?: number;
   deliveryRate?: number;
+}
+
+export interface InviteResult {
+  /** Shown once. Copy it when the send failed. */
+  link: string;
+  delivery: { channel: string; sent: boolean; reason?: string };
 }
 
 export interface UpdateUserData {
@@ -177,8 +182,15 @@ export const adminService = {
     return response.data;
   },
 
-  async createUser(data: CreateUserData): Promise<AdminUser> {
-    const response = await apiClient.post('/api/admin/users', data);
+  /** POST /api/staff/invite (M6-T06): the person gets a link and chooses their own password. */
+  async inviteUser(data: CreateUserData): Promise<InviteResult> {
+    const response = await apiClient.post('/api/staff/invite', {
+      name: `${data.firstName} ${data.lastName}`.trim(),
+      email: data.email,
+      phoneNumber: data.phoneNumber || undefined,
+      role: data.role,
+      ...(data.commissionAmount ? { payMethod: 'per_order', amount: data.commissionAmount } : {}),
+    });
     return response.data;
   },
 

@@ -5,7 +5,6 @@
  * Create makes all three in one transaction. The user comes from adminService.createUser (the Staff modal swaps in at M6).
  * There is no coverage route and no fallback flag (decision O4). Fee rules are M5.
  */
-import { randomBytes } from 'crypto';
 import { PartnerDataSource, Prisma, UserKind } from '@prisma/client';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
@@ -44,7 +43,7 @@ export interface CreatePartnerInput {
   lastName: string;
   email: string;
   phoneNumber?: string;
-  /** A person who signs in to the agent app sets one. Without it the account gets a random password nobody knows. */
+  /** A person who signs in to the agent app sets one. Without it the account has no password. */
   password?: string;
   baseTown?: string;
   daysToPay?: number;
@@ -83,7 +82,8 @@ export async function createPartner(requester: Requester, input: CreatePartnerIn
     return await prisma.$transaction(async (tx) => {
       const user = (await adminService.createUser(requester, {
         email: clean(input.email),
-        password: input.password ?? randomBytes(24).toString('base64url'),
+        // A person who signs in to the agent app set a password; otherwise the account has none.
+        ...(input.password ? { password: input.password } : { access: 'none' as const }),
         firstName,
         lastName,
         phoneNumber: clean(input.phoneNumber) || undefined,

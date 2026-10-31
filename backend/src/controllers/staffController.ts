@@ -1,8 +1,9 @@
 import { AuthRequest } from '../types';
 import { auditService } from '../services/auditService';
 import * as staffService from '../services/staffService';
+import * as inviteService from '../services/inviteService';
 import { actorOf, handler, idParam, parse } from './helpers';
-import { permanentDeleteSchema, resetPasswordSchema, staffQuerySchema, updateStaffSchema } from '../validators/staffSchema';
+import { inviteStaffSchema, permanentDeleteSchema, resendInviteSchema, resetPasswordSchema, staffQuerySchema, updateStaffSchema } from '../validators/staffSchema';
 
 /** M6-T05: the staff table API. Routes -> this file -> staffService. */
 
@@ -52,3 +53,21 @@ export const removePermanently = handler(async (req, res) => {
   await audit(req, 'staff_permanent_delete', id);
   res.json({ message: 'Staff member permanently deleted' });
 });
+
+/** POST /api/staff/invite: make the Invited person and send the link. `link` is in this answer only. */
+export const invite = handler(async (req, res) => {
+  const result = await inviteService.inviteStaff(actorOf(req), parse(inviteStaffSchema, req.body));
+  await audit(req, 'staff_invite', result.staff.id);
+  res.status(201).json(result);
+});
+
+/** POST /api/staff/:id/resend-invite: a new link and 7 days; the old link is dead. */
+export const resendInvite = handler(async (req, res) => {
+  const id = idParam(req.params.id, 'staff');
+  const result = await inviteService.resendInvite(actorOf(req), id, parse(resendInviteSchema, req.body).channel);
+  await audit(req, 'staff_invite_resend', id);
+  res.json(result);
+});
+
+/** POST /api/staff/:id/revoke-invite: the link dies; the person goes to the Deleted tab. */
+export const revokeInvite = transition('staff_invite_revoke', inviteService.revokeInvite);

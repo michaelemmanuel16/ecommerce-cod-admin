@@ -26,6 +26,7 @@ import { updateUserSchema } from '../validators/staffSchema';
 import { formatIssues } from '../tools/shared';
 import { assignmentSelect } from './roleService';
 import { emailConflictOf } from '../utils/prismaErrors';
+import { newInviteToken } from '../utils/inviteToken';
 import { startOfUtcDay } from '../utils/startOfUtcDay';
 import { formTenantBySlug } from './tenantLookupService';
 import { clearCheckoutFormConfigCache } from './checkoutFormService';
@@ -39,6 +40,11 @@ import { defaultRolePermissions } from '../config/defaultRolePermissions';
 const USER_UPDATE_SELECT = {
   id: true, email: true, firstName: true, lastName: true, phoneNumber: true, role: true, isActive: true,
   country: true, commissionAmount: true, createdAt: true,
+} satisfies Prisma.UserSelect;
+
+const USER_CREATE_SELECT = {
+  id: true, email: true, firstName: true, lastName: true, phoneNumber: true, role: true, kind: true, isActive: true, invitedAt: true,
+  country: true, commissionAmount: true, createdAt: true, roleAssignments: { select: assignmentSelect },
 } satisfies Prisma.UserSelect;
 
 export const adminService = {
@@ -467,10 +473,17 @@ export const adminService = {
     vehicleType?: string;
     vehicleId?: string;
     /**
-     * No password at creation (M6-T03). `invite`: a person who has not accepted yet (inactive, invite date set; T06 sends the
-     * link and activates them). `none`: a company that never signs in (active). Login refuses both: the stored password is not a hash.
+     * No password at creation (M6-T03). `invite`: a person who has not accepted yet (inactive, invite date set, a 7-day token whose
+     * raw value comes back as `inviteToken` with `inviteExpiresAt`, shown once; accept-invite activates them). `none`: a company that never signs in (active). Login refuses both: the stored password is not a hash.
      */
     access?: 'invite' | 'none';
+    /** Pick the returned fields (default: `USER_CREATE_SELECT`). */
+    select?: Prisma.UserSelect;
+    /** The caller writes its own audit row (the invite does: `staff_invite`). */
+    skipAudit?: boolean;
+    /** City (delivery) and free preferences, e.g. how the person is paid (M6-T06). */
+    location?: string;
+    preferences?: Prisma.InputJsonObject;
     /** The role the new user holds from today. Default: the position role mapped from `role` (F-1155). */
     roleId?: number;
     /** Create inside the caller's transaction (M4-T19). The caller writes the audit row for the whole unit of work. */
@@ -490,6 +503,7 @@ export const adminService = {
 
     const password = data.access ? SYSTEM_USER_PASSWORD : await bcrypt.hash(data.password!, 10);
     const db = data.tx ?? prisma;
+    const invite = data.access === 'invite' ? newInviteToken() : undefined;
     // The user and the role they hold are one write (F-1155). A tenant with no roles yet gets the user and no assignment.
     const roleId = data.roleId ?? await positionRoleId(db, data.role);
 
@@ -507,33 +521,22 @@ export const adminService = {
           ...(data.kind && { kind: data.kind }),
           ...(data.vehicleType && { vehicleType: data.vehicleType }),
           ...(data.vehicleId && { vehicleId: data.vehicleId }),
-          ...(data.access === 'invite' && { isActive: false, invitedAt: new Date() }),
+          ...(data.location && { location: data.location }),
+          ...(data.preferences && { preferences: data.preferences }),
+          ...(invite && { isActive: false, invitedAt: new Date(), inviteTokenHash: invite.hash, inviteExpiresAt: invite.expiresAt }),
           ...(roleId !== null && { roleAssignments: { create: { tenantId: resolveTenantId(), roleId, fromDate: startOfUtcDay() } } }),
         },
-        select: {
-          id: true,
-          email: true,
-          firstName: true,
-          lastName: true,
-          phoneNumber: true,
-          role: true,
-          kind: true,
-          isActive: true,
-          invitedAt: true,
-          country: true,
-          commissionAmount: true,
-          createdAt: true,
-          roleAssignments: { select: assignmentSelect },
-        },
-      });
+        select: (data.select ?? USER_CREATE_SELECT) as typeof USER_CREATE_SELECT,
+      }) as Prisma.UserGetPayload<{ select: typeof USER_CREATE_SELECT }>;
     } catch (error) {
       // Email is unique across all tenants.
       throw emailConflictOf(error) ?? error;
     }
 
-    if (!data.tx) await this.createAuditLog(requester, 'create', 'user', user.id.toString(), { email: user.email, role: user.role });
+    if (!data.tx && !data.skipAudit) await this.createAuditLog(requester, 'create', 'user', user.id.toString(), { email: user.email, role: user.role });
 
-    return user;
+    // The raw invite token: only here, never stored. The caller builds the link.
+    return invite ? { ...user, inviteToken: invite.raw, inviteExpiresAt: invite.expiresAt } : user;
   },
 
   /**
@@ -571,13 +574,21 @@ export const adminService = {
     // can find inactive users — admins must be able to reactivate them.
     const targetUser = await withSoftDeleted(() => prisma.user.findUnique({
       where: { id: userId },
-      select: { role: true }
+      select: { role: true, isActive: true, invitedAt: true, deletedAt: true }
     }));
 
     if (!targetUser) {
       throw new AppError('User not found', 404);
     }
     const target = { id: userId, role: targetUser.role };
+
+    // Any edit of another person (name, email, phone, ...) needs rank over them; an email change would otherwise be an account takeover.
+    if (requester.id !== userId) assertMayManage(requester, target, { higher: 'Access denied: Cannot modify a user with a higher role.' });
+    // Coming back from a soft delete or a pending invite has its own rules (reactivateStaff); this route does not restore.
+    if (input.isActive === true) {
+      if (targetUser.deletedAt) throw new AppError('Restore this person from the Deleted tab', 409, 'STAFF_DELETED');
+      if (!targetUser.isActive && targetUser.invitedAt) throw new AppError('This person has not accepted the invite yet', 409, 'STAFF_INVITED');
+    }
 
     // Role management protection
     if (input.role) {
@@ -589,21 +600,17 @@ export const adminService = {
       if (!canManageRole(requester.role, input.role)) {
         throw new AppError(`Access denied: Cannot promote user to ${input.role} role.`, 403);
       }
-      // Cannot modify a user with a higher role than your own
-      assertMayManage(requester, target, { higher: 'Access denied: Cannot modify a user with a higher role.' });
     }
-    // Deactivating needs rank over the person (a person may still deactivate themselves here).
-    if (input.isActive === false && requester.id !== userId) assertMayManage(requester, target);
 
     const roleChanged = input.role !== undefined && input.role !== targetUser.role;
     const deactivating = input.isActive === false;
     const [firstName, ...rest] = name?.split(' ') ?? [];
     const updateData: Prisma.UserUncheckedUpdateInput = {
       ...input,
+      // An inactive person cannot accept an invite: the link dies with the deactivation.
+      ...(deactivating && { inviteTokenHash: null, inviteExpiresAt: null }),
       // "First Last" in one field: the first word is the first name.
       ...(name !== undefined && { firstName: firstName || 'Unknown', lastName: rest.join(' ') }),
-      // Active again clears the staff soft delete (M6-T05).
-      ...(input.isActive === true && { deletedAt: null }),
     };
     const select = options.select ?? USER_UPDATE_SELECT;
 
@@ -673,7 +680,7 @@ export const adminService = {
     assertMayManage(requester, { id: userId, role: targetUser.role }, { higher: 'Access denied: Cannot deactivate a user with a higher role.' });
 
     const result = await this.writeWithOwnerGuard({ id: userId, role: targetUser.role }, 'deactivated', (tx) =>
-      tx.user.update({ where: { id: userId }, data: { isActive: false } }), true);
+      tx.user.update({ where: { id: userId }, data: { isActive: false, inviteTokenHash: null, inviteExpiresAt: null } }), true);
 
     await this.createAuditLog(requester, 'deactivate', 'user', userId.toString());
 

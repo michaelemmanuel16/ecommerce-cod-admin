@@ -10,11 +10,12 @@ import { AppError } from '../middleware/errorHandler';
 import { adminService } from './adminService';
 import { holderStatus } from './roleService';
 import { assertNotLastOwner } from './systemRoleService';
+import { PAY_METHODS } from '../validators/staffSchema';
 import type { StaffStatus, staffQuerySchema, updateStaffSchema } from '../validators/staffSchema';
 
 /**
  * M6-T05 (F-1157, F-1159 to F-1162, F-1165): the team table. Staff are the people and companies of the tenant (the system
- * user and AI agents are not staff). Call inside the tenant context. The invite and accept-invite flow is M6-T06.
+ * user and AI agents are not staff). Call inside the tenant context. The invite flow is in inviteService (M6-T06).
  *
  * Status of a person:
  * - active: `isActive`.
@@ -32,13 +33,13 @@ const STAFF_KINDS: Prisma.UserWhereInput = { kind: { in: ['person', 'company'] }
 /** Orders in these statuses are done; every other order is open work for its rep or partner. */
 const CLOSED_ORDER_STATUSES: OrderStatus[] = ['delivered', 'digital_delivered', 'cancelled', 'returned'];
 
-const staffSelect = {
+export const staffSelect = {
   id: true, firstName: true, lastName: true, email: true, phoneNumber: true, kind: true, role: true, isActive: true,
   invitedAt: true, deletedAt: true, lastLogin: true, createdAt: true, commissionAmount: true, vehicleType: true, vehicleId: true,
   roleAssignments: { where: { toDate: null }, select: { role: { select: { id: true, name: true } } } },
 } satisfies Prisma.UserSelect;
 
-type StaffRow = Prisma.UserGetPayload<{ select: typeof staffSelect }>;
+export type StaffRow = Prisma.UserGetPayload<{ select: typeof staffSelect }>;
 
 export const staffStatus = (u: { isActive: boolean; invitedAt: Date | null; deletedAt: Date | null }): StaffStatus =>
   !u.isActive && u.deletedAt ? 'deleted' : holderStatus(u);
@@ -51,11 +52,21 @@ const STATUS_WHERE: Record<StaffStatus, Prisma.UserWhereInput> = {
   deleted: { isActive: false, deletedAt: { not: null } },
 };
 
-/** A delivery partner's fee is a fee rule (M5), not a field of the person (F-1161). */
-const feeRuleOf = (u: { id: number; role: UserRole }) =>
-  u.role === 'delivery_agent' ? { editable: false, url: `/api/delivery-partners/${u.id}/fee-rules` } : null;
+/**
+ * How a role of person can be paid (F-1158, F-1161). A delivery partner's fee is a fee rule (M5), not a field of the person,
+ * so there is no amount to set. One rule for the invite, the staff edit and the fee-rule link.
+ */
+export const payPolicyFor = (role: UserRole) => role === 'delivery_agent'
+  ? { methods: ['fee_rule', 'none'] as const, defaultMethod: 'fee_rule' as const, amountEditable: false }
+  : { methods: PAY_METHODS, defaultMethod: 'none' as const, amountEditable: true };
 
-const staffView = ({ roleAssignments, commissionAmount, ...u }: StaffRow) => ({
+export const feeNotEditable = () =>
+  new AppError('A delivery partner has no per-order amount here. Their fee is set in the partner fee rule.', 400, 'FEE_NOT_EDITABLE');
+
+const feeRuleOf = (u: { id: number; role: UserRole }) =>
+  payPolicyFor(u.role).amountEditable ? null : { editable: false, url: `/api/delivery-partners/${u.id}/fee-rules` };
+
+export const staffView = ({ roleAssignments, commissionAmount, ...u }: StaffRow) => ({
   ...u,
   name: fullName(u),
   status: staffStatus(u),
@@ -67,7 +78,7 @@ const staffView = ({ roleAssignments, commissionAmount, ...u }: StaffRow) => ({
 export type StaffView = ReturnType<typeof staffView>;
 
 /** A person of the tenant (any status), or 404. */
-async function findStaff(id: number): Promise<StaffRow> {
+export async function findStaff(id: number): Promise<StaffRow> {
   const row = await withSoftDeleted(() => prisma.user.findFirst({ where: { id, ...STAFF_KINDS }, select: staffSelect }));
   if (!row) throw new AppError('Staff member not found', 404);
   return row;
@@ -124,9 +135,7 @@ export async function listStaff(query: StaffQuery) {
 export async function updateStaff(actor: Requester, id: number, input: UpdateStaffInput): Promise<StaffView> {
   const target = await findStaff(id);
   if (staffStatus(target) === 'deleted') throw new AppError('Restore this person before editing', 409, 'STAFF_DELETED');
-  if ((input.role ?? target.role) === 'delivery_agent' && input.commissionAmount !== undefined) {
-    throw new AppError('A delivery partner has no commission here. Their fee is set in the partner fee rule.', 400, 'FEE_NOT_EDITABLE');
-  }
+  if (!payPolicyFor(input.role ?? target.role).amountEditable && input.commissionAmount !== undefined) throw feeNotEditable();
   return staffView(await adminService.updateUser(actor, id, input, { select: staffSelect }) as StaffRow);
 }
 
@@ -148,7 +157,7 @@ export const deactivateStaff = (actor: Requester, id: number) =>
     if (status !== 'active') throw new AppError(`This person is already ${status}`, 409, 'NOT_ACTIVE');
     // invitedAt goes: an accepted invite must not read as "invited" once the person is inactive (the T03 status rule).
     return adminService.writeWithOwnerGuard(target, 'deactivated', (tx) =>
-      tx.user.update({ where: { id: target.id }, data: { isActive: false, invitedAt: null }, select: staffSelect }), true);
+      tx.user.update({ where: { id: target.id }, data: { isActive: false, invitedAt: null, inviteTokenHash: null, inviteExpiresAt: null }, select: staffSelect }), true);
   });
 
 /** Deactivated or deleted back to active. A person deleted before they accepted an invite goes back to invited. */
@@ -167,7 +176,7 @@ export const deleteStaff = (actor: Requester, id: number) =>
     if (status === 'deleted') throw new AppError('This person is already deleted', 409, 'ALREADY_DELETED');
     // The invite link dies with the delete.
     return adminService.writeWithOwnerGuard(target, 'deleted', (tx) =>
-      tx.user.update({ where: { id: target.id }, data: { isActive: false, deletedAt: new Date(), inviteTokenHash: null }, select: staffSelect }), true);
+      tx.user.update({ where: { id: target.id }, data: { isActive: false, deletedAt: new Date(), inviteTokenHash: null, inviteExpiresAt: null }, select: staffSelect }), true);
   });
 
 /**

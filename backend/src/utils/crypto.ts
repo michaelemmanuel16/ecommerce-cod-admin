@@ -24,6 +24,19 @@ export const safeEqual = (a: string, b: string): boolean =>
     crypto.createHash('sha256').update(b).digest()
   );
 
+const MINUTE_MS = 60 * 1000;
+
+/**
+ * A single-use link token: 32 random bytes as hex, its SHA-256 hash (the only part stored) and the moment it stops working.
+ * Used by password reset and the staff invite.
+ */
+export function newHashedToken(ttlMs: number, now: Date = new Date()): { raw: string; hash: string; expiresAt: Date } {
+  const raw = crypto.randomBytes(32).toString('hex');
+  return { raw, hash: sha256Hex(raw), expiresAt: new Date(now.getTime() + ttlMs) };
+}
+
+export const RESET_TOKEN_TTL_MS = 15 * MINUTE_MS;
+
 export const verifySignature = (payload: string, signature: string): boolean =>
   safeEqual(signature, generateSignature(payload));
 

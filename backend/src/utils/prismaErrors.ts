@@ -5,6 +5,10 @@ import { AppError } from '../middleware/errorHandler';
 export const isUniqueViolation = (error: unknown): boolean =>
   error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
 
+/** True for P2025: the row an update or delete named does not exist (or no longer matches its filters). */
+export const isRecordNotFound = (error: unknown): boolean =>
+  error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025';
+
 /** True for a foreign-key violation (P2003): a row that other rows still point at. */
 export const isForeignKeyViolation = (error: unknown): boolean =>
   error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003';

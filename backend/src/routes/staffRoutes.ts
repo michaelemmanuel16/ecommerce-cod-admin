@@ -12,6 +12,10 @@ router.use(tenantRateLimiter);
 // outranks the person. Permanent delete is the Owner's alone.
 router.get('/', requireResourcePermission('users', 'view'), staffController.list);
 router.get('/workload', requireResourcePermission('users', 'view'), staffController.workload);
+// M6-T06 (F-1158): invite (users:create), resend and revoke (users:update).
+router.post('/invite', requireResourcePermission('users', 'create'), staffController.invite);
+router.post('/:id/resend-invite', requireResourcePermission('users', 'update'), staffController.resendInvite);
+router.post('/:id/revoke-invite', requireResourcePermission('users', 'update'), staffController.revokeInvite);
 router.put('/:id', requireResourcePermission('users', 'update'), staffController.update);
 router.post('/:id/reset-password', requireResourcePermission('users', 'update'), staffController.resetPassword);
 router.post('/:id/deactivate', requireResourcePermission('users', 'update'), staffController.deactivate);
