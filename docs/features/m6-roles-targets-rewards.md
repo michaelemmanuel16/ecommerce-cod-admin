@@ -83,6 +83,31 @@ The API behind the Staff table. Plan task: M6-T05. COD-56 is still In Progress (
 
 ---
 
+## COD-56 — Invite flow (M6-T06)
+**Date:** 2026-11-01 | **Type:** feat | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-56-t06-invites`, merge 8019a878) | **Commits:** 0ec05778 (T05 security fix), 8174467b, 092d36eb
+
+### Summary
+New staff join by invite link only. Nobody types a password for another person. Plan task: M6-T06. COD-56 is still In Progress (T04 left).
+
+### Changes
+- **Invite (`inviteService`, `POST /api/staff/invite`):** creates the person as Invited (inactive, `invitedAt` set) and sends a link by email, SMS or WhatsApp. If sending fails, the screen shows a copy-link dialog. The link is valid for `INVITE_TTL_DAYS` (7). Only the hash of the token is stored (`newHashedToken` in `utils/crypto.ts`).
+- **Resend and revoke:** `POST /api/staff/:id/resend-invite` makes a new token (the old link stops working). `POST /api/staff/:id/revoke-invite` soft-deletes the invite (Deleted tab).
+- **Accept (`POST /api/auth/accept-invite`, page `/accept-invite`):** the person sets a password and is signed in. One conditional update takes only a person who is still invited (`inviteTokenHash`, inactive, not deleted, `invitedAt` set). Any other case gives 400 `INVITE_INVALID`.
+- **Security:** deactivate, delete and `updateUser` (isActive false) clear the invite token, so an old link cannot reactivate a person. The SMS and WhatsApp log stores the message without the link (`logBody`).
+- **Old create paths closed:** `POST /api/users` and `POST /api/admin/users` return 410 `USE_INVITE`. The delivery-partner admin path keeps its password branch, because a partner signs in with it.
+- **T05 security fix (0ec05778):** `updateUser` checks rank on every edit of another person and cannot restore a deleted or invited person through `isActive: true`.
+- **Shared code:** `sessionService.signIn` (login and accept-invite), `utils/appUrl.ts`, `<NewPasswordFields>` and `lib/passwordRules.ts` (reset password and accept invite), the 72-character limit in `resetPasswordValidation`.
+
+### Verification
+- Merged branch (8019a878): migrate, generate, backend typecheck, lint and build clean. Unit 125 suites / 1683 tests pass.
+- Integration: `m6InviteApi`, `m6StaffApi`, `m6RolesApi`, `m6Targets`, `navApi`, `systemUser`, `authFailClosed`, `onboardingApi`, `deliveryPartnersWrite`, `accountApi`, `sessionsApi`, `m6RoleMigration`: 12 suites / 237 tests pass.
+- Frontend: build and lint clean; vitest 174 files / 1404 tests pass (includes `AcceptInvite`).
+
+### Open points
+- The full invite form on the Staff screen is T20. This task adds the accept page and the copy-link dialog only.
+
+---
+
 ## COD-57 — Target service (M6-T07)
 **Date:** 2026-11-01 | **Type:** feat | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-57-t07-targets`, merge 2e37b9b1) | **Commits:** 4508bbce, 2dff0328
 
