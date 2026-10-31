@@ -20,7 +20,7 @@ import {
 } from '../utils/providerCrypto';
 import { getTenantId, resolveTenantId, withoutTenant } from '../utils/tenantContext';
 import { HUMAN_USERS_WHERE, SYSTEM_USER_PASSWORD } from './systemUserService';
-import { positionRoleId } from './systemRoleService';
+import { assertNotLastOwner, assignPositionRole, positionRoleId } from './systemRoleService';
 import { assignmentSelect } from './roleService';
 import { isUniqueViolation } from '../utils/prismaErrors';
 import { startOfUtcDay } from '../utils/startOfUtcDay';
@@ -534,10 +534,14 @@ export const adminService = {
   async updateUser(requester: Requester, userId: number, data: {
     email?: string;
     name?: string;
+    firstName?: string;
+    lastName?: string;
     phoneNumber?: string;
     role?: UserRole;
     isActive?: boolean;
     commissionAmount?: number;
+    vehicleType?: string;
+    vehicleId?: string;
   }) {
     await this.checkAdminPrivilege(requester, 'admin');
 
@@ -551,6 +555,8 @@ export const adminService = {
     if (!targetUser) {
       throw new AppError('User not found', 404);
     }
+
+    const roleChanged = data.role !== undefined && data.role !== targetUser.role;
 
     // Role management protection
     if (data.role) {
@@ -570,6 +576,14 @@ export const adminService = {
       }
     }
 
+    // Deactivating needs rank over the person, like the role changes above (M6-T05).
+    if (data.isActive === false && !canManageRole(requester.role, targetUser.role) && requester.id !== userId) {
+      throw new AppError('Access denied: Cannot deactivate a user with a higher role.', 403);
+    }
+    // The last Owner can be neither demoted nor deactivated (M6-T05). A role change moves the position role too (F-1155).
+    if (roleChanged) await assertNotLastOwner(prisma, userId, 'demoted');
+    if (data.isActive === false) await assertNotLastOwner(prisma, userId);
+
     const updateData: any = { ...data };
     // A delivery partner has no pay rate any more (F-915): a client that still sends deliveryRate is ignored.
     delete updateData.deliveryRate;
@@ -582,22 +596,35 @@ export const adminService = {
       delete updateData.name;
     }
 
-    const updatedUser = await prisma.user.update({
-      where: { id: userId },
-      data: updateData,
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        phoneNumber: true,
-        role: true,
-        isActive: true,
-        country: true,
-        commissionAmount: true,
-        createdAt: true,
-      } as any,
-    });
+    let updatedUser;
+    try {
+      // The user row and their position role change together.
+      updatedUser = await prisma.$transaction(async (tx) => {
+        const row = await tx.user.update({
+          where: { id: userId },
+          data: updateData,
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            phoneNumber: true,
+            role: true,
+            isActive: true,
+            country: true,
+            commissionAmount: true,
+            createdAt: true,
+          } as any,
+        });
+        if (roleChanged) await assignPositionRole(tx, userId, data.role!);
+        return row;
+      });
+    } catch (error) {
+      if (isUniqueViolation(error) && String((error as { meta?: { target?: unknown } }).meta?.target ?? '').includes('email')) {
+        throw new AppError('A user with this email already exists', 409, 'EMAIL_EXISTS');
+      }
+      throw error;
+    }
 
     // Deactivating signs the user out of every device at once (F-1224)
     if (data.isActive === false) await sessionService.revokeAll(userId);

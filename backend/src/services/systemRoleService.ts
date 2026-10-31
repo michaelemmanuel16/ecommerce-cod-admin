@@ -3,6 +3,8 @@ import prisma, { TransactionClient } from '../utils/prisma';
 import { withSoftDeleted } from '../utils/prismaExtensions';
 import { startOfUtcDay } from '../utils/startOfUtcDay';
 import logger from '../utils/logger';
+import { resolveTenantId } from '../utils/tenantContext';
+import { AppError } from '../middleware/errorHandler';
 import { PermissionGrid } from '../config/defaultRolePermissions';
 import { ROLE_NAME_BY_USER_ROLE, defaultRoleRows } from '../config/defaultRoles';
 
@@ -103,4 +105,33 @@ export async function positionRoleId(db: Pick<TransactionClient, 'role'>, userRo
   const role = await db.role.findFirst({ where: { name }, select: { id: true } });
   if (!role) logger.warn(`Position role "${name}" is missing; new ${userRole} users get no role assignment yet`);
   return role?.id ?? null;
+}
+
+/**
+ * Keep the position role of a person in step with their UserRole (F-1155, M6-T05). Ends the open assignments to any other
+ * position role (the roles mapped from a UserRole) and holds the one mapped from `userRole`. Custom roles and Marketing are
+ * left alone. A tenant that has not seeded its roles yet is a no-op with a warning. Call inside the tenant context.
+ */
+export async function assignPositionRole(db: Pick<TransactionClient, 'role' | 'roleAssignment'>, userId: number, userRole: UserRole): Promise<void> {
+  const target = await positionRoleId(db, userRole);
+  if (target === null) return;
+  const today = startOfUtcDay();
+  await db.roleAssignment.updateMany({
+    where: { holderId: userId, toDate: null, roleId: { not: target }, role: { name: { in: Object.values(ROLE_NAME_BY_USER_ROLE) } } },
+    data: { toDate: today },
+  });
+  if ((await db.roleAssignment.count({ where: { holderId: userId, roleId: target, toDate: null } })) === 0) {
+    await db.roleAssignment.create({ data: { tenantId: resolveTenantId(), roleId: target, holderId: userId, fromDate: today } });
+  }
+}
+
+/**
+ * The last active Owner (super_admin person) cannot be deactivated, deleted or demoted (M6-T05). No-op for anyone else.
+ * `what` completes "The last Owner cannot be ...".
+ */
+export async function assertNotLastOwner(db: Pick<TransactionClient, 'user'>, userId: number, what = 'deactivated or deleted'): Promise<void> {
+  const target = await withSoftDeleted(() => db.user.findFirst({ where: { id: userId }, select: { role: true } }));
+  if (target?.role !== 'super_admin') return;
+  const others = await db.user.count({ where: { id: { not: userId }, role: 'super_admin', kind: 'person', isActive: true } });
+  if (others === 0) throw new AppError(`The last Owner cannot be ${what}`, 409, 'LAST_OWNER');
 }
