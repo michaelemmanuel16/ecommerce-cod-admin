@@ -1,11 +1,13 @@
 import { z } from 'zod';
+import { MONTH_RE, parseYmd, YMD } from '../services/kpi/dates';
 
 /** Input of the target routes (M6-T08, F-1100 to F-1103, F-1111 to F-1113). Strict: an unknown field is refused. */
 
 const num = z.coerce.number().finite();
 const year = z.coerce.number().int().min(2000).max(2100);
-const month = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Use YYYY-MM');
-const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
+const month = z.string().regex(MONTH_RE, 'Use YYYY-MM');
+/** A real calendar day: 2026-02-31 is refused. */
+const day = z.string().regex(YMD, 'Use YYYY-MM-DD').refine((d) => { try { parseYmd(d); return true; } catch { return false; } }, 'Not a real calendar day');
 const metric = z.string().trim().min(1).max(60);
 const unit = z.string().trim().min(1).max(20);
 
@@ -15,7 +17,7 @@ export const dailyQuerySchema = z.object({ metric, date: day, userId: z.coerce.n
 
 /** Save one target: North Star, role, person or daily. A quarter or month is saved with PUT /:id/children. */
 export const saveTargetSchema = z.object({
-  scope: z.enum(['north_star', 'role', 'person', 'daily']),
+  scope: z.enum(['north_star', 'role', 'person', 'daily']), // north_star is refused by the controller (USE_NORTH_STAR)
   metric,
   unit,
   value: num.min(0),

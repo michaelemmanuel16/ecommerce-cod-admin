@@ -42,7 +42,7 @@ export const DEFAULT_SUCCESS_TARGET = 60;
 /** The lever asks "what is +5 points of this rate worth". */
 const LEVER_POINTS = 5;
 /** Days of delivered orders behind the default planned AOV (R12). */
-const PLANNED_AOV_DAYS = 30;
+export const PLANNED_AOV_DAYS = 30;
 
 export type Period = 'month' | 'quarter' | 'year';
 
@@ -166,9 +166,16 @@ export function quarterTargetsOf(rows: Array<{ periodStart: Date; value: Prisma.
 export const autoPlannedAov = (window: DeliveredRevenue): Money.Money | null =>
   window.deliveredOrders.value > 0 ? Money.roundHalfUp(Money.div(window.total.value, window.deliveredOrders.value), 0) : null;
 
-/** The 30 days of orders the default planned AOV is taken from, ending with the end of `asOfDate`. */
-export const plannedAovWindow = (tenantId: string, asOfDate: string) =>
-  deliveredRevenue(tenantId, addDays(endOfDay(asOfDate, getStoreTimeZone(tenantId)), -PLANNED_AOV_DAYS), endOfDay(asOfDate, getStoreTimeZone(tenantId)));
+/** The 30 store days that end with the end of `asOfDate`: [from, to). The default planned AOV and the profit lookup both read this window. */
+export function plannedAovBounds(tenantId: string, asOfDate: string): { from: Date; to: Date } {
+  const to = endOfDay(asOfDate, getStoreTimeZone(tenantId));
+  return { from: addDays(to, -PLANNED_AOV_DAYS), to };
+}
+
+export const plannedAovWindow = (tenantId: string, asOfDate: string) => {
+  const { from, to } = plannedAovBounds(tenantId, asOfDate);
+  return deliveredRevenue(tenantId, from, to);
+};
 
 /** The year plan of a tenant for `year`: its quarter targets and the given annual target (one read). */
 export async function loadYearPlan(tenantId: string, year: number, annualTarget: Money.MoneyInput | null): Promise<YearPlan> {

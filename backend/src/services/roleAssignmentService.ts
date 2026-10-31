@@ -118,9 +118,9 @@ export async function unassign(actor: Requester, roleId: number, assignmentId: n
   assertOutranks(actor, baseRoleOf(role), current.holder.role);
 
   const { assignment, keys, released } = await prismaBase.$transaction(async (tx) => {
-    // Lock the role's active assignments first, so two unassigns at once take turns and the last-Owner count below is true.
-    await tx.$queryRaw`SELECT id FROM role_assignments WHERE tenant_id = ${tenantId} AND role_id = ${roleId} AND to_date IS NULL ORDER BY id FOR UPDATE`;
-    const live = await tx.roleAssignment.findMany({ where: { tenantId, roleId, toDate: null }, select: { id: true } });
+    // Lock the role's active assignments first, so two unassigns at once take turns and the count below is true. The check
+    // before the transaction is only the fast path; this one counts.
+    const live = await tx.$queryRaw<Array<{ id: number }>>`SELECT id FROM role_assignments WHERE tenant_id = ${tenantId} AND role_id = ${roleId} AND to_date IS NULL ORDER BY id FOR UPDATE`;
     if (!live.some((a) => a.id === current.id)) throw new AppError('This assignment has already ended', 409, 'ALREADY_ENDED');
     if (isOwnerRole(role) && live.length <= 1) throw new AppError('The Owner role needs at least one holder', 409, 'LAST_OWNER');
     return {

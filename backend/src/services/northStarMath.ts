@@ -55,36 +55,30 @@ export function quarterSplit(annual: Money.MoneyInput, mode: GrowthMode, custom?
 }
 
 /**
+ * The open slots take what is left of `total` after the fixed ones, in the proportions of `weights`. With every slot fixed, the
+ * fixed values must add up to `total`; with too much fixed, the difference is in the error.
+ */
+function fillOpen(parentScope: 'north_star' | 'quarter', total: Money.Money, fixed: Array<Money.Money | null>, weights: Money.Money[]): Money.Money[] {
+  const kept = Money.sum(fixed.filter((f): f is Money.Money => f !== null));
+  const open = fixed.map((f, i) => (f === null ? i : -1)).filter((i) => i >= 0);
+  const left = Money.sub(total, kept);
+  if (open.length === 0 || left.lt(0)) assertSum(parentScope, kept, total);
+  const parts = share(left, open.map((i) => weights[i]));
+  return fixed.map((f, i) => f ?? parts[open.indexOf(i)]);
+}
+
+/**
  * Quarters for a re-plan. A quarter in `fixed` (every month past or closed) keeps its value; the rest take what is left of the
  * annual figure in the proportions of the chosen mode. With nothing fixed this is `quarterSplit`.
  */
 export function planQuarters(annual: Money.MoneyInput, mode: GrowthMode, custom: Money.MoneyInput[] | undefined, fixed: Array<Money.Money | null>): Money.Money[] {
   const wanted = quarterSplit(annual, mode, custom);
-  const open = wanted.map((_, i) => i).filter((i) => fixed[i] === null);
-  if (open.length === wanted.length) return wanted;
-  const left = Money.sub(annual, Money.sum(fixed.filter((f): f is Money.Money => f !== null)));
-  if (open.length === 0) {
-    assertSum('north_star', Money.sum(fixed as Money.Money[]), Money.parse(annual));
-    return fixed as Money.Money[];
-  }
-  if (left.lt(0)) assertSum('north_star', Money.sum(fixed.filter((f): f is Money.Money => f !== null)), Money.parse(annual));
-  const parts = share(left, open.map((i) => wanted[i]));
-  return wanted.map((_, i) => fixed[i] ?? parts[open.indexOf(i)]);
+  return fixed.every((f) => f === null) ? wanted : fillOpen('north_star', Money.parse(annual), fixed, wanted);
 }
 
 /** The three months of a quarter. A month in `fixed` (past or closed) keeps its value; the open months share the rest evenly. */
 export function monthSplit(quarter: Money.MoneyInput, fixed: Array<Money.Money | null>): Money.Money[] {
-  const value = Money.parse(quarter);
-  const kept = Money.sum(fixed.filter((f): f is Money.Money => f !== null));
-  const open = fixed.map((f, i) => (f === null ? i : -1)).filter((i) => i >= 0);
-  if (open.length === 0) {
-    assertSum('quarter', kept, value);
-    return fixed as Money.Money[];
-  }
-  const left = Money.sub(value, kept);
-  if (left.lt(0)) assertSum('quarter', kept, value);
-  const parts = share(left, open.map(() => Money.parse(1)));
-  return fixed.map((f, i) => f ?? parts[open.indexOf(i)]);
+  return fillOpen('quarter', Money.parse(quarter), fixed, fixed.map(() => Money.parse(1)));
 }
 
 const positive = (v: Money.MoneyInput, what: string): Money.Money => {

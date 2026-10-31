@@ -21,10 +21,7 @@ export const tree = handler(async (req, res) => {
 
 /** GET /api/targets/roles/:roleId/pool?month: the role target, what persons hold, the pool, each holder (or "Set a target"). */
 export const pool = handler(async (req, res) => {
-  const roleId = idParam(req.params.roleId);
-  const { month } = parse(poolQuerySchema, req.query, 'query');
-  const [rolePool, holders] = await Promise.all([targetService.rolePool(roleId, month), targetService.roleHolderTargets(roleId, month)]);
-  res.json({ roleId, month, pool: rolePool && { metric: rolePool.metric, unit: rolePool.unit, total: rolePool.total, allocated: rolePool.allocated, pool: rolePool.pool }, holders });
+  res.json(await targetService.roleView(idParam(req.params.roleId), parse(poolQuerySchema, req.query, 'query').month));
 });
 
 /** GET /api/targets/daily?metric&date&userId */
@@ -33,9 +30,11 @@ export const daily = handler(async (req, res) => {
   res.json(await targetService.dailyTargetProgress(q.metric, q.date, q.userId));
 });
 
-/** POST /api/targets: save a North Star, role, person or daily target. */
+/** POST /api/targets: save a role, person or daily target. The North Star and its drivers have their own routes (Owner only). */
 export const save = handler(async (req, res) => {
-  const target = await targetService.saveTarget(parse(saveTargetSchema, req.body));
+  const input = parse(saveTargetSchema, req.body);
+  if (input.scope === 'north_star') throw northStar.NORTH_STAR_ONLY();
+  const target = await targetService.saveTarget(input);
   await audit(req, 'target_save', String(target.id), { scope: target.scope, metric: target.metric, value: target.value.toString() });
   res.status(201).json({ target });
 });
@@ -60,7 +59,7 @@ export const children = handler(async (req, res) => {
 /** DELETE /api/targets/:id */
 export const remove = handler(async (req, res) => {
   const id = idParam(req.params.id, 'target');
-  await targetService.deleteTarget(id);
+  await northStar.removeTarget(id);
   await audit(req, 'target_delete', String(id));
   res.json({ message: 'Target deleted' });
 });

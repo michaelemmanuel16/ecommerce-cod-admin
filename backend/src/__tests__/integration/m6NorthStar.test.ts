@@ -137,6 +137,16 @@ describe('driver targets and the manual AOV', () => {
   });
 });
 
+describe('atomic saves', () => {
+  it('a tree that fails does not leave its typed AOV behind; a bad rate saves no other driver', async () => {
+    const bad = await api.post(ownerA, '/api/targets/north-star', planBody({ mode: 'custom', customQuarters: [1, 1, 1, 1], plannedAov: 999 }));
+    expect(bad.status).toBe(400);
+    const rate = await api.put(ownerA, '/api/targets/drivers', { year: 2026, plannedAov: 260, deliverySuccessRate: 0 });
+    expect(rate.status).toBe(400);
+    expect(await prismaBase.target.count({ where: { tenantId: A(), metric: 'planned_aov' } })).toBe(0);
+  });
+});
+
 describe('role, person and daily targets', () => {
   it('a role target under November, a person under it, the pool and "Set a target"', async () => {
     const nov = await monthRow('2026-11');
@@ -219,6 +229,36 @@ describe('tenant isolation and permissions', () => {
     expect((await api.get(ownerB, `/api/targets/roles/${roleId}/pool?month=2026-11`)).body).toMatchObject({ pool: null, holders: [] });
     expect((await api.get(ownerB, '/api/targets/daily?metric=failed_delivery_calls_per_day&date=2026-11-02')).body.target).toBeNull();
     expect((await api.get(ownerB, '/api/targets/drivers?year=2026')).body.confirmationRate.source).toBe('default');
+  });
+
+  it('S1: the generic routes never touch the North Star or a driver row; only /north-star and /drivers (Owner) do', async () => {
+    const admin = pair.a.users.admin.token;
+    const ns = await prismaBase.target.findFirstOrThrow({ where: { tenantId: A(), scope: 'north_star', metric: 'revenue' } });
+    const driver = await prismaBase.target.findFirstOrThrow({ where: { tenantId: A(), scope: 'north_star', metric: 'confirmation_rate' } });
+    const post = await api.post(admin, '/api/targets', { scope: 'north_star', metric: 'confirmation_rate', unit: 'percent', value: 0, period: '2026' });
+    expect(post.status).toBe(403);
+    expect(post.body.code ?? post.body.errorCode).toBe('USE_NORTH_STAR');
+    for (const row of [ns, driver]) {
+      const put = await api.put(admin, `/api/targets/${row.id}`, { value: 1 });
+      expect([put.status, put.body.code ?? put.body.errorCode]).toEqual([403, 'USE_NORTH_STAR']);
+      const del = await api.del(admin, `/api/targets/${row.id}`);
+      expect([del.status, del.body.code ?? del.body.errorCode]).toEqual([403, 'USE_NORTH_STAR']);
+      expect((await api.put(ownerA, `/api/targets/${row.id}`, { value: 1 })).status).toBe(403); // the Owner uses the North Star routes too
+    }
+    expect(Number((await prismaBase.target.findUniqueOrThrow({ where: { id: driver.id } })).value)).toBe(72);
+    expect(Number((await prismaBase.target.findUniqueOrThrow({ where: { id: ns.id } })).value)).toBe(2_000_000);
+    const owner = await api.put(ownerA, '/api/targets/drivers', { year: 2026, confirmationRate: 71 });
+    expect(owner.body.confirmationRate.value).toBe(71);
+  });
+
+  it('S2: a role or person id of another tenant is a 404 and nothing is written', async () => {
+    const before = await prismaBase.target.count({ where: { tenantId: A() } });
+    const role = await api.post(ownerA, '/api/targets', { scope: 'role', metric: 'revenue', unit: 'money', value: 1, period: '2026-11', roleId: pair.b.ids.role });
+    expect(role.status).toBe(404);
+    const person = await api.post(ownerA, '/api/targets', { scope: 'person', metric: 'revenue', unit: 'money', value: 1, period: '2026-11', roleId, userId: pair.b.users.admin.id });
+    expect(person.status).toBe(404);
+    expect(await prismaBase.target.count({ where: { tenantId: A() } })).toBe(before);
+    expect(await prismaBase.target.count({ where: { roleId: pair.b.ids.role } })).toBe(0);
   });
 
   it('a sales rep is refused on every route; an admin reads and sets one target but cannot set the North Star', async () => {
