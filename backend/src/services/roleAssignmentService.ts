@@ -10,6 +10,7 @@ import { AppError } from '../middleware/errorHandler';
 import { isOwnerRole } from '../config/defaultRoles';
 import { adminService } from './adminService';
 import { createKeyIn, evictKeys, revokeKeysIn } from './mcpKeyService';
+import { announceRelease, releasePersonTargets } from './targetService';
 import { assertMayTouchRole, assignmentSelect, findRole, holderSelect, holderStatus, holderView } from './roleService';
 import type { AssignInput } from '../validators/roleSchema';
 
@@ -119,10 +120,13 @@ export async function unassign(actor: Requester, roleId: number, assignmentId: n
     throw new AppError('The Owner role needs at least one holder', 409, 'LAST_OWNER');
   }
 
-  const { assignment, keys } = await prismaBase.$transaction(async (tx) => ({
+  const { assignment, keys, released } = await prismaBase.$transaction(async (tx) => ({
     assignment: await tx.roleAssignment.update({ where: { id: current.id }, data: { toDate: startOfUtcDay() }, select: assignmentSelect }),
     keys: await revokeKeysIn(tx, { tenantId, userId: current.holderId, roleId }),
+    // M6-T07: the person's open targets go back to the role pool in the same transaction.
+    released: await releasePersonTargets(tx, { tenantId, roleId, roleName: role.name, userId: current.holderId }),
   }));
   evictKeys(keys);
-  return { assignment, revokedKeys: keys.length };
+  if (released) await announceRelease(actor.id, released);
+  return { assignment, revokedKeys: keys.length, targetReturned: released && { notice: released.notice, returned: released.returned } };
 }
