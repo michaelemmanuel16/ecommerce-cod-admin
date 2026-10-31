@@ -27,6 +27,7 @@
  * `planned_aov` (money) matched on the period that covers asOf, newest first. Defaults when no row: 70 and 60.
  */
 import prisma from '../../utils/prisma';
+import { DELIVERY_SUCCESS_METRIC } from '../../config/targetMetrics';
 import { runInTenant } from '../../utils/tenantContext';
 import { yearPace } from './yearPace';
 import * as Money from '../../utils/money';
@@ -221,7 +222,7 @@ export async function leadership(tenantId: string, asOf?: string, options: Leade
       periodRevenueTarget('month', month.startMonth),
       periodRevenueTarget('north_star', 1),
       coveringTarget(tenantId, 'confirmation_rate', asOfDay),
-      coveringTarget(tenantId, 'delivery_success_rate', asOfDay),
+      coveringTarget(tenantId, DELIVERY_SUCCESS_METRIC, asOfDay),
       coveringTarget(tenantId, 'planned_aov', asOfDay),
       deliveredRevenue(tenantId, month.from, to, revScope),
       deliveredRevenue(tenantId, spans[1].from, to, revScope),

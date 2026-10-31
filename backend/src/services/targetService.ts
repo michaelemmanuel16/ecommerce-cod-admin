@@ -544,3 +544,28 @@ export async function dailyTargetProgress(metric: string, date: string, userId?:
   const actual = source ? await source(tenantId, startOfDay(date, zone), endOfDay(date, zone)) : null;
   return { metric, date, target: target ? Number(target.value) : null, actual, message: source ? null : NO_DATA_FOR_METRIC };
 }
+
+// ---- Month reads for rewards (M6-T09) -------------------------------------------------------------------------------
+
+/**
+ * The live person targets of a month, oldest first: the `liveHolderTargets` rule (a target cut short by an unassign is
+ * released and does not count), for every role or one `roleId`, every person or one `userId`.
+ */
+export function monthPersonTargets(period: string, filter: { userId?: number; roleId?: number } = {}) {
+  // liveHolderTargets names the role; the spread after it widens that to any role unless one is asked for.
+  return prisma.target.findMany({
+    where: { ...liveHolderTargets(0, periodBounds('person', period)), roleId: filter.roleId ?? { not: null }, userId: filter.userId ?? { not: null } },
+    orderBy: { id: 'asc' },
+  });
+}
+
+/** The role targets of a month (the `rolePool` rule: scope role, period start on the month). */
+export function monthRoleTargets(period: string) {
+  return prisma.target.findMany({ where: { scope: 'role', periodStart: periodBounds('role', period).start, roleId: { not: null } }, orderBy: { id: 'asc' } });
+}
+
+/** True when the month is closed: a month target that touches it has `closedAt` (the `closedMonths` rule, read without a lock). */
+export async function isMonthClosed(period: string): Promise<boolean> {
+  const { start, end } = periodBounds('month', period);
+  return (await prisma.target.count({ where: { scope: 'month', periodStart: { lte: end }, periodEnd: { gte: start }, closedAt: { not: null } } })) > 0;
+}

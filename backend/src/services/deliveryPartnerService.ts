@@ -16,6 +16,7 @@ import { withSoftDeleted } from '../utils/prismaExtensions';
 import { runInTenant } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 import { fullName } from '../utils/nameUtils';
+import { DELIVERY_SUCCESS_METRIC } from '../config/targetMetrics';
 import { DAY_MS } from './kpi/dates';
 import { currentFeeRules, storeToday } from './feeRuleService';
 import { DEFAULT_SUCCESS_TARGET, coveringTarget } from './kpi/leadership';
@@ -212,7 +213,7 @@ export async function partnerSummary(tenantId: string, from: Date, to: Date, opt
       where: { deletedAt: null, status: { notIn: DIGITAL }, createdAt: { gte: from, lt: to } },
       _count: { _all: true },
     })),
-    runInTenant(tenantId, () => coveringTarget(tenantId, 'delivery_success_rate', from)),
+    runInTenant(tenantId, () => coveringTarget(tenantId, DELIVERY_SUCCESS_METRIC, from)),
   ]);
   const closed = (s: OrderStatus) => byStatus.find((g) => g.status === s)?._count._all ?? 0;
   const rate = closedOutcomeResult(
