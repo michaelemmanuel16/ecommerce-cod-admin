@@ -4,6 +4,7 @@ import { resolveTenantId, withoutTenant } from '../utils/tenantContext';
 import { withSoftDeleted } from '../utils/prismaExtensions';
 import { SYSTEM_EMAIL_DOMAIN, isReservedSystemEmail } from '../utils/systemEmail';
 import logger from '../utils/logger';
+import { holderSelect } from './roleService';
 
 export { SYSTEM_EMAIL_DOMAIN, isReservedSystemEmail };
 
@@ -21,7 +22,7 @@ export const HUMAN_USERS_WHERE = { kind: 'person' } satisfies Prisma.UserWhereIn
 export function createAiAgentUser(
   tx: Prisma.TransactionClient,
   { tenantId, name, email }: { tenantId: string; name: string; email: string },
-): Promise<{ id: number }> {
+) {
   return tx.user.create({
     data: {
       email,
@@ -34,7 +35,7 @@ export function createAiAgentUser(
       kind: 'ai_agent',
       tenantId,
     },
-    select: { id: true },
+    select: holderSelect,
   });
 }
 

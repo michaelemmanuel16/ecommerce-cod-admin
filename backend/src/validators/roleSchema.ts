@@ -2,6 +2,9 @@ import { z } from 'zod';
 
 /** Input of the role routes (M6-T03, F-1150, F-1152, F-1156). Strict: an unknown field (tools, permissions) is refused; those are M6-T04. */
 
+/** Every UserRole a role can give its holders; the Owner's super_admin is not one of them. */
+const BASE_ROLES = ['admin', 'manager', 'sales_rep', 'inventory_manager', 'delivery_agent', 'accountant'] as const;
+
 const text = (max: number) => z.string().trim().max(max);
 
 const contract = z.object({
@@ -17,6 +20,8 @@ const roleFields = {
   contract: contract.optional(),
   kpis: z.array(text(80).min(1)).max(20).optional(),
   targetMetric: text(60).nullish(),
+  /** The base role (UserRole) of the people and companies assigned to this role. Owner only; never super_admin. Default: manager. */
+  presetRole: z.enum(BASE_ROLES).optional(),
 };
 
 export const createRoleSchema = z.object({

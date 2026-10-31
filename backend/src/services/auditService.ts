@@ -150,6 +150,21 @@ export const auditService = {
     return tenantId === getTenantId() ? write(tenantId, p) : runInTenant(tenantId, () => write(tenantId, p));
   },
 
+  /**
+   * Record a change made by the person behind a request (channel `app`): the actor, IP and user agent come from the request.
+   * The change already happened, so a failed write is logged and never fails the request.
+   */
+  async recordFromRequest(
+    req: { user?: { id: number }; ip?: string; get(name: string): string | undefined },
+    p: Pick<AuditRecordInput, 'action' | 'resource' | 'resourceId' | 'metadata'>,
+  ): Promise<void> {
+    try {
+      await auditService.record({ ...p, actorId: req.user?.id, actorKind: 'person', channel: 'app', ipAddress: req.ip, userAgent: req.get('user-agent') });
+    } catch (error) {
+      logger.error('Failed to write audit row', { action: p.action, resource: p.resource, resourceId: p.resourceId, error });
+    }
+  },
+
   /** Newest first, current tenant only (the Prisma extension adds the tenant filter). */
   async list(filters: AuditListFilters) {
     // page and limit are bounded by the controller's zod schema

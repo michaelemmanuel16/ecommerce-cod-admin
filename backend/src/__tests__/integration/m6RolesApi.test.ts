@@ -34,6 +34,14 @@ const api = {
   put: (token: string, url: string, body: object = {}) => request(app).put(url).set(bearer(token)).send(body),
   del: (token: string, url: string) => request(app).delete(url).set(bearer(token)),
 };
+/** POST /api/roles/:id/assign as `token` (the Owner of tenant A by default). */
+const assign = (roleId: number, body: object, token = ownerA) => api.post(token, `/api/roles/${roleId}/assign`, body);
+/** The account has no usable password: any login fails with 401. */
+const cannotLogin = async (email: string) => {
+  for (const password of ['!', 'password123']) {
+    expect((await request(app).post('/api/auth/login').send({ email, password })).status).toBe(401);
+  }
+};
 let seq = 0;
 const uniq = (label: string) => `${label}-${SUFFIX}-${seq++}`;
 const newRole = async (token = ownerA, extra: object = {}) => {
@@ -171,8 +179,8 @@ describe('DELETE /api/roles/:id', () => {
 
   it('a role with holders answers 409 "Move N holders first"; ended assignments do not count', async () => {
     const role = await newRole();
-    const person = await api.post(ownerA, `/api/roles/${role.id}/assign`, { type: 'person', name: 'Ama Boateng', email: mailOf('ama') });
-    const company = await api.post(ownerA, `/api/roles/${role.id}/assign`, { type: 'company', name: 'Fast Riders' });
+    const person = await assign(role.id, { type: 'person', name: 'Ama Boateng', email: mailOf('ama') });
+    const company = await assign(role.id, { type: 'company', name: 'Fast Riders' });
     const blocked = await api.del(ownerA, `/api/roles/${role.id}`);
     expect(blocked.status).toBe(409);
     expect(blocked.body.message ?? blocked.body.error).toBe('Move 2 holders first');
@@ -180,7 +188,7 @@ describe('DELETE /api/roles/:id', () => {
     await api.del(ownerA, `/api/roles/${role.id}/assignments/${person.body.assignment.id}`);
     const one = await api.del(ownerA, `/api/roles/${role.id}`);
     expect(one.status).toBe(409);
-    expect(one.body.message ?? one.body.error).toBe('Move 1 holders first');
+    expect(one.body.message ?? one.body.error).toBe('Move 1 holder first');
     await api.del(ownerA, `/api/roles/${role.id}/assignments/${company.body.assignment.id}`);
     expect((await api.del(ownerA, `/api/roles/${role.id}`)).status).toBe(200);
   });
@@ -204,7 +212,7 @@ describe('assign a person (F-1152)', () => {
   it('makes an invited user: kind person, no usable password, inactive, cannot sign in; assignment starts today', async () => {
     const role = await roleOf(A(), 'Finance clerk');
     const email = mailOf('Kofi');
-    const res = await api.post(ownerA, `/api/roles/${role.id}/assign`, { type: 'person', name: 'Kofi Mensah', email: email.toUpperCase(), phoneNumber: '0244000000' });
+    const res = await assign(role.id, { type: 'person', name: 'Kofi Mensah', email: email.toUpperCase(), phoneNumber: '0244000000' });
     expect(res.status).toBe(201);
     expect(res.body.holder).toMatchObject({ name: 'Kofi Mensah', kind: 'person', typeLabel: 'Human', status: 'invited', email: email.toLowerCase() });
     expect(res.body).not.toHaveProperty('apiKey');
@@ -219,16 +227,14 @@ describe('assign a person (F-1152)', () => {
     expect(assignment.fromDate.getTime()).toBe(startOfUtcDay().getTime());
     expect(await prismaBase.auditLog.count({ where: { tenantId: A(), action: 'role_assign', resourceId: String(role.id) } })).toBeGreaterThan(0);
 
-    for (const password of ['!', 'password123']) {
-      expect((await request(app).post('/api/auth/login').send({ email, password })).status).toBe(401);
-    }
+    await cannotLogin(email);
   });
 
   it('rejects a duplicate email in the tenant (any case) and an email used in another tenant', async () => {
     const role = await roleOf(A(), 'Stock keeper');
     const email = mailOf('dup');
-    expect((await api.post(ownerA, `/api/roles/${role.id}/assign`, { type: 'person', name: 'First One', email })).status).toBe(201);
-    const again = await api.post(ownerA, `/api/roles/${role.id}/assign`, { type: 'person', name: 'Second One', email: email.toUpperCase() });
+    expect((await assign(role.id, { type: 'person', name: 'First One', email })).status).toBe(201);
+    const again = await assign(role.id, { type: 'person', name: 'Second One', email: email.toUpperCase() });
     expect(again.status).toBe(409);
     expect(again.body.message ?? again.body.error).toBe('A user with this email already exists');
     const cross = await api.post(ownerB, `/api/roles/${pair.b.ids.legacyRole}/assign`, { type: 'person', name: 'Cross', email: pair.a.users.admin.email });
@@ -247,17 +253,17 @@ describe('assign a person (F-1152)', () => {
 
   it('refuses bad input and a role of another tenant', async () => {
     const role = await roleOf(A(), 'Call rep');
-    expect((await api.post(ownerA, `/api/roles/${role.id}/assign`, { type: 'person', name: 'No Email' })).status).toBe(400);
-    expect((await api.post(ownerA, `/api/roles/${role.id}/assign`, { type: 'person', name: 'Bad', email: 'not-an-email' })).status).toBe(400);
-    expect((await api.post(ownerA, `/api/roles/${role.id}/assign`, { type: 'robot', name: 'x' })).status).toBe(400);
-    expect((await api.post(ownerA, `/api/roles/${pair.b.ids.role}/assign`, { type: 'company', name: 'Leak Co' })).status).toBe(404);
+    expect((await assign(role.id, { type: 'person', name: 'No Email' })).status).toBe(400);
+    expect((await assign(role.id, { type: 'person', name: 'Bad', email: 'not-an-email' })).status).toBe(400);
+    expect((await assign(role.id, { type: 'robot', name: 'x' })).status).toBe(400);
+    expect((await assign(pair.b.ids.role, { type: 'company', name: 'Leak Co' })).status).toBe(404);
   });
 });
 
 describe('assign an AI agent (F-1152)', () => {
   it('makes an ai_agent user, an assignment and a key whose tools are exactly the role tools; the key is shown once', async () => {
     const role = await roleOf(A(), 'Call rep');
-    const res = await api.post(ownerA, `/api/roles/${role.id}/assign`, { type: 'ai_agent', name: 'Claude Desktop' });
+    const res = await assign(role.id, { type: 'ai_agent', name: 'Claude Desktop' });
     expect(res.status).toBe(201);
     const { key } = res.body.apiKey;
     expect(key).toMatch(/^mcp_[0-9a-f]{64}$/);
@@ -284,26 +290,28 @@ describe('assign an AI agent (F-1152)', () => {
     expect(audit.metadata).toMatchObject({ type: 'ai_agent', keyPrefix: key.substring(0, 12) });
   });
 
-  it('cannot hold the Owner role, whoever asks; nothing is created', async () => {
+  it('cannot hold the Owner role; only the Owner connects an agent; nothing is created', async () => {
     const before = { users: await prismaBase.user.count({ where: { tenantId: A() } }), keys: await prismaBase.mcpApiKey.count({ where: { tenantId: A() } }) };
-    for (const token of [ownerA, pair.a.users.admin.token]) {
-      const res = await api.post(token, `/api/roles/${pair.a.ids.role}/assign`, { type: 'ai_agent', name: 'Sneaky' });
-      expect(res.status).toBe(400);
-      expect(res.body.message ?? res.body.error).toBe('An AI agent cannot hold the Owner role');
+    const res = await assign(pair.a.ids.role, { type: 'ai_agent', name: 'Sneaky' });
+    expect(res.status).toBe(400);
+    expect(res.body.message ?? res.body.error).toBe('An AI agent cannot hold the Owner role');
+    // an admin is refused before the role is looked at, on any role
+    const callRep = await roleOf(A(), 'Call rep');
+    for (const roleId of [pair.a.ids.role, callRep.id]) {
+      expect((await assign(roleId, { type: 'ai_agent', name: 'Admin bot' }, pair.a.users.admin.token)).status).toBe(403);
     }
-    const existingAgent = await api.post(ownerA, `/api/roles/${pair.a.ids.role}/assign`, { type: 'existing', holderId: pair.a.ids.mcpUser });
-    expect(existingAgent.status).toBe(400);
+    expect((await assign(pair.a.ids.role, { type: 'existing', holderId: pair.a.ids.mcpUser })).status).toBe(400);
     expect({ users: await prismaBase.user.count({ where: { tenantId: A() } }), keys: await prismaBase.mcpApiKey.count({ where: { tenantId: A() } }) }).toEqual(before);
   });
 
   it('can reuse an ai_agent user of the tenant, but not another tenant user or a person; twice on one role is 409', async () => {
     const role = await roleOf(A(), 'Delivery');
-    const ok = await api.post(ownerA, `/api/roles/${role.id}/assign`, { type: 'ai_agent', name: 'Second key', userId: pair.a.ids.mcpUser });
+    const ok = await assign(role.id, { type: 'ai_agent', name: 'Second key', userId: pair.a.ids.mcpUser });
     expect(ok.status).toBe(201);
     expect(ok.body.holder.id).toBe(pair.a.ids.mcpUser);
-    expect((await api.post(ownerA, `/api/roles/${role.id}/assign`, { type: 'ai_agent', name: 'Again', userId: pair.a.ids.mcpUser })).status).toBe(409);
-    expect((await api.post(ownerA, `/api/roles/${role.id}/assign`, { type: 'ai_agent', name: 'Foreign', userId: pair.b.ids.mcpUser })).status).toBe(400);
-    expect((await api.post(ownerA, `/api/roles/${role.id}/assign`, { type: 'ai_agent', name: 'Person', userId: pair.a.users.admin.id })).status).toBe(400);
+    expect((await assign(role.id, { type: 'ai_agent', name: 'Again', userId: pair.a.ids.mcpUser })).status).toBe(409);
+    expect((await assign(role.id, { type: 'ai_agent', name: 'Foreign', userId: pair.b.ids.mcpUser })).status).toBe(400);
+    expect((await assign(role.id, { type: 'ai_agent', name: 'Person', userId: pair.a.users.admin.id })).status).toBe(400);
     // the failed attempts left no extra key or assignment behind
     expect(await prismaBase.mcpApiKey.count({ where: { tenantId: A(), userId: pair.a.ids.mcpUser, roleId: role.id } })).toBe(1);
     expect(await prismaBase.roleAssignment.count({ where: { holderId: pair.a.ids.mcpUser, roleId: role.id } })).toBe(1);
@@ -314,30 +322,30 @@ describe('assign a company and an existing user (F-1152)', () => {
   it('a company is kind company with no login; an email is optional; a clash is 409', async () => {
     const role = await roleOf(A(), 'Delivery');
     const email = mailOf('logi');
-    const res = await api.post(ownerA, `/api/roles/${role.id}/assign`, { type: 'company', name: 'Logiswift', email });
+    const res = await assign(role.id, { type: 'company', name: 'Logiswift', email });
     expect(res.status).toBe(201);
     expect(res.body.holder).toMatchObject({ kind: 'company', typeLabel: 'Company', name: 'Logiswift', status: 'active' });
     const user = await prismaBase.user.findUniqueOrThrow({ where: { id: res.body.holder.id } });
     expect(user).toMatchObject({ kind: 'company', tenantId: A(), password: '!', role: 'delivery_agent' });
-    expect((await request(app).post('/api/auth/login').send({ email, password: '!' })).status).toBe(401);
+    await cannotLogin(email);
 
-    const bare = await api.post(ownerA, `/api/roles/${role.id}/assign`, { type: 'company', name: 'Kasapa Express' });
+    const bare = await assign(role.id, { type: 'company', name: 'Kasapa Express' });
     expect(bare.status).toBe(201);
     expect((await prismaBase.user.findUniqueOrThrow({ where: { id: bare.body.holder.id } })).email).toMatch(/^company\+[0-9a-f]+@company\.codadmin\.internal$/);
-    expect((await api.post(ownerA, `/api/roles/${role.id}/assign`, { type: 'company', name: 'Logiswift 2', email })).status).toBe(409);
+    expect((await assign(role.id, { type: 'company', name: 'Logiswift 2', email })).status).toBe(409);
   });
 
   it('gives an existing user the role without a new account; twice is 409; other tenants, the system user and agents are refused', async () => {
     const role = await roleOf(A(), 'Marketing');
     const usersBefore = await prismaBase.user.count({ where: { tenantId: A() } });
-    const res = await api.post(ownerA, `/api/roles/${role.id}/assign`, { type: 'existing', holderId: pair.a.users.salesRep.id });
+    const res = await assign(role.id, { type: 'existing', holderId: pair.a.users.salesRep.id });
     expect(res.status).toBe(201);
     expect(await prismaBase.user.count({ where: { tenantId: A() } })).toBe(usersBefore);
-    expect((await api.post(ownerA, `/api/roles/${role.id}/assign`, { type: 'existing', holderId: pair.a.users.salesRep.id })).status).toBe(409);
-    expect((await api.post(ownerA, `/api/roles/${role.id}/assign`, { type: 'existing', holderId: pair.b.users.salesRep.id })).status).toBe(404);
+    expect((await assign(role.id, { type: 'existing', holderId: pair.a.users.salesRep.id })).status).toBe(409);
+    expect((await assign(role.id, { type: 'existing', holderId: pair.b.users.salesRep.id })).status).toBe(404);
     const system = await prismaBase.user.findFirstOrThrow({ where: { tenantId: A(), kind: 'system' } });
-    expect((await api.post(ownerA, `/api/roles/${role.id}/assign`, { type: 'existing', holderId: system.id })).status).toBe(400);
-    expect((await api.post(ownerA, `/api/roles/${role.id}/assign`, { type: 'existing', holderId: pair.a.ids.mcpUser })).status).toBe(400);
+    expect((await assign(role.id, { type: 'existing', holderId: system.id })).status).toBe(400);
+    expect((await assign(role.id, { type: 'existing', holderId: pair.a.ids.mcpUser })).status).toBe(400);
   });
 });
 
@@ -352,9 +360,9 @@ describe('overview (F-1151)', () => {
         periodEnd: new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 0)),
       },
     });
-    await api.post(ownerA, `/api/roles/${role.id}/assign`, { type: 'person', name: 'Esi Owusu', email: mailOf('esi') });
-    await api.post(ownerA, `/api/roles/${role.id}/assign`, { type: 'company', name: 'Kasapa' });
-    await api.post(ownerA, `/api/roles/${role.id}/assign`, { type: 'existing', holderId: pair.a.users.deliveryAgent.id });
+    await assign(role.id, { type: 'person', name: 'Esi Owusu', email: mailOf('esi') });
+    await assign(role.id, { type: 'company', name: 'Kasapa' });
+    await assign(role.id, { type: 'existing', holderId: pair.a.users.deliveryAgent.id });
 
     const res = await api.get(ownerA, '/api/roles/overview');
     expect(res.status).toBe(200);
@@ -388,7 +396,7 @@ describe('overview (F-1151)', () => {
 describe('unassign keeps history', () => {
   it('ends the assignment today: gone from the card, kept in the history list, row still in the database', async () => {
     const role = await newRole();
-    const res = await api.post(ownerA, `/api/roles/${role.id}/assign`, { type: 'person', name: 'Yaw Asare', email: mailOf('yaw') });
+    const res = await assign(role.id, { type: 'person', name: 'Yaw Asare', email: mailOf('yaw') });
     const assignmentId = res.body.assignment.id;
     const done = await api.del(ownerA, `/api/roles/${role.id}/assignments/${assignmentId}`);
     expect(done.status).toBe(200);
@@ -406,7 +414,7 @@ describe('unassign keeps history', () => {
 
     expect((await api.del(ownerA, `/api/roles/${role.id}/assignments/${assignmentId}`)).status).toBe(409);
     // the same person can hold the role again, as a new row
-    const back = await api.post(ownerA, `/api/roles/${role.id}/assign`, { type: 'existing', holderId: res.body.holder.id });
+    const back = await assign(role.id, { type: 'existing', holderId: res.body.holder.id });
     expect(back.status).toBe(201);
     expect((await api.get(ownerA, `/api/roles/${role.id}/assignments`)).body.assignments.map((h: any) => h.current)).toEqual([true, false]);
   });
@@ -421,7 +429,7 @@ describe('unassign keeps history', () => {
 
   it('ending an AI agent revokes its keys for the role, and a role with a key row cannot be deleted', async () => {
     const role = await newRole(ownerA, { copyToolsFromRoleId: (await roleOf(A(), 'Stock keeper')).id });
-    const res = await api.post(ownerA, `/api/roles/${role.id}/assign`, { type: 'ai_agent', name: 'Stock bot' });
+    const res = await assign(role.id, { type: 'ai_agent', name: 'Stock bot' });
     expect(res.status).toBe(201);
     clearAuthCache();
     await expect(validateKey(res.body.apiKey.key)).resolves.toMatchObject({ roleId: role.id });
@@ -430,7 +438,7 @@ describe('unassign keeps history', () => {
     await expect(validateKey(res.body.apiKey.key)).rejects.toThrow(/revoked/);
     const blocked = await api.del(ownerA, `/api/roles/${role.id}`);
     expect(blocked.status).toBe(409);
-    expect(blocked.body.message ?? blocked.body.error).toBe('This role is used by 1 API keys');
+    expect(blocked.body.message ?? blocked.body.error).toBe('This role is used by 1 API key');
   });
 });
 
@@ -457,7 +465,7 @@ describe('every new staff user gets their position role (T02 carry-forward)', ()
 
   it('a user that fails to save leaves no assignment; an unseeded tenant still creates the user', async () => {
     const dup = await api.post(ownerA, '/api/admin/users', { email: pair.a.users.admin.email, password: 'Passw0rd!test', firstName: 'D', lastName: 'Up', role: 'sales_rep' });
-    expect(dup.status).toBeGreaterThanOrEqual(400);
+    expect(dup.status).toBe(409);
     const bare = await prismaBase.tenant.create({ data: { name: `Bare ${SUFFIX}`, slug: `m6roles-bare-${SUFFIX}` } });
     extraTenants.push(bare.id);
     const bareOwner = await superAdminToken(bare.id, `bare-${SUFFIX}`);
@@ -492,7 +500,99 @@ describe('every new staff user gets their position role (T02 carry-forward)', ()
     expect(key.status).toBe(201);
     expect(await heldNames(key.body.userId)).toEqual([]);
     await api.del(ownerA, `/api/mcp-keys/${key.body.id}`);
-    const invited = await api.post(ownerA, `/api/roles/${role.id}/assign`, { type: 'person', name: 'Just One', email: mailOf('one') });
+    const invited = await assign(role.id, { type: 'person', name: 'Just One', email: mailOf('one') });
     expect(await heldNames(invited.body.holder.id)).toEqual(['Finance clerk']);
+  });
+});
+
+describe('the last Owner holder stays', () => {
+  it('unassigning the last current holder of Owner is 409; with a second holder one can go', async () => {
+    const [first] = await prismaBase.roleAssignment.findMany({ where: { roleId: pair.b.ids.role, toDate: null } });
+    const blocked = await api.del(ownerB, `/api/roles/${pair.b.ids.role}/assignments/${first.id}`);
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.message ?? blocked.body.error).toBe('The Owner role needs at least one holder');
+    expect((await prismaBase.roleAssignment.findUniqueOrThrow({ where: { id: first.id } })).toDate).toBeNull();
+
+    const second = await assign(pair.b.ids.role, { type: 'existing', holderId: pair.b.users.salesRep.id }, ownerB);
+    expect(second.status).toBe(201);
+    expect((await api.del(ownerB, `/api/roles/${pair.b.ids.role}/assignments/${first.id}`)).status).toBe(200);
+    const last = await api.del(ownerB, `/api/roles/${pair.b.ids.role}/assignments/${second.body.assignment.id}`);
+    expect(last.status).toBe(409);
+  });
+});
+
+describe('presetRole: the base role of the people a role gets', () => {
+  it('POST sets it (Owner only, never super_admin) and a new holder gets that UserRole', async () => {
+    const role = await newRole(ownerA, { presetRole: 'sales_rep' });
+    expect((await api.get(ownerA, `/api/roles/overview`)).body.roles.find((r: any) => r.id === role.id).presetRole).toBe('sales_rep');
+    const person = await assign(role.id, { type: 'person', name: 'Preset Person', email: mailOf('preset') });
+    expect((await prismaBase.user.findUniqueOrThrow({ where: { id: person.body.holder.id } })).role).toBe('sales_rep');
+    // the default stays manager
+    const plain = await newRole();
+    const other = await assign(plain.id, { type: 'company', name: 'Plain Co' });
+    expect((await prismaBase.user.findUniqueOrThrow({ where: { id: other.body.holder.id } })).role).toBe('manager');
+    expect((await api.post(ownerA, '/api/roles', { name: uniq('Boss'), presetRole: 'super_admin' })).status).toBe(400);
+    expect((await api.post(pair.a.users.admin.token, '/api/roles', { name: uniq('Adm'), presetRole: 'manager' })).status).toBe(403);
+  });
+
+  it('PUT: only the Owner changes it; not on the Owner role; a custom role with a preset can still be renamed', async () => {
+    const role = await newRole();
+    expect((await api.put(pair.a.users.admin.token, `/api/roles/${role.id}`, { presetRole: 'accountant' })).status).toBe(403);
+    expect((await api.put(pair.a.users.admin.token, `/api/roles/${role.id}`, { area: 'Ok' })).status).toBe(200);
+    const done = await api.put(ownerA, `/api/roles/${role.id}`, { presetRole: 'accountant', name: uniq('Renamed preset') });
+    expect(done.status).toBe(200);
+    expect(done.body.role.presetRole).toBe('accountant');
+    expect((await api.put(ownerA, `/api/roles/${role.id}`, { presetRole: 'super_admin' })).status).toBe(400);
+    expect((await api.put(ownerA, `/api/roles/${pair.a.ids.role}`, { presetRole: 'admin' })).status).toBe(400);
+  });
+});
+
+describe('rank checks on assign and unassign (security review)', () => {
+  const adminToken = () => pair.a.users.admin.token;
+
+  it('an existing user: the actor must outrank the role base and the holder; deactivated users are refused', async () => {
+    const callRep = await roleOf(A(), 'Call rep');
+    const adminRole = await roleOf(A(), 'Admin');
+    // admin may give Call rep to a delivery agent, not to another admin, and may not hand out the Admin role
+    expect((await assign(callRep.id, { type: 'existing', holderId: pair.a.users.deliveryAgent.id }, adminToken())).status).toBe(201);
+    const peer = await assign(callRep.id, { type: 'existing', holderId: pair.a.users.admin.id }, adminToken());
+    expect(peer.status).toBe(403);
+    expect((await assign(adminRole.id, { type: 'existing', holderId: pair.a.users.salesRep.id }, adminToken())).status).toBe(403);
+    expect(await prismaBase.roleAssignment.count({ where: { holderId: pair.a.users.admin.id, roleId: callRep.id } })).toBe(0);
+
+    const gone = await prismaBase.user.create({ data: { email: mailOf('gone'), password: 'x', firstName: 'Gone', lastName: 'User', role: 'sales_rep', tenantId: A(), isActive: false } });
+    const refused = await assign(callRep.id, { type: 'existing', holderId: gone.id });
+    expect(refused.status).toBe(400);
+    expect(await prismaBase.roleAssignment.count({ where: { holderId: gone.id } })).toBe(0);
+    // an invited person (inactive, invite date set) may still be given another role
+    const invited = await assign(callRep.id, { type: 'person', name: 'Still Invited', email: mailOf('inv') });
+    expect((await assign((await roleOf(A(), 'Finance clerk')).id, { type: 'existing', holderId: invited.body.holder.id })).status).toBe(201);
+  });
+
+  it('unassign: an admin cannot end the assignment of someone at or above their own rank', async () => {
+    const marketing = await roleOf(A(), 'Marketing');
+    const given = await assign(marketing.id, { type: 'existing', holderId: pair.a.users.admin.id });
+    expect(given.status).toBe(201);
+    const refused = await api.del(adminToken(), `/api/roles/${marketing.id}/assignments/${given.body.assignment.id}`);
+    expect(refused.status).toBe(403);
+    expect((await prismaBase.roleAssignment.findUniqueOrThrow({ where: { id: given.body.assignment.id } })).toDate).toBeNull();
+    expect((await api.del(ownerA, `/api/roles/${marketing.id}/assignments/${given.body.assignment.id}`)).status).toBe(200);
+    // below the admin it works
+    const rep = await assign(marketing.id, { type: 'existing', holderId: pair.a.users.deliveryAgent.id });
+    expect((await api.del(adminToken(), `/api/roles/${marketing.id}/assignments/${rep.body.assignment.id}`)).status).toBe(200);
+  });
+});
+
+describe('the Owner role at signup', () => {
+  it('seedTenantDefaults(tenantId, ownerUserId) gives the Owner role once, and throws when it cannot', async () => {
+    const { seedTenantDefaults } = await import('../../services/tenantDefaultsService');
+    const tenant = await prismaBase.tenant.create({ data: { name: `Seed owner ${SUFFIX}`, slug: `m6roles-seed-${SUFFIX}` } });
+    extraTenants.push(tenant.id);
+    const owner = await prismaBase.user.create({ data: { email: mailOf('seedowner'), password: 'x', firstName: 'S', lastName: 'O', role: 'super_admin', tenantId: tenant.id } });
+    await seedTenantDefaults(tenant.id, owner.id);
+    await seedTenantDefaults(tenant.id, owner.id);
+    const held = await prismaBase.roleAssignment.findMany({ where: { holderId: owner.id }, include: { role: true } });
+    expect(held.map((h) => h.role.name)).toEqual(['Owner']);
+    await expect(seedTenantDefaults(tenant.id, 999_999_999)).rejects.toThrow();
   });
 });

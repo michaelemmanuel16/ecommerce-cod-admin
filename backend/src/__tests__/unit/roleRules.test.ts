@@ -3,7 +3,7 @@ import { describe, it, expect, jest } from '@jest/globals';
 import '../mocks/logger.mock';
 import { assignSchema, createRoleSchema, updateRoleSchema } from '../../validators/roleSchema';
 import { holderStatus } from '../../services/roleService';
-import { assignPositionRole } from '../../services/systemRoleService';
+import { positionRoleId } from '../../services/systemRoleService';
 import { runInTenant } from '../../utils/tenantContext';
 import { ROLE_NAME_BY_USER_ROLE } from '../../config/defaultRoles';
 
@@ -14,6 +14,8 @@ describe('roleSchema', () => {
     expect(createRoleSchema.safeParse({ name: 'X', tools: ['orders_search'] }).success).toBe(false);
     expect(createRoleSchema.safeParse({ name: 'X', permissions: {} }).success).toBe(false);
     expect(createRoleSchema.safeParse({ name: 'X', copyToolsFromRoleId: 0 }).success).toBe(false);
+    expect(createRoleSchema.parse({ name: 'X', presetRole: 'sales_rep' }).presetRole).toBe('sales_rep');
+    expect(createRoleSchema.safeParse({ name: 'X', presetRole: 'super_admin' }).success).toBe(false);
   });
 
   it('updateRoleSchema needs at least one field', () => {
@@ -33,34 +35,24 @@ describe('roleSchema', () => {
 });
 
 describe('holderStatus', () => {
-  const base = { isActive: false, invitedAt: new Date(), password: '!' };
-  it('active wins; an inactive user with an invite and no password is invited; any other inactive user is deactivated', () => {
-    expect(holderStatus({ ...base, isActive: true })).toBe('active');
-    expect(holderStatus(base)).toBe('invited');
-    expect(holderStatus({ ...base, password: '$2b$10$hash' })).toBe('deactivated');
-    expect(holderStatus({ ...base, invitedAt: null })).toBe('deactivated');
+  it('active wins; an inactive user with an invite date is invited; any other inactive user is deactivated', () => {
+    expect(holderStatus({ isActive: true, invitedAt: new Date() })).toBe('active');
+    expect(holderStatus({ isActive: false, invitedAt: new Date() })).toBe('invited');
+    expect(holderStatus({ isActive: false, invitedAt: null })).toBe('deactivated');
   });
 });
 
-describe('assignPositionRole', () => {
-  const dbWith = (found: { id: number } | null) => ({
-    role: { findFirst: jest.fn<any>().mockResolvedValue(found) },
-    roleAssignment: { create: jest.fn<any>().mockResolvedValue({}) },
-  });
+describe('positionRoleId', () => {
+  const dbWith = (found: { id: number } | null) => ({ role: { findFirst: jest.fn<any>().mockResolvedValue(found) } });
+  const inTenant = <T>(fn: () => Promise<T>) => runInTenant('tenant-1', fn);
 
-  it('writes one assignment for the role mapped from the UserRole, from today, in the tenant', async () => {
+  it('looks the role up by the name mapped from the UserRole', async () => {
     const db = dbWith({ id: 7 });
-    const wrote = await runInTenant('tenant-1', () => assignPositionRole(db as any, { id: 42, role: 'sales_rep' }));
-    expect(wrote).toBe(true);
+    expect(await inTenant(() => positionRoleId(db as any, 'sales_rep'))).toBe(7);
     expect(db.role.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { name: ROLE_NAME_BY_USER_ROLE.sales_rep } }));
-    const data = (db.roleAssignment.create.mock.calls[0][0] as any).data;
-    expect(data).toMatchObject({ tenantId: 'tenant-1', roleId: 7, holderId: 42 });
-    expect(data.fromDate.getTime() % 86_400_000).toBe(0);
   });
 
-  it('a tenant without the role writes nothing and does not fail', async () => {
-    const db = dbWith(null);
-    expect(await runInTenant('tenant-1', () => assignPositionRole(db as any, { id: 1, role: 'admin' }))).toBe(false);
-    expect(db.roleAssignment.create).not.toHaveBeenCalled();
+  it('a tenant without the role gets null, not an error', async () => {
+    expect(await inTenant(() => positionRoleId(dbWith(null) as any, 'admin'))).toBeNull();
   });
 });

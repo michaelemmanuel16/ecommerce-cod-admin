@@ -19,8 +19,11 @@ import {
   decryptString,
 } from '../utils/providerCrypto';
 import { getTenantId, resolveTenantId, withoutTenant } from '../utils/tenantContext';
-import { HUMAN_USERS_WHERE } from './systemUserService';
-import { assignPositionRole } from './systemRoleService';
+import { HUMAN_USERS_WHERE, SYSTEM_USER_PASSWORD } from './systemUserService';
+import { positionRoleId } from './systemRoleService';
+import { assignmentSelect } from './roleService';
+import { isUniqueViolation } from '../utils/prismaErrors';
+import { startOfUtcDay } from '../utils/startOfUtcDay';
 import { formTenantBySlug } from './tenantLookupService';
 import { clearCheckoutFormConfigCache } from './checkoutFormService';
 import { currencyOfTenant, getCurrency } from '../utils/currency';
@@ -444,7 +447,8 @@ export const adminService = {
 
   async createUser(requester: Requester, data: {
     email: string;
-    password: string;
+    /** Required unless `access` is set. */
+    password?: string;
     firstName: string;
     lastName: string;
     phoneNumber?: string;
@@ -454,6 +458,13 @@ export const adminService = {
     kind?: UserKind;
     vehicleType?: string;
     vehicleId?: string;
+    /**
+     * No password at creation (M6-T03). `invite`: a person who has not accepted yet (inactive, invite date set; T06 sends the
+     * link and activates them). `none`: a company that never signs in (active). Login refuses both: the stored password is not a hash.
+     */
+    access?: 'invite' | 'none';
+    /** The role the new user holds from today. Default: the position role mapped from `role` (F-1155). */
+    roleId?: number;
     /** Create inside the caller's transaction (M4-T19). The caller writes the audit row for the whole unit of work. */
     tx?: TransactionClient;
   }) {
@@ -465,26 +476,31 @@ export const adminService = {
     }
 
     // Service-level password policy enforcement
-    if (!data.password || data.password.length < 8) {
+    if (!data.access && (!data.password || data.password.length < 8)) {
       throw new AppError('Password must be at least 8 characters long.', 400);
     }
 
-    const hashedPassword = await bcrypt.hash(data.password, 10);
+    const password = data.access ? SYSTEM_USER_PASSWORD : await bcrypt.hash(data.password!, 10);
+    const db = data.tx ?? prisma;
+    // The user and the role they hold are one write (F-1155). A tenant with no roles yet gets the user and no assignment.
+    const roleId = data.roleId ?? await positionRoleId(db, data.role);
 
-    // M6-T03: the new user and their position role (F-1155) are written together.
-    const write = async (db: TransactionClient) => {
-      const created = await db.user.create({
+    let user;
+    try {
+      user = await db.user.create({
         data: {
           email: data.email,
           firstName: data.firstName,
           lastName: data.lastName,
           phoneNumber: data.phoneNumber,
           role: data.role,
-          password: hashedPassword,
+          password,
           commissionAmount: data.commissionAmount || 0,
           ...(data.kind && { kind: data.kind }),
           ...(data.vehicleType && { vehicleType: data.vehicleType }),
           ...(data.vehicleId && { vehicleId: data.vehicleId }),
+          ...(data.access === 'invite' && { isActive: false, invitedAt: new Date() }),
+          ...(roleId !== null && { roleAssignments: { create: { tenantId: resolveTenantId(), roleId, fromDate: startOfUtcDay() } } }),
         },
         select: {
           id: true,
@@ -493,16 +509,22 @@ export const adminService = {
           lastName: true,
           phoneNumber: true,
           role: true,
+          kind: true,
           isActive: true,
+          invitedAt: true,
           country: true,
           commissionAmount: true,
           createdAt: true,
-        } as any,
+          roleAssignments: { select: assignmentSelect },
+        },
       });
-      await assignPositionRole(db, { id: (created as unknown as { id: number }).id, role: data.role });
-      return created;
-    };
-    const user = await (data.tx ? write(data.tx) : prisma.$transaction(write));
+    } catch (error) {
+      // Email is unique across all tenants.
+      if (isUniqueViolation(error) && String((error as { meta?: { target?: unknown } }).meta?.target ?? '').includes('email')) {
+        throw new AppError('A user with this email already exists', 409, 'EMAIL_EXISTS');
+      }
+      throw error;
+    }
 
     if (!data.tx) await this.createAuditLog(requester, 'create', 'user', user.id.toString(), { email: user.email, role: user.role });
 

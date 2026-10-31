@@ -1,56 +1,50 @@
 import { Prisma, UserKind, UserRole } from '@prisma/client';
 import prisma from '../utils/prisma';
 import { withSoftDeleted } from '../utils/prismaExtensions';
+import { isUniqueViolation } from '../utils/prismaErrors';
+import { fullName } from '../utils/nameUtils';
+import { Requester, isOwner } from '../utils/authUtils';
 import { startOfUtcDay } from '../utils/startOfUtcDay';
 import { AppError } from '../middleware/errorHandler';
 import { ALL_TOOL_NAMES } from '../config/toolPermissions';
-import { isOwnerRole, roleToolList } from '../config/defaultRoles';
-import { SYSTEM_USER_PASSWORD } from './systemUserService';
+import { DEFAULT_ROLES, isOwnerRole, roleToolList } from '../config/defaultRoles';
 import type { CreateRoleInput, UpdateRoleInput } from '../validators/roleSchema';
 
 /** M6-T03 (F-1150, F-1151, F-1156): roles of the current tenant. Call inside the tenant context (the request has it). */
 
-/** Who is asking. Only the Owner (super_admin) may change the Owner role (F-1150). */
-export interface RoleActor {
-  id: number;
-  role: UserRole;
-}
-
-export const assertMayTouchRole = (actor: RoleActor, role: { presetRole: UserRole | null }): void => {
-  if (isOwnerRole(role) && actor.role !== 'super_admin') throw new AppError('Only the Owner can change the Owner role', 403);
+/** Only the Owner (super_admin) may change the Owner role (F-1150). */
+export const assertMayTouchRole = (actor: Requester, role: { presetRole: UserRole | null }): void => {
+  if (isOwnerRole(role) && !isOwner(actor)) throw new AppError('Only the Owner can change the Owner role', 403);
 };
 
 const TYPE_LABEL: Record<UserKind, string> = { person: 'Human', ai_agent: 'AI agent', company: 'Company', system: 'System' };
 
 export type HolderStatus = 'active' | 'invited' | 'deactivated';
 
-/**
- * An invited person has no password yet (the sentinel) and is not active until they accept (T06). Anyone else who is not
- * active is deactivated.
- */
-export function holderStatus(u: { isActive: boolean; invitedAt: Date | null; password: string }): HolderStatus {
+/** An inactive user with an invite date has not accepted yet (T06 sets the user active); any other inactive user is deactivated. */
+export function holderStatus(u: { isActive: boolean; invitedAt: Date | null }): HolderStatus {
   if (u.isActive) return 'active';
-  return u.invitedAt !== null && u.password === SYSTEM_USER_PASSWORD ? 'invited' : 'deactivated';
+  return u.invitedAt !== null ? 'invited' : 'deactivated';
 }
 
-const fullName = (u: { firstName: string; lastName: string; kind: UserKind }) =>
-  u.kind === 'person' ? `${u.firstName} ${u.lastName}`.trim() : u.firstName;
-
-const holderSelect = {
-  id: true, firstName: true, lastName: true, email: true, kind: true, isActive: true, invitedAt: true, password: true,
+/** The user fields a role card needs. One copy: every holder read and every holder-creating write selects exactly this. */
+export const holderSelect = {
+  id: true, firstName: true, lastName: true, email: true, kind: true, isActive: true, invitedAt: true,
 } satisfies Prisma.UserSelect;
 
 type HolderRow = Prisma.UserGetPayload<{ select: typeof holderSelect }>;
 
-/** The holder as the screens need it. The password never leaves this function. */
+/** The holder as the screens need it. */
 export const holderView = (u: HolderRow) => ({
   id: u.id,
-  name: fullName(u),
+  name: u.kind === 'person' ? fullName(u) : u.firstName,
   email: u.email,
   kind: u.kind,
   typeLabel: TYPE_LABEL[u.kind],
   status: holderStatus(u),
 });
+
+export const assignmentSelect = { id: true, roleId: true, holderId: true, fromDate: true, toDate: true } satisfies Prisma.RoleAssignmentSelect;
 
 const roleSelect = {
   id: true, name: true, area: true, contract: true, kpis: true, targetMetric: true, presetRole: true, isSystem: true, tools: true,
@@ -58,57 +52,34 @@ const roleSelect = {
 
 type RoleRow = Prisma.RoleGetPayload<{ select: typeof roleSelect }>;
 
-/** `toolCount` and `holderCount` keep the fields the Settings screen already reads. */
-const roleView = ({ tools, ...role }: RoleRow, holderCount: number) => ({
-  ...role,
-  tools: roleToolList(tools),
-  toolCount: roleToolList(tools).length,
-  toolTotal: ALL_TOOL_NAMES.length,
-  holderCount,
-});
+/** `toolCount` and `holderCount` keep the fields the Settings screen already reads. The plain list leaves the tool names out. */
+const roleView = ({ tools, ...role }: RoleRow, holderCount: number, withTools = true) => {
+  const list = roleToolList(tools);
+  return { ...role, ...(withTools && { tools: list }), toolCount: list.length, toolTotal: ALL_TOOL_NAMES.length, holderCount };
+};
 
-/** Live holders per role id: assignments with no end date. */
-async function holderCounts(): Promise<Map<number, number>> {
-  const rows = await prisma.roleAssignment.groupBy({ by: ['roleId'], where: { toDate: null }, _count: { _all: true } });
-  return new Map(rows.map((r) => [r.roleId, r._count._all]));
-}
-
-const findRole = async (id: number) => {
+/** A role of the current tenant, or 404. */
+export async function findRole(id: number): Promise<RoleRow> {
   const role = await prisma.role.findFirst({ where: { id }, select: roleSelect });
   if (!role) throw new AppError('Role not found', 404);
   return role;
-};
+}
+
+const liveHolders = (roleId: number) => prisma.roleAssignment.count({ where: { roleId, toDate: null } });
 
 /** The plain list keeps the M2 shape (no tool names, only the count) plus the holder count. */
 export async function listRoles() {
   const [roles, counts] = await Promise.all([
     prisma.role.findMany({ select: roleSelect, orderBy: { name: 'asc' } }),
-    holderCounts(),
+    prisma.roleAssignment.groupBy({ by: ['roleId'], where: { toDate: null }, _count: { _all: true } }),
   ]);
-  return roles.map((r) => {
-    const { tools, ...rest } = roleView(r, counts.get(r.id) ?? 0);
-    return rest;
-  });
+  const byRole = new Map(counts.map((r) => [r.roleId, r._count._all]));
+  return roles.map((r) => roleView(r, byRole.get(r.id) ?? 0, false));
 }
 
 export async function getRole(id: number) {
-  const [role, counts] = await Promise.all([findRole(id), holderCounts()]);
-  return roleView(role, counts.get(id) ?? 0);
-}
-
-/** The target of a role for the month that holds `today`, if one is set. */
-async function currentRoleTargets(roleIds: number[], today: Date) {
-  const rows = await prisma.target.findMany({
-    where: { roleId: { in: roleIds }, scope: 'role', periodStart: { lte: today }, periodEnd: { gte: today } },
-    orderBy: { periodStart: 'desc' },
-  });
-  const byRole = new Map<number, { metric: string; unit: string; value: string; periodStart: Date; periodEnd: Date }>();
-  for (const t of rows) {
-    if (t.roleId !== null && !byRole.has(t.roleId)) {
-      byRole.set(t.roleId, { metric: t.metric, unit: t.unit, value: t.value.toString(), periodStart: t.periodStart, periodEnd: t.periodEnd });
-    }
-  }
-  return byRole;
+  const [role, holders] = await Promise.all([findRole(id), liveHolders(id)]);
+  return roleView(role, holders);
 }
 
 /**
@@ -117,22 +88,35 @@ async function currentRoleTargets(roleIds: number[], today: Date) {
  * assignment has ended is not on the card; see listAssignments for the history.
  */
 export async function roleOverview() {
-  const roles = await prisma.role.findMany({ where: { isSystem: false }, select: roleSelect, orderBy: { id: 'asc' } });
-  const ids = roles.map((r) => r.id);
-  const [assignments, targets] = await Promise.all([
+  const today = startOfUtcDay();
+  const [roles, assignments, targets] = await Promise.all([
+    prisma.role.findMany({ where: { isSystem: false }, select: roleSelect, orderBy: { id: 'asc' } }),
     // Invited people are inactive, so the soft-delete filter must not hide them.
     withSoftDeleted(() => prisma.roleAssignment.findMany({
-      where: { roleId: { in: ids }, toDate: null },
+      where: { toDate: null, role: { isSystem: false } },
       select: { id: true, roleId: true, fromDate: true, holder: { select: holderSelect } },
       orderBy: { id: 'asc' },
     })),
-    currentRoleTargets(ids, startOfUtcDay()),
+    prisma.target.findMany({
+      where: { scope: 'role', role: { isSystem: false }, periodStart: { lte: today }, periodEnd: { gte: today } },
+      orderBy: { periodStart: 'desc' },
+    }),
   ]);
+  const holdersOf = new Map<number, Array<{ assignmentId: number; since: Date } & ReturnType<typeof holderView>>>();
+  for (const a of assignments) {
+    const list = holdersOf.get(a.roleId) ?? [];
+    list.push({ assignmentId: a.id, since: a.fromDate, ...holderView(a.holder) });
+    holdersOf.set(a.roleId, list);
+  }
+  const targetOf = new Map<number, { metric: string; unit: string; value: string; periodStart: Date; periodEnd: Date }>();
+  for (const t of targets) {
+    if (t.roleId !== null && !targetOf.has(t.roleId)) {
+      targetOf.set(t.roleId, { metric: t.metric, unit: t.unit, value: t.value.toString(), periodStart: t.periodStart, periodEnd: t.periodEnd });
+    }
+  }
   return roles.map((role) => {
-    const holders = assignments
-      .filter((a) => a.roleId === role.id)
-      .map((a) => ({ assignmentId: a.id, since: a.fromDate, ...holderView(a.holder) }));
-    return { ...roleView(role, holders.length), holders, target: targets.get(role.id) ?? null };
+    const holders = holdersOf.get(role.id) ?? [];
+    return { ...roleView(role, holders.length), holders, target: targetOf.get(role.id) ?? null };
   });
 }
 
@@ -153,22 +137,24 @@ const nameTaken = async (name: string, exceptId?: number) =>
 
 const NAME_TAKEN = 'A role with this name already exists';
 
-const isUniqueViolation = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002';
+/** A role the app seeds (Owner, Call rep, ..., Marketing, Admin, Manager): the position role of a new user is found by this name. */
+const isDefaultRoleName = (name: string) => DEFAULT_ROLES.some((r) => r.name === name);
 
 /** Make a custom role (F-1156). It has the tools of `copyToolsFromRoleId`, or none. */
 export async function createRole(tenantId: string, input: CreateRoleInput) {
-  if (await nameTaken(input.name)) throw new AppError(NAME_TAKEN, 409);
-  let tools: string[] = [];
-  if (input.copyToolsFromRoleId !== undefined) {
-    const source = await prisma.role.findFirst({ where: { id: input.copyToolsFromRoleId }, select: { tools: true } });
-    if (!source) throw new AppError('Role to copy from was not found', 400);
-    tools = roleToolList(source.tools);
-  }
+  const [taken, source] = await Promise.all([
+    nameTaken(input.name),
+    input.copyToolsFromRoleId === undefined
+      ? null
+      : prisma.role.findFirst({ where: { id: input.copyToolsFromRoleId }, select: { tools: true } }),
+  ]);
+  if (taken) throw new AppError(NAME_TAKEN, 409);
+  if (input.copyToolsFromRoleId !== undefined && !source) throw new AppError('Role to copy from was not found', 400);
   try {
     const role = await prisma.role.create({
       data: {
         tenantId, name: input.name, area: input.area ?? null, contract: input.contract ?? {}, kpis: input.kpis ?? [],
-        targetMetric: input.targetMetric ?? null, tools, isSystem: false,
+        targetMetric: input.targetMetric ?? null, presetRole: input.presetRole ?? null, tools: roleToolList(source?.tools), isSystem: false,
       },
       select: roleSelect,
     });
@@ -181,29 +167,37 @@ export async function createRole(tenantId: string, input: CreateRoleInput) {
 
 /**
  * Edit the card fields of a role. Tools and the permission grid are M6-T04. A system role (Legacy MCP) is not edited here, and a
- * role built from a UserRole keeps its name: the position role of a new user is found by that name.
+ * seeded role keeps its name. `presetRole` (the base role of its new holders) is the Owner's to set, and not on the Owner role.
  */
-export async function updateRole(actor: RoleActor, id: number, input: UpdateRoleInput) {
+export async function updateRole(actor: Requester, id: number, input: UpdateRoleInput) {
   const role = await findRole(id);
   assertMayTouchRole(actor, role);
   if (role.isSystem) throw new AppError('A system role cannot be changed', 400);
+  if (input.presetRole !== undefined) {
+    if (!isOwner(actor)) throw new AppError('Only the Owner can set the base role of a role', 403);
+    if (isOwnerRole(role)) throw new AppError('The Owner role keeps its base role', 400);
+  }
   if (input.name !== undefined && input.name !== role.name) {
-    if (role.presetRole) throw new AppError('A position role keeps its name', 400);
+    if (isDefaultRoleName(role.name)) throw new AppError('A position role keeps its name', 400);
     if (await nameTaken(input.name, id)) throw new AppError(NAME_TAKEN, 409);
   }
   try {
-    const updated = await prisma.role.update({
-      where: { id },
-      data: {
-        ...(input.name !== undefined && { name: input.name }),
-        ...(input.area !== undefined && { area: input.area }),
-        ...(input.contract !== undefined && { contract: input.contract }),
-        ...(input.kpis !== undefined && { kpis: input.kpis }),
-        ...(input.targetMetric !== undefined && { targetMetric: input.targetMetric }),
-      },
-      select: roleSelect,
-    });
-    return roleView(updated, (await holderCounts()).get(id) ?? 0);
+    const [updated, holders] = await Promise.all([
+      prisma.role.update({
+        where: { id },
+        data: {
+          ...(input.name !== undefined && { name: input.name }),
+          ...(input.area !== undefined && { area: input.area }),
+          ...(input.contract !== undefined && { contract: input.contract }),
+          ...(input.kpis !== undefined && { kpis: input.kpis }),
+          ...(input.targetMetric !== undefined && { targetMetric: input.targetMetric }),
+          ...(input.presetRole !== undefined && { presetRole: input.presetRole }),
+        },
+        select: roleSelect,
+      }),
+      liveHolders(id),
+    ]);
+    return roleView(updated, holders);
   } catch (e) {
     if (isUniqueViolation(e)) throw new AppError(NAME_TAKEN, 409);
     throw e;
@@ -216,13 +210,11 @@ export async function updateRole(actor: RoleActor, id: number, input: UpdateRole
  * still points at is blocked too (the key row keeps it, even a revoked one).
  */
 export async function deleteRole(roleId: number): Promise<void> {
-  const role = await prisma.role.findFirst({ where: { id: roleId }, select: { id: true, presetRole: true, isSystem: true } });
-  if (!role) throw new AppError('Role not found', 404);
+  const role = await findRole(roleId);
   if (isOwnerRole(role)) throw new AppError('The Owner role cannot be deleted', 400);
   if (role.isSystem) throw new AppError('A system role cannot be deleted', 400);
-  const holders = await prisma.roleAssignment.count({ where: { roleId, toDate: null } });
-  if (holders > 0) throw new AppError(`Move ${holders} holders first`, 409, 'ROLE_HAS_HOLDERS');
-  const keys = await prisma.mcpApiKey.count({ where: { roleId } });
-  if (keys > 0) throw new AppError(`This role is used by ${keys} API keys`, 409, 'ROLE_HAS_KEYS');
+  const [holders, keys] = await Promise.all([liveHolders(roleId), prisma.mcpApiKey.count({ where: { roleId } })]);
+  if (holders > 0) throw new AppError(`Move ${holders} ${holders === 1 ? 'holder' : 'holders'} first`, 409, 'ROLE_HAS_HOLDERS');
+  if (keys > 0) throw new AppError(`This role is used by ${keys} API ${keys === 1 ? 'key' : 'keys'}`, 409, 'ROLE_HAS_KEYS');
   await prisma.role.delete({ where: { id: role.id } });
 }

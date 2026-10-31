@@ -6,9 +6,13 @@ jest.mock('../../utils/jwt', () => ({
   verifyRefreshToken: jest.fn(),
 }));
 
+// The seed gives the first user the Owner role and signup fails if it throws; the seed has its own integration tests.
+jest.mock('../../services/tenantDefaultsService', () => ({ seedTenantDefaults: jest.fn(async () => ({})) }));
+
 import { prismaMock } from '../mocks/prisma.mock';
 import { registerTenant } from '../../controllers/authController';
 import { generateAccessToken, generateRefreshToken } from '../../utils/jwt';
+import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 
 function mockRes() {
   const res: any = {};
@@ -48,6 +52,7 @@ describe('registerTenant — pricing-first plan selection (MAN-61)', () => {
     await registerTenant(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
+    expect(seedTenantDefaults).toHaveBeenCalledWith('T1', 1);
     const createArg = (prismaMock.tenant.create as any).mock.calls[0][0];
     expect(createArg.data.currentPlanId).toBe('plan-growth');
     expect(createArg.data.subscriptionStatus).toBe('pending');
