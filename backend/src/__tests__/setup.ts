@@ -9,13 +9,11 @@ dotenv.config({ path: path.join(__dirname, '../../.env.test') });
 dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 // Parallel local runs (`npm run test:integration:parallel`): every Jest worker gets its own database,
-// <name>_w<JEST_WORKER_ID>, made by scripts/test-dbs.sh. This runs before any test file imports Prisma.
-// A smaller pool keeps N workers under the Postgres connection limit.
+// chosen here before any test file imports Prisma (names and creation: scripts/lib/testDb.js).
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { workerDatabaseUrl, testDatabaseProblem } = require('../../scripts/lib/testDb');
 if (process.env.TEST_DB_PER_WORKER === '1' && process.env.DATABASE_URL) {
-  const url = new URL(process.env.DATABASE_URL);
-  url.pathname = `${url.pathname}_w${process.env.JEST_WORKER_ID || '1'}`;
-  if (!url.searchParams.has('connection_limit')) url.searchParams.set('connection_limit', '10');
-  process.env.DATABASE_URL = url.toString();
+  process.env.DATABASE_URL = workerDatabaseUrl(process.env.DATABASE_URL, process.env.JEST_WORKER_ID || '1');
 }
 
 // Mock environment variables for testing
@@ -30,14 +28,9 @@ if (!process.env.DATABASE_URL) {
   process.env.DATABASE_URL = 'postgresql://ecommerce_user:ecommerce_dev_password@localhost:5432/ecommerce_cod_test';
 } else {
   // Strict safety check for tests
-  if (!process.env.DATABASE_URL.includes('_test')) {
-    console.error('CRITICAL: Test suite is attempting to run against a non-test database!');
-    console.error('DATABASE_URL must contain "_test" to be used for testing.');
-    process.exit(1);
-  }
-
-  if (process.env.DATABASE_URL.includes('prod') || process.env.DATABASE_URL.includes('production')) {
-    console.error('CRITICAL: Test suite is attempting to run against a production database!');
+  const problem = testDatabaseProblem(process.env.DATABASE_URL);
+  if (problem) {
+    console.error(`CRITICAL: ${problem}`);
     process.exit(1);
   }
 }

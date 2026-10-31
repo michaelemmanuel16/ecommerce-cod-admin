@@ -42,8 +42,7 @@ run_check() {
 
 # Fast checks only (about a minute): lint, type check, backend unit tests, workflow lint.
 # Not run here, on purpose: the backend integration suite (serial, ~15 min; CI runs it sharded),
-# frontend tests/builds (CI runs them). `npm test` is not used: its script already sets --maxWorkers,
-# so extra Jest flags such as --runInBand are refused. For integration tests locally:
+# frontend tests/builds (CI runs them). For integration tests locally:
 #   cd backend && npm run test:integration:parallel
 
 # 1. Backend Lint

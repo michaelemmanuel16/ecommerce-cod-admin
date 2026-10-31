@@ -1,5 +1,10 @@
 name: Set up backend
-description: Node 20, cached backend/node_modules (npm ci only on a cache miss), Prisma client.
+description: Node 20, cached backend/node_modules (npm ci only on a cache miss), optionally the Prisma client.
+
+inputs:
+  prisma:
+    description: Run `prisma generate` ('false' for jobs that never import the client).
+    default: 'true'
 
 runs:
   using: composite
@@ -8,8 +13,6 @@ runs:
       uses: actions/setup-node@v4
       with:
         node-version: 20.x
-        cache: 'npm'
-        cache-dependency-path: backend/package-lock.json
 
     - name: Restore node_modules
       id: modules
@@ -25,6 +28,7 @@ runs:
       run: npm ci
 
     - name: Generate Prisma Client
+      if: inputs.prisma == 'true'
       shell: bash
       working-directory: backend
       run: npx prisma generate
