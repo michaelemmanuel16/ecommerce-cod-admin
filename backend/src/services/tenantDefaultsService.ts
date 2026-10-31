@@ -5,6 +5,7 @@ import { DEFAULT_GL_ACCOUNTS, RETIRED_GL_CODES } from '../config/glAccounts';
 import { DEFAULT_ROLES } from '../config/defaultRoles';
 import { seedDefaultEmailTemplates } from './emailTemplateService';
 import { ensureSystemUser } from './systemUserService';
+import { seedSystemRoles } from './systemRoleService';
 
 type GrantResult = 'granted' | 'already there' | 'no stored list';
 
@@ -48,7 +49,7 @@ export const grantAdminUpdateStock = (tenantId: string, db?: Pick<TransactionCli
 
 /**
  * Create what a tenant is missing: the chart of accounts, the default email
- * templates, the 7 default roles and the system user. Idempotent: re-running never creates duplicates (unique
+ * templates, the default roles (with Admin and Manager and each role's permission grid) and the system user. Idempotent: re-running never creates duplicates (unique
  * `(tenantId, code)` on accounts, `(name, tenantId)` on email templates and
  * `(tenantId, name)` on roles; the system user is found by kind first).
  * Runs inside the tenant context so the Prisma extension stamps the tenantId.
@@ -78,8 +79,10 @@ export async function seedTenantDefaults(tenantId: string): Promise<{ accounts: 
     }),
     ensureSystemUser(tenantId).then(({ created }) => (created ? 1 : 0)),
   ]);
+  // Needs the roles above: Admin, Manager, and each role's preset and permission grid (M6-T02).
+  const positionRoles = await runInTenant(tenantId, () => seedSystemRoles(tenantId));
   if (accounts > 0 || emailTemplates > 0 || roles > 0 || systemUser > 0) {
     logger.info(`Seeded tenant defaults for ${tenantId}: ${accounts} accounts, ${emailTemplates} email templates, ${roles} roles, ${systemUser} system user`);
   }
-  return { accounts, emailTemplates, roles, systemUser };
+  return { accounts, emailTemplates, roles: roles + positionRoles.created, systemUser };
 }

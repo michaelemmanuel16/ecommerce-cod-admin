@@ -67,7 +67,7 @@ describe('seedTenantDefaults', () => {
     const second = await seedTenantDefaults(id);
     expect(second).toEqual({ accounts: 0, emailTemplates: 0, roles: 0, systemUser: 0 });
     expect(await counts(id)).toEqual(after1);
-    expect(after1).toEqual({ accounts: N, emailTemplates: DEFAULT_EMAIL_TEMPLATES.length, roles: 7, systemUsers: 1 });
+    expect(after1).toEqual({ accounts: N, emailTemplates: DEFAULT_EMAIL_TEMPLATES.length, roles: 9, systemUsers: 1 });
   });
 
   it('fills only what is missing', async () => {
@@ -88,13 +88,13 @@ describe('seedTenantDefaults', () => {
     });
     expect(res.status).toBe(201);
     tenantIds.push(res.body.tenant.id);
-    expect(await counts(res.body.tenant.id)).toEqual({ accounts: N, emailTemplates: DEFAULT_EMAIL_TEMPLATES.length, roles: 7, systemUsers: 1 });
+    expect(await counts(res.body.tenant.id)).toEqual({ accounts: N, emailTemplates: DEFAULT_EMAIL_TEMPLATES.length, roles: 9, systemUsers: 1 });
   });
 
   it('platform createTenant seeds the new tenant', async () => {
     const t = await createTenant({ name: `Plat Defaults ${SUFFIX}`, slug: `defaults-plat-${SUFFIX}` });
     tenantIds.push(t.id);
-    expect(await counts(t.id)).toEqual({ accounts: N, emailTemplates: DEFAULT_EMAIL_TEMPLATES.length, roles: 7, systemUsers: 1 });
+    expect(await counts(t.id)).toEqual({ accounts: N, emailTemplates: DEFAULT_EMAIL_TEMPLATES.length, roles: 9, systemUsers: 1 });
   });
 });
 

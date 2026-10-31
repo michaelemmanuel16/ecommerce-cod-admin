@@ -143,9 +143,9 @@ describe('reserved system email', () => {
 });
 
 describe('seeded roles', () => {
-  it('a new tenant has the 7 roles, one of them the system role with all 14 tools', async () => {
+  it('a new tenant has the 9 roles (M6 added Admin and Manager), one of them the system role with all 14 tools', async () => {
     const roles = await prismaBase.role.findMany({ where: { tenantId: pair.a.id } });
-    expect(roles).toHaveLength(7);
+    expect(roles).toHaveLength(9);
     const legacy = roles.find((r) => r.name === 'Legacy MCP (14 tools)')!;
     expect(legacy.isSystem).toBe(true);
     expect(legacy.tools).toHaveLength(14);
