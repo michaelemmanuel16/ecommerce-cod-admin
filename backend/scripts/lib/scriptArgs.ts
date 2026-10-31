@@ -1,3 +1,5 @@
+import { prismaBase } from '../../src/utils/prisma';
+
 /**
  * Shared helpers for the one-off data scripts (backfills, normalizers): CLI flags,
  * the production guard and tenant grouping.
@@ -34,4 +36,37 @@ export function groupByTenant<T extends { tenantId: string | null }>(rows: T[]):
     else groups.set(row.tenantId, [row]);
   }
   return groups;
+}
+
+/**
+ * The main() of a per-tenant data script: production guard, `--dry-run` and `--tenant <id>` flags, a banner, one try/catch per
+ * tenant, exit code 1 when any tenant fails (or `fn` returns false), and the disconnect. An unknown `--tenant` is an error.
+ * `fn` gets the tenant id and the dry-run flag; the tenants are read with the base client in id order.
+ */
+export async function runPerTenant(fn: (tenantId: string, dryRun: boolean) => Promise<boolean | void>): Promise<void> {
+  try {
+    if (!assertNotProduction()) return;
+    const dryRun = hasFlag('--dry-run');
+    const only = option('--tenant');
+    const tenants = await prismaBase.tenant.findMany({ where: only ? { id: only } : undefined, select: { id: true }, orderBy: { id: 'asc' } });
+    if (only && !tenants.length) {
+      console.error(`Unknown tenant: ${only}`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(dryRun ? 'DRY RUN: nothing is written' : 'REAL RUN');
+    for (const t of tenants) {
+      try {
+        if ((await fn(t.id, dryRun)) === false) process.exitCode = 1;
+      } catch (e) {
+        process.exitCode = 1;
+        console.error(`Tenant ${t.id}: ${(e as Error).message}`);
+      }
+    }
+  } catch (e) {
+    console.error(e);
+    process.exitCode = 1;
+  } finally {
+    await prismaBase.$disconnect();
+  }
 }

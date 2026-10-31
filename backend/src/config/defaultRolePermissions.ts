@@ -1,3 +1,8 @@
+import { UserRole } from '@prisma/client';
+
+/** resource -> actions */
+export type PermissionGrid = Record<string, string[]>;
+
 /**
  * The default role-permission matrix (SystemConfig.rolePermissions before a tenant saves its own): resource -> actions per role.
  * One copy, read by the auth middleware (the effective permissions) and by `adminService.getDefaultPermissions` (what Settings
@@ -112,4 +117,16 @@ export function defaultRolePermissions() {
       expenses: ['view_all', 'edit', 'delete'],
     },
   };
+}
+
+/**
+ * What each UserRole may do: the tenant's saved matrix laid over the defaults, resource by resource (a saved list replaces the
+ * default list). Read by the auth middleware and by the role seed, so both apply one rule.
+ */
+export function mergeRolePermissions(stored: unknown): Record<UserRole, PermissionGrid> {
+  const defaults = defaultRolePermissions() as Record<UserRole, PermissionGrid>;
+  const saved = (stored ?? {}) as Partial<Record<UserRole, PermissionGrid>>;
+  const merged = {} as Record<UserRole, PermissionGrid>;
+  for (const role of Object.keys(defaults) as UserRole[]) merged[role] = { ...defaults[role], ...(saved[role] || {}) };
+  return merged;
 }

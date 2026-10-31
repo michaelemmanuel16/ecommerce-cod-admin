@@ -14,9 +14,9 @@ describe('TOOL_PERMISSIONS', () => {
     for (const cell of Object.values(TOOL_PERMISSIONS)) expect(cell).toMatch(/^[a-z_]+:[a-z_]+$/);
   });
 
-  it('default roles are the 7 expected and only list known tools', () => {
+  it('default roles are the 9 expected and only list known tools', () => {
     expect(DEFAULT_ROLES.map((r) => r.name)).toEqual([
-      'Owner', 'Call rep', 'Delivery', 'Finance clerk', 'Marketing', 'Stock keeper', LEGACY_MCP_ROLE_NAME,
+      'Owner', 'Call rep', 'Delivery', 'Finance clerk', 'Marketing', 'Stock keeper', 'Admin', 'Manager', LEGACY_MCP_ROLE_NAME,
     ]);
     for (const role of DEFAULT_ROLES) {
       for (const tool of role.tools) expect(TOOL_PERMISSIONS).toHaveProperty(tool);

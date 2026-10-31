@@ -3,6 +3,7 @@
  * create-tenant seed the new tenant, and two tenants each post a delivery into
  * their own account 4010.
  */
+import { Prisma } from '@prisma/client';
 import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import request from 'supertest';
 import app from '../../server';
@@ -13,6 +14,7 @@ import { tenantStorage } from '../../utils/tenantContext';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import { createTenant } from '../../services/platformService';
 import { DeliveryService } from '../../services/deliveryService';
+import { DEFAULT_ROLES, LEGACY_MCP_ROLE_NAME } from '../../config/defaultRoles';
 import { DEFAULT_GL_ACCOUNTS, GL_ACCOUNTS } from '../../config/glAccounts';
 import { DEFAULT_EMAIL_TEMPLATES } from '../../services/emailTemplateService';
 
@@ -68,6 +70,29 @@ describe('seedTenantDefaults', () => {
     expect(second).toEqual({ accounts: 0, emailTemplates: 0, roles: 0, systemUser: 0 });
     expect(await counts(id)).toEqual(after1);
     expect(after1).toEqual({ accounts: N, emailTemplates: DEFAULT_EMAIL_TEMPLATES.length, roles: 9, systemUsers: 1 });
+  });
+
+  it('every seeded role has its preset, and a grid unless it is the Legacy MCP role', async () => {
+    const id = await mkTenant('presets');
+    await seedTenantDefaults(id);
+    const roles = await prismaBase.role.findMany({ where: { tenantId: id } });
+    expect(roles.map((r) => r.name).sort()).toEqual(DEFAULT_ROLES.map((r) => r.name).sort());
+    for (const r of roles) {
+      if (r.name === LEGACY_MCP_ROLE_NAME) continue;
+      expect(r.presetRole).not.toBeNull();
+      expect(r.permissions).not.toBeNull();
+    }
+  });
+
+  it('does not touch an existing role at boot: only missing roles are inserted', async () => {
+    const id = await mkTenant('boot');
+    await seedTenantDefaults(id);
+    await prismaBase.role.updateMany({ where: { tenantId: id, name: 'Call rep' }, data: { presetRole: null, permissions: Prisma.DbNull } });
+    await prismaBase.role.deleteMany({ where: { tenantId: id, name: 'Admin' } });
+    expect((await seedTenantDefaults(id)).roles).toBe(1);
+    const rep = await prismaBase.role.findFirstOrThrow({ where: { tenantId: id, name: 'Call rep' } });
+    expect(rep.presetRole).toBeNull();
+    expect(rep.permissions).toBeNull();
   });
 
   it('fills only what is missing', async () => {

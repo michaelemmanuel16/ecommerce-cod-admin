@@ -7,7 +7,7 @@ import logger from '../utils/logger';
 import { enterTenant, getTenantId, withoutTenant } from '../utils/tenantContext';
 import { isPlatformAdmin } from '../utils/platformAdmin';
 import { canSeeCost } from '../utils/costAccess';
-import { defaultRolePermissions } from '../config/defaultRolePermissions';
+import { defaultRolePermissions, mergeRolePermissions } from '../config/defaultRolePermissions';
 
 // Per-tenant cache for role permissions to avoid database hits on every request.
 // Keyed by tenantId to prevent cross-tenant permission leakage.
@@ -35,12 +35,7 @@ async function getPermissionsFromDatabase() {
       logger.info('[auth.getPermissionsFromDatabase] Loaded permissions from database, merging with defaults');
       // Merge stored permissions with defaults so new resources (e.g. calls, gl)
       // are available even if the tenant saved permissions before those resources existed.
-      const defaults = defaultRolePermissions();
-      const stored = config.rolePermissions as Record<string, Record<string, string[]>>;
-      permissions = {} as any;
-      for (const role of Object.keys(defaults) as Array<keyof typeof defaults>) {
-        permissions[role] = { ...defaults[role], ...(stored[role] || {}) };
-      }
+      permissions = mergeRolePermissions(config.rolePermissions);
     }
   } catch (error) {
     logger.error('[auth.getPermissionsFromDatabase] Error fetching from database, using defaults:', error);

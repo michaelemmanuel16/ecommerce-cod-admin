@@ -9,10 +9,9 @@ import { UserRole } from '@prisma/client';
 import { prismaBase } from '../../utils/prisma';
 import { clearPermissionsCache, getEffectivePermissions } from '../../middleware/auth';
 import { runInTenant } from '../../utils/tenantContext';
-import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import { unionPermissions } from '../../services/systemRoleService';
 import { deleteRole } from '../../services/roleService';
-import { ROLE_NAME_BY_USER_ROLE } from '../../config/systemRoles';
+import { DEFAULT_ROLES, ROLE_NAME_BY_USER_ROLE } from '../../config/defaultRoles';
 import { createTenant, deleteTenantRows, mkUser } from './helpers/twoTenants';
 import { migrateTenant } from '../../../scripts/migrate-users-to-roles';
 
@@ -33,25 +32,29 @@ let plain: string;
 let usersOf: Record<string, Record<string, number>> = {};
 const tenants = () => [edited, plain];
 
-/** A tenant as it was before M6-T02: M2 roles only, no Admin/Manager, no preset and no grid. */
+/** A tenant as it was before M6-T02: the M2 roles (no Admin, Manager, preset or grid), the users, and maybe an edited matrix. */
 async function legacyTenant(label: string, withMatrix: boolean) {
   const id = (await createTenant(label)).id;
-  await seedTenantDefaults(id);
-  await db.role.deleteMany({ where: { tenantId: id, name: { in: ['Admin', 'Manager'] } } });
-  await db.role.updateMany({ where: { tenantId: id }, data: { presetRole: null, permissions: null as any } });
+  const m2Roles = DEFAULT_ROLES.filter((r) => !['Admin', 'Manager'].includes(r.name));
+  await db.role.createMany({ data: m2Roles.map((r) => ({ name: r.name, area: r.area, contract: r.contract, tools: r.tools, isSystem: r.isSystem, kpis: [], tenantId: id })) });
   if (withMatrix) await db.systemConfig.create({ data: { tenantId: id, rolePermissions: EDITED as any } });
-  usersOf[id] = {};
-  for (const role of USER_ROLES) usersOf[id][role] = (await mkUser(id, role, role)).id;
-  // an inactive user is still staff, and a user with no tenant must stay untouched
-  usersOf[id].inactive = (await mkUser(id, 'inactive', 'sales_rep', { isActive: false })).id;
+  const ids = await Promise.all([
+    ...USER_ROLES.map(async (role) => [role, (await mkUser(id, role, role)).id] as const),
+    // an inactive user is still staff
+    mkUser(id, 'inactive', 'sales_rep', { isActive: false }).then((u) => ['inactive', u.id] as const),
+  ]);
+  usersOf[id] = Object.fromEntries(ids);
   return id;
 }
 
+const counts = async (tenantId: string) => ({
+  roles: await db.role.count({ where: { tenantId } }),
+  assignments: await db.roleAssignment.count({ where: { tenantId } }),
+});
 const assignmentsOf = (tenantId: string) => db.roleAssignment.findMany({ where: { tenantId }, orderBy: { id: 'asc' } });
 
 beforeAll(async () => {
-  edited = await legacyTenant('RoleMigEdited', true);
-  plain = await legacyTenant('RoleMigPlain', false);
+  [edited, plain] = await Promise.all([legacyTenant('RoleMigEdited', true), legacyTenant('RoleMigPlain', false)]);
 });
 
 beforeEach(() => clearPermissionsCache());
@@ -64,12 +67,12 @@ afterAll(async () => {
 
 describe('M6-T02 dry run', () => {
   it('reports the counts and writes nothing', async () => {
-    const before = [await db.role.count({ where: { tenantId: edited } }), await db.roleAssignment.count({ where: { tenantId: edited } })];
+    const before = await counts(edited);
     const report = await migrateTenant(edited, { dryRun: true });
-    expect(report.roles).toEqual({ created: 2, filled: 8 });
+    expect(report.roles).toEqual({ created: 2, filled: 6 });
     expect(report.users.assigned).toMatchObject({ super_admin: 1, admin: 1, manager: 1, sales_rep: 2, delivery_agent: 1, accountant: 1, inventory_manager: 1 });
     expect(report.users.alreadyHeld).toBe(0);
-    expect([await db.role.count({ where: { tenantId: edited } }), await db.roleAssignment.count({ where: { tenantId: edited } })]).toEqual(before);
+    expect(await counts(edited)).toEqual(before);
     expect(await db.role.count({ where: { tenantId: edited, presetRole: { not: null } } })).toBe(0);
   });
 });
@@ -136,24 +139,7 @@ describe('M6-T02 migration', () => {
   });
 });
 
-describe('M6-T02 new tenants and the Owner guard', () => {
-  it('seedTenantDefaults gives a new tenant all eight roles with presets and grids, and runs twice without change', async () => {
-    const id = (await createTenant('RoleMigNew')).id;
-    try {
-      await seedTenantDefaults(id);
-      const first = await db.role.findMany({ where: { tenantId: id }, orderBy: { id: 'asc' } });
-      expect(first.map((r) => r.name)).toEqual(expect.arrayContaining(['Owner', 'Call rep', 'Delivery', 'Finance clerk', 'Stock keeper', 'Marketing', 'Admin', 'Manager']));
-      for (const r of first.filter((r) => r.name !== 'Legacy MCP (14 tools)')) {
-        expect(r.presetRole).not.toBeNull();
-        expect(r.permissions).not.toBeNull();
-      }
-      await seedTenantDefaults(id);
-      expect(await db.role.findMany({ where: { tenantId: id }, orderBy: { id: 'asc' } })).toEqual(first);
-    } finally {
-      await deleteTenantRows([id]);
-    }
-  });
-
+describe('M6-T02 Owner guard', () => {
   it('the Owner role cannot be deleted; another role can', async () => {
     const owner = await db.role.findFirstOrThrow({ where: { tenantId: edited, name: 'Owner' } });
     await expect(runInTenant(edited, () => deleteRole(owner.id))).rejects.toThrow('The Owner role cannot be deleted');
