@@ -46,15 +46,16 @@ const ASSIGN_KINDS: Record<AssignRole, { relation: string; short: string; label:
  */
 export class AssignmentService {
   /**
-   * Select a user using smooth round robin. The cursor lives in Redis with a database fallback (F-513),
-   * so the sequence continues after a restart. Every user counts the same.
+   * Select a user using smooth round robin. The cursor lives in the database (F-513), so the sequence continues
+   * after a restart. Every user counts the same.
    *
-   * @param users - Array of users to select from
-   * @param contextKey - Optional key to maintain separate cursors (e.g., 'delivery_agent', 'sales_rep')
-   * @returns Selected user or null if no users available
+   * @param users - The rotation: every active user of the role, available or not
+   * @param role - Role of the rotation
+   * @param contextKey - Optional key to maintain separate cursors (e.g., 'delivery_agent_Accra')
+   * @returns Selected user or null if nobody is available
    */
-  async selectUserRoundRobin(users: User[], contextKey: string = 'default'): Promise<User | null> {
-    return this.selectWithCursor(users, contextKey, () => 1);
+  async selectUserRoundRobin(users: User[], role: AssignRole, contextKey: string = 'default'): Promise<User | null> {
+    return this.selectWithCursor(users, role, contextKey, () => 1);
   }
 
   /**
@@ -62,52 +63,67 @@ export class AssignmentService {
    * The weights come from the caller (the workflow's `assignments[].weight`). A user with no weight gets none;
    * if no available user has a weight, everyone counts the same.
    *
-   * @param users - Array of users to select from
+   * @param users - The rotation: every active user of the role, available or not
    * @param weights - Object mapping userId to weight (percentage as decimal, e.g., 0.5 = 50%)
+   * @param role - Role of the rotation
    * @param contextKey - Key of the cursor
-   * @returns Selected user or null if no users available
+   * @returns Selected user or null if nobody is available
    */
-  async selectUserWeighted(users: User[], weights: AssignmentWeights, contextKey: string = 'default'): Promise<User | null> {
+  async selectUserWeighted(users: User[], weights: AssignmentWeights, role: AssignRole, contextKey: string = 'default'): Promise<User | null> {
     // Integer shares keep the running totals exact (0.6 + 0.4 would drift).
-    const shareOf = (user: User) => Math.round((weights[user.id] || 0) * 1000);
-    const anyWeight = (users || []).some((user) => user.isActive && user.isAvailable && shareOf(user) > 0);
-    if (!anyWeight && users?.length) logger.info('No valid weights found, using equal distribution');
-    return this.selectWithCursor(users, contextKey, anyWeight ? shareOf : () => 1);
+    return this.selectWithCursor(users, role, contextKey, (user) => Math.round((weights[user.id] || 0) * 1000));
   }
 
-  private async selectWithCursor(users: User[], contextKey: string, shareOf: (user: User) => number): Promise<User | null> {
-    if (!users || users.length === 0) {
-      logger.warn('No users available for cursor selection', { contextKey });
-      return null;
-    }
-    const candidates = users.filter((user) => shareOf(user) > 0).map((user) => ({ id: user.id, weight: shareOf(user) }));
-    // Only active and available users may take an order; the others stay in the list so the cursor does not reset.
-    const usable = new Set(users.filter((user) => user.isActive && user.isAvailable).map((user) => user.id));
-    const available = candidates.filter((c) => usable.has(c.id));
-    if (available.length === 0) {
+  /**
+   * The rotation is the whole list; availability (active, switched on, and for a delivery agent not blocked for
+   * unpaid cash) only decides who may take this order, so an away user is skipped and the cursor is kept.
+   * Nobody available, or an empty rotation: no pick, and the owner gets one alert per scope per hour.
+   */
+  private async selectWithCursor(users: User[], role: AssignRole, contextKey: string, shareOf: (user: User) => number): Promise<User | null> {
+    const blocked = role === 'delivery_agent' && users?.length
+      ? new Set((await prisma.agentBalance.findMany({ where: { agentId: { in: users.map((u) => u.id) }, isBlocked: true }, select: { agentId: true } })).map((b) => b.agentId))
+      : new Set<number>();
+    const usable = (users ?? []).filter((user) => user.isActive && user.isAvailable && !blocked.has(user.id));
+    if (usable.length === 0) {
       logger.warn('No active and available users for cursor selection', { contextKey });
-      await this.alertNoneAvailable(contextKey, users[0].role);
+      await this.alertNoneAvailable(contextKey, role);
       return null;
     }
-    const pickedId = await pickWithCursor(contextKey, users[0].role, candidates, available);
-    const selectedUser = users.find((user) => user.id === pickedId) ?? null;
-    if (selectedUser) {
-      logger.info('User selected via assignment cursor', {
-        userId: selectedUser.id,
-        userName: `${selectedUser.firstName} ${selectedUser.lastName}`,
-        contextKey
-      });
-    }
+
+    const shares = new Map(users.map((user) => [user.id, shareOf(user)]));
+    // Nobody available has a weight: everyone counts the same.
+    const equal = !usable.some((user) => shares.get(user.id)! > 0);
+    if (equal) logger.info('No valid weights found, using equal distribution');
+    const share = (user: User) => (equal ? 1 : shares.get(user.id)!);
+    const toCandidate = (user: User) => ({ id: user.id, weight: share(user) });
+    const rotation = users.filter((user) => share(user) > 0).map(toCandidate);
+    const available = usable.filter((user) => share(user) > 0).map(toCandidate);
+
+    const pickedId = await pickWithCursor(contextKey, role, rotation, available);
+    const selectedUser = users.find((user) => user.id === pickedId)!;
+    logger.info('User selected via assignment cursor', {
+      userId: selectedUser.id,
+      userName: `${selectedUser.firstName} ${selectedUser.lastName}`,
+      contextKey
+    });
     return selectedUser;
   }
 
   /** The owner is told once per scope per hour; an alert that fails must not stop the caller, the order just waits. */
-  private async alertNoneAvailable(scope: string, role: string): Promise<void> {
+  private async alertNoneAvailable(scope: string, role: AssignRole): Promise<void> {
     try {
-      await notifyAdminsNoAssigneeAvailable(scope, role);
+      await notifyAdminsNoAssigneeAvailable(scope, role, ASSIGN_KINDS[role].noun);
     } catch (error) {
       logger.warn('No-assignee alert failed', { scope, error: (error as Error).message });
     }
+  }
+
+  /**
+   * The rotation for a role: every active user, available or not. Availability is decided at pick time, so an
+   * away user is skipped without resetting the cursor. `getUsersByRole` keeps its own filter for its other callers.
+   */
+  private getRotation(role: AssignRole): Promise<User[]> {
+    return prisma.user.findMany({ where: { role, isActive: true }, orderBy: { firstName: 'asc' } });
   }
 
   /**
@@ -145,18 +161,8 @@ export class AssignmentService {
    * @returns Selected delivery agent or null
    */
   async selectDeliveryAgentForArea(area: string): Promise<User | null> {
-    // Get all delivery agents
-    const agents = await this.getUsersByRole('delivery_agent');
-
     // Use area-specific round-robin context
-    const contextKey = `delivery_agent_${area}`;
-    if (agents.length === 0) {
-      logger.warn('No delivery agents available', { area });
-      await this.alertNoneAvailable(contextKey, 'delivery_agent');
-      return null;
-    }
-
-    return this.selectUserRoundRobin(agents, contextKey);
+    return this.selectUserRoundRobin(await this.getRotation('delivery_agent'), 'delivery_agent', `delivery_agent_${area}`);
   }
 
   /**
@@ -166,15 +172,7 @@ export class AssignmentService {
    * @returns Selected sales rep or null
    */
   async selectSalesRepWeighted(weights: AssignmentWeights): Promise<User | null> {
-    const salesReps = await this.getUsersByRole('sales_rep');
-
-    if (salesReps.length === 0) {
-      logger.warn('No sales representatives available');
-      await this.alertNoneAvailable('sales_rep', 'sales_rep');
-      return null;
-    }
-
-    return this.selectUserWeighted(salesReps, weights, 'sales_rep');
+    return this.selectUserWeighted(await this.getRotation('sales_rep'), weights, 'sales_rep', 'sales_rep');
   }
 
   /**
