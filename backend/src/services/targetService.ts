@@ -56,14 +56,22 @@ export interface TargetInput {
   parentId?: number;
   roleId?: number;
   userId?: number;
+  /** 'manual' marks an owner edit (planned AOV, F-1113). A new row is 'auto'; an update keeps its source unless given. */
+  source?: 'auto' | 'manual';
 }
 
 export interface ChildInput { period: string; value: Money.MoneyInput }
 
 type Db = Prisma.TransactionClient;
-interface Row { scope: TargetScope; metric: string; unit: string; value: Money.Money; start: Date; end: Date; parentId?: number; roleId?: number; userId?: number }
+interface Row { scope: TargetScope; metric: string; unit: string; value: Money.Money; start: Date; end: Date; parentId?: number; roleId?: number; userId?: number; source?: string }
+
+/** The whole tree of a year, 4 quarters of 3 months. `build` gets the existing quarter and month rows (read under lock) and returns the plan. */
+export interface YearPlanResult<E = undefined> { annual: Money.Money; quarters: Array<{ value: Money.Money; months: Money.Money[] }>; extra?: E }
 type WriteOp =
+  /** `alongside` rows are saved first in the same transaction (the planned AOV that goes with a tree). */
+  | { kind: 'plan'; metric: string; unit: string; year: number; build: (existing: Target[]) => YearPlanResult<unknown>; alongside: Row[] }
   | { kind: 'save'; row: Row }
+  | { kind: 'saveMany'; rows: Row[]; removeIds: number[] }
   | { kind: 'set'; parentId: number; children: Array<{ start: Date; end: Date; value: Money.Money }> }
   | { kind: 'delete'; id: number }
   | { kind: 'release'; roleId: number; userId: number; today: Date };
@@ -96,14 +104,14 @@ export function periodBounds(scope: TargetScope, period?: string): { start: Date
 // ---- Checks ---------------------------------------------------------------------------------------------------------
 
 /** `sum` is what the children add up to. Exact levels must equal the parent; the others must not exceed it. */
-function assertSum(parentScope: TargetScope, sum: Money.Money, value: Money.Money) {
+export function assertSum(parentScope: TargetScope, sum: Money.Money, value: Money.Money) {
   const { name, exact } = CHILD[parentScope]!;
   if (exact ? sum.eq(value) : sum.lte(value)) return;
   const diff = Money.sub(sum, value);
   throw new AppError(
     `The ${name} add up to ${money(sum)} but the ${parentScope.replace('_', ' ')} is ${money(value)} `
     + `(${diff.gt(0) ? 'over' : 'short'} by ${money(diff.abs())}). Difference: ${money(diff.abs())}`,
-    400, 'CHILDREN_SUM_MISMATCH',
+    400, 'TARGET_SUM_MISMATCH',
   );
 }
 
@@ -173,6 +181,9 @@ async function lockParent(tx: Db, tenantId: string, row: Row): Promise<Target | 
 }
 
 async function saveRow(tx: Db, tenantId: string, row: Row): Promise<Target> {
+  // An id from the request must belong to this tenant: the base client does not add the filter.
+  if (row.roleId !== undefined && (await tx.role.count({ where: { id: row.roleId, tenantId } })) === 0) throw new AppError('Role not found', 404);
+  if (row.userId !== undefined && (await tx.user.count({ where: { id: row.userId, tenantId } })) === 0) throw new AppError('User not found', 404);
   if (row.scope === 'person' && (await tx.roleAssignment.count({ where: { tenantId, roleId: row.roleId, holderId: row.userId, toDate: null } })) === 0) {
     throw new AppError('This person does not hold the role', 400, 'NOT_A_HOLDER');
   }
@@ -186,7 +197,7 @@ async function saveRow(tx: Db, tenantId: string, row: Row): Promise<Target> {
     const kids = await childSum(tx, tenantId, existing);
     if (kids.count > 0) assertSum(existing.scope, kids.sum, row.value);
   }
-  if (existing) return tx.target.update({ where: { id: existing.id }, data: { unit: row.unit, value: row.value, parentId: parent?.id ?? null } });
+  if (existing) return tx.target.update({ where: { id: existing.id }, data: { unit: row.unit, value: row.value, parentId: parent?.id ?? null, ...(row.source && { source: row.source }) } });
 
   if (row.scope === 'daily') {
     // A new start day ends the previous open target of the same metric and owner the day before.
@@ -198,9 +209,19 @@ async function saveRow(tx: Db, tenantId: string, row: Row): Promise<Target> {
   return tx.target.create({
     data: {
       tenantId, scope: row.scope, metric: row.metric, unit: row.unit, value: row.value, periodStart: row.start, periodEnd: row.end,
-      parentId: parent?.id ?? null, roleId: row.roleId ?? null, userId: row.userId ?? null,
+      parentId: parent?.id ?? null, roleId: row.roleId ?? null, userId: row.userId ?? null, source: row.source ?? 'auto',
     },
   });
+}
+
+/** A parent whose value moves must still cover what sits under it (exactly for quarters, at most for months and roles). */
+async function assertCoversChildren(tx: Db, tenantId: string, moved: Map<number, { scope: TargetScope; next: Money.Money }>) {
+  if (moved.size === 0) return;
+  const under = await tx.target.groupBy({ by: ['parentId'], where: { tenantId, parentId: { in: [...moved.keys()] } }, _sum: { value: true } });
+  for (const g of under) {
+    const parent = moved.get(g.parentId!)!;
+    assertSum(parent.scope, Money.orZero(g._sum.value), parent.next);
+  }
 }
 
 async function setRows(tx: Db, tenantId: string, op: Extract<WriteOp, { kind: 'set' }>): Promise<Target[]> {
@@ -234,15 +255,7 @@ async function setRows(tx: Db, tenantId: string, op: Extract<WriteOp, { kind: 's
   }
   assertSum(parent.scope, Money.add(Money.sum(values.values()), fresh), parent.value);
 
-  // A child whose value moves must still match what sits under it.
-  const moved = changes.filter((c) => c.row && !c.row.value.eq(c.child.value)).map((c) => c.row!);
-  if (moved.length > 0) {
-    const under = await tx.target.groupBy({ by: ['parentId'], where: { tenantId, parentId: { in: moved.map((r) => r.id) } }, _sum: { value: true }, _count: true });
-    for (const g of under) {
-      const row = moved.find((r) => r.id === g.parentId)!;
-      if (g._count > 0) assertSum(row.scope, Money.orZero(g._sum.value), values.get(row.id)!);
-    }
-  }
+  await assertCoversChildren(tx, tenantId, new Map(changes.filter((c) => c.row && !c.row.value.eq(c.child.value)).map((c) => [c.row!.id, { scope: c.row!.scope, next: c.child.value }])));
 
   const saved: Target[] = [];
   for (const { row, child } of changes) {
@@ -256,6 +269,66 @@ async function setRows(tx: Db, tenantId: string, op: Extract<WriteOp, { kind: 's
   const savedIds = new Set(saved.map((s) => s.id));
   const unchanged = op.children.map((c) => slotOf(c.start)).filter((r): r is Target => !!r && !savedIds.has(r.id));
   return [...saved, ...unchanged].sort((a, b) => a.periodStart.getTime() - b.periodStart.getTime());
+}
+
+/**
+ * Re-plan a whole year: the North Star, its 4 quarters and their 12 months in one transaction. A closed month must keep its
+ * value (the plan the caller builds from `existing` is expected to keep it; this checks). Nothing is saved when a sum is off.
+ */
+async function planRows(tx: Db, tenantId: string, op: Extract<WriteOp, { kind: 'plan' }>) {
+  for (const row of op.alongside) await saveRow(tx, tenantId, row);
+  const year = periodBounds('north_star', String(op.year));
+  const [northStar] = await findSlots(tx, tenantId, { scope: 'north_star', metric: op.metric }, [year.start]);
+  if (northStar) await lock(tx, tenantId, [northStar.id]);
+  if (northStar?.closedAt) throw closedError();
+  const existing = await tx.target.findMany({
+    where: { tenantId, metric: op.metric, roleId: null, userId: null, scope: { in: ['quarter', 'month'] }, periodStart: { gte: year.start, lte: year.end } },
+    orderBy: { periodStart: 'asc' },
+  });
+  if (existing.length > 0) await lock(tx, tenantId, existing.map((r) => r.id));
+  const plan = op.build(existing);
+  plan.quarters.forEach((q) => assertSum('quarter', Money.sum(q.months), q.value));
+  assertSum('north_star', Money.sum(plan.quarters.map((q) => q.value)), plan.annual);
+
+  const at = (scope: TargetScope, start: Date) => existing.find((r) => r.scope === scope && r.periodStart.getTime() === start.getTime());
+  const months = plan.quarters.flatMap((q, qi) => q.months.map((value, mi) => {
+    const n = qi * 3 + mi + 1;
+    return { qi, value, start: utcDate(op.year, n), end: utcDate(op.year, n + 1, 0) };
+  }));
+  // One pass: a closed month must keep its value; a month that moves must still hold the role targets under it.
+  const moved = new Map<number, { scope: TargetScope; next: Money.Money }>();
+  for (const m of months) {
+    const row = at('month', m.start);
+    if (!row || row.value.eq(m.value)) continue;
+    if (row.closedAt) throw closedError();
+    moved.set(row.id, { scope: 'month', next: m.value });
+  }
+  await assertCoversChildren(tx, tenantId, moved);
+
+  // Rows whose value, unit and parent did not change are left alone.
+  const upsert = async (scope: TargetScope, start: Date, end: Date, value: Money.Money, parentId: number | null) => {
+    const row = scope === 'north_star' ? northStar : at(scope, start);
+    if (!row) return tx.target.create({ data: { tenantId, scope, metric: op.metric, unit: op.unit, value, periodStart: start, periodEnd: end, parentId } });
+    if (row.value.eq(value) && row.unit === op.unit && row.parentId === parentId) return row;
+    return tx.target.update({ where: { id: row.id }, data: { value, unit: op.unit, parentId } });
+  };
+  const ns = await upsert('north_star', year.start, year.end, plan.annual, null);
+  const quarters: Target[] = [];
+  for (let qi = 0; qi < 4; qi++) {
+    const b = periodBounds('quarter', `${op.year}-Q${qi + 1}`);
+    quarters.push(await upsert('quarter', b.start, b.end, plan.quarters[qi].value, ns.id));
+  }
+  const saved: Target[] = [];
+  for (const m of months) saved.push(await upsert('month', m.start, m.end, m.value, quarters[m.qi].id));
+  return { northStar: ns, quarters, months: saved, extra: plan.extra };
+}
+
+/** Several saves and removals in one transaction: all happen or none. */
+async function saveMany(tx: Db, tenantId: string, op: Extract<WriteOp, { kind: 'saveMany' }>) {
+  const saved: Target[] = [];
+  for (const row of op.rows) saved.push(await saveRow(tx, tenantId, row));
+  for (const id of op.removeIds) await deleteRow(tx, tenantId, id);
+  return saved;
 }
 
 async function deleteRow(tx: Db, tenantId: string, id: number): Promise<void> {
@@ -292,7 +365,9 @@ async function releaseRows(tx: Db, tenantId: string, op: Extract<WriteOp, { kind
 async function writeTarget(tx: Db, tenantId: string, op: WriteOp) {
   switch (op.kind) {
     case 'save': return saveRow(tx, tenantId, op.row);
+    case 'saveMany': return saveMany(tx, tenantId, op);
     case 'set': return setRows(tx, tenantId, op);
+    case 'plan': return planRows(tx, tenantId, op);
     case 'delete': return deleteRow(tx, tenantId, op.id);
     case 'release': return releaseRows(tx, tenantId, op);
   }
@@ -306,8 +381,8 @@ const run = <T extends WriteOp>(op: T) => {
 
 // ---- Public writes --------------------------------------------------------------------------------------------------
 
-/** Save a North Star, role, person or daily target (create, or update the row for the same scope, metric, period and owner). */
-export async function saveTarget(input: TargetInput): Promise<Target> {
+/** The checked row of an input, or 400. A quarter or month is never a single row: it goes through its set. */
+function toRow(input: TargetInput): Row {
   const { scope } = input;
   if (scope === 'quarter' || scope === 'month') {
     throw new AppError(`A ${scope} target is saved with its quarter or year as a set: use setChildren on the ${PARENT[scope]!.replace('_', ' ')} target`, 400, 'SET_ONLY');
@@ -319,10 +394,17 @@ export async function saveTarget(input: TargetInput): Promise<Target> {
   if (scope === 'person' && !input.userId) throw new AppError('A person target needs a person', 400);
   if (scope === 'north_star' && (input.roleId || input.userId)) throw new AppError('A North Star target has no role or person', 400);
   const { start, end } = periodBounds(scope, input.period);
-  return run({
-    kind: 'save',
-    row: { scope, metric: input.metric, unit: input.unit, value, start, end, parentId: input.parentId, roleId: input.roleId, userId: input.userId },
-  }) as Promise<Target>;
+  return { scope, metric: input.metric, unit: input.unit, value, start, end, parentId: input.parentId, roleId: input.roleId, userId: input.userId, source: input.source };
+}
+
+/** Save a North Star, role, person or daily target (create, or update the row for the same scope, metric, period and owner). */
+export async function saveTarget(input: TargetInput): Promise<Target> {
+  return run({ kind: 'save', row: toRow(input) }) as Promise<Target>;
+}
+
+/** Save several targets and remove some others in one transaction (the driver targets). */
+export async function saveTargets(inputs: TargetInput[], removeIds: number[] = []): Promise<Target[]> {
+  return run({ kind: 'saveMany', rows: inputs.map(toRow), removeIds }) as Promise<Target[]>;
 }
 
 /**
@@ -343,6 +425,17 @@ export async function setChildren(parentId: number, children: ChildInput[]): Pro
   return run({ kind: 'set', parentId, children: planned }) as Promise<Target[]>;
 }
 
+/**
+ * Create or re-plan the tree of one year in one transaction (the North Star service builds the numbers). `build` is given the
+ * existing quarter and month rows and returns the new plan with any `extra` to hand back. `alongside` targets are saved first,
+ * in the same transaction.
+ */
+export async function replanYear<E>(
+  metric: string, unit: string, year: number, build: (existing: Target[]) => YearPlanResult<E>, alongside: TargetInput[] = [],
+) {
+  return run({ kind: 'plan', metric, unit, year, build, alongside: alongside.map(toRow) }) as Promise<{ northStar: Target; quarters: Target[]; months: Target[]; extra: E }>;
+}
+
 /** Delete a North Star, role, person or daily target that is not closed and has nothing under it. */
 export async function deleteTarget(id: number): Promise<void> {
   await run({ kind: 'delete', id });
@@ -354,16 +447,22 @@ export async function deleteTarget(id: number): Promise<void> {
 const liveHolderTargets = (roleId: number, month: { start: Date; end: Date }): Prisma.TargetWhereInput =>
   ({ scope: 'person', roleId, periodStart: month.start, periodEnd: { gte: month.end } });
 
-/** The role's target for a month, what its persons hold, and what is left (the pool). Null when the role has no target. */
-export async function rolePool(roleId: number, month: string, metric?: string) {
+/** The role's target for a month (read, or given), what its persons hold, and what is left (the pool). Null when the role has no target. */
+export async function rolePool(roleId: number, month: string, metric?: string, given?: Target) {
   const bounds = periodBounds('role', month);
-  const role = await prisma.target.findFirst({
+  const role = given ?? await prisma.target.findFirst({
     where: { scope: 'role', roleId, periodStart: bounds.start, ...(metric ? { metric } : {}) }, orderBy: { createdAt: 'asc' },
   });
   if (!role) return null;
   const persons = await prisma.target.aggregate({ where: { ...liveHolderTargets(roleId, bounds), metric: role.metric }, _sum: { value: true } });
   const allocated = Money.orZero(persons._sum.value);
   return { target: role, metric: role.metric, unit: role.unit, total: money(role.value), allocated: money(allocated), pool: money(Money.sub(role.value, allocated)) };
+}
+
+/** One role for a month: its pool and each holder's target. The screens and the pool route read this. */
+export async function roleView(roleId: number, month: string, target?: Target) {
+  const [pool, holders] = await Promise.all([rolePool(roleId, month, undefined, target), roleHolderTargets(roleId, month)]);
+  return { roleId, month, pool: pool && { metric: pool.metric, unit: pool.unit, total: pool.total, allocated: pool.allocated, pool: pool.pool }, holders };
 }
 
 /** Each current holder of a role with their target for the month, or "Set a target" when the owner has not set one. */
