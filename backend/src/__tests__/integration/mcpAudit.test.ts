@@ -6,6 +6,8 @@
  *     an error, and the audit row has status `denied`.
  * "stdio" runs the real StdioServerTransport on in-process streams (the same createMcpServer that server.ts connects).
  */
+import { registryToolsForGrid } from '../../config/roleToolRules';
+import { defaultRolePermissions } from '../../config/defaultRolePermissions';
 import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import '../mocks/logger.mock';
 import '../mocks/socketInstance.mock';
@@ -217,7 +219,8 @@ describe.each(TRANSPORTS)('Done when 1: one audit row per call over %s', (transp
 });
 
 describe.each(TRANSPORTS)('Done when 2: a key that may not use a tool, over %s', (transport, connect) => {
-  const CALL_REP_TOOLS = ['customers_lookup', 'orders_search', 'orders_summary', 'reps_status'];
+  // the registry tools whose cell the Call rep grid grants (F-1153)
+  const CALL_REP_TOOLS = registryToolsForGrid(defaultRolePermissions().sales_rep);
 
   it("role: the Call rep key lists only the role's tools, and another tool is denied", async () => {
     const { key, user, roleId } = await makeKey(`rolekey-${transport === 'stdio' ? 's' : 'h'}`, 'admin', 'Call rep');

@@ -1,6 +1,6 @@
 import prisma from '../utils/prisma';
 import { hasPermission } from '../middleware/auth';
-import { roleToolList } from '../config/defaultRoles';
+import { registryToolsOfRole } from '../config/roleToolRules';
 
 /**
  * M2-T04: the database lookups behind the tool access decision. They live here because tool files and the
@@ -19,11 +19,12 @@ export interface AccessFacts {
 export async function loadAccessFacts(actorId: number, roleId: number | null): Promise<AccessFacts> {
   const [user, role] = await Promise.all([
     prisma.user.findFirst({ where: { id: actorId }, select: { role: true } }),
-    roleId === null ? null : prisma.role.findFirst({ where: { id: roleId }, select: { tools: true } }),
+    roleId === null ? null : prisma.role.findFirst({ where: { id: roleId }, select: { tools: true, isSystem: true, permissions: true, presetRole: true } }),
   ]);
   return {
     baseRole: user?.role ?? null,
-    roleTools: roleId === null ? null : roleToolList(role?.tools),
+    // A role that is missing allows nothing; otherwise the registry tools whose cell the role's grid grants (F-1153).
+    roleTools: roleId === null ? null : role ? registryToolsOfRole(role) : [],
   };
 }
 

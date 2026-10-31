@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'crypto';
 import { PrismaClient, UserKind } from '@prisma/client';
 import type { AccessFacts } from '../services/toolAccessService';
-import { roleToolList } from '../config/defaultRoles';
+import { registryToolsOfRole } from '../config/roleToolRules';
 import { MCP_CONFIG } from './config';
 
 /**
@@ -72,7 +72,7 @@ export async function validateKey(apiKey: string): Promise<McpPrincipal> {
     where: { keyHash },
     include: {
       user: { select: { id: true, kind: true, isActive: true, tenantId: true, role: true } },
-      role: { select: { tools: true } },
+      role: { select: { tools: true, isSystem: true, permissions: true, presetRole: true } },
     },
   });
 
@@ -120,7 +120,7 @@ export async function validateKey(apiKey: string): Promise<McpPrincipal> {
     roleId: mcpKey.roleId,
     access: {
       baseRole: mcpKey.user.role,
-      roleTools: roleToolList(mcpKey.role.tools),
+      roleTools: registryToolsOfRole(mcpKey.role),
     },
   };
   if (authCache.size >= AUTH_CACHE_MAX) authCache.delete(authCache.keys().next().value!);

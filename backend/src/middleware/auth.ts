@@ -7,6 +7,7 @@ import logger from '../utils/logger';
 import { enterTenant, getTenantId, withoutTenant } from '../utils/tenantContext';
 import { isPlatformAdmin } from '../utils/platformAdmin';
 import { canSeeCost } from '../utils/costAccess';
+import { ROLE_NAME_BY_USER_ROLE } from '../config/defaultRoles';
 import { PermissionGrid, defaultRolePermissions, mergeRolePermissions, unionPermissions } from '../config/defaultRolePermissions';
 
 // Per-tenant cache for role permissions to avoid database hits on every request.
@@ -43,6 +44,24 @@ async function getPermissionsFromDatabase() {
   } catch (error) {
     logger.error('[auth.getPermissionsFromDatabase] Error fetching from database, using defaults:', error);
     permissions = defaultRolePermissions();
+  }
+
+  // M6-T04: the grid of the position role mapped from a UserRole is the one store; the saved matrix and the defaults only fill a role
+  // that has no grid yet. So a user with no role of their own (an AI agent, the system user) follows the same grid as the people with one.
+  try {
+    if (getTenantId()) {
+      const mapped = await prisma.role.findMany({
+        where: { presetRole: { not: null }, name: { in: Object.values(ROLE_NAME_BY_USER_ROLE) } },
+        select: { name: true, presetRole: true, permissions: true },
+      });
+      for (const r of mapped) {
+        if (r.presetRole && ROLE_NAME_BY_USER_ROLE[r.presetRole] === r.name && r.permissions && typeof r.permissions === 'object' && !Array.isArray(r.permissions)) {
+          permissions[r.presetRole] = r.permissions;
+        }
+      }
+    }
+  } catch (error) {
+    logger.error('[auth.getPermissionsFromDatabase] Error reading role grids, using the saved matrix:', error);
   }
 
   permissionsCache.set(tenantId, { data: permissions, timestamp: now });

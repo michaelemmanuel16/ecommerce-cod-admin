@@ -54,7 +54,7 @@ export const getRolePermissions = async (req: AuthRequest, res: Response, next: 
 
 export const updateRolePermissions = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const config = await adminService.updateRolePermissions(req.user!, req.body);
+    const saved = await adminService.updateRolePermissions(req.user!, req.body);
 
     // Clear permissions cache
     const { clearPermissionsCache } = await import('../middleware/auth');
@@ -70,7 +70,7 @@ export const updateRolePermissions = async (req: AuthRequest, res: Response, nex
       emitPermissionsUpdated(io, updatedRoles);
     }
 
-    res.json(config.rolePermissions);
+    res.json(saved);
   } catch (error) {
     next(error);
   }

@@ -9,7 +9,7 @@ import { runInTenant, runInTenantOf, withoutTenant } from '../utils/tenantContex
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt';
 import { AppError } from '../middleware/errorHandler';
 import navService from '../services/navService';
-import { adminService } from '../services/adminService';
+import { getUserPermissions } from '../middleware/auth';
 import { sendPasswordResetEmail } from '../services/emailService';
 import { SUBSCRIPTION_STATUS, SELF_SERVE_PLAN_NAMES } from '../config/billing';
 import { seedTenantDefaults } from '../services/tenantDefaultsService';
@@ -57,9 +57,8 @@ export const login = async (req: AuthRequest, res: Response, next: NextFunction)
         await prisma.user.update({ where: { id: user.id }, data: { refreshToken, lastLogin: new Date() } });
       }
 
-      // Get user permissions from system config
-      const allPermissions = await adminService.getRolePermissions(req.user as any) as Record<string, any>;
-      const userPermissions = allPermissions[user.role] || {};
+      // The union of the roles the user holds: the same function as GET /api/auth/me
+      const userPermissions = await getUserPermissions({ id: user.id, role: user.role });
 
       res.json({
         message: 'Login successful',

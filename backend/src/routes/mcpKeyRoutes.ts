@@ -6,7 +6,7 @@ import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { getTenantId } from '../utils/tenantContext';
 import { auditService } from '../services/auditService';
 import { buildMcpConfig, createKey, revokeKey } from '../services/mcpKeyService';
-import { roleToolList } from '../config/defaultRoles';
+import { registryToolsOfRole } from '../config/roleToolRules';
 import { AppError } from '../middleware/errorHandler';
 
 const router = Router();
@@ -47,7 +47,7 @@ router.get('/', async (_req: Request, res: Response) => {
         revokedAt: true,
         userId: true,
         roleId: true,
-        role: { select: { name: true, tools: true } },
+        role: { select: { name: true, tools: true, isSystem: true, permissions: true, presetRole: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -56,7 +56,7 @@ router.get('/', async (_req: Request, res: Response) => {
       keys: keys.map(({ role, ...key }) => ({
         ...key,
         roleName: role?.name ?? null,
-        toolCount: roleToolList(role?.tools).length,
+        toolCount: role ? registryToolsOfRole(role).length : 0,
       })),
     });
   } catch (error) {

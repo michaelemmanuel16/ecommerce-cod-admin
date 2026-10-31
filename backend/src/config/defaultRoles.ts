@@ -1,5 +1,6 @@
 import { UserRole } from '@prisma/client';
 import { ALL_TOOL_NAMES, ToolName } from './toolPermissions';
+import { switchesOn } from './roleToolRules';
 import { PermissionGrid, mergeRolePermissions } from './defaultRolePermissions';
 
 /** M2-T02: the roles every tenant starts with. M6 extends the shape (F-1150). */
@@ -7,7 +8,8 @@ export interface DefaultRole {
   name: string;
   area: string;
   contract: { purpose: string };
-  tools: ToolName[];
+  /** Only the system role keeps a fixed list (registry tool names). Every other role's switches come from its grid. */
+  tools?: ToolName[];
   isSystem: boolean;
   /** M6 (F-1155): the UserRole this role is the position role of (its base preset); none on a role that maps to no UserRole. */
   presetRole?: UserRole;
@@ -27,39 +29,33 @@ const ADDED_AFTER_LEGACY: readonly ToolName[] = ['partner_payout_record'];
 
 export const DEFAULT_ROLES: DefaultRole[] = [
   {
-    name: 'Owner', presetRole: 'super_admin', area: 'Management', isSystem: false, tools: [...ALL_TOOL_NAMES],
+    name: 'Owner', presetRole: 'super_admin', area: 'Management', isSystem: false,
     contract: { purpose: 'Runs the business and sees everything.' },
   },
   {
     name: 'Call rep', presetRole: 'sales_rep', area: 'Sales', isSystem: false,
-    tools: ['customers_lookup', 'orders_search', 'orders_summary', 'reps_status'],
     contract: { purpose: 'Calls new customers and confirms their orders.' },
   },
   {
     name: 'Delivery', presetRole: 'delivery_agent', area: 'Delivery', isSystem: false,
-    tools: ['deliveries_active', 'orders_search', 'agents_status'],
     contract: { purpose: 'Delivers orders and collects the cash.' },
   },
   {
     name: 'Finance clerk', presetRole: 'accountant', area: 'Finance', isSystem: false,
-    tools: ['financial_summary', 'orders_summary', 'analytics_daily', 'analytics_weekly', 'analytics_monthly'],
     contract: { purpose: 'Keeps the books and checks cash from deliveries.' },
   },
   {
     // No UserRole value: its holders keep base role `manager` (PRD F-1155).
     name: 'Marketing', presetRole: 'manager', area: 'Marketing', isSystem: false,
     permissions: { orders: ['view'], customers: ['view'], analytics: ['view', 'export'], marketing: ['view', 'update'] },
-    tools: ['analytics_daily', 'analytics_weekly', 'analytics_monthly', 'orders_summary', 'customers_lookup'],
     contract: { purpose: 'Runs ads and reads what they bring in.' },
   },
   {
     name: 'Stock keeper', presetRole: 'inventory_manager', area: 'Stock', isSystem: false,
-    tools: ['products_inventory', 'orders_search'],
     contract: { purpose: 'Counts stock and prepares orders for dispatch.' },
   },
-  // No tools until M6-T04 adds the 16 tool switches.
-  { name: 'Admin', presetRole: 'admin', area: 'Management', isSystem: false, tools: [], contract: { purpose: 'Runs the daily work of the business.' } },
-  { name: 'Manager', presetRole: 'manager', area: 'Management', isSystem: false, tools: [], contract: { purpose: 'Leads the team and reads the numbers.' } },
+  { name: 'Admin', presetRole: 'admin', area: 'Management', isSystem: false, contract: { purpose: 'Runs the daily work of the business.' } },
+  { name: 'Manager', presetRole: 'manager', area: 'Management', isSystem: false, contract: { purpose: 'Leads the team and reads the numbers.' } },
   {
     name: LEGACY_MCP_ROLE_NAME, area: 'Integrations', isSystem: true, tools: ALL_TOOL_NAMES.filter((t) => !ADDED_AFTER_LEGACY.includes(t)),
     contract: { purpose: 'Old MCP keys keep working with all 14 tools until the owner tightens them.' },
@@ -80,5 +76,9 @@ export const isOwnerRole = (role: { presetRole: UserRole | null }): boolean => r
  */
 export function defaultRoleRows(stored: unknown) {
   const grids = mergeRolePermissions(stored);
-  return DEFAULT_ROLES.map((r) => ({ ...r, kpis: [], permissions: r.permissions ?? (r.presetRole ? grids[r.presetRole] : undefined) }));
+  return DEFAULT_ROLES.map((r) => {
+    const permissions = r.permissions ?? (r.presetRole ? grids[r.presetRole] : undefined);
+    // The switches that are on follow the grid (M6-T04); the system role keeps its list of registry tool names.
+    return { ...r, kpis: [], permissions, tools: r.tools ?? switchesOn(permissions ?? {}) };
+  });
 }

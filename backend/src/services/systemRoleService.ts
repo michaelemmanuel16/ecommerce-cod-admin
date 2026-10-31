@@ -3,7 +3,7 @@ import prisma, { TransactionClient } from '../utils/prisma';
 import { withSoftDeleted } from '../utils/prismaExtensions';
 import { startOfUtcDay } from '../utils/startOfUtcDay';
 import logger from '../utils/logger';
-import { mergeRolePermissions, unionPermissions } from '../config/defaultRolePermissions';
+import { unionPermissions } from '../config/defaultRolePermissions';
 import { ROLE_NAME_BY_USER_ROLE, defaultRoleRows } from '../config/defaultRoles';
 
 type Db = Pick<TransactionClient, 'role' | 'roleAssignment' | 'systemConfig' | 'user'>;
@@ -82,17 +82,6 @@ export async function assignUsersToPositionRoles(tenantId: string, db: Db = pris
 }
 
 export { unionPermissions };
-
-/**
- * The Settings matrix (SystemConfig.rolePermissions) is saved: copy each UserRole's grid to the position role mapped from it,
- * so the people who hold that role (whose access is the union of role grids since M6-T04) get the change. Call inside the
- * tenant context. Roles the owner made, and Marketing, are not touched.
- */
-export async function syncMappedRoleGrids(stored: unknown, db: Pick<TransactionClient, 'role'> = prisma): Promise<void> {
-  const grids = mergeRolePermissions(stored);
-  await Promise.all((Object.keys(ROLE_NAME_BY_USER_ROLE) as UserRole[]).map((userRole) =>
-    db.role.updateMany({ where: { name: ROLE_NAME_BY_USER_ROLE[userRole], presetRole: userRole }, data: { permissions: grids[userRole] } })));
-}
 
 /**
  * The id of the position role mapped from a UserRole (F-1155), or null when the tenant has not seeded its roles yet (a warning

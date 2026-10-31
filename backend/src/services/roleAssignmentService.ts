@@ -10,6 +10,7 @@ import { AppError } from '../middleware/errorHandler';
 import { isOwnerRole } from '../config/defaultRoles';
 import { adminService } from './adminService';
 import { createKeyIn, evictKeys, revokeKeysIn } from './mcpKeyService';
+import { assertGridWithin } from './rolePermissionService';
 import { assertMayTouchRole, assignmentSelect, findRole, holderSelect, holderStatus, holderView } from './roleService';
 import type { AssignInput } from '../validators/roleSchema';
 
@@ -51,6 +52,8 @@ export async function assignToRole(actor: Requester, roleId: number, input: Assi
   const role = await findRole(roleId);
   const base = baseRoleOf(role);
   const fromDate = startOfUtcDay();
+  // A person below the Owner may not give a role above their own access, or give one to themselves (union of roles, T04).
+  await assertGridWithin(actor, role, input.type === 'existing' ? input.holderId : input.type === 'ai_agent' ? input.userId : undefined);
 
   if (input.type === 'ai_agent') {
     if (!isOwner(actor)) throw new AppError('Only the Owner can connect an AI agent', 403);

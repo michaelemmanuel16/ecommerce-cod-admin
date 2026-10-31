@@ -20,7 +20,10 @@ import {
 } from '../utils/providerCrypto';
 import { getTenantId, resolveTenantId, withoutTenant } from '../utils/tenantContext';
 import { HUMAN_USERS_WHERE, SYSTEM_USER_PASSWORD } from './systemUserService';
-import { positionRoleId, syncMappedRoleGrids } from './systemRoleService';
+import { positionRoleId } from './systemRoleService';
+import { saveGrid } from './rolePermissionService';
+import { clearPermissionsCache, getEffectivePermissions } from '../middleware/auth';
+import { ROLE_NAME_BY_USER_ROLE } from '../config/defaultRoles';
 import { assignmentSelect } from './roleService';
 import { isUniqueViolation } from '../utils/prismaErrors';
 import { startOfUtcDay } from '../utils/startOfUtcDay';
@@ -339,29 +342,33 @@ export const adminService = {
     return updatedConfig;
   },
 
-  // Role Permissions
+  // Role Permissions (the Settings matrix). Since M6-T04 it is a thin layer on the grid of the position role mapped from each
+  // UserRole (Owner, Admin, Manager, Call rep, ...): `Role.permissions` is the one store, nothing is copied.
   async getRolePermissions(_requester?: Requester) {
     // Permissions are needed for login/register response, so we allow read access
     // Note: Update requires strict admin privilege
-    const config = await this.getSystemConfig();
-    return config.rolePermissions || this.getDefaultPermissions();
+    const roles = Object.keys(ROLE_NAME_BY_USER_ROLE) as UserRole[];
+    const grids = await Promise.all(roles.map((r) => getEffectivePermissions(r)));
+    return Object.fromEntries(roles.map((r, i) => [r, grids[i]])) as Record<UserRole, Record<string, string[]>>;
   },
 
   async updateRolePermissions(requester: Requester, permissions: any) {
     await this.checkAdminPrivilege(requester, 'super_admin');
+    if (!permissions || typeof permissions !== 'object' || Array.isArray(permissions)) throw new AppError('Permissions must be an object of roles', 400);
+    for (const [userRole, grid] of Object.entries(permissions) as Array<[UserRole, Record<string, string[]>]>) {
+      const name = ROLE_NAME_BY_USER_ROLE[userRole];
+      if (!name) throw new AppError(`Unknown role: ${userRole}`, 400);
+      // The Owner always passes every check and its grid is locked.
+      if (userRole === 'super_admin') continue;
+      const role = await prisma.role.findFirst({ where: { name, presetRole: userRole }, select: { id: true } });
+      if (!role) throw new AppError(`The ${name} role is missing; seed the tenant roles first`, 409);
+      // A saved list replaces the old list for that resource; resources left out keep theirs.
+      await saveGrid(role.id, await getEffectivePermissions(userRole), { ...(await getEffectivePermissions(userRole)), ...grid });
+    }
+    clearPermissionsCache();
     const config = await this.getSystemConfig();
-
-    const result = await prisma.systemConfig.update({
-      where: { id: config.id },
-      data: { rolePermissions: permissions },
-    });
-
-    // Holders of a position role get the new matrix through their role (M6-T04).
-    await syncMappedRoleGrids(permissions);
-
     await this.createAuditLog(requester, 'update', 'role_permissions', config.id.toString(), { permissions });
-
-    return result;
+    return this.getRolePermissions(requester);
   },
 
   getDefaultPermissions() {

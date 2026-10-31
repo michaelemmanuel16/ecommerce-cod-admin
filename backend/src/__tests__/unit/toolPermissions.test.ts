@@ -18,8 +18,10 @@ describe('TOOL_PERMISSIONS', () => {
     expect(DEFAULT_ROLES.map((r) => r.name)).toEqual([
       'Owner', 'Call rep', 'Delivery', 'Finance clerk', 'Marketing', 'Stock keeper', 'Admin', 'Manager', LEGACY_MCP_ROLE_NAME,
     ]);
+    // Only the system role keeps a list of registry tool names; the others' switches come from their grid (M6-T04)
     for (const role of DEFAULT_ROLES) {
-      for (const tool of role.tools) expect(TOOL_PERMISSIONS).toHaveProperty(tool);
+      if (role.isSystem) for (const tool of role.tools ?? []) expect(TOOL_PERMISSIONS).toHaveProperty(tool);
+      else expect(role.tools).toBeUndefined();
     }
     const legacy = DEFAULT_ROLES.find((r) => r.name === LEGACY_MCP_ROLE_NAME)!;
     expect(legacy.isSystem).toBe(true);

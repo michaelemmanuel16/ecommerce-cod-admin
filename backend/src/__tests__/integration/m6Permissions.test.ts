@@ -41,6 +41,8 @@ const newRole = async (token: string, extra: object = {}) => {
   return res.body.role as { id: number; name: string };
 };
 const setGrid = (token: string, roleId: number, permissions: object) => api.put(token, `/api/roles/${roleId}/permissions`, { permissions });
+/** POST /api/roles/:id/assign with a body. */
+const assign = (token: string, roleId: number, body: object) => api.post(token, `/api/roles/${roleId}/assign`, body);
 const assignExisting = (token: string, roleId: number, holderId: number) => api.post(token, `/api/roles/${roleId}/assign`, { type: 'existing', holderId });
 const meOf = async (token: string) => (await api.get(token, '/api/auth/me')).body.permissions as Record<string, string[]>;
 
@@ -62,33 +64,44 @@ afterAll(async () => {
 beforeEach(() => { clearAuthCache(); clearPermissionsCache(); });
 
 describe('PUT /api/roles/:id/tools', () => {
-  it('rejects a write tool without its read tool and names the read tool', async () => {
+  it('rejects a write switch without its read switch and names the read switch', async () => {
     const role = await newRole(ownerA);
-    const res = await api.put(ownerA, `/api/roles/${role.id}/tools`, { tools: ['orders_update_status'] });
+    const res = await api.put(ownerA, `/api/roles/${role.id}/tools`, { tools: ['update_order_status'] });
     expect(res.status).toBe(400);
     expect(message(res)).toBe('Needs View orders');
     expect((await prismaBase.role.findUniqueOrThrow({ where: { id: role.id } })).tools).toEqual([]);
   });
 
-  it('saves a valid set, replaces the old one, and writes an audit row with before and after', async () => {
+  it('turning switches on writes their cells into the grid, in one save, with an audit row', async () => {
     const role = await newRole(ownerA);
-    const ok = await api.put(ownerA, `/api/roles/${role.id}/tools`, { tools: ['orders_search', 'orders_update_status', 'orders_search'] });
+    const ok = await api.put(ownerA, `/api/roles/${role.id}/tools`, { tools: ['view_orders', 'update_order_status', 'view_orders'] });
     expect(ok.status).toBe(200);
-    expect(ok.body.role.tools).toEqual(['orders_search', 'orders_update_status']);
-    expect(ok.body.role.toolCount).toBe(2);
-    expect((await api.get(ownerA, `/api/roles/${role.id}`)).body.role.tools).toEqual(['orders_search', 'orders_update_status']);
-    const next = await api.put(ownerA, `/api/roles/${role.id}/tools`, { tools: ['customers_lookup'] });
-    expect(next.body.role.tools).toEqual(['customers_lookup']);
+    expect(ok.body.role).toMatchObject({ tools: ['view_orders', 'update_order_status'], toolCount: 2, toolTotal: 16, custom: false });
+    const row = await prismaBase.role.findUniqueOrThrow({ where: { id: role.id } });
+    expect(row.tools).toEqual(['view_orders', 'update_order_status']);
+    expect(row.permissions).toMatchObject({ orders: expect.arrayContaining(['view', 'update', 'update_status']) });
+    const grid = (await api.get(ownerA, `/api/roles/${role.id}/permissions`)).body.permissions;
+    expect(grid.orders.sort()).toEqual(['update', 'update_status', 'view']);
     const audit = await prismaBase.auditLog.findFirstOrThrow({ where: { tenantId: pair.a.id, action: 'role_tools_update', resourceId: String(role.id) }, orderBy: { id: 'desc' } });
-    expect(audit.metadata).toMatchObject({ before: ['orders_search', 'orders_update_status'], after: ['customers_lookup'] });
+    expect(audit.metadata).toMatchObject({ before: [], after: ['view_orders', 'update_order_status'] });
   });
 
-  it('refuses an unknown tool and a body that is not a tool list', async () => {
+  it('turning a switch off removes its cells but keeps a cell another switch that stays on needs', async () => {
     const role = await newRole(ownerA);
-    const unknown = await api.put(ownerA, `/api/roles/${role.id}/tools`, { tools: ['orders_search', 'make_coffee'] });
+    await api.put(ownerA, `/api/roles/${role.id}/tools`, { tools: ['view_stock', 'edit_products', 'adjust_stock'] });
+    const off = await api.put(ownerA, `/api/roles/${role.id}/tools`, { tools: ['view_stock', 'adjust_stock'] });
+    expect(off.body.role.tools).toEqual(['view_stock', 'adjust_stock']);
+    const grid = (await api.get(ownerA, `/api/roles/${role.id}/permissions`)).body.permissions;
+    expect(grid.products.sort()).toEqual(['update_stock', 'view']);
+  });
+
+  it('refuses an unknown switch, an old registry tool name, and a body that is not a list', async () => {
+    const role = await newRole(ownerA);
+    const unknown = await api.put(ownerA, `/api/roles/${role.id}/tools`, { tools: ['view_orders', 'make_coffee'] });
     expect(unknown.status).toBe(400);
     expect(message(unknown)).toContain('make_coffee');
-    expect((await api.put(ownerA, `/api/roles/${role.id}/tools`, { tools: 'orders_search' })).status).toBe(400);
+    expect((await api.put(ownerA, `/api/roles/${role.id}/tools`, { tools: ['orders_search'] })).status).toBe(400);
+    expect((await api.put(ownerA, `/api/roles/${role.id}/tools`, { tools: 'view_orders' })).status).toBe(400);
   });
 
   it('locks the Owner switches and system roles; only the Owner may call; another tenant sees 404', async () => {
@@ -102,6 +115,15 @@ describe('PUT /api/roles/:id/tools', () => {
     expect((await api.put(pair.a.users.admin.token, `/api/roles/${role.id}/tools`, { tools: [] })).status).toBe(403);
     expect((await api.put(ownerB, `/api/roles/${role.id}/tools`, { tools: [] })).status).toBe(404);
   });
+
+  it('seeded roles read their switches from the grid: Owner has 16 of 16, Stock keeper has the stock switches', async () => {
+    const cards = (await api.get(ownerA, '/api/roles/overview')).body.roles as any[];
+    const owner = cards.find((c) => c.name === 'Owner');
+    expect(owner).toMatchObject({ toolCount: 16, toolTotal: 16, custom: false });
+    const stock = cards.find((c) => c.name === 'Stock keeper');
+    expect(stock.tools).toEqual(expect.arrayContaining(['view_stock', 'edit_products', 'adjust_stock']));
+    expect(stock.custom).toBe(false);
+  });
 });
 
 describe('the permission matrix', () => {
@@ -110,6 +132,7 @@ describe('the permission matrix', () => {
     const res = await api.get(ownerA, `/api/roles/${callRep.id}/permissions`);
     expect(res.status).toBe(200);
     expect(res.body.permissions.orders).toEqual(expect.arrayContaining(['create', 'view', 'update']));
+    expect(res.body.permissions.targets).toEqual(['view']);
     expect(res.body.catalog.orders).toContain('bulk_import');
   });
 
@@ -118,9 +141,28 @@ describe('the permission matrix', () => {
     const grid = { orders: ['view', 'assign'], targets: ['view'] };
     const res = await setGrid(ownerA, role.id, grid);
     expect(res.status).toBe(200);
-    expect((await api.get(ownerA, `/api/roles/${role.id}/permissions`)).body).toMatchObject({ permissions: grid, custom: true });
+    expect((await api.get(ownerA, `/api/roles/${role.id}/permissions`)).body).toMatchObject({ permissions: grid, saved: true });
     const audit = await prismaBase.auditLog.findFirstOrThrow({ where: { tenantId: pair.a.id, action: 'role_permissions_update', resourceId: String(role.id) } });
     expect(audit.metadata).toMatchObject({ before: {}, after: grid });
+  });
+
+  it('saving the grid recomputes the switches; a grid that no preset gives reads Custom', async () => {
+    const role = await newRole(ownerA);
+    const res = await setGrid(ownerA, role.id, { orders: ['view', 'update', 'update_status'], customers: ['view'], gl: ['view'] });
+    expect(res.status).toBe(200);
+    const card = (await api.get(ownerA, `/api/roles/${role.id}`)).body.role;
+    expect(card.tools.sort()).toEqual(['update_order_status', 'view_customers', 'view_orders']);
+    expect(card.custom).toBe(true); // gl:view belongs to no switch
+    const clean = await setGrid(ownerA, role.id, { orders: ['view'] });
+    expect(clean.status).toBe(200);
+    expect((await api.get(ownerA, `/api/roles/${role.id}`)).body.role).toMatchObject({ tools: ['view_orders'], custom: false });
+    const callRep = await roleOf(pair.a.id, 'Call rep');
+    expect((await api.get(ownerA, `/api/roles/${callRep.id}`)).body.role.custom).toBe(false);
+    const preset = (await api.get(ownerA, `/api/roles/${callRep.id}/permissions`)).body.permissions;
+    expect((await setGrid(ownerA, callRep.id, { ...preset, gl: ['view'] })).status).toBe(200);
+    expect((await api.get(ownerA, `/api/roles/${callRep.id}`)).body.role.custom).toBe(true);
+    await setGrid(ownerA, callRep.id, preset);
+    expect((await api.get(ownerA, `/api/roles/${callRep.id}`)).body.role.custom).toBe(false);
   });
 
   it('refuses an unknown resource or action, the Owner role, and a caller who is not the Owner', async () => {
@@ -189,6 +231,101 @@ describe('effective permission is the union of the roles a person holds', () => 
     const person = await mkUser(pair.a.id, 'no-grid', 'inventory_manager');
     await prismaBase.roleAssignment.create({ data: { tenantId: pair.a.id, roleId: role.id, holderId: person.id, fromDate: startOfUtcDay() } });
     expect((await meOf(person.token)).products).toEqual(expect.arrayContaining(['create', 'view', 'update_stock']));
+  });
+});
+
+describe('MCP keys call only tools whose cell the role grants (F-1153)', () => {
+  const toolsList = async (key: string) => {
+    clearAuthCache();
+    const res = await request(app).post('/mcp').set('Authorization', `Bearer ${key}`).set('Content-Type', 'application/json')
+      .send({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+    expect(res.status).toBe(200);
+    return (res.body.result.tools as Array<{ name: string }>).map((t) => t.name);
+  };
+
+  it('the key sees the tools of the role grid, and a switch change reaches it at once', async () => {
+    const role = await newRole(ownerA);
+    await api.put(ownerA, `/api/roles/${role.id}/tools`, { tools: ['view_orders'] });
+    const created = await api.post(ownerA, '/api/mcp-keys', { label: uniq('grid key'), roleId: role.id });
+    expect(created.status).toBe(201);
+    try {
+      expect(created.body.toolCount).toBe(3);
+      const before = await toolsList(created.body.key);
+      expect(before).toEqual(expect.arrayContaining(['orders_search']));
+      expect(before).not.toContain('customers_lookup');
+      expect(before).not.toContain('orders_update_status');
+      expect((await api.put(ownerA, `/api/roles/${role.id}/tools`, { tools: ['view_orders', 'update_order_status', 'view_customers'] })).status).toBe(200);
+      const after = await toolsList(created.body.key);
+      expect(after).toEqual(expect.arrayContaining(['orders_search', 'customers_lookup', 'orders_update_status']));
+      expect(after).not.toContain('financial_summary');
+    } finally {
+      await api.del(ownerA, `/api/mcp-keys/${created.body.id}`);
+    }
+  });
+});
+
+describe('the Settings matrix is a thin layer on the mapped role', () => {
+  it('reads and writes the grid of the seeded role, with no second store', async () => {
+    const callRep = await roleOf(pair.a.id, 'Call rep');
+    const original = (await api.get(ownerA, '/api/admin/permissions')).body;
+    expect(original.sales_rep.orders).toEqual(expect.arrayContaining(['create', 'view', 'update']));
+    const saved = await api.put(ownerA, '/api/admin/permissions', { sales_rep: { orders: ['view'] } });
+    expect(saved.status).toBe(200);
+    expect(saved.body.sales_rep.orders).toEqual(['view']);
+    expect(saved.body.sales_rep.customers).toEqual(original.sales_rep.customers); // not named: kept
+    expect((await api.get(ownerA, `/api/roles/${callRep.id}/permissions`)).body.permissions.orders).toEqual(['view']);
+    expect((await prismaBase.systemConfig.findFirst({ where: { tenantId: pair.a.id } }))?.rolePermissions ?? null).toBeNull();
+    // a rep with the Call rep role feels it at once
+    expect((await meOf(pair.a.users.salesRep.token)).orders).toEqual(['view']);
+    await api.put(ownerA, '/api/admin/permissions', { sales_rep: { orders: original.sales_rep.orders } });
+  });
+});
+
+describe('login returns the union, like /api/auth/me', () => {
+  it('a person with two roles gets both sets at sign-in', async () => {
+    const bcrypt = await import('bcrypt');
+    const email = `${uniq('login')}@codadmin.test`;
+    const user = await prismaBase.user.create({
+      data: { email, password: await bcrypt.hash('Passw0rd!test', 4), firstName: 'Log', lastName: 'In', role: 'manager', tenantId: pair.a.id },
+    });
+    const one = await newRole(ownerA);
+    const two = await newRole(ownerA);
+    await setGrid(ownerA, one.id, { orders: ['view'] });
+    await setGrid(ownerA, two.id, { gl: ['view'] });
+    await assignExisting(ownerA, one.id, user.id);
+    await assignExisting(ownerA, two.id, user.id);
+    const res = await request(app).post('/api/auth/login').send({ email, password: 'Passw0rd!test' });
+    expect(res.status).toBe(200);
+    expect(res.body.permissions).toMatchObject({ orders: ['view'], gl: ['view'] });
+    expect(res.body.permissions).toEqual(await meOf(res.body.tokens.accessToken));
+  });
+});
+
+describe('giving a role stays within your own access', () => {
+  it('an admin cannot give a role with cells they lack (to anyone), the Owner can', async () => {
+    const adminToken = pair.a.users.admin.token;
+    const above = await newRole(ownerA);
+    await setGrid(ownerA, above.id, { orders: ['view'], financial: ['update'] }); // the Admin role has no financial:update
+    const target = await mkUser(pair.a.id, 'above-target', 'sales_rep');
+    const denied = await assignExisting(adminToken, above.id, target.id);
+    expect(denied.status).toBe(403);
+    expect(denied.body.code).toBe('GRID_ABOVE_ACTOR');
+    expect((await assign(adminToken, above.id, { type: 'person', name: 'New Above', email: `${uniq('above')}@codadmin.test` })).status).toBe(403);
+    expect(await prismaBase.roleAssignment.count({ where: { roleId: above.id } })).toBe(0);
+    expect((await assignExisting(ownerA, above.id, target.id)).status).toBe(201);
+  });
+
+  it('an admin may give a role within their access to a rep, but not to themselves', async () => {
+    const adminToken = pair.a.users.admin.token;
+    const callRep = await roleOf(pair.a.id, 'Call rep');
+    const rep = await mkUser(pair.a.id, 'within-target', 'sales_rep');
+    expect((await assignExisting(adminToken, callRep.id, rep.id)).status).toBe(201);
+    const self = await assignExisting(adminToken, callRep.id, pair.a.users.admin.id);
+    expect(self.status).toBe(403);
+    expect(self.body.code).toBe('SELF_ASSIGN');
+    // the Owner may give a role to themselves
+    const ownerUser = await prismaBase.user.findFirstOrThrow({ where: { tenantId: pair.a.id, email: { startsWith: 'owner-' } } });
+    expect((await assignExisting(ownerA, callRep.id, ownerUser.id)).status).toBe(201);
   });
 });
 

@@ -6,8 +6,9 @@ import { fullName } from '../utils/nameUtils';
 import { Requester, isOwner } from '../utils/authUtils';
 import { startOfUtcDay } from '../utils/startOfUtcDay';
 import { AppError } from '../middleware/errorHandler';
-import { ALL_TOOL_NAMES } from '../config/toolPermissions';
-import { DEFAULT_ROLES, isOwnerRole, roleToolList } from '../config/defaultRoles';
+import { ROLE_TOOL_TOTAL, gridOfRole, sameGrid, gridFromSwitches, switchesOn } from '../config/roleToolRules';
+import { defaultRolePermissions } from '../config/defaultRolePermissions';
+import { DEFAULT_ROLES, ROLE_NAME_BY_USER_ROLE, isOwnerRole, roleToolList } from '../config/defaultRoles';
 import type { CreateRoleInput, UpdateRoleInput } from '../validators/roleSchema';
 
 /** M6-T03 (F-1150, F-1151, F-1156): roles of the current tenant. Call inside the tenant context (the request has it). */
@@ -47,15 +48,34 @@ export const holderView = (u: HolderRow) => ({
 export const assignmentSelect = { id: true, roleId: true, holderId: true, fromDate: true, toDate: true } satisfies Prisma.RoleAssignmentSelect;
 
 const roleSelect = {
-  id: true, name: true, area: true, contract: true, kpis: true, targetMetric: true, presetRole: true, isSystem: true, tools: true,
+  id: true, name: true, area: true, contract: true, kpis: true, targetMetric: true, presetRole: true, isSystem: true, tools: true, permissions: true,
 } satisfies Prisma.RoleSelect;
 
 type RoleRow = Prisma.RoleGetPayload<{ select: typeof roleSelect }>;
 
-/** `toolCount` and `holderCount` keep the fields the Settings screen already reads. The plain list leaves the tool names out. */
-const roleView = ({ tools, ...role }: RoleRow, holderCount: number, withTools = true) => {
-  const list = roleToolList(tools);
-  return { ...role, ...(withTools && { tools: list }), toolCount: list.length, toolTotal: ALL_TOOL_NAMES.length, holderCount };
+/**
+ * A role is "Custom" (M6-T04, F-1154) when its grid is neither the preset it was seeded with nor what its tool switches give on
+ * their own, i.e. someone edited single cells.
+ */
+function isCustomGrid(role: { name: string; presetRole: UserRole | null }, grid: Record<string, string[]>): boolean {
+  if (sameGrid(grid, gridFromSwitches(switchesOn(grid)))) return false;
+  const seeded = DEFAULT_ROLES.find((r) => r.name === role.name);
+  const preset = seeded?.permissions ?? (role.presetRole && ROLE_NAME_BY_USER_ROLE[role.presetRole] === role.name ? defaultRolePermissions()[role.presetRole] : undefined);
+  return !preset || !sameGrid(grid, preset);
+}
+
+/**
+ * `tools` are the switches that are on: read from the grid (the one store), so a role seeded before the 16 switches reads right.
+ * The system role keeps its list of registry tool names. `toolCount` and `holderCount` keep the fields the Settings screen already
+ * reads. The plain list leaves the tool names out.
+ */
+const roleView = ({ tools, permissions, ...role }: RoleRow, holderCount: number, withTools = true) => {
+  const grid = gridOfRole({ permissions, presetRole: role.presetRole });
+  const list = role.isSystem ? roleToolList(tools) : switchesOn(grid);
+  return {
+    ...role, ...(withTools && { tools: list }), toolCount: list.length, toolTotal: ROLE_TOOL_TOTAL, holderCount,
+    custom: !role.isSystem && isCustomGrid(role, grid),
+  };
 };
 
 /** A role of the current tenant, or 404. */
@@ -146,15 +166,17 @@ export async function createRole(tenantId: string, input: CreateRoleInput) {
     nameTaken(input.name),
     input.copyToolsFromRoleId === undefined
       ? null
-      : prisma.role.findFirst({ where: { id: input.copyToolsFromRoleId }, select: { tools: true } }),
+      : prisma.role.findFirst({ where: { id: input.copyToolsFromRoleId }, select: { permissions: true, presetRole: true, isSystem: true } }),
   ]);
   if (taken) throw new AppError(NAME_TAKEN, 409);
   if (input.copyToolsFromRoleId !== undefined && !source) throw new AppError('Role to copy from was not found', 400);
+  // The new role gets the grid of the role it copies (a system role has none), else an empty one: it never falls back to a base-role matrix.
+  const grid = source && !source.isSystem ? gridOfRole(source) : {};
   try {
     const role = await prisma.role.create({
       data: {
         tenantId, name: input.name, area: input.area ?? null, contract: input.contract ?? {}, kpis: input.kpis ?? [],
-        targetMetric: input.targetMetric ?? null, presetRole: input.presetRole ?? null, tools: roleToolList(source?.tools), isSystem: false,
+        targetMetric: input.targetMetric ?? null, presetRole: input.presetRole ?? null, permissions: grid, tools: switchesOn(grid), isSystem: false,
       },
       select: roleSelect,
     });

@@ -12,12 +12,12 @@ export function defaultRolePermissions() {
   return {
     super_admin: {
       users: ['create', 'view', 'update', 'delete'],
-      orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign', 'force_status'],
+      orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign', 'force_status', 'update_status'],
       customers: ['create', 'view', 'update', 'delete', 'export'],
       products: ['create', 'view', 'update', 'delete', 'update_stock'],
       financial: ['view', 'create', 'update', 'delete'],
       analytics: ['view', 'export'],
-      marketing: ['view'],
+      marketing: ['view', 'update'],
       workflows: ['create', 'view', 'update', 'delete', 'execute'],
       settings: ['view', 'update'],
       calls: ['create', 'view', 'update', 'delete'],
@@ -26,6 +26,8 @@ export function defaultRolePermissions() {
       journal: ['post', 'void'],
       expenses: ['view_all', 'edit', 'delete'],
       audit: ['view'],
+      targets: ['view', 'update'],
+      messages: ['view', 'create'],
     },
     admin: {
       users: ['create', 'view', 'update', 'delete'],
@@ -34,7 +36,7 @@ export function defaultRolePermissions() {
       products: ['create', 'view', 'update', 'delete', 'update_stock'],
       financial: ['view', 'create'],
       analytics: ['view', 'export'],
-      marketing: ['view'],
+      marketing: ['view', 'update'],
       workflows: ['create', 'view', 'update', 'delete', 'execute'],
       settings: ['view'],
       calls: ['create', 'view', 'update', 'delete'],
@@ -42,6 +44,8 @@ export function defaultRolePermissions() {
       payouts: ['view', 'create'],
       expenses: ['view_all', 'edit', 'delete'],
       audit: ['view'],
+      targets: ['view', 'update'],
+      messages: ['view', 'create'],
     },
     manager: {
       users: [],
@@ -57,6 +61,8 @@ export function defaultRolePermissions() {
       gl: ['view'],
       payouts: ['view', 'create'],
       expenses: ['view_all'],
+      targets: ['view'],
+      messages: ['view'],
     },
     sales_rep: {
       users: [],
@@ -71,6 +77,8 @@ export function defaultRolePermissions() {
       calls: ['create', 'view'],
       gl: [],
       payouts: [],
+      targets: ['view'],
+      messages: ['view', 'create'],
     },
     inventory_manager: {
       users: [],
@@ -85,6 +93,8 @@ export function defaultRolePermissions() {
       calls: [],
       gl: [],
       payouts: [],
+      targets: ['view'],
+      messages: ['view'],
     },
     delivery_agent: {
       users: [],
@@ -99,6 +109,8 @@ export function defaultRolePermissions() {
       calls: ['view'],
       gl: [],
       payouts: [],
+      targets: ['view'],
+      messages: ['view'],
     },
     accountant: {
       users: [],
@@ -115,6 +127,8 @@ export function defaultRolePermissions() {
       payouts: ['view', 'create'],
       journal: ['post', 'void'],
       expenses: ['view_all', 'edit', 'delete'],
+      targets: ['view'],
+      messages: ['view'],
     },
   };
 }
