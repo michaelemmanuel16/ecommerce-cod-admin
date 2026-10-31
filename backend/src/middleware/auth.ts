@@ -7,12 +7,15 @@ import logger from '../utils/logger';
 import { enterTenant, getTenantId, withoutTenant } from '../utils/tenantContext';
 import { isPlatformAdmin } from '../utils/platformAdmin';
 import { canSeeCost } from '../utils/costAccess';
-import { defaultRolePermissions, mergeRolePermissions } from '../config/defaultRolePermissions';
+import { PermissionGrid, defaultRolePermissions, mergeRolePermissions, unionPermissions } from '../config/defaultRolePermissions';
 
 // Per-tenant cache for role permissions to avoid database hits on every request.
 // Keyed by tenantId to prevent cross-tenant permission leakage.
 const permissionsCache = new Map<string, { data: any; timestamp: number }>();
 const CACHE_TTL = 60000; // 1 minute
+
+// M6-T04: the grids of the roles a person holds now, per tenant and user, cached for the same minute.
+const heldGridsCache = new Map<string, { data: PermissionGrid[]; timestamp: number }>();
 
 async function getPermissionsFromDatabase() {
   const now = Date.now();
@@ -54,6 +57,24 @@ async function getPermissionsFromDatabase() {
   return permissions;
 }
 
+/**
+ * One read per request: is the user still active (not deactivated, not soft-deleted)? The default user filter hides an inactive
+ * row, so no row means no. The same read brings the roles the user holds, which fill the permission cache the checks use next.
+ * Call inside the tenant context.
+ */
+async function isUserActive(tenantId: string, userId: number): Promise<boolean> {
+  const [user, matrix] = await Promise.all([
+    prisma.user.findFirst({
+      where: { id: userId, isActive: true },
+      select: { roleAssignments: { where: { toDate: null }, select: heldAssignmentSelect } },
+    }),
+    getPermissionsFromDatabase(),
+  ]);
+  if (!user) return false;
+  cacheHeldGrids(tenantId, userId, gridsOf(user.roleAssignments, matrix));
+  return true;
+}
+
 export const authenticate = (req: AuthRequest, res: Response, next: NextFunction): void => {
   try {
     const authHeader = req.headers.authorization;
@@ -70,7 +91,19 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
       req.user = decoded;
       if (decoded.tenantId) {
         // Propagate tenantId into AsyncLocalStorage so Prisma extension can scope queries
-        enterTenant(decoded.tenantId, next);
+        const tenantId = decoded.tenantId;
+        enterTenant(tenantId, () => {
+          isUserActive(tenantId, decoded.id).then((active) => {
+            if (!active) {
+              res.status(401).json({ error: 'Account is no longer active', code: 'ACCOUNT_INACTIVE' });
+              return;
+            }
+            next();
+          }).catch((err) => {
+            logger.error('[AuthMiddleware] Active-user check failed:', err);
+            res.status(500).json({ error: 'Internal application error' });
+          });
+        });
         return;
       }
       // No tenant in the JWT: only a platform admin may continue (no tenant, on purpose).
@@ -162,8 +195,59 @@ export const requirePermission = (allowedRoles: UserRole[]) => {
 };
 
 /**
+ * The grids of the roles the user holds now (assignments with no end date): the role's own `permissions`, else the tenant's
+ * matrix for its base role. A role with neither (the Legacy MCP role) gives nothing. Empty when the user holds no role that
+ * gives a grid, or the lookup cannot run (no tenant context).
+ */
+const heldAssignmentSelect = { role: { select: { permissions: true, presetRole: true } } } as const;
+type HeldAssignment = { role: { permissions: unknown; presetRole: UserRole | null } };
+
+/** The grid of each held role: its own `permissions`, else the tenant's matrix for its base role; the Legacy role gives none. */
+function gridsOf(assignments: HeldAssignment[], matrix: Record<string, PermissionGrid>): PermissionGrid[] {
+  return assignments.flatMap(({ role }): PermissionGrid[] => {
+    if (role.permissions && typeof role.permissions === 'object' && !Array.isArray(role.permissions)) return [role.permissions as PermissionGrid];
+    return role.presetRole ? [matrix[role.presetRole]] : [];
+  });
+}
+
+function cacheHeldGrids(tenantId: string, userId: number, grids: PermissionGrid[]): void {
+  const now = Date.now();
+  heldGridsCache.set(`${tenantId}:${userId}`, { data: grids, timestamp: now });
+  if (heldGridsCache.size > 5000) {
+    for (const [k, entry] of heldGridsCache) if (now - entry.timestamp > CACHE_TTL) heldGridsCache.delete(k);
+  }
+}
+
+async function heldRoleGrids(userId: number): Promise<PermissionGrid[]> {
+  const tenantId = getTenantId();
+  if (!tenantId) return [];
+  const cached = heldGridsCache.get(`${tenantId}:${userId}`);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) return cached.data;
+
+  const [assignments, matrix] = await Promise.all([
+    prisma.roleAssignment.findMany({ where: { holderId: userId, toDate: null }, select: heldAssignmentSelect }),
+    getPermissionsFromDatabase(),
+  ]);
+  const grids = gridsOf(assignments, matrix);
+  cacheHeldGrids(tenantId, userId, grids);
+  return grids;
+}
+
+/**
+ * What a user may do (M6-T04, F-1155): the union of the grids of the roles they hold. A user with no such role (an AI agent
+ * on a key, the system user, a caller that passes only a base role) gets the matrix of their base role, as before.
+ */
+export async function getUserPermissions(user: { id?: number; role: UserRole | string }): Promise<Record<string, string[]>> {
+  if (user.id !== undefined) {
+    const grids = await heldRoleGrids(user.id);
+    if (grids.length) return unionPermissions(grids);
+  }
+  return getEffectivePermissions(user.role);
+}
+
+/**
  * Permission check used by requireResourcePermission and the services:
- * super_admin always passes, other roles need the action in their (merged) role permissions.
+ * super_admin always passes, other users need the action in the union of the roles they hold (else their base role's matrix).
  */
 export async function hasPermission(
   user: { id?: number; role: UserRole | string },
@@ -171,8 +255,7 @@ export async function hasPermission(
   action: string
 ): Promise<boolean> {
   if (user.role === 'super_admin') return true;
-  const permissions = await getPermissionsFromDatabase();
-  const list = permissions[user.role]?.[resource];
+  const list = (await getUserPermissions(user))[resource];
   return Array.isArray(list) && list.includes(action);
 }
 
@@ -265,11 +348,10 @@ export const requireEitherPermission = (checks: Array<{ resource: string, action
         return;
       }
 
-      // Get permissions from database (or cache)
-      const permissions = await getPermissionsFromDatabase();
-      const rolePermissions = permissions[req.user.role];
+      // The union of the roles the user holds (or their base role's matrix)
+      const rolePermissions = await getUserPermissions(req.user);
 
-      if (!rolePermissions) {
+      if (Object.keys(rolePermissions).length === 0) {
         res.status(403).json({
           error: 'Forbidden: No permissions configured for your role',
           code: 'NO_ROLE_PERMISSIONS'
@@ -305,6 +387,7 @@ export const requireEitherPermission = (checks: Array<{ resource: string, action
 // Helper to clear permissions cache (call after updating permissions)
 export const clearPermissionsCache = (): void => {
   permissionsCache.clear();
+  heldGridsCache.clear();
 };
 
 export const requireSuperAdmin = (req: AuthRequest, res: Response, next: NextFunction): void => {

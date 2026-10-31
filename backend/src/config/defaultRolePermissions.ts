@@ -130,3 +130,43 @@ export function mergeRolePermissions(stored: unknown): Record<UserRole, Permissi
   for (const role of Object.keys(defaults) as UserRole[]) merged[role] = { ...defaults[role], ...(saved[role] || {}) };
   return merged;
 }
+
+/**
+ * Union of permission grids: a resource keeps every action any grid gives it (F-1155). Used for a person who holds several
+ * roles, and for the "last holder" check.
+ */
+export function unionPermissions(grids: Array<PermissionGrid | null | undefined>): PermissionGrid {
+  const union: Record<string, Set<string>> = {};
+  for (const grid of grids) {
+    for (const [resource, actions] of Object.entries(grid ?? {})) {
+      union[resource] ??= new Set();
+      for (const a of actions) union[resource].add(a);
+    }
+  }
+  return Object.fromEntries(Object.entries(union).map(([r, s]) => [r, [...s]]));
+}
+
+/**
+ * M6-T04 (F-1154): every cell the matrix may hold, resource -> actions. A role grid is checked against it, so a typo cannot
+ * be saved as a permission. Includes the cells the old matrix has plus the resources F-1153 adds (targets, messages,
+ * marketing update, payouts).
+ */
+export const PERMISSION_CATALOG: Readonly<Record<string, readonly string[]>> = {
+  users: ['create', 'view', 'update', 'delete'],
+  orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign', 'force_status', 'update_status'],
+  customers: ['create', 'view', 'update', 'delete', 'export'],
+  products: ['create', 'view', 'update', 'delete', 'update_stock'],
+  financial: ['view', 'create', 'update', 'delete'],
+  analytics: ['view', 'export'],
+  marketing: ['view', 'update'],
+  workflows: ['create', 'view', 'update', 'delete', 'execute'],
+  settings: ['view', 'update'],
+  calls: ['create', 'view', 'update', 'delete'],
+  gl: ['create', 'view', 'update', 'delete'],
+  payouts: ['view', 'create'],
+  journal: ['post', 'void'],
+  expenses: ['view_all', 'edit', 'delete'],
+  audit: ['view'],
+  targets: ['view', 'update'],
+  messages: ['view', 'create'],
+};

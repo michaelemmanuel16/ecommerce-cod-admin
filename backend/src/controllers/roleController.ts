@@ -5,9 +5,11 @@ import { AppError } from '../middleware/errorHandler';
 import { auditService } from '../services/auditService';
 import * as roleService from '../services/roleService';
 import * as assignmentService from '../services/roleAssignmentService';
+import * as permissionService from '../services/rolePermissionService';
+import { clearPermissionsCache } from '../middleware/auth';
 import { resolveTenantId } from '../utils/tenantContext';
 import { formatIssues } from '../tools/shared';
-import { assignSchema, createRoleSchema, updateRoleSchema } from '../validators/roleSchema';
+import { assignSchema, createRoleSchema, setPermissionsSchema, setToolsSchema, updateRoleSchema } from '../validators/roleSchema';
 
 /** An async handler whose errors go to the error middleware. */
 const handler = (fn: (req: AuthRequest, res: Response) => Promise<void>): RequestHandler =>
@@ -55,8 +57,38 @@ export const update = handler(async (req, res) => {
   const id = idParam(req.params.id);
   const input = parse(updateRoleSchema, req.body);
   const role = await roleService.updateRole(actorOf(req), id, input);
+  clearPermissionsCache(); // the base role decides the grid of a role that has none of its own
   await audit(req, 'role_update', id, { fields: Object.keys(input) });
   res.json({ role });
+});
+
+/** PUT /api/roles/:id/tools: `{tools: [...]}` replaces the switches. A write tool without its read tool is 400 ("Needs View orders"). */
+export const setTools = handler(async (req, res) => {
+  const id = idParam(req.params.id);
+  const { tools } = parse(setToolsSchema, req.body);
+  const before = (await roleService.getRole(id)).tools;
+  const role = await permissionService.setRoleTools(actorOf(req), id, tools);
+  await audit(req, 'role_tools_update', id, { before, after: role.tools });
+  res.json({ role });
+});
+
+/** GET /api/roles/:id/permissions: the grid of the role and the cells that may be set. */
+export const getPermissions = handler(async (req, res) => {
+  res.json(await permissionService.getRolePermissions(idParam(req.params.id)));
+});
+
+/** PUT /api/roles/:id/permissions: `{permissions: {resource: [actions]}}` replaces the grid. Clears the cache and tells the holders' browsers. */
+export const setPermissions = handler(async (req, res) => {
+  const id = idParam(req.params.id);
+  const { permissions } = parse(setPermissionsSchema, req.body);
+  const { before, after } = await permissionService.setRolePermissions(actorOf(req), id, permissions);
+  clearPermissionsCache();
+  await audit(req, 'role_permissions_update', id, { before, after });
+  const { getSocketInstance } = await import('../utils/socketInstance');
+  const { emitPermissionsUpdated } = await import('../sockets');
+  const io = getSocketInstance();
+  if (io) emitPermissionsUpdated(io, await permissionService.holderBaseRoles(id));
+  res.json({ permissions: after });
 });
 
 export const remove = handler(async (req, res) => {
@@ -76,6 +108,7 @@ export const assign = handler(async (req, res) => {
   const id = idParam(req.params.id);
   const input = parse(assignSchema, req.body);
   const result = await assignmentService.assignToRole(actorOf(req), id, input);
+  clearPermissionsCache();
   const apiKey = 'apiKey' in result ? result.apiKey : undefined;
   await audit(req, 'role_assign', id, {
     type: input.type, holderId: result.holder.id, assignmentId: result.assignment.id,
@@ -90,6 +123,7 @@ export const unassign = handler(async (req, res) => {
   const id = idParam(req.params.id);
   const assignmentId = idParam(req.params.assignmentId, 'assignment');
   const result = await assignmentService.unassign(actorOf(req), id, assignmentId);
+  clearPermissionsCache();
   await audit(req, 'role_unassign', id, { assignmentId, holderId: result.assignment.holderId, revokedKeys: result.revokedKeys });
   res.json(result);
 });

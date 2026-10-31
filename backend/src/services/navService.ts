@@ -1,6 +1,6 @@
 import { UserRole } from '@prisma/client';
 import prisma from '../utils/prisma';
-import { getEffectivePermissions } from '../middleware/auth';
+import { getUserPermissions } from '../middleware/auth';
 import { ROLE_NAME_BY_USER_ROLE } from '../config/defaultRoles';
 import { startOfUtcDay } from '../utils/startOfUtcDay';
 import { orderScope, Requester } from '../utils/authUtils';
@@ -75,7 +75,7 @@ async function roleList(userId: number, role: UserRole): Promise<Array<{ id: num
 class NavService {
   /** Everything /api/auth/me adds for the shell. */
   async getShell(userId: number, role: UserRole) {
-    const [permissions, roles] = await Promise.all([getEffectivePermissions(role), roleList(userId, role)]);
+    const [permissions, roles] = await Promise.all([getUserPermissions({ id: userId, role }), roleList(userId, role)]);
     return {
       permissions,
       homeRoute: homeRouteFor(role),
@@ -90,7 +90,7 @@ class NavService {
    * (a rep or an agent counts only their own). financeOpen: open Findings.
    */
   async getCounts(user: Requester) {
-    const permissions = await getEffectivePermissions(user.role);
+    const permissions = await getUserPermissions(user);
     const has = hasIn(user.role, permissions);
 
     const [inbox, ordersPending, financeOpen] = await Promise.all([

@@ -20,7 +20,7 @@ import {
 } from '../utils/providerCrypto';
 import { getTenantId, resolveTenantId, withoutTenant } from '../utils/tenantContext';
 import { HUMAN_USERS_WHERE, SYSTEM_USER_PASSWORD } from './systemUserService';
-import { positionRoleId } from './systemRoleService';
+import { positionRoleId, syncMappedRoleGrids } from './systemRoleService';
 import { assignmentSelect } from './roleService';
 import { isUniqueViolation } from '../utils/prismaErrors';
 import { startOfUtcDay } from '../utils/startOfUtcDay';
@@ -355,6 +355,9 @@ export const adminService = {
       where: { id: config.id },
       data: { rolePermissions: permissions },
     });
+
+    // Holders of a position role get the new matrix through their role (M6-T04).
+    await syncMappedRoleGrids(permissions);
 
     await this.createAuditLog(requester, 'update', 'role_permissions', config.id.toString(), { permissions });
 
