@@ -4,6 +4,8 @@ import { Prisma, UserRole } from '@prisma/client';
 import { prismaBase } from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { registryToolsOfRole } from '../config/roleToolRules';
+import { getTenantMatrix } from '../middleware/auth';
+import { runInTenant } from '../utils/tenantContext';
 import { evictKey, generateMcpKey, hashApiKey } from '../mcp/auth';
 import { createAiAgentUser } from './systemUserService';
 import { holderSelect } from './roleService';
@@ -46,7 +48,7 @@ export async function createKeyIn(tx: Prisma.TransactionClient, p: KeyParams, lo
   const key = await tx.mcpApiKey.create({
     data: { tenantId, keyHash: hashApiKey(rawKey), keyPrefix: rawKey.substring(0, 12), label, expiresAt, userId: agent.id, roleId: role.id },
   });
-  return { key, rawKey, agent, roleName: role.name, toolCount: registryToolsOfRole(role).length };
+  return { key, rawKey, agent, roleName: role.name, toolCount: registryToolsOfRole(role, await runInTenant(tenantId, getTenantMatrix)).length };
 }
 
 /** Make an MCP key for a tenant (see createKeyIn); the checks, the key limit and the writes share one transaction. */

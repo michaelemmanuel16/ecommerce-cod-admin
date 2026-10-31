@@ -370,6 +370,61 @@ describe('the last holder of users:update', () => {
   });
 });
 
+describe('switch writes share the grid guard and clear access at once', () => {
+  it('turning off Manage team on the last role that can manage users is 409 and changes nothing', async () => {
+    const tenant = await createTenant('m6switchguard');
+    extraTenants.push(tenant.id);
+    await tenantDefaults.seedTenantDefaults(tenant.id); // no super_admin yet: the Owner role has no holder
+    const owner = await mkUser(tenant.id, 'owner', 'super_admin');
+    const role = await newRole(owner.token);
+    expect((await api.put(owner.token, `/api/roles/${role.id}/tools`, { tools: ['manage_team'] })).status).toBe(200);
+    const holder = await mkUser(tenant.id, 'only-manager', 'admin');
+    expect((await assignExisting(owner.token, role.id, holder.id)).status).toBe(201);
+
+    const blocked = await api.put(owner.token, `/api/roles/${role.id}/tools`, { tools: [] });
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.code).toBe('LAST_USER_MANAGER');
+    const row = await prismaBase.role.findUniqueOrThrow({ where: { id: role.id } });
+    expect(row.tools).toEqual(['manage_team']);
+    expect((row.permissions as any).users.sort()).toEqual(['create', 'update']);
+  });
+
+  it('a holder loses access the moment the switch goes off (no wait for the cache)', async () => {
+    const role = await newRole(ownerA);
+    expect((await api.put(ownerA, `/api/roles/${role.id}/tools`, { tools: ['manage_team'] })).status).toBe(200);
+    const person = await mkUser(pair.a.id, 'switch-off', 'manager');
+    expect((await assignExisting(ownerA, role.id, person.id)).status).toBe(201);
+    const edit = () => api.put(person.token, `/api/roles/${role.id}`, { area: uniq('Area') });
+    expect((await edit()).status).toBe(200); // users:update through the switch
+    expect((await api.put(ownerA, `/api/roles/${role.id}/tools`, { tools: [] })).status).toBe(200);
+    expect((await edit()).status).toBe(403);
+  });
+});
+
+describe('one grid fallback for the checks and the middleware', () => {
+  it('a role with no grid follows the tenant matrix, so an admin cannot hand out more than they hold', async () => {
+    const tenant = await createTenant('m6matrix');
+    extraTenants.push(tenant.id);
+    await prismaBase.systemConfig.create({ data: { tenantId: tenant.id, rolePermissions: { manager: { financial: ['view', 'update'] } } } });
+    await tenantDefaults.seedTenantDefaults(tenant.id);
+    const owner = await mkUser(tenant.id, 'owner', 'super_admin');
+    const admin = await mkUser(tenant.id, 'admin', 'admin');
+    const rep = await mkUser(tenant.id, 'rep', 'sales_rep');
+    // a manager-preset role that has no saved grid: its holders get the tenant matrix for manager (financial:update), not the code default
+    const role = await newRole(owner.token, { presetRole: 'manager' });
+    await prismaBase.$executeRaw`UPDATE roles SET permissions = NULL WHERE id = ${role.id}`;
+    clearPermissionsCache();
+    const holder = await mkUser(tenant.id, 'holder', 'manager');
+    expect((await assignExisting(owner.token, role.id, holder.id)).status).toBe(201);
+    expect((await meOf(holder.token)).financial).toEqual(expect.arrayContaining(['view', 'update']));
+    // the Admin role has no financial:update
+    const denied = await assignExisting(admin.token, role.id, rep.id);
+    expect(denied.status).toBe(403);
+    expect(denied.body.code).toBe('GRID_ABOVE_ACTOR');
+    expect((await api.get(owner.token, `/api/roles/${role.id}/permissions`)).body.permissions.financial).toEqual(['view', 'update']);
+  });
+});
+
 describe('authenticate refuses a user who is no longer active', () => {
   it('a valid token gets 401 at once after the user is deactivated or soft-deleted; reactivating restores it', async () => {
     const person = await mkUser(pair.a.id, 'goes-away', 'admin');

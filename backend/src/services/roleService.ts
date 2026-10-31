@@ -4,6 +4,7 @@ import { withSoftDeleted } from '../utils/prismaExtensions';
 import { isUniqueViolation } from '../utils/prismaErrors';
 import { fullName } from '../utils/nameUtils';
 import { Requester, isOwner } from '../utils/authUtils';
+import { getTenantMatrix } from '../middleware/auth';
 import { startOfUtcDay } from '../utils/startOfUtcDay';
 import { AppError } from '../middleware/errorHandler';
 import { ROLE_TOOL_TOTAL, gridOfRole, sameGrid, gridFromSwitches, switchesOn } from '../config/roleToolRules';
@@ -51,6 +52,8 @@ const roleSelect = {
   id: true, name: true, area: true, contract: true, kpis: true, targetMetric: true, presetRole: true, isSystem: true, tools: true, permissions: true,
 } satisfies Prisma.RoleSelect;
 
+type Matrix = Awaited<ReturnType<typeof getTenantMatrix>>;
+
 type RoleRow = Prisma.RoleGetPayload<{ select: typeof roleSelect }>;
 
 /**
@@ -69,8 +72,8 @@ function isCustomGrid(role: { name: string; presetRole: UserRole | null }, grid:
  * The system role keeps its list of registry tool names. `toolCount` and `holderCount` keep the fields the Settings screen already
  * reads. The plain list leaves the tool names out.
  */
-const roleView = ({ tools, permissions, ...role }: RoleRow, holderCount: number, withTools = true) => {
-  const grid = gridOfRole({ permissions, presetRole: role.presetRole });
+const roleView = ({ tools, permissions, ...role }: RoleRow, holderCount: number, matrix: Matrix, withTools = true) => {
+  const grid = gridOfRole({ permissions, presetRole: role.presetRole }, matrix);
   const list = role.isSystem ? roleToolList(tools) : switchesOn(grid);
   return {
     ...role, ...(withTools && { tools: list }), toolCount: list.length, toolTotal: ROLE_TOOL_TOTAL, holderCount,
@@ -89,17 +92,18 @@ const liveHolders = (roleId: number) => prisma.roleAssignment.count({ where: { r
 
 /** The plain list keeps the M2 shape (no tool names, only the count) plus the holder count. */
 export async function listRoles() {
-  const [roles, counts] = await Promise.all([
+  const [roles, counts, matrix] = await Promise.all([
     prisma.role.findMany({ select: roleSelect, orderBy: { name: 'asc' } }),
     prisma.roleAssignment.groupBy({ by: ['roleId'], where: { toDate: null }, _count: { _all: true } }),
+    getTenantMatrix(),
   ]);
   const byRole = new Map(counts.map((r) => [r.roleId, r._count._all]));
-  return roles.map((r) => roleView(r, byRole.get(r.id) ?? 0, false));
+  return roles.map((r) => roleView(r, byRole.get(r.id) ?? 0, matrix, false));
 }
 
 export async function getRole(id: number) {
-  const [role, holders] = await Promise.all([findRole(id), liveHolders(id)]);
-  return roleView(role, holders);
+  const [role, holders, matrix] = await Promise.all([findRole(id), liveHolders(id), getTenantMatrix()]);
+  return roleView(role, holders, matrix);
 }
 
 /**
@@ -109,7 +113,7 @@ export async function getRole(id: number) {
  */
 export async function roleOverview() {
   const today = startOfUtcDay();
-  const [roles, assignments, targets] = await Promise.all([
+  const [roles, assignments, targets, matrix] = await Promise.all([
     prisma.role.findMany({ where: { isSystem: false }, select: roleSelect, orderBy: { id: 'asc' } }),
     // Invited people are inactive, so the soft-delete filter must not hide them.
     withSoftDeleted(() => prisma.roleAssignment.findMany({
@@ -121,6 +125,7 @@ export async function roleOverview() {
       where: { scope: 'role', role: { isSystem: false }, periodStart: { lte: today }, periodEnd: { gte: today } },
       orderBy: { periodStart: 'desc' },
     }),
+    getTenantMatrix(),
   ]);
   const holdersOf = new Map<number, Array<{ assignmentId: number; since: Date } & ReturnType<typeof holderView>>>();
   for (const a of assignments) {
@@ -136,7 +141,7 @@ export async function roleOverview() {
   }
   return roles.map((role) => {
     const holders = holdersOf.get(role.id) ?? [];
-    return { ...roleView(role, holders.length), holders, target: targetOf.get(role.id) ?? null };
+    return { ...roleView(role, holders.length, matrix), holders, target: targetOf.get(role.id) ?? null };
   });
 }
 
@@ -171,7 +176,7 @@ export async function createRole(tenantId: string, input: CreateRoleInput) {
   if (taken) throw new AppError(NAME_TAKEN, 409);
   if (input.copyToolsFromRoleId !== undefined && !source) throw new AppError('Role to copy from was not found', 400);
   // The new role gets the grid of the role it copies (a system role has none), else an empty one: it never falls back to a base-role matrix.
-  const grid = source && !source.isSystem ? gridOfRole(source) : {};
+  const grid = source && !source.isSystem ? gridOfRole(source, await getTenantMatrix()) : {};
   try {
     const role = await prisma.role.create({
       data: {
@@ -180,7 +185,7 @@ export async function createRole(tenantId: string, input: CreateRoleInput) {
       },
       select: roleSelect,
     });
-    return roleView(role, 0);
+    return roleView(role, 0, await getTenantMatrix());
   } catch (e) {
     if (isUniqueViolation(e)) throw new AppError(NAME_TAKEN, 409);
     throw e;
@@ -204,7 +209,7 @@ export async function updateRole(actor: Requester, id: number, input: UpdateRole
     if (await nameTaken(input.name, id)) throw new AppError(NAME_TAKEN, 409);
   }
   try {
-    const [updated, holders] = await Promise.all([
+    const [updated, holders, matrix] = await Promise.all([
       prisma.role.update({
         where: { id },
         data: {
@@ -218,8 +223,9 @@ export async function updateRole(actor: Requester, id: number, input: UpdateRole
         select: roleSelect,
       }),
       liveHolders(id),
+      getTenantMatrix(),
     ]);
-    return roleView(updated, holders);
+    return roleView(updated, holders, matrix);
   } catch (e) {
     if (isUniqueViolation(e)) throw new AppError(NAME_TAKEN, 409);
     throw e;

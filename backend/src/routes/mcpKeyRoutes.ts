@@ -7,6 +7,7 @@ import { getTenantId } from '../utils/tenantContext';
 import { auditService } from '../services/auditService';
 import { buildMcpConfig, createKey, revokeKey } from '../services/mcpKeyService';
 import { registryToolsOfRole } from '../config/roleToolRules';
+import { getTenantMatrix } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 
 const router = Router();
@@ -52,11 +53,12 @@ router.get('/', async (_req: Request, res: Response) => {
       orderBy: { createdAt: 'desc' },
     });
 
+    const matrix = await getTenantMatrix();
     res.json({
       keys: keys.map(({ role, ...key }) => ({
         ...key,
         roleName: role?.name ?? null,
-        toolCount: role ? registryToolsOfRole(role).length : 0,
+        toolCount: role ? registryToolsOfRole(role, matrix).length : 0,
       })),
     });
   } catch (error) {

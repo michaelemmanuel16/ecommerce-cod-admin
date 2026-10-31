@@ -2,7 +2,7 @@ import { UserRole } from '@prisma/client';
 import prisma from '../utils/prisma';
 import { Requester, isOwner } from '../utils/authUtils';
 import { AppError } from '../middleware/errorHandler';
-import { getUserPermissions } from '../middleware/auth';
+import { getTenantMatrix, getUserPermissions } from '../middleware/auth';
 import { clearAuthCache } from '../mcp/auth';
 import { PERMISSION_CATALOG, PermissionGrid } from '../config/defaultRolePermissions';
 import { isOwnerRole } from '../config/defaultRoles';
@@ -18,7 +18,7 @@ import { assertMayTouchRole, findRole, getRole } from './roleService';
 /** A role of the tenant with its own grid, or 404. */
 async function findRoleWithGrid(id: number) {
   const role = await findRole(id);
-  return { ...role, grid: gridOfRole(role) };
+  return { ...role, grid: gridOfRole(role, await getTenantMatrix()) };
 }
 
 /** Both setters: only the Owner touches the Owner role, which is locked anyway; a system role is not edited. */
@@ -41,16 +41,15 @@ export async function setRoleTools(actor: Requester, roleId: number, tools: stri
   if (unknown.length) throw new AppError(`Unknown tool: ${unknown.join(', ')}`, 400, 'UNKNOWN_TOOL');
   const missing = missingReadTools(unique);
   if (missing.length) throw new AppError(`Needs ${missing.join(' and ')}`, 400, 'TOOL_NEEDS_READ');
-  const grid = applySwitches(role.grid, unique);
-  await prisma.role.update({ where: { id: roleId }, data: { permissions: grid, tools: switchesOn(grid) } });
-  clearAuthCache();
+  // Same write and same last-manager guard as the grid setter
+  await saveGrid(roleId, role.grid, applySwitches(role.grid, unique));
   return getRole(roleId);
 }
 
 /** The grid of a role and the cells that may be set (for the "Advanced permissions" panel). */
 export async function getRolePermissions(roleId: number) {
-  const role = await findRole(roleId);
-  return { permissions: gridOfRole(role), catalog: PERMISSION_CATALOG, custom: (await getRole(roleId)).custom, saved: hasOwnGrid(role) };
+  const [role, matrix] = await Promise.all([findRole(roleId), getTenantMatrix()]);
+  return { permissions: gridOfRole(role, matrix), catalog: PERMISSION_CATALOG, custom: (await getRole(roleId)).custom, saved: hasOwnGrid(role) };
 }
 
 /** Keep only known resources and actions; an unknown one is an error that names it. Empty resources stay (an explicit "none"). */
@@ -77,7 +76,8 @@ async function otherRoleKeepsUsersUpdate(roleId: number): Promise<boolean> {
     where: { toDate: null, roleId: { not: roleId }, holder: { isActive: true } },
     select: { role: { select: { permissions: true, presetRole: true } } },
   });
-  return assignments.some((a) => grants(gridOfRole(a.role), 'users', 'update'));
+  const matrix = await getTenantMatrix();
+  return assignments.some((a) => grants(gridOfRole(a.role, matrix), 'users', 'update'));
 }
 
 /**
@@ -112,8 +112,8 @@ export async function saveGrid(roleId: number, before: PermissionGrid, input: Pe
 export async function assertGridWithin(actor: Requester, role: { permissions: unknown; presetRole: UserRole | null }, holderId?: number): Promise<void> {
   if (isOwner(actor)) return;
   if (holderId === actor.id) throw new AppError('You cannot give a role to yourself', 403, 'SELF_ASSIGN');
-  const own = await getUserPermissions(actor);
-  for (const [resource, actions] of Object.entries(gridOfRole(role))) {
+  const [own, matrix] = await Promise.all([getUserPermissions(actor), getTenantMatrix()]);
+  for (const [resource, actions] of Object.entries(gridOfRole(role, matrix))) {
     const missing = actions.filter((a) => !grants(own, resource, a));
     if (missing.length) throw new AppError(`You cannot give a role that has permissions you do not have (${resource}:${missing[0]})`, 403, 'GRID_ABOVE_ACTOR');
   }

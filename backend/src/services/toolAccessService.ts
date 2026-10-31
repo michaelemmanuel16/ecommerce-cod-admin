@@ -1,5 +1,5 @@
 import prisma from '../utils/prisma';
-import { hasPermission } from '../middleware/auth';
+import { getTenantMatrix, hasPermission } from '../middleware/auth';
 import { registryToolsOfRole } from '../config/roleToolRules';
 
 /**
@@ -24,7 +24,7 @@ export async function loadAccessFacts(actorId: number, roleId: number | null): P
   return {
     baseRole: user?.role ?? null,
     // A role that is missing allows nothing; otherwise the registry tools whose cell the role's grid grants (F-1153).
-    roleTools: roleId === null ? null : role ? registryToolsOfRole(role) : [],
+    roleTools: roleId === null ? null : role ? registryToolsOfRole(role, await getTenantMatrix()) : [],
   };
 }
 

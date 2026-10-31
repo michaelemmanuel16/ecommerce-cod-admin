@@ -1,6 +1,6 @@
 import { UserRole } from '@prisma/client';
 import { ALL_TOOL_NAMES, TOOL_PERMISSIONS } from './toolPermissions';
-import { PermissionGrid, defaultRolePermissions } from './defaultRolePermissions';
+import { PermissionGrid } from './defaultRolePermissions';
 
 /**
  * M6-T04 (F-1153): the 16 tool switches of a role. `Role.tools` stores the keys of the switches that are on. Each switch is a
@@ -95,10 +95,10 @@ type GridSource = { permissions: unknown; presetRole: UserRole | null };
 const isGrid = (v: unknown): v is PermissionGrid => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /**
- * The grid a role gives its holders: its own `permissions`, else the base-role matrix (`matrix`, the defaults unless the caller
- * has the tenant's), else nothing. One rule for the middleware, the role views and the MCP keys.
+ * The grid a role gives its holders: its own `permissions`, else the tenant's matrix for its base role (`matrix`: always the tenant's,
+ * from `getTenantMatrix`), else nothing. One rule for the middleware, the checks, the role views and the MCP keys.
  */
-export function gridOfRole(role: GridSource, matrix: Record<string, PermissionGrid> = defaultRolePermissions()): PermissionGrid {
+export function gridOfRole(role: GridSource, matrix: Record<string, PermissionGrid>): PermissionGrid {
   if (isGrid(role.permissions)) return role.permissions;
   return role.presetRole ? matrix[role.presetRole] ?? {} : {};
 }
@@ -113,7 +113,7 @@ export const registryToolsForGrid = (grid: PermissionGrid): string[] =>
  * The registry tools an MCP key of this role may call (F-1153). A system role (Legacy MCP) keeps its stored list of registry
  * names; every other role gets the tools its grid allows.
  */
-export function registryToolsOfRole(role: GridSource & { isSystem: boolean; tools: unknown }): string[] {
+export function registryToolsOfRole(role: GridSource & { isSystem: boolean; tools: unknown }, matrix: Record<string, PermissionGrid>): string[] {
   if (role.isSystem) return (Array.isArray(role.tools) ? role.tools : []).filter((t): t is string => typeof t === 'string' && t in TOOL_PERMISSIONS);
-  return registryToolsForGrid(gridOfRole(role));
+  return registryToolsForGrid(gridOfRole(role, matrix));
 }

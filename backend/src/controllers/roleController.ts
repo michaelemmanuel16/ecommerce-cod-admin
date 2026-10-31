@@ -62,12 +62,22 @@ export const update = handler(async (req, res) => {
   res.json({ role });
 });
 
+/** A role's grid changed: drop the cached permissions and tell the browsers of its holders, so access changes at once. */
+async function permissionsChanged(roleId: number): Promise<void> {
+  clearPermissionsCache();
+  const { getSocketInstance } = await import('../utils/socketInstance');
+  const { emitPermissionsUpdated } = await import('../sockets');
+  const io = getSocketInstance();
+  if (io) emitPermissionsUpdated(io, await permissionService.holderBaseRoles(roleId));
+}
+
 /** PUT /api/roles/:id/tools: `{tools: [...]}` replaces the switches. A write tool without its read tool is 400 ("Needs View orders"). */
 export const setTools = handler(async (req, res) => {
   const id = idParam(req.params.id);
   const { tools } = parse(setToolsSchema, req.body);
   const before = (await roleService.getRole(id)).tools;
   const role = await permissionService.setRoleTools(actorOf(req), id, tools);
+  await permissionsChanged(id);
   await audit(req, 'role_tools_update', id, { before, after: role.tools });
   res.json({ role });
 });
@@ -82,12 +92,8 @@ export const setPermissions = handler(async (req, res) => {
   const id = idParam(req.params.id);
   const { permissions } = parse(setPermissionsSchema, req.body);
   const { before, after } = await permissionService.setRolePermissions(actorOf(req), id, permissions);
-  clearPermissionsCache();
+  await permissionsChanged(id);
   await audit(req, 'role_permissions_update', id, { before, after });
-  const { getSocketInstance } = await import('../utils/socketInstance');
-  const { emitPermissionsUpdated } = await import('../sockets');
-  const io = getSocketInstance();
-  if (io) emitPermissionsUpdated(io, await permissionService.holderBaseRoles(id));
   res.json({ permissions: after });
 });
 

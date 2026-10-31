@@ -8,6 +8,7 @@ import { enterTenant, getTenantId, withoutTenant } from '../utils/tenantContext'
 import { isPlatformAdmin } from '../utils/platformAdmin';
 import { canSeeCost } from '../utils/costAccess';
 import { ROLE_NAME_BY_USER_ROLE } from '../config/defaultRoles';
+import { gridOfRole, hasOwnGrid } from '../config/roleToolRules';
 import { PermissionGrid, defaultRolePermissions, mergeRolePermissions, unionPermissions } from '../config/defaultRolePermissions';
 
 // Per-tenant cache for role permissions to avoid database hits on every request.
@@ -221,13 +222,13 @@ export const requirePermission = (allowedRoles: UserRole[]) => {
 const heldAssignmentSelect = { role: { select: { permissions: true, presetRole: true } } } as const;
 type HeldAssignment = { role: { permissions: unknown; presetRole: UserRole | null } };
 
-/** The grid of each held role: its own `permissions`, else the tenant's matrix for its base role; the Legacy role gives none. */
+/** The grid of each held role, by the one rule (gridOfRole). A role with no grid and no base role (the Legacy role) gives none. */
 function gridsOf(assignments: HeldAssignment[], matrix: Record<string, PermissionGrid>): PermissionGrid[] {
-  return assignments.flatMap(({ role }): PermissionGrid[] => {
-    if (role.permissions && typeof role.permissions === 'object' && !Array.isArray(role.permissions)) return [role.permissions as PermissionGrid];
-    return role.presetRole ? [matrix[role.presetRole]] : [];
-  });
+  return assignments.filter(({ role }) => hasOwnGrid(role) || role.presetRole).map(({ role }) => gridOfRole(role, matrix));
 }
+
+/** The tenant's matrix per base role (saved matrix over defaults, position-role grids over both). Call inside the tenant context. */
+export const getTenantMatrix = (): Promise<Record<string, PermissionGrid>> => getPermissionsFromDatabase();
 
 function cacheHeldGrids(tenantId: string, userId: number, grids: PermissionGrid[]): void {
   const now = Date.now();

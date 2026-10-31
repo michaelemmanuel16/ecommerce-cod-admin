@@ -3,6 +3,8 @@
  * (person, AI agent with a role-limited MCP key, company), unassign with history, two tenants, and the position role
  * every new staff user gets.
  */
+import { getTenantMatrix } from '../../middleware/auth';
+import { runInTenant } from '../../utils/tenantContext';
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from '@jest/globals';
 import '../mocks/logger.mock';
 import '../mocks/socketInstance.mock';
@@ -263,18 +265,19 @@ describe('assign a person (F-1152)', () => {
 describe('assign an AI agent (F-1152)', () => {
   it('makes an ai_agent user, an assignment and a key whose tools are exactly the role tools; the key is shown once', async () => {
     const role = await roleOf(A(), 'Call rep');
+    const matrix = await runInTenant(A(), getTenantMatrix);
     const res = await assign(role.id, { type: 'ai_agent', name: 'Claude Desktop' });
     expect(res.status).toBe(201);
     const { key } = res.body.apiKey;
     expect(key).toMatch(/^mcp_[0-9a-f]{64}$/);
-    expect(res.body.apiKey).toMatchObject({ toolCount: registryToolsOfRole(role).length, roleId: role.id });
+    expect(res.body.apiKey).toMatchObject({ toolCount: registryToolsOfRole(role, matrix).length, roleId: role.id });
     expect(res.body.holder).toMatchObject({ kind: 'ai_agent', typeLabel: 'AI agent', name: 'Claude Desktop' });
 
     clearAuthCache();
     const principal = await validateKey(key);
     expect(principal.roleId).toBe(role.id);
     expect(principal.userId).toBe(res.body.holder.id);
-    expect([...principal.access.roleTools].sort()).toEqual([...registryToolsOfRole(role)].sort());
+    expect([...principal.access.roleTools].sort()).toEqual([...registryToolsOfRole(role, matrix)].sort());
 
     const assignment = await prismaBase.roleAssignment.findFirstOrThrow({ where: { holderId: res.body.holder.id } });
     expect(assignment).toMatchObject({ roleId: role.id, toDate: null, tenantId: A() });

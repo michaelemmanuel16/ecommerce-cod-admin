@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import {
-  ROLE_TOOLS, ROLE_TOOL_TOTAL, applySwitches, gridFromSwitches, missingReadTools, registryToolsForGrid, registryToolsOfRole, sameGrid, switchesOn,
+  ROLE_TOOLS, ROLE_TOOL_TOTAL, applySwitches, gridFromSwitches, missingReadTools, gridOfRole, registryToolsForGrid, registryToolsOfRole, sameGrid, switchesOn,
 } from '../../config/roleToolRules';
 import { PERMISSION_CATALOG, defaultRolePermissions, unionPermissions } from '../../config/defaultRolePermissions';
 import { ALL_TOOL_NAMES } from '../../config/toolPermissions';
@@ -67,9 +67,13 @@ describe('MCP tools follow the grid (F-1153)', () => {
   });
 
   it('the system role keeps its stored list; other roles use the grid', () => {
-    expect(registryToolsOfRole({ isSystem: true, tools: ['orders_search', 'not_a_tool'], permissions: null, presetRole: null })).toEqual(['orders_search']);
-    expect(registryToolsOfRole({ isSystem: false, tools: ['orders_search'], permissions: { customers: ['view'] }, presetRole: null })).toEqual(['customers_lookup']);
-    expect(registryToolsOfRole({ isSystem: false, tools: [], permissions: null, presetRole: 'accountant' })).toContain('financial_summary');
+    expect(registryToolsOfRole({ isSystem: true, tools: ['orders_search', 'not_a_tool'], permissions: null, presetRole: null }, defaultRolePermissions())).toEqual(['orders_search']);
+    expect(registryToolsOfRole({ isSystem: false, tools: ['orders_search'], permissions: { customers: ['view'] }, presetRole: null }, defaultRolePermissions())).toEqual(['customers_lookup']);
+    expect(registryToolsOfRole({ isSystem: false, tools: [], permissions: null, presetRole: 'accountant' }, defaultRolePermissions())).toContain('financial_summary');
+    // the matrix is the tenant's: a widened matrix widens a role that has no grid of its own
+    const widened = { ...defaultRolePermissions(), manager: { ...defaultRolePermissions().manager, financial: ['view', 'update'] } };
+    expect(gridOfRole({ permissions: null, presetRole: 'manager' }, widened).financial).toEqual(['view', 'update']);
+    expect(gridOfRole({ permissions: { orders: ['view'] }, presetRole: 'manager' }, widened)).toEqual({ orders: ['view'] });
   });
 });
 
