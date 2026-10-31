@@ -83,6 +83,31 @@ The API behind the Staff table. Plan task: M6-T05. COD-56 is still In Progress (
 
 ---
 
+## COD-57 — Target service (M6-T07)
+**Date:** 2026-11-01 | **Type:** feat | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-57-t07-targets`, merge 2e37b9b1) | **Commits:** 4508bbce, 2dff0328
+
+### Summary
+The service behind the target tree: North Star (year), quarter, month, role, person and daily targets. Plan task: M6-T07. The routes come in T08, so COD-57 stays In Progress.
+
+### Changes
+- **One write path (`targetService.writeTarget(tx, tenantId, op)`):** the ops are save, set children, delete and release. Each op locks the parent and child rows (`FOR UPDATE`) in one transaction.
+- **Children must add up:** children that do not sum to the parent are rejected, and the message gives the difference.
+- **Closed months (`monthClosed`, `closedMonths`):** a month with `closedAt` set cannot be edited.
+- **Unassign returns the target to the pool:** `releasePersonTargets` runs inside the unassign transaction in `roleAssignmentService`. The notice (`announceRelease`) and the audit row go out after the commit.
+- **Holder added mid-month:** no automatic proration. The person shows "Set a target" until the owner sets one.
+- **Daily activity targets:** they save; a metric with no data returns "No data for this metric".
+- **Year pace (`kpi/yearPace.ts`, `paceMarker`):** quarter plan, not straight days. Expected to date = closed quarter targets + (days gone / days in quarter) x current quarter target. `paceBasis` is `quarter_plan` or `days`. Quarter and month pace stay straight days. `utcDate` added to `kpi/dates.ts`.
+
+### Verification
+- Merged branch (2e37b9b1): migrate, generate, backend typecheck, lint and build clean. Unit 124 suites / 1680 tests pass (`yearPace` fixture: 17 Oct gives 1,359,783 = 75.5%).
+- Integration: `m6Targets`, `m6RolesApi`, `m6StaffApi`, `m6Schema`, `m6RoleMigration`, `dashboardOwner`, `kpiLeadership`, `m5FinanceOverview`: 10 suites / 185 tests pass.
+- Service only; the target screens come later, so no browser check here.
+
+### Open points
+- The last-Owner count in unassign runs before the transaction. The fix (row lock inside the transaction) is on the T08 branch.
+
+---
+
 ## COD-58 — Persistent assignment cursor
 **Date:** 2026-10-31 | **Type:** feat | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-58-t13-cursor`, merge 3fa283e7) | **Commits:** 68577a8c, 5840ce98
 
