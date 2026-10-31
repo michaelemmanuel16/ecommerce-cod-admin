@@ -33,6 +33,106 @@ Schema for roles, rewards, badges and invites, then the system roles and the mov
 
 ---
 
+## COD-56 — Role service and API (M6-T03)
+**Date:** 2026-10-31 | **Type:** feat | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-56-t03-roles-api`, merge c02d40b3) | **Commits:** 34814123, a164713d
+
+### Summary
+The API for roles and who holds them. Plan task: M6-T03. COD-56 is still In Progress (T04 to T06 left).
+
+### Changes
+- **Roles (`roleService`, `roleController`, `routes/roleRoutes`):** list (Owner only), overview with holders and counts in one query, get, create, update, delete. `presetRole` is set on create and update (Owner only on update, never on the Owner role). Seeded role names cannot be renamed. A role with holders or API keys cannot be deleted ("Move 1 holder first").
+- **Holders (`roleAssignmentService`):** four ways to add a holder: an existing user, an invited person (`adminService.createUser` with `access: 'invite'`), an AI agent (Owner only; it gets an MCP key limited to the role's tools, shown once) and a company (no login). Unassign ends the assignment today and keeps the row as history. It also revokes the agent's keys for that role (`mcpKeyService.revokeKeysIn`, cache evicted after the commit).
+- **Guards:** the last Owner holder cannot be removed (409 `LAST_OWNER`). One rank rule (`assertOutranks`): the actor must outrank the role's base role and the holder's own role, so an admin cannot give or take a role at or above their own. Deactivated users and system users cannot get a role.
+- **Signup:** `seedTenantDefaults(tenantId, ownerUserId)` gives the first user the Owner role.
+- **Shared helpers:** `handler()` wrapper with `formatIssues`, `auditService.recordFromRequest`, `Requester` / `isOwner`, `splitName`, `isUniqueViolation`. A duplicate email returns 409 `EMAIL_EXISTS`.
+
+### Verification
+- Merged branch (c02d40b3): backend typecheck, lint and build clean. Unit 123 suites / 1675 tests pass. `validate-workflows` ok.
+- Integration: `m6RolesApi` (39 tests), `mcpKeys`, `deliveryPartnersWrite`: 85 / 85 pass.
+- API only; the roles screen is T19, so no browser check here.
+
+### Open points
+- T04: signup must not fail when the seed fails (a failure strands the tenant and blocks a retry). The seed will fill an empty Owner role on a later run.
+- T06 must clear `invitedAt` when an invite is accepted.
+
+---
+
+## COD-56 — Staff service (M6-T05)
+**Date:** 2026-11-01 | **Type:** feat | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-56-t05-staff`, merge 7430c598) | **Commits:** b2b8c86d, 90942a67
+
+### Summary
+The API behind the Staff table. Plan task: M6-T05. COD-56 is still In Progress (T04 and T06 left).
+
+### Changes
+- **List (`staffService.listStaff`, `GET /api/staff?status&role&q`):** tab counts for active, invited, deactivated and deleted. The counts use the role and search filters but not the status filter. Without a status the list shows everyone except the deleted.
+- **Actions (`routes/staffRoutes`, `staffController`):** edit, reset password, deactivate, reactivate, soft delete, permanent erase, and `GET /api/staff/workload` (open orders per person).
+- **Soft delete:** new column `users.deleted_at` (migration `20261031230000_m6_user_deleted_at`). A deleted person is in the Deleted tab, cannot sign in, and can be restored. Restore of a person who never accepted their invite puts them back to invited.
+- **Permanent erase (`eraseUser`):** the only hard-delete path. The confirm token is the person's email. A person with payouts or ledger entries cannot be erased (409 `HAS_RECORDS`). The old admin delete routes now use the same guards.
+- **Last-Owner guard (`adminService.writeWithOwnerGuard`):** deactivate, delete and demote run in one transaction that locks the Owner rows (`FOR UPDATE`), so two requests at the same time cannot remove the last Owner. Sessions end after the commit, so a deactivated person is signed out on every device.
+- **Edit (`adminService.updateUser`):** only the fields in `updateUserSchema` get through. A role change moves the position role with it (`systemRoleService.assignPositionRole`). A commission change applies to later deliveries only. A delivery partner's fee is not edited here (400 `FEE_NOT_EDITABLE`, set in the partner fee rule).
+- **Shared helpers:** `controllers/helpers.ts` (`handler`, `idParam`, `parse`, `actorOf`), `assertMayManage` in `authUtils`, `emailConflictOf` and `isForeignKeyViolation` in `prismaErrors`.
+
+### Verification
+- Merged branch (7430c598): migrate, generate, backend typecheck, lint and build clean. Unit 123 suites / 1675 tests pass.
+- Integration: `m6StaffApi` (19), `m6RolesApi`, `sessionsApi`, `deliveryPartnersWrite`, `m6RoleMigration`, `dataExportDelete`, `accountApi`: 7 suites / 154 tests pass.
+- API only; the Staff table screen is T20, so no browser check here.
+
+### Open points
+- Security review after the merge: `updateUser` must check rank on every edit of another person (not only role and deactivate), and must not restore a deleted or invited person through `isActive: true`. The fix is on the T06 branch.
+- Notification preferences were empty, so no migration (owner decision).
+
+---
+
+## COD-56 — Invite flow (M6-T06)
+**Date:** 2026-11-01 | **Type:** feat | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-56-t06-invites`, merge 8019a878) | **Commits:** 0ec05778 (T05 security fix), 8174467b, 092d36eb
+
+### Summary
+New staff join by invite link only. Nobody types a password for another person. Plan task: M6-T06. COD-56 is still In Progress (T04 left).
+
+### Changes
+- **Invite (`inviteService`, `POST /api/staff/invite`):** creates the person as Invited (inactive, `invitedAt` set) and sends a link by email, SMS or WhatsApp. If sending fails, the screen shows a copy-link dialog. The link is valid for `INVITE_TTL_DAYS` (7). Only the hash of the token is stored (`newHashedToken` in `utils/crypto.ts`).
+- **Resend and revoke:** `POST /api/staff/:id/resend-invite` makes a new token (the old link stops working). `POST /api/staff/:id/revoke-invite` soft-deletes the invite (Deleted tab).
+- **Accept (`POST /api/auth/accept-invite`, page `/accept-invite`):** the person sets a password and is signed in. One conditional update takes only a person who is still invited (`inviteTokenHash`, inactive, not deleted, `invitedAt` set). Any other case gives 400 `INVITE_INVALID`.
+- **Security:** deactivate, delete and `updateUser` (isActive false) clear the invite token, so an old link cannot reactivate a person. The SMS and WhatsApp log stores the message without the link (`logBody`).
+- **Old create paths closed:** `POST /api/users` and `POST /api/admin/users` return 410 `USE_INVITE`. The delivery-partner admin path keeps its password branch, because a partner signs in with it.
+- **T05 security fix (0ec05778):** `updateUser` checks rank on every edit of another person and cannot restore a deleted or invited person through `isActive: true`.
+- **Shared code:** `sessionService.signIn` (login and accept-invite), `utils/appUrl.ts`, `<NewPasswordFields>` and `lib/passwordRules.ts` (reset password and accept invite), the 72-character limit in `resetPasswordValidation`.
+
+### Verification
+- Merged branch (8019a878): migrate, generate, backend typecheck, lint and build clean. Unit 125 suites / 1683 tests pass.
+- Integration: `m6InviteApi`, `m6StaffApi`, `m6RolesApi`, `m6Targets`, `navApi`, `systemUser`, `authFailClosed`, `onboardingApi`, `deliveryPartnersWrite`, `accountApi`, `sessionsApi`, `m6RoleMigration`: 12 suites / 237 tests pass.
+- Frontend: build and lint clean; vitest 174 files / 1404 tests pass (includes `AcceptInvite`).
+
+### Open points
+- The full invite form on the Staff screen is T20. This task adds the accept page and the copy-link dialog only.
+
+---
+
+## COD-57 — Target service (M6-T07)
+**Date:** 2026-11-01 | **Type:** feat | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-57-t07-targets`, merge 2e37b9b1) | **Commits:** 4508bbce, 2dff0328
+
+### Summary
+The service behind the target tree: North Star (year), quarter, month, role, person and daily targets. Plan task: M6-T07. The routes come in T08, so COD-57 stays In Progress.
+
+### Changes
+- **One write path (`targetService.writeTarget(tx, tenantId, op)`):** the ops are save, set children, delete and release. Each op locks the parent and child rows (`FOR UPDATE`) in one transaction.
+- **Children must add up:** children that do not sum to the parent are rejected, and the message gives the difference.
+- **Closed months (`monthClosed`, `closedMonths`):** a month with `closedAt` set cannot be edited.
+- **Unassign returns the target to the pool:** `releasePersonTargets` runs inside the unassign transaction in `roleAssignmentService`. The notice (`announceRelease`) and the audit row go out after the commit.
+- **Holder added mid-month:** no automatic proration. The person shows "Set a target" until the owner sets one.
+- **Daily activity targets:** they save; a metric with no data returns "No data for this metric".
+- **Year pace (`kpi/yearPace.ts`, `paceMarker`):** quarter plan, not straight days. Expected to date = closed quarter targets + (days gone / days in quarter) x current quarter target. `paceBasis` is `quarter_plan` or `days`. Quarter and month pace stay straight days. `utcDate` added to `kpi/dates.ts`.
+
+### Verification
+- Merged branch (2e37b9b1): migrate, generate, backend typecheck, lint and build clean. Unit 124 suites / 1680 tests pass (`yearPace` fixture: 17 Oct gives 1,359,783 = 75.5%).
+- Integration: `m6Targets`, `m6RolesApi`, `m6StaffApi`, `m6Schema`, `m6RoleMigration`, `dashboardOwner`, `kpiLeadership`, `m5FinanceOverview`: 10 suites / 185 tests pass.
+- Service only; the target screens come later, so no browser check here.
+
+### Open points
+- The last-Owner count in unassign runs before the transaction. The fix (row lock inside the transaction) is on the T08 branch.
+
+---
+
 ## COD-58 — Persistent assignment cursor
 **Date:** 2026-10-31 | **Type:** feat | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-58-t13-cursor`, merge 3fa283e7) | **Commits:** 68577a8c, 5840ce98
 

@@ -1,0 +1,447 @@
+import { Prisma, Target, TargetScope } from '@prisma/client';
+import prisma, { prismaBase } from '../utils/prisma';
+import { resolveTenantId } from '../utils/tenantContext';
+import { startOfUtcDay } from '../utils/startOfUtcDay';
+import { fullName } from '../utils/nameUtils';
+import logger from '../utils/logger';
+import { AppError } from '../middleware/errorHandler';
+import * as Money from '../utils/money';
+import { auditService } from './auditService';
+import { createNotification, findTenantAdmins } from './notificationService';
+import { holderSelect, holderView } from './roleService';
+import { HUMAN_USERS_WHERE } from './systemUserService';
+import { failedDeliveryCalls, FAILED_CALLS_METRIC } from './kpi/daily';
+import { DAY_MS, endOfDay, getStoreTimeZone, MONTH_RE, parseYmd, startOfDay, utcDate, utcDateOfYmd, ymdOfUtc } from './kpi/dates';
+
+/**
+ * M6-T07 (F-1100, F-1103): the target tree on the one `Target` table.
+ *
+ *   north_star (year) -> quarter -> month -> role -> person        and a separate `daily` activity target
+ *
+ * - A period is a string: '2026' (north_star), '2026-Q4' (quarter), '2026-10' (month, role, person). A daily target has a
+ *   start day and stands until a newer one replaces it.
+ * - Quarter and month values exist only as a whole set (`setChildren`): the quarters of a year add up to the North Star and
+ *   the months of a quarter to the quarter, or the set is rejected with the difference. A role target sits under a month and a
+ *   person target under a role target, same metric; together they may add up to less than the parent (what is left is the
+ *   role pool) but never to more.
+ * - A closed month locks itself and everything inside it. Other months of the same quarter can still be re-planned.
+ * - A holder added mid-month gets no automatic share: until the owner sets one, the person shows "Set a target" (F-1102).
+ * - Every write goes through `writeTarget`, one transaction that locks the parent row (and the month rows for the closed
+ *   check), so two writes under one parent cannot both pass the sum check.
+ */
+
+export const SET_A_TARGET = 'Set a target';
+export const NO_DATA_FOR_METRIC = 'No data for this metric';
+
+/** The levels. A child sits under `scope` parents; `exact` children must add up to the parent, the others to at most. */
+const CHILD: Partial<Record<TargetScope, { scope: TargetScope; name: string; exact: boolean }>> = {
+  north_star: { scope: 'quarter', name: 'quarters', exact: true },
+  quarter: { scope: 'month', name: 'months', exact: true },
+  month: { scope: 'role', name: 'role targets', exact: false },
+  role: { scope: 'person', name: 'person targets', exact: false },
+};
+const PARENT = Object.fromEntries(Object.entries(CHILD).map(([parent, c]) => [c.scope, parent as TargetScope])) as Partial<Record<TargetScope, TargetScope>>;
+/** A daily target that is not replaced runs to this day. */
+const OPEN_END = utcDate(2999, 12, 31);
+
+export interface TargetInput {
+  /** north_star, role, person or daily. Quarters and months are saved with `setChildren`. */
+  scope: TargetScope;
+  metric: string;
+  unit: string;
+  value: Money.MoneyInput;
+  /** '2026' | '2026-10' for the tree; a start day 'YYYY-MM-DD' for daily (default today). */
+  period?: string;
+  /** Optional. Without one, a role/person target links to the parent that covers its period with the same metric. */
+  parentId?: number;
+  roleId?: number;
+  userId?: number;
+}
+
+export interface ChildInput { period: string; value: Money.MoneyInput }
+
+type Db = Prisma.TransactionClient;
+interface Row { scope: TargetScope; metric: string; unit: string; value: Money.Money; start: Date; end: Date; parentId?: number; roleId?: number; userId?: number }
+type WriteOp =
+  | { kind: 'save'; row: Row }
+  | { kind: 'set'; parentId: number; children: Array<{ start: Date; end: Date; value: Money.Money }> }
+  | { kind: 'delete'; id: number }
+  | { kind: 'release'; roleId: number; userId: number; today: Date };
+
+const money = (v: Money.MoneyInput) => Money.toApi(v);
+const bad = (period: string | undefined, scope: TargetScope) => new AppError(`Invalid period "${period}" for a ${scope} target`, 400, 'INVALID_PERIOD');
+
+/** [start, end] of a period string for `scope`. */
+export function periodBounds(scope: TargetScope, period?: string): { start: Date; end: Date } {
+  if (scope === 'daily') {
+    if (!period) return { start: startOfUtcDay(), end: OPEN_END };
+    try { parseYmd(period); } catch { throw bad(period, scope); }
+    return { start: utcDateOfYmd(period), end: OPEN_END };
+  }
+  if (scope === 'north_star') {
+    if (!period || !/^\d{4}$/.test(period)) throw bad(period, scope);
+    return { start: utcDate(Number(period), 1), end: utcDate(Number(period), 13, 0) };
+  }
+  if (scope === 'quarter') {
+    const m = /^(\d{4})-Q([1-4])$/.exec(period ?? '');
+    if (!m) throw bad(period, scope);
+    const first = (Number(m[2]) - 1) * 3 + 1;
+    return { start: utcDate(Number(m[1]), first), end: utcDate(Number(m[1]), first + 3, 0) };
+  }
+  const m = MONTH_RE.exec(period ?? '');
+  if (!m) throw bad(period, scope);
+  return { start: utcDate(Number(m[1]), Number(m[2])), end: utcDate(Number(m[1]), Number(m[2]) + 1, 0) };
+}
+
+// ---- Checks ---------------------------------------------------------------------------------------------------------
+
+/** `sum` is what the children add up to. Exact levels must equal the parent; the others must not exceed it. */
+function assertSum(parentScope: TargetScope, sum: Money.Money, value: Money.Money) {
+  const { name, exact } = CHILD[parentScope]!;
+  if (exact ? sum.eq(value) : sum.lte(value)) return;
+  const diff = Money.sub(sum, value);
+  throw new AppError(
+    `The ${name} add up to ${money(sum)} but the ${parentScope.replace('_', ' ')} is ${money(value)} `
+    + `(${diff.gt(0) ? 'over' : 'short'} by ${money(diff.abs())}). Difference: ${money(diff.abs())}`,
+    400, 'CHILDREN_SUM_MISMATCH',
+  );
+}
+
+const CLOSED_MESSAGE = 'This month is closed and its targets cannot be edited';
+const closedError = () => new AppError(CLOSED_MESSAGE, 409, 'MONTH_CLOSED');
+
+const lock = (tx: Db, tenantId: string, ids: number[]) =>
+  tx.$queryRaw`SELECT id FROM targets WHERE tenant_id = ${tenantId} AND id IN (${Prisma.join(ids)}) ORDER BY id FOR UPDATE`;
+
+/**
+ * The closed month targets that touch [start, end]. The same query locks every month row it covers, so a month cannot be
+ * closed while a write inside it is in flight.
+ */
+async function closedMonths(tx: Db, tenantId: string, start: Date, end: Date) {
+  const rows = await tx.$queryRaw<Array<{ period_start: Date; period_end: Date; closed_at: Date | null }>>`
+    SELECT period_start, period_end, closed_at FROM targets
+    WHERE tenant_id = ${tenantId} AND scope::text = 'month' AND period_start <= ${end} AND period_end >= ${start}
+    ORDER BY id FOR UPDATE`;
+  return rows.filter((r) => r.closed_at !== null);
+}
+const monthClosed = async (tx: Db, tenantId: string, start: Date, end: Date) => (await closedMonths(tx, tenantId, start, end)).length > 0;
+
+/** Targets that sit under `parent` and still count: a person target cut short by an unassign is released, so it does not. */
+const underParent = (tenantId: string, parent: Pick<Target, 'id' | 'scope' | 'periodEnd'>): Prisma.TargetWhereInput => ({
+  tenantId, parentId: parent.id, ...(parent.scope === 'role' ? { periodEnd: { gte: parent.periodEnd } } : {}),
+});
+
+const childSum = async (tx: Db, tenantId: string, parent: Pick<Target, 'id' | 'scope' | 'periodEnd'>, exceptId?: number) => {
+  const r = await tx.target.aggregate({
+    where: { ...underParent(tenantId, parent), ...(exceptId ? { id: { not: exceptId } } : {}) }, _sum: { value: true }, _count: true,
+  });
+  return { sum: Money.orZero(r._sum.value), count: r._count };
+};
+
+/** The rows of one slot (scope, metric, owner) that start on any of `starts`. */
+const findSlots = (tx: Db, tenantId: string, slot: Pick<Row, 'scope' | 'metric' | 'roleId' | 'userId'>, starts: Date[]) =>
+  tx.target.findMany({
+    where: { tenantId, scope: slot.scope, metric: slot.metric, roleId: slot.roleId ?? null, userId: slot.userId ?? null, periodStart: { in: starts } },
+  });
+
+// ---- The one write path ---------------------------------------------------------------------------------------------
+
+/** The parent of a role or person target: the named one, else the one that covers the period with the same metric. Locked. */
+async function lockParent(tx: Db, tenantId: string, row: Row): Promise<Target | null> {
+  const need = PARENT[row.scope];
+  if (!need) return null;
+  const found = await tx.target.findFirst({
+    where: {
+      tenantId,
+      ...(row.parentId !== undefined
+        ? { id: row.parentId }
+        : { scope: need, metric: row.metric, periodStart: { lte: row.start }, periodEnd: { gte: row.start }, ...(row.scope === 'person' ? { roleId: row.roleId } : { roleId: null, userId: null }) }),
+    },
+  });
+  if (!found) {
+    if (row.parentId !== undefined) throw new AppError('Parent target not found', 404);
+    throw new AppError(`A ${row.scope} target needs a ${need} target for this period and metric first`, 400, 'NO_PARENT');
+  }
+  if (found.scope !== need) throw new AppError(`A ${row.scope} target sits under a ${need} target`, 400, 'WRONG_PARENT_SCOPE');
+  if (found.metric !== row.metric) throw new AppError(`The parent target is "${found.metric}"; a child uses the same metric`, 400, 'METRIC_MISMATCH');
+  const outside = row.start < found.periodStart || row.start > found.periodEnd
+    || (ymdOfUtc(found.periodStart) !== ymdOfUtc(row.start) && (row.scope === 'role' || row.scope === 'person'));
+  if (outside) throw new AppError('The child period is outside the parent period', 400, 'INVALID_PERIOD');
+  if (row.scope === 'person' && found.roleId !== row.roleId) throw new AppError('The role target belongs to another role', 400, 'WRONG_PARENT_SCOPE');
+  await lock(tx, tenantId, [found.id]);
+  return tx.target.findFirstOrThrow({ where: { id: found.id } });
+}
+
+async function saveRow(tx: Db, tenantId: string, row: Row): Promise<Target> {
+  if (row.scope === 'person' && (await tx.roleAssignment.count({ where: { tenantId, roleId: row.roleId, holderId: row.userId, toDate: null } })) === 0) {
+    throw new AppError('This person does not hold the role', 400, 'NOT_A_HOLDER');
+  }
+  const parent = await lockParent(tx, tenantId, row);
+  if (row.scope !== 'north_star' && (await monthClosed(tx, tenantId, row.start, row.scope === 'daily' ? row.start : row.end))) throw closedError();
+  const [existing] = await findSlots(tx, tenantId, row, [row.start]);
+  if (existing?.closedAt) throw closedError();
+
+  if (parent) assertSum(parent.scope, Money.add((await childSum(tx, tenantId, parent, existing?.id)).sum, row.value), parent.value);
+  if (existing) {
+    const kids = await childSum(tx, tenantId, existing);
+    if (kids.count > 0) assertSum(existing.scope, kids.sum, row.value);
+  }
+  if (existing) return tx.target.update({ where: { id: existing.id }, data: { unit: row.unit, value: row.value, parentId: parent?.id ?? null } });
+
+  if (row.scope === 'daily') {
+    // A new start day ends the previous open target of the same metric and owner the day before.
+    await tx.target.updateMany({
+      where: { tenantId, scope: 'daily', metric: row.metric, userId: row.userId ?? null, periodStart: { lt: row.start }, periodEnd: { gte: row.start } },
+      data: { periodEnd: new Date(row.start.getTime() - DAY_MS) },
+    });
+  }
+  return tx.target.create({
+    data: {
+      tenantId, scope: row.scope, metric: row.metric, unit: row.unit, value: row.value, periodStart: row.start, periodEnd: row.end,
+      parentId: parent?.id ?? null, roleId: row.roleId ?? null, userId: row.userId ?? null,
+    },
+  });
+}
+
+async function setRows(tx: Db, tenantId: string, op: Extract<WriteOp, { kind: 'set' }>): Promise<Target[]> {
+  await lock(tx, tenantId, [op.parentId]);
+  const parent = await tx.target.findFirst({ where: { id: op.parentId, tenantId } });
+  if (!parent) throw new AppError('Parent target not found', 404);
+  const level = CHILD[parent.scope];
+  if (!level?.exact) throw new AppError('Only a North Star or quarter target takes a set of children', 400, 'WRONG_PARENT_SCOPE');
+  if (parent.closedAt) throw closedError();
+  if (parent.scope === 'quarter') await closedMonths(tx, tenantId, parent.periodStart, parent.periodEnd); // locks the month rows
+
+  const starts = op.children.map((c) => c.start);
+  if (new Set(starts.map((s) => s.getTime())).size !== starts.length) throw new AppError('A period is listed twice', 400, 'DUPLICATE_PERIOD');
+  for (const c of op.children) {
+    if (c.start < parent.periodStart || c.end > parent.periodEnd) throw new AppError(`${ymdOfUtc(c.start)} is outside the parent period`, 400, 'INVALID_PERIOD');
+  }
+  const existing = new Map((await tx.target.findMany({
+    where: { tenantId, OR: [{ parentId: parent.id }, { scope: level.scope, metric: parent.metric, roleId: null, userId: null, periodStart: { in: starts } }] },
+  })).map((r) => [r.id, r]));
+  const slotOf = (start: Date) => [...existing.values()].find((r) => r.scope === level.scope && r.periodStart.getTime() === start.getTime() && r.userId === null && r.roleId === null);
+
+  // A closed child keeps its value; the others may move as long as the whole set still adds up.
+  const changes: Array<{ row?: Target; child: (typeof op.children)[number] }> = [];
+  const values = new Map([...existing].map(([id, r]) => [id, r.value as Money.Money]));
+  let fresh = Money.ZERO;
+  for (const child of op.children) {
+    const row = slotOf(child.start);
+    if (row?.closedAt && !row.value.eq(child.value)) throw closedError();
+    if (row) { values.set(row.id, child.value); if (!row.value.eq(child.value) || row.parentId !== parent.id) changes.push({ row, child }); }
+    else { fresh = Money.add(fresh, child.value); changes.push({ child }); }
+  }
+  assertSum(parent.scope, Money.add(Money.sum(values.values()), fresh), parent.value);
+
+  // A child whose value moves must still match what sits under it.
+  const moved = changes.filter((c) => c.row && !c.row.value.eq(c.child.value)).map((c) => c.row!);
+  if (moved.length > 0) {
+    const under = await tx.target.groupBy({ by: ['parentId'], where: { tenantId, parentId: { in: moved.map((r) => r.id) } }, _sum: { value: true }, _count: true });
+    for (const g of under) {
+      const row = moved.find((r) => r.id === g.parentId)!;
+      if (g._count > 0) assertSum(row.scope, Money.orZero(g._sum.value), values.get(row.id)!);
+    }
+  }
+
+  const saved: Target[] = [];
+  for (const { row, child } of changes) {
+    saved.push(row
+      ? await tx.target.update({ where: { id: row.id }, data: { value: child.value, parentId: parent.id } })
+      : await tx.target.create({
+        data: { tenantId, scope: level.scope, metric: parent.metric, unit: parent.unit, value: child.value, periodStart: child.start, periodEnd: child.end, parentId: parent.id },
+      }));
+  }
+  // Children that did not change are still part of the answer.
+  const savedIds = new Set(saved.map((s) => s.id));
+  const unchanged = op.children.map((c) => slotOf(c.start)).filter((r): r is Target => !!r && !savedIds.has(r.id));
+  return [...saved, ...unchanged].sort((a, b) => a.periodStart.getTime() - b.periodStart.getTime());
+}
+
+async function deleteRow(tx: Db, tenantId: string, id: number): Promise<void> {
+  const target = await tx.target.findFirst({ where: { id, tenantId } });
+  if (!target) throw new AppError('Target not found', 404);
+  if (target.scope === 'quarter' || target.scope === 'month') throw new AppError('A quarter or month is changed with setChildren, not removed', 409, 'SET_ONLY');
+  if (target.parentId) await lock(tx, tenantId, [target.parentId]);
+  if (target.closedAt || (target.scope !== 'north_star' && (await monthClosed(tx, tenantId, target.periodStart, target.scope === 'daily' ? target.periodStart : target.periodEnd)))) throw closedError();
+  if ((await tx.target.count({ where: { tenantId, parentId: id } })) > 0) throw new AppError('Remove the targets under it first', 409, 'HAS_CHILDREN');
+  await tx.target.delete({ where: { id } });
+}
+
+/**
+ * A person left the role: future-month person targets are removed; the current one stays for the history with its period cut
+ * to the day before `today`, so it no longer counts (the amount is back in the role pool). Rows in a closed month stay.
+ */
+async function releaseRows(tx: Db, tenantId: string, op: Extract<WriteOp, { kind: 'release' }>) {
+  const rows = await tx.target.findMany({
+    where: { tenantId, scope: 'person', roleId: op.roleId, userId: op.userId, closedAt: null, periodEnd: { gte: op.today } },
+    orderBy: { periodStart: 'asc' },
+  });
+  if (rows.length === 0) return [];
+  await lock(tx, tenantId, rows.map((r) => r.id));
+  const closed = await closedMonths(tx, tenantId, rows[0].periodStart, rows[rows.length - 1].periodEnd);
+  const open = rows.filter((r) => !closed.some((m) => m.period_start <= r.periodEnd && m.period_end >= r.periodStart));
+  const drop = open.filter((r) => r.periodStart >= op.today);
+  const cut = open.filter((r) => r.periodStart < op.today);
+  if (drop.length > 0) await tx.target.deleteMany({ where: { id: { in: drop.map((r) => r.id) } } });
+  if (cut.length > 0) await tx.target.updateMany({ where: { id: { in: cut.map((r) => r.id) } }, data: { periodEnd: new Date(op.today.getTime() - DAY_MS) } });
+  return open;
+}
+
+/** The only function that writes `Target` rows. */
+async function writeTarget(tx: Db, tenantId: string, op: WriteOp) {
+  switch (op.kind) {
+    case 'save': return saveRow(tx, tenantId, op.row);
+    case 'set': return setRows(tx, tenantId, op);
+    case 'delete': return deleteRow(tx, tenantId, op.id);
+    case 'release': return releaseRows(tx, tenantId, op);
+  }
+}
+
+const run = <T extends WriteOp>(op: T) => {
+  const tenantId = resolveTenantId();
+  // The un-extended client: every query inside names the tenant.
+  return prismaBase.$transaction((tx) => writeTarget(tx, tenantId, op));
+};
+
+// ---- Public writes --------------------------------------------------------------------------------------------------
+
+/** Save a North Star, role, person or daily target (create, or update the row for the same scope, metric, period and owner). */
+export async function saveTarget(input: TargetInput): Promise<Target> {
+  const { scope } = input;
+  if (scope === 'quarter' || scope === 'month') {
+    throw new AppError(`A ${scope} target is saved with its quarter or year as a set: use setChildren on the ${PARENT[scope]!.replace('_', ' ')} target`, 400, 'SET_ONLY');
+  }
+  if (!input.metric?.trim() || !input.unit?.trim()) throw new AppError('A target needs a metric and a unit', 400);
+  const value = Money.tryParse(input.value);
+  if (value === null || value.lt(0)) throw new AppError('A target value must be a number of 0 or more', 400);
+  if ((scope === 'role' || scope === 'person') && !input.roleId) throw new AppError(`A ${scope} target needs a role`, 400);
+  if (scope === 'person' && !input.userId) throw new AppError('A person target needs a person', 400);
+  if (scope === 'north_star' && (input.roleId || input.userId)) throw new AppError('A North Star target has no role or person', 400);
+  const { start, end } = periodBounds(scope, input.period);
+  return run({
+    kind: 'save',
+    row: { scope, metric: input.metric, unit: input.unit, value, start, end, parentId: input.parentId, roleId: input.roleId, userId: input.userId },
+  }) as Promise<Target>;
+}
+
+/**
+ * Save the whole set of children of a North Star (its quarters) or quarter (its months). The set, with any child of the parent
+ * that is not listed, must add up to the parent exactly, or nothing is saved and the difference is in the message. A closed
+ * month keeps its value; the others can move. Returns the children.
+ */
+export async function setChildren(parentId: number, children: ChildInput[]): Promise<Target[]> {
+  const parent = await prisma.target.findFirst({ where: { id: parentId }, select: { scope: true } });
+  if (!parent) throw new AppError('Parent target not found', 404);
+  const childScope = CHILD[parent.scope]?.scope;
+  if (!childScope || !CHILD[parent.scope]!.exact) throw new AppError('Only a North Star or quarter target takes a set of children', 400, 'WRONG_PARENT_SCOPE');
+  const planned = children.map((c) => {
+    const value = Money.tryParse(c.value);
+    if (value === null || value.lt(0)) throw new AppError('A target value must be a number of 0 or more', 400);
+    return { ...periodBounds(childScope, c.period), value };
+  });
+  return run({ kind: 'set', parentId, children: planned }) as Promise<Target[]>;
+}
+
+/** Delete a North Star, role, person or daily target that is not closed and has nothing under it. */
+export async function deleteTarget(id: number): Promise<void> {
+  await run({ kind: 'delete', id });
+}
+
+// ---- Role pool and person status (F-1102) ---------------------------------------------------------------------------
+
+/** A person target that stops before its month ends was released by an unassign: it does not count. */
+const liveHolderTargets = (roleId: number, month: { start: Date; end: Date }): Prisma.TargetWhereInput =>
+  ({ scope: 'person', roleId, periodStart: month.start, periodEnd: { gte: month.end } });
+
+/** The role's target for a month, what its persons hold, and what is left (the pool). Null when the role has no target. */
+export async function rolePool(roleId: number, month: string, metric?: string) {
+  const bounds = periodBounds('role', month);
+  const role = await prisma.target.findFirst({
+    where: { scope: 'role', roleId, periodStart: bounds.start, ...(metric ? { metric } : {}) }, orderBy: { createdAt: 'asc' },
+  });
+  if (!role) return null;
+  const persons = await prisma.target.aggregate({ where: { ...liveHolderTargets(roleId, bounds), metric: role.metric }, _sum: { value: true } });
+  const allocated = Money.orZero(persons._sum.value);
+  return { target: role, metric: role.metric, unit: role.unit, total: money(role.value), allocated: money(allocated), pool: money(Money.sub(role.value, allocated)) };
+}
+
+/** Each current holder of a role with their target for the month, or "Set a target" when the owner has not set one. */
+export async function roleHolderTargets(roleId: number, month: string) {
+  const bounds = periodBounds('role', month);
+  const [holders, targets] = await Promise.all([
+    prisma.roleAssignment.findMany({
+      where: { roleId, toDate: null, holder: { ...HUMAN_USERS_WHERE } }, select: { holder: { select: holderSelect } },
+    }),
+    prisma.target.findMany({ where: liveHolderTargets(roleId, bounds) }),
+  ]);
+  const byUser = new Map(targets.map((t) => [t.userId, t]));
+  return holders.map(({ holder }) => {
+    const mine = byUser.get(holder.id);
+    return {
+      userId: holder.id, name: holderView(holder).name,
+      target: mine ? { id: mine.id, metric: mine.metric, unit: mine.unit, value: money(mine.value) } : null,
+      label: mine ? null : SET_A_TARGET,
+    };
+  });
+}
+
+export interface ReleasedTargets {
+  notice: string;
+  returned: Array<{ metric: string; unit: string; value: string; month: string; kept: boolean }>;
+  roleId: number;
+  userId: number;
+}
+
+/**
+ * Call inside the transaction that ends the assignment (roleAssignmentService.unassign). Releases the person's open targets
+ * (see `releaseRows`) and returns the notice, or null when they had none. Send it after commit with `announceRelease`.
+ */
+export async function releasePersonTargets(
+  tx: Db, p: { tenantId: string; roleId: number; roleName: string; userId: number },
+): Promise<ReleasedTargets | null> {
+  const released = await writeTarget(tx, p.tenantId, { kind: 'release', roleId: p.roleId, userId: p.userId, today: startOfUtcDay() }) as Target[];
+  if (released.length === 0) return null;
+  const person = fullName(await tx.user.findFirst({ where: { id: p.userId, tenantId: p.tenantId }, select: { firstName: true, lastName: true } })) || 'A person';
+  const returned = released.map((t) => ({
+    metric: t.metric, unit: t.unit, value: money(t.value), month: ymdOfUtc(t.periodStart).slice(0, 7), kept: t.periodStart < startOfUtcDay(),
+  }));
+  const parts = returned.map((r) => `${r.value} ${r.unit} for ${r.month}`).join(', ');
+  return { notice: `${person} left ${p.roleName}. Their target of ${parts} went back to the ${p.roleName} pool.`, returned, roleId: p.roleId, userId: p.userId };
+}
+
+/** After commit: one audit row with the released values, and the notice to the actor and the admins. Never fails the caller. */
+export async function announceRelease(actorId: number, r: ReleasedTargets): Promise<void> {
+  try {
+    await auditService.record({
+      actorId, actorKind: 'person', channel: 'app', action: 'target_release', resource: 'role', resourceId: String(r.roleId),
+      metadata: { userId: r.userId, returned: r.returned },
+    });
+    const recipients = new Set([actorId, ...(await findTenantAdmins()).map((a) => a.id)]);
+    await Promise.all([...recipients].map((id) =>
+      createNotification(String(id), 'target_returned', 'Target returned to the role pool', r.notice, { roleId: r.roleId, userId: r.userId, returned: r.returned })));
+  } catch (error) {
+    logger.error('Target release: audit or notice failed', { roleId: r.roleId, userId: r.userId, error });
+  }
+}
+
+// ---- Daily activity targets (F-1103) --------------------------------------------------------------------------------
+
+/** Metrics that have a day-level source. Any other daily metric saves (`saveTarget`, scope daily), but has no data to read. */
+const DAILY_SOURCES: Record<string, ((tenantId: string, from: Date, to: Date) => Promise<number>) | undefined> = {
+  [FAILED_CALLS_METRIC]: async (tenantId, from, to) => (await failedDeliveryCalls(tenantId, from, to)).value,
+};
+
+/** The daily target in force on `date` ('YYYY-MM-DD') and that day's count. A metric with no source says "No data for this metric". */
+export async function dailyTargetProgress(metric: string, date: string, userId?: number) {
+  const tenantId = resolveTenantId();
+  const day = utcDateOfYmd(date);
+  const target = await prisma.target.findFirst({
+    where: { scope: 'daily', metric, userId: userId ?? null, periodStart: { lte: day }, periodEnd: { gte: day } },
+    orderBy: [{ periodStart: 'desc' }, { createdAt: 'desc' }],
+  });
+  const source = DAILY_SOURCES[metric];
+  const zone = getStoreTimeZone(tenantId);
+  const actual = source ? await source(tenantId, startOfDay(date, zone), endOfDay(date, zone)) : null;
+  return { metric, date, target: target ? Number(target.value) : null, actual, message: source ? null : NO_DATA_FOR_METRIC };
+}

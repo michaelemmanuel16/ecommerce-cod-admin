@@ -169,8 +169,10 @@ async function ladderBlock(c: Context) {
       actual: a.actual,
       target: a.target,
       percent: a.value,
-      /** Days gone / days in the period, percent. */
+      /** Pace marker, percent: days gone / days in the period; the year follows its quarter plan (see paceBasis). */
       pace: a.pace,
+      /** 'quarter_plan' when the pace follows the quarter targets (the year), else 'days'. */
+      paceBasis: a.paceBasis,
       daysLeft: gone.daysInPeriod - gone.daysGone,
       tag: progressTag(a.value, a.pace),
     };

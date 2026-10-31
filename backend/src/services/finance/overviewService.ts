@@ -18,7 +18,7 @@ import { fullName } from '../../utils/nameUtils';
 import { formatOrderNumber } from '../../utils/orderNumber';
 import { getStoreTimeZone, localDate, parseYmd, shiftYmd, startOfDay, utcDateOfYmd, ymdOfUtc } from '../kpi/dates';
 import { deliveredAov, deliveredRevenue } from '../kpi/revenue';
-import { coveringTarget, paceMarker, periodOfTarget } from '../kpi/leadership';
+import { coveringTarget, loadYearPlan, paceMarker, periodOfTarget } from '../kpi/leadership';
 import { progressTag } from '../kpi/status';
 import { ratePercent } from '../kpi/rates';
 import { topProductByDelivered } from './profitService';
@@ -144,7 +144,10 @@ export async function financeOverview(opts: OverviewOptions) {
     if (!target || !period || Money.parse(target.value).lte(0) || ymdOfUtc(target.periodStart) !== fromDay) return null;
     const r = await revenue();
     const percent = ratePercent(Money.parse(r.total.value).toNumber(), Money.parse(target.value).toNumber());
-    return { value: Money.toApi(target.value), status: progressTag(percent, paceMarker(parseYmd(toDay), period).percent) };
+    const day = parseYmd(toDay);
+    // A year follows its quarter plan (M6-T07), so it needs the quarter targets.
+    const plan = period === 'year' ? await loadYearPlan(tenantId, day.year, target.value) : undefined;
+    return { value: Money.toApi(target.value), status: progressTag(percent, paceMarker(day, period, plan).percent) };
   });
   const runwayData = once(async () => {
     const [balances, ads] = await Promise.all([

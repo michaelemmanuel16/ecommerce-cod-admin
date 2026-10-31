@@ -5,10 +5,10 @@ import prisma, { TransactionClient } from '../utils/prisma';
 import { sessionService } from './sessionService';
 import { withSoftDeleted } from '../utils/prismaExtensions';
 import bcrypt from 'bcrypt';
-import { UserKind, UserRole } from '@prisma/client';
+import { Prisma, UserKind, UserRole } from '@prisma/client';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
-import { Requester, canManageRole } from '../utils/authUtils';
+import { Requester, assertMayManage, canManageRole } from '../utils/authUtils';
 import { clearWhatsAppConfigCache } from './whatsappService';
 import {
   encryptProviderSecrets,
@@ -20,12 +20,16 @@ import {
 } from '../utils/providerCrypto';
 import { getTenantId, resolveTenantId, withoutTenant } from '../utils/tenantContext';
 import { HUMAN_USERS_WHERE, SYSTEM_USER_PASSWORD } from './systemUserService';
-import { positionRoleId } from './systemRoleService';
+import { assertNotLastOwner, assignPositionRole, positionRoleId } from './systemRoleService';
+import { eraseUser } from './staffService';
+import { updateUserSchema } from '../validators/staffSchema';
+import { formatIssues } from '../tools/shared';
 import { saveGrid } from './rolePermissionService';
 import { clearPermissionsCache, getEffectivePermissions } from '../middleware/auth';
 import { ROLE_NAME_BY_USER_ROLE } from '../config/defaultRoles';
 import { assignmentSelect } from './roleService';
-import { isUniqueViolation } from '../utils/prismaErrors';
+import { emailConflictOf } from '../utils/prismaErrors';
+import { newInviteToken } from '../utils/inviteToken';
 import { startOfUtcDay } from '../utils/startOfUtcDay';
 import { formTenantBySlug } from './tenantLookupService';
 import { clearCheckoutFormConfigCache } from './checkoutFormService';
@@ -35,6 +39,16 @@ import { parseOperatingHours } from './kpi/workingTime';
 import { normalizeInternationalPhone } from '../utils/phone';
 import { isValidTimeZone } from '../utils/timeZone';
 import { defaultRolePermissions } from '../config/defaultRolePermissions';
+
+const USER_UPDATE_SELECT = {
+  id: true, email: true, firstName: true, lastName: true, phoneNumber: true, role: true, isActive: true,
+  country: true, commissionAmount: true, createdAt: true,
+} satisfies Prisma.UserSelect;
+
+const USER_CREATE_SELECT = {
+  id: true, email: true, firstName: true, lastName: true, phoneNumber: true, role: true, kind: true, isActive: true, invitedAt: true,
+  country: true, commissionAmount: true, createdAt: true, roleAssignments: { select: assignmentSelect },
+} satisfies Prisma.UserSelect;
 
 export const adminService = {
   /**
@@ -472,10 +486,17 @@ export const adminService = {
     vehicleType?: string;
     vehicleId?: string;
     /**
-     * No password at creation (M6-T03). `invite`: a person who has not accepted yet (inactive, invite date set; T06 sends the
-     * link and activates them). `none`: a company that never signs in (active). Login refuses both: the stored password is not a hash.
+     * No password at creation (M6-T03). `invite`: a person who has not accepted yet (inactive, invite date set, a 7-day token whose
+     * raw value comes back as `inviteToken` with `inviteExpiresAt`, shown once; accept-invite activates them). `none`: a company that never signs in (active). Login refuses both: the stored password is not a hash.
      */
     access?: 'invite' | 'none';
+    /** Pick the returned fields (default: `USER_CREATE_SELECT`). */
+    select?: Prisma.UserSelect;
+    /** The caller writes its own audit row (the invite does: `staff_invite`). */
+    skipAudit?: boolean;
+    /** City (delivery) and free preferences, e.g. how the person is paid (M6-T06). */
+    location?: string;
+    preferences?: Prisma.InputJsonObject;
     /** The role the new user holds from today. Default: the position role mapped from `role` (F-1155). */
     roleId?: number;
     /** Create inside the caller's transaction (M4-T19). The caller writes the audit row for the whole unit of work. */
@@ -495,6 +516,7 @@ export const adminService = {
 
     const password = data.access ? SYSTEM_USER_PASSWORD : await bcrypt.hash(data.password!, 10);
     const db = data.tx ?? prisma;
+    const invite = data.access === 'invite' ? newInviteToken() : undefined;
     // The user and the role they hold are one write (F-1155). A tenant with no roles yet gets the user and no assignment.
     const roleId = data.roleId ?? await positionRoleId(db, data.role);
 
@@ -512,108 +534,111 @@ export const adminService = {
           ...(data.kind && { kind: data.kind }),
           ...(data.vehicleType && { vehicleType: data.vehicleType }),
           ...(data.vehicleId && { vehicleId: data.vehicleId }),
-          ...(data.access === 'invite' && { isActive: false, invitedAt: new Date() }),
+          ...(data.location && { location: data.location }),
+          ...(data.preferences && { preferences: data.preferences }),
+          ...(invite && { isActive: false, invitedAt: new Date(), inviteTokenHash: invite.hash, inviteExpiresAt: invite.expiresAt }),
           ...(roleId !== null && { roleAssignments: { create: { tenantId: resolveTenantId(), roleId, fromDate: startOfUtcDay() } } }),
         },
-        select: {
-          id: true,
-          email: true,
-          firstName: true,
-          lastName: true,
-          phoneNumber: true,
-          role: true,
-          kind: true,
-          isActive: true,
-          invitedAt: true,
-          country: true,
-          commissionAmount: true,
-          createdAt: true,
-          roleAssignments: { select: assignmentSelect },
-        },
-      });
+        select: (data.select ?? USER_CREATE_SELECT) as typeof USER_CREATE_SELECT,
+      }) as Prisma.UserGetPayload<{ select: typeof USER_CREATE_SELECT }>;
     } catch (error) {
       // Email is unique across all tenants.
-      if (isUniqueViolation(error) && String((error as { meta?: { target?: unknown } }).meta?.target ?? '').includes('email')) {
-        throw new AppError('A user with this email already exists', 409, 'EMAIL_EXISTS');
-      }
-      throw error;
+      throw emailConflictOf(error) ?? error;
     }
 
-    if (!data.tx) await this.createAuditLog(requester, 'create', 'user', user.id.toString(), { email: user.email, role: user.role });
+    if (!data.tx && !data.skipAudit) await this.createAuditLog(requester, 'create', 'user', user.id.toString(), { email: user.email, role: user.role });
 
-    return user;
+    // The raw invite token: only here, never stored. The caller builds the link.
+    return invite ? { ...user, inviteToken: invite.raw, inviteExpiresAt: invite.expiresAt } : user;
   },
 
-  async updateUser(requester: Requester, userId: number, data: {
-    email?: string;
-    name?: string;
-    phoneNumber?: string;
-    role?: UserRole;
-    isActive?: boolean;
-    commissionAmount?: number;
-  }) {
+  /**
+   * The one gate for changes that can take the last Owner away (deactivate, delete, demote) and the write itself, in ONE
+   * transaction: it locks the tenant's active Owner rows, checks the person is not the last one, runs `write`, and then
+   * (`endSessions`) signs the person out everywhere. `verb` completes "The last Owner cannot be ...", or is null for a
+   * change that needs no check.
+   */
+  async writeWithOwnerGuard<T>(
+    target: { id: number; role: UserRole },
+    verb: string | null,
+    write: (tx: TransactionClient) => Promise<T>,
+    endSessions: boolean,
+  ): Promise<T> {
+    const result = await prisma.$transaction(async (tx) => {
+      if (verb) await assertNotLastOwner(tx, target, verb);
+      return write(tx);
+    });
+    if (endSessions) await sessionService.revokeAll(target.id);
+    return result;
+  },
+
+  /**
+   * Edit a person. Only the fields of `updateUserSchema` get through; anything else in `data` is dropped. A role change moves
+   * the position role with it (F-1155). Deactivating or demoting the last Owner is refused. `select` picks the returned fields.
+   */
+  async updateUser(requester: Requester, userId: number, data: Record<string, unknown>, options: { select?: Prisma.UserSelect } = {}) {
     await this.checkAdminPrivilege(requester, 'admin');
+
+    const parsed = updateUserSchema.safeParse(data);
+    if (!parsed.success) throw new AppError(formatIssues(parsed.error, 'body'), 400, 'VALIDATION_ERROR');
+    const { name, ...input } = parsed.data;
 
     // withSoftDeleted bypasses the soft-delete auto-inject so this lookup
     // can find inactive users — admins must be able to reactivate them.
     const targetUser = await withSoftDeleted(() => prisma.user.findUnique({
       where: { id: userId },
-      select: { role: true }
+      select: { role: true, isActive: true, invitedAt: true, deletedAt: true }
     }));
 
     if (!targetUser) {
       throw new AppError('User not found', 404);
     }
+    const target = { id: userId, role: targetUser.role };
+
+    // Any edit of another person (name, email, phone, ...) needs rank over them; an email change would otherwise be an account takeover.
+    if (requester.id !== userId) assertMayManage(requester, target, { higher: 'Access denied: Cannot modify a user with a higher role.' });
+    // Coming back from a soft delete or a pending invite has its own rules (reactivateStaff); this route does not restore.
+    if (input.isActive === true) {
+      if (targetUser.deletedAt) throw new AppError('Restore this person from the Deleted tab', 409, 'STAFF_DELETED');
+      if (!targetUser.isActive && targetUser.invitedAt) throw new AppError('This person has not accepted the invite yet', 409, 'STAFF_INVITED');
+    }
 
     // Role management protection
-    if (data.role) {
-      // 1. Cannot promote self (prevent self-role escalation)
-      if (requester.id === userId && requester.role !== data.role) {
+    if (input.role) {
+      // Cannot promote self (prevent self-role escalation)
+      if (requester.id === userId && requester.role !== input.role) {
         throw new AppError('Access denied: Cannot change your own role.', 403);
       }
-
-      // 2. Cannot promote to a role higher than your own
-      if (!canManageRole(requester.role, data.role)) {
-        throw new AppError(`Access denied: Cannot promote user to ${data.role} role.`, 403);
-      }
-
-      // 3. Cannot modify a user with a higher role than your own
-      if (!canManageRole(requester.role, targetUser.role)) {
-        throw new AppError('Access denied: Cannot modify a user with a higher role.', 403);
+      // Cannot promote to a role higher than your own
+      if (!canManageRole(requester.role, input.role)) {
+        throw new AppError(`Access denied: Cannot promote user to ${input.role} role.`, 403);
       }
     }
 
-    const updateData: any = { ...data };
-    // A delivery partner has no pay rate any more (F-915): a client that still sends deliveryRate is ignored.
-    delete updateData.deliveryRate;
+    const roleChanged = input.role !== undefined && input.role !== targetUser.role;
+    const deactivating = input.isActive === false;
+    const [firstName, ...rest] = name?.split(' ') ?? [];
+    const updateData: Prisma.UserUncheckedUpdateInput = {
+      ...input,
+      // An inactive person cannot accept an invite: the link dies with the deactivation.
+      ...(deactivating && { inviteTokenHash: null, inviteExpiresAt: null }),
+      // "First Last" in one field: the first word is the first name.
+      ...(name !== undefined && { firstName: firstName || 'Unknown', lastName: rest.join(' ') }),
+    };
+    const select = options.select ?? USER_UPDATE_SELECT;
 
-    // If name is provided, split it into firstName and lastName
-    if (data.name !== undefined) {
-      const nameParts = data.name.trim().split(' ');
-      updateData.firstName = nameParts[0] || 'Unknown';
-      updateData.lastName = nameParts.slice(1).join(' ') || '';
-      delete updateData.name;
+    let updatedUser;
+    try {
+      // The user row and their position role change together, behind the last-Owner guard.
+      updatedUser = await this.writeWithOwnerGuard(target, deactivating ? 'deactivated' : roleChanged ? 'demoted' : null, async (tx) => {
+        // `select` is chosen by the caller, so the row type is open (the cast also spares the compiler a deep type).
+        const row: any = await tx.user.update({ where: { id: userId }, data: updateData, select } as any);
+        if (roleChanged) await assignPositionRole(tx, userId, input.role!);
+        return row;
+      }, deactivating); // deactivating signs the user out of every device at once (F-1224)
+    } catch (error) {
+      throw emailConflictOf(error) ?? error;
     }
-
-    const updatedUser = await prisma.user.update({
-      where: { id: userId },
-      data: updateData,
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        phoneNumber: true,
-        role: true,
-        isActive: true,
-        country: true,
-        commissionAmount: true,
-        createdAt: true,
-      } as any,
-    });
-
-    // Deactivating signs the user out of every device at once (F-1224)
-    if (data.isActive === false) await sessionService.revokeAll(userId);
 
     await this.createAuditLog(requester, 'update', 'user', userId.toString(), { changes: Object.keys(data) });
 
@@ -665,61 +690,22 @@ export const adminService = {
       throw new AppError('User not found', 404);
     }
 
-    if (!canManageRole(requester.role, targetUser.role)) {
-      throw new AppError('Access denied: Cannot deactivate a user with a higher role.', 403);
-    }
+    assertMayManage(requester, { id: userId, role: targetUser.role }, { higher: 'Access denied: Cannot deactivate a user with a higher role.' });
 
-    const result = await prisma.user.update({
-      where: { id: userId },
-      data: { isActive: false },
-    });
-
-    await sessionService.revokeAll(userId);
+    const result = await this.writeWithOwnerGuard({ id: userId, role: targetUser.role }, 'deactivated', (tx) =>
+      tx.user.update({ where: { id: userId }, data: { isActive: false, inviteTokenHash: null, inviteExpiresAt: null } }), true);
 
     await this.createAuditLog(requester, 'deactivate', 'user', userId.toString());
 
     return result;
   },
 
+  /** Erase a user for good; the erase itself (unlinking, tenant scope, HAS_RECORDS) is `eraseUser` in staffService. */
   async permanentlyDeleteUser(requester: Requester, userId: number) {
     await this.checkAdminPrivilege(requester, 'super_admin');
-    // Step 1: Nullify order references (preserves order history)
-    await prisma.order.updateMany({
-      where: {
-        OR: [
-          { customerRepId: userId },
-          { deliveryAgentId: userId },
-          { createdById: userId }
-        ]
-      },
-      data: {
-        customerRepId: null,
-        deliveryAgentId: null,
-        createdById: null
-      }
-    });
-
-    // Step 2: Nullify delivery agent references (preserves delivery history)
-    await prisma.delivery.updateMany({
-      where: { agentId: userId },
-      data: { agentId: null }
-    });
-
-    // Step 3: Nullify expense records (keep for accounting)
-    await prisma.expense.updateMany({
-      where: { recordedBy: userId },
-      data: { recordedBy: null }
-    });
-
-    // Step 4: Delete user's personal notifications
-    await prisma.notification.deleteMany({
-      where: { userId: userId }
-    });
-
-    // Step 5: Permanently delete the user
-    await prisma.user.delete({
-      where: { id: userId }
-    });
+    const target = await withSoftDeleted(() => prisma.user.findUnique({ where: { id: userId }, select: { id: true, role: true } }));
+    if (!target) throw new AppError('User not found', 404);
+    await eraseUser(target);
 
     await this.createAuditLog(requester, 'permanent_delete', 'user', userId.toString());
   },

@@ -43,6 +43,12 @@ export const authService = {
     return response.data;
   },
 
+  /** Spend an invite link: choose a password, become active and be signed in (M6-T06, F-1158). */
+  async acceptInvite(token: string, password: string): Promise<LoginResponse> {
+    const response = await apiClient.post('/api/auth/accept-invite', { token, password });
+    return response.data;
+  },
+
   async getProfile(): Promise<User> {
     const response = await apiClient.get('/api/auth/profile');
     return response.data;

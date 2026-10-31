@@ -75,6 +75,9 @@ export const ymdOfUtc = (instant: Date): string => localDate(instant, 'UTC');
 /** The UTC midnight of 'YYYY-MM-DD': the value a Postgres DATE column holds and Prisma reads back. */
 export const utcDateOfYmd = (ymd: string): Date => new Date(`${ymd}T00:00:00.000Z`);
 
+/** UTC midnight of a calendar day (month 1-12; day 1 by default): the value of a Postgres DATE column. */
+export const utcDate = (year: number, month: number, day = 1): Date => new Date(Date.UTC(year, month - 1, day));
+
 /** A date as YYYY-MM-DD (shape only; parseYmd checks it is a real day). */
 export const YMD = /^(\d{4})-(\d{2})-(\d{2})$/;
 

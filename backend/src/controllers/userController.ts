@@ -36,13 +36,9 @@ export const getAllUsers = async (req: AuthRequest, res: Response, next: NextFun
   }
 };
 
-export const createUser = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
-  try {
-    const user = await adminService.createUser(req.user!, req.body);
-    res.status(201).json({ user });
-  } catch (error) {
-    next(error);
-  }
+/** M6-T06: a person is invited (POST /api/staff/invite), never created with a password. */
+export const createUser = async (_req: AuthRequest, _res: Response, next: NextFunction): Promise<void> => {
+  next(new AppError('Creating a user with a password is gone. Invite the person instead: POST /api/staff/invite.', 410, 'USE_INVITE'));
 };
 
 export const getUser = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {

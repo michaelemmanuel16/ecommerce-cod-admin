@@ -452,29 +452,29 @@ describe('every new staff user gets their position role (T02 carry-forward)', ()
     return held.map((h) => h.role.name);
   };
 
-  it('POST /api/admin/users', async () => {
+  it('POST /api/staff/invite', async () => {
     const cases: Array<[string, string]> = [['sales_rep', 'Call rep'], ['accountant', 'Finance clerk'], ['inventory_manager', 'Stock keeper'], ['manager', 'Manager'], ['delivery_agent', 'Delivery']];
     for (const [role, name] of cases) {
-      const res = await api.post(ownerA, '/api/admin/users', { email: mailOf(role), password: 'Passw0rd!test', firstName: 'New', lastName: role, role });
+      const res = await api.post(ownerA, '/api/staff/invite', { email: mailOf(role), name: `New ${role}`, role });
       expect(res.status).toBe(201);
-      expect(await heldNames(res.body.id)).toEqual([name]);
+      expect(await heldNames(res.body.staff.id)).toEqual([name]);
     }
     // an admin creates a rep through the same path
-    const viaAdmin = await api.post(pair.a.users.admin.token, '/api/admin/users', { email: mailOf('byadmin'), password: 'Passw0rd!test', firstName: 'By', lastName: 'Admin', role: 'sales_rep' });
-    expect(await heldNames(viaAdmin.body.id)).toEqual(['Call rep']);
-    const admin = await api.post(ownerA, '/api/admin/users', { email: mailOf('adm'), password: 'Passw0rd!test', firstName: 'New', lastName: 'Admin', role: 'admin' });
-    expect(await heldNames(admin.body.id)).toEqual(['Admin']);
+    const viaAdmin = await api.post(pair.a.users.admin.token, '/api/staff/invite', { email: mailOf('byadmin'), name: 'By Admin', role: 'sales_rep' });
+    expect(await heldNames(viaAdmin.body.staff.id)).toEqual(['Call rep']);
+    const admin = await api.post(ownerA, '/api/staff/invite', { email: mailOf('adm'), name: 'New Admin', role: 'admin' });
+    expect(await heldNames(admin.body.staff.id)).toEqual(['Admin']);
   });
 
   it('a user that fails to save leaves no assignment; an unseeded tenant still creates the user', async () => {
-    const dup = await api.post(ownerA, '/api/admin/users', { email: pair.a.users.admin.email, password: 'Passw0rd!test', firstName: 'D', lastName: 'Up', role: 'sales_rep' });
+    const dup = await api.post(ownerA, '/api/staff/invite', { email: pair.a.users.admin.email, name: 'D Up', role: 'sales_rep' });
     expect(dup.status).toBe(409);
     const bare = await prismaBase.tenant.create({ data: { name: `Bare ${SUFFIX}`, slug: `m6roles-bare-${SUFFIX}` } });
     extraTenants.push(bare.id);
     const bareOwner = await superAdminToken(bare.id, `bare-${SUFFIX}`);
-    const res = await api.post(bareOwner, '/api/admin/users', { email: mailOf('bare'), password: 'Passw0rd!test', firstName: 'No', lastName: 'Roles', role: 'sales_rep' });
+    const res = await api.post(bareOwner, '/api/staff/invite', { email: mailOf('bare'), name: 'No Roles', role: 'sales_rep' });
     expect(res.status).toBe(201);
-    expect(await heldNames(res.body.id)).toEqual([]);
+    expect(await heldNames(res.body.staff.id)).toEqual([]);
   });
 
   it('a delivery partner (person and company) holds Delivery', async () => {

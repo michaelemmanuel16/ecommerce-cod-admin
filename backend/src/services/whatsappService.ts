@@ -279,6 +279,8 @@ interface SendTemplateOptions {
 interface SendTextOptions {
   to: string;
   body: string;
+  /** What the message log keeps instead of `body` (a text with a secret link). WhatsApp still gets `body`. */
+  logBody?: string;
   orderId?: number;
   customerId?: number;
 }
@@ -463,7 +465,7 @@ class WhatsAppService {
    * Send a free-form text message via WhatsApp.
    */
   async sendText(options: SendTextOptions): Promise<{ messageLogId: number; providerMessageId?: string }> {
-    const { to, body, orderId, customerId } = options;
+    const { to, body, logBody, orderId, customerId } = options;
     const formattedPhone = formatPhoneNumber(to);
 
     const messageLog = await prisma.messageLog.create({
@@ -472,7 +474,7 @@ class WhatsAppService {
         customerId,
         channel: MessageChannel.whatsapp,
         direction: MessageDirection.outbound,
-        messageBody: body,
+        messageBody: logBody ?? body,
         status: MessageStatus.pending,
         metadata: { to: formattedPhone },
       },

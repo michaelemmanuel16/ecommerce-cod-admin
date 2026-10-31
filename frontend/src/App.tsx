@@ -20,6 +20,7 @@ import { Register } from './pages/Register';
 import { Onboarding } from './pages/Onboarding';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
+import { AcceptInvite } from './pages/AcceptInvite';
 import { DynamicDashboard } from './pages/DynamicDashboard';
 import { Dashboard } from './pages/Dashboard';
 import { SettingsTabRedirect } from './pages/settings/SettingsTabRedirect';
@@ -212,6 +213,7 @@ function App() {
           <Route path="/register" element={<SaasRoute><Register /></SaasRoute>} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/accept-invite" element={<AcceptInvite />} />
           {/* Platform login on main domain — used by PlatformGuard redirect in local dev */}
           <Route path="/platform/login" element={
             <Suspense fallback={<Loading />}><PlatformLogin /></Suspense>

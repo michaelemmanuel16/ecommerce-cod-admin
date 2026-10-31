@@ -4,6 +4,7 @@ import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { adminService, AdminUser, CreateUserData } from '../../services/admin.service';
 import { Loading } from '../ui/Loading';
+import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 
 const USER_ROLES = [
   { value: 'super_admin', label: 'Super Admin' },
@@ -34,17 +35,16 @@ export const UserManagementTable: React.FC = () => {
 
   const [formData, setFormData] = useState<CreateUserData>({
     email: '',
-    password: '',
     firstName: '',
     lastName: '',
     phoneNumber: '',
     role: 'sales_rep',
     commissionAmount: 0,
-    deliveryRate: 0,
   });
+  const [unsentInvite, setUnsentInvite] = useState<{ email: string; reason?: string; link: string } | null>(null);
+  const { copied, copy } = useCopyToClipboard();
 
   const [newPassword, setNewPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
 
   useEffect(() => {
@@ -73,17 +73,18 @@ export const UserManagementTable: React.FC = () => {
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await adminService.createUser(formData);
+      // No password here: the person gets a link and chooses their own (F-1158).
+      const result = await adminService.inviteUser(formData);
       setShowCreateModal(false);
+      // Not sent (no provider set up, or it refused): the link is shown once so it can be copied and sent by hand.
+      if (!result.delivery.sent) setUnsentInvite({ email: formData.email, reason: result.delivery.reason, link: result.link });
       setFormData({
         email: '',
-        password: '',
         firstName: '',
         lastName: '',
         phoneNumber: '',
         role: 'sales_rep',
         commissionAmount: 0,
-        deliveryRate: 0,
       });
       fetchUsers();
     } catch (error) {
@@ -165,8 +166,7 @@ export const UserManagementTable: React.FC = () => {
     setSelectedUser(user);
     setFormData({
       email: user.email,
-      password: '',
-      firstName: user.firstName,
+        firstName: user.firstName,
       lastName: user.lastName,
       phoneNumber: user.phoneNumber || '',
       role: user.role,
@@ -392,7 +392,7 @@ export const UserManagementTable: React.FC = () => {
       {showCreateModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <Card className="w-full max-w-md p-6">
-            <h3 className="text-lg font-semibold mb-4">Create New User</h3>
+            <h3 className="text-lg font-semibold mb-4">Invite a person</h3>
             <form onSubmit={handleCreateUser} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">First Name</label>
@@ -427,26 +427,6 @@ export const UserManagementTable: React.FC = () => {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    required
-                    minLength={8}
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    className="w-full px-4 py-2 pr-12 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                  >
-                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                  </button>
-                </div>
-              </div>
-              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
                 <input
                   type="tel"
@@ -475,7 +455,7 @@ export const UserManagementTable: React.FC = () => {
                   value={formData.commissionAmount}
                   onChange={(e) => {
                     const val = parseFloat(e.target.value) || 0;
-                    setFormData({ ...formData, commissionAmount: val, deliveryRate: val });
+                    setFormData({ ...formData, commissionAmount: val });
                   }}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
@@ -485,10 +465,34 @@ export const UserManagementTable: React.FC = () => {
                   Cancel
                 </Button>
                 <Button variant="primary" type="submit">
-                  Create User
+                  Send invite
                 </Button>
               </div>
             </form>
+          </Card>
+        </div>
+      )}
+
+      {/* The invite was saved but not sent: show the link once */}
+      {unsentInvite && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-md p-6">
+            <h3 className="text-lg font-semibold mb-2">Invite saved, not sent</h3>
+            <p className="text-sm text-gray-600 mb-3">
+              {unsentInvite.reason ?? 'No provider is set up.'} Copy this link and send it to {unsentInvite.email} yourself. It is shown only once.
+            </p>
+            <input
+              type="text"
+              readOnly
+              value={unsentInvite.link}
+              onFocus={(e) => e.currentTarget.select()}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm"
+              aria-label="Invite link"
+            />
+            <div className="flex justify-end gap-2 mt-4">
+              <Button variant="secondary" type="button" onClick={() => setUnsentInvite(null)}>Close</Button>
+              <Button variant="primary" type="button" onClick={() => copy(unsentInvite.link)}>{copied ? 'Copied' : 'Copy link'}</Button>
+            </div>
           </Card>
         </div>
       )}

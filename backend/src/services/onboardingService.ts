@@ -1,4 +1,3 @@
-import crypto from 'crypto';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { Requester } from '../utils/authUtils';
@@ -79,8 +78,8 @@ export async function addPartner(requester: Requester, input: PartnerInput) {
   const [firstName, ...rest] = name.split(/\s+/);
   const created = (await adminService.createUser(requester, {
     email: email.toLowerCase(),
-    // Nobody knows this password; the partner sets one with "Forgot password" if they ever sign in.
-    password: crypto.randomBytes(18).toString('base64url'),
+    // No password: this partner has no login until one is set up for them.
+    access: 'none',
     firstName,
     lastName: rest.join(' ') || firstName,
     phoneNumber: phone,

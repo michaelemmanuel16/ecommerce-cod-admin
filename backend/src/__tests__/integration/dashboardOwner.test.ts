@@ -4,7 +4,7 @@
  * error isolation per block and the HTTP guards.
  *
  * Fixture numbers that differ from the plan text (M3.md, F-202, F-203; reasons in the COD-22 report):
- *   - North Star progress is 76.8 (1,382,000 / 1,800,000 = 76.78, half up), the plan writes 76.7. The chip still reads 3 pts behind.
+ *   - North Star progress is 76.8 (1,382,000 / 1,800,000 = 76.78, half up), the plan writes 76.7. Year pace follows the quarter plan (M6-T07): 1,260,000 + 17/92 x 540,000 = 75.5%, so the chip reads 1 pt ahead.
  *   - Today the fixture delivers GH 4,950 in 19 orders, not the mockup's 4,200 in 17, so the sub-line needs GH 1,300 more, not 2,100.
  *   - The New orders quest was hit on 16 of 17 days (mockup: 14), 84 orders on Friday 10 October (mockup: +18%, here -24%), no failed-delivery call today (mockup: 6).
  */
@@ -59,10 +59,10 @@ afterAll(async () => {
 beforeEach(() => clearDashboardCache());
 
 describe('ladder on the fixture, 17 October (F-202)', () => {
-  it('North Star 1.38M of 1.8M: 76.8 percent, pace 79.5, "3 pts behind", tag behind', async () => {
+  it('North Star 1.38M of 1.8M: 76.8 percent, quarter-plan pace 75.5, "1 pt ahead", tag on_track', async () => {
     const { year } = (await dash()).ladder;
-    expect(year).toMatchObject({ actual: '1382000.00', target: '1800000.00', percent: 76.8, pace: 79.5, daysLeft: 75, tag: 'behind' });
-    expect(year.paceChip).toEqual({ points: 3, tag: 'behind' });
+    expect(year).toMatchObject({ actual: '1382000.00', target: '1800000.00', percent: 76.8, pace: 75.5, daysLeft: 75, tag: 'on_track' });
+    expect(year.paceChip).toEqual({ points: 1, tag: 'ahead' });
   });
 
   it('quarter 92k of 540k with 75 days left is behind; month 92k of 180k with 14 days left is off track', async () => {
