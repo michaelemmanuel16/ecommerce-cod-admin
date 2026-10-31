@@ -15,6 +15,7 @@ import { generateAccessToken } from '../../utils/jwt';
 import { bearer, superAdminToken } from './helpers/superAdminToken';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
 import { getRepPay } from '../../services/rewardService';
+import { rates, outcomesByPartner, deliveredByRep } from '../../services/kpi/rates';
 
 jest.setTimeout(120_000);
 
@@ -245,6 +246,20 @@ describe('attainment (delivery-date numbers)', () => {
     expect(row).toMatchObject({ actual: 60, percent: 100, tier: '100', reward: { amount: '250.00' } });
     // 72 percent needs 3 more deliveries with no failure (6 of 8)
     expect(row.distance).toMatchObject({ next: '120', amount: 3, unit: 'deliveries with no failure' });
+  });
+
+  it('a partner success rate is the number rates() gives for that partner; the batch and the rep count agree with rates()', async () => {
+    const from = new Date('2026-10-01T00:00:00Z');
+    const to = new Date('2026-11-01T00:00:00Z');
+    const viaRates = await rates(pair.a.id, from, to, { basis: 'delivery', partnerId: partner.id });
+    const batch = await outcomesByPartner(pair.a.id, from, to, [partner.id, agent.id]);
+    expect(batch.get(partner.id)).toEqual({ delivered: viaRates.deliverySuccessRate.detail.delivered, failed: viaRates.deliverySuccessRate.detail.failed, returned: viaRates.deliverySuccessRate.detail.returned });
+    expect(batch.has(agent.id)).toBe(false); // no closed orders, not in the map
+    const row = rowOf((await attain(ownerA, '?period=2026-10')).body, partner.id);
+    expect(row.actual).toBe(viaRates.deliverySuccessRate.value);
+    const repViaRates = await rates(pair.a.id, from, to, { basis: 'delivery', repId: top.id });
+    expect((await deliveredByRep(pair.a.id, from, to, [top.id])).get(top.id)).toBe(repViaRates.deliverySuccessRate.detail.delivered);
+    expect((await deliveredByRep(pair.a.id, from, to)).get(top.id)).toBe(12);
   });
 
   it('a closed month says Earned instead of On track', async () => {

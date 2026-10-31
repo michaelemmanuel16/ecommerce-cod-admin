@@ -19,8 +19,6 @@ import { getStoreTimeZone, localDate, MONTH_RE, monthRange } from './kpi/dates';
  * CR 1010 Cash at bank and MoMo. Method, reference and recorder are stored on the payout.
  */
 
-const CURRENCY_SIGN: Record<string, string> = { GHS: 'GH₵', NGN: '₦' };
-
 interface OpenEntry {
   id: number;
   amount: Money.Money;
@@ -305,7 +303,7 @@ class PayoutService {
         if (!amount.gt(0)) throw new AppError('Amount must be above zero', 400);
         if (amount.gt(owed)) {
           const currency = await currencyOfTenant(payee.tenantId);
-          throw new AppError(`Owed is ${Money.format(owed, currency, { symbol: CURRENCY_SIGN[currency], wholeIfZero: true })}`, 400);
+          throw new AppError(`Owed is ${Money.formatWithSign(owed, currency)}`, 400);
         }
 
         const payout = await tx.payout.create({

@@ -6,19 +6,21 @@ import { Requester, isManagerUp } from '../utils/authUtils';
 import { getCurrency } from '../utils/currency';
 import { fullName } from '../utils/nameUtils';
 import * as Money from '../utils/money';
-import { DIGITAL, rates } from './kpi/rates';
+import { deliveredByRep, outcomesByPartner } from './kpi/rates';
 import { getStoreTimeZone, monthRange, ymdOfUtc, MONTH_RE, localDate } from './kpi/dates';
-import { CONFIRMED_DELIVERED_METRIC } from './teamReportService';
-import { NO_DATA_FOR_METRIC, SET_A_TARGET, periodBounds } from './targetService';
-import { attainmentPercent, countDistance, displayPercent, rateDistance, tierReached, type TierKey } from './rewardMath';
+import { METRIC_BASIS, type MeasureBasis } from '../config/targetMetrics';
+import { NO_DATA_FOR_METRIC, SET_A_TARGET, isMonthClosed, monthPersonTargets, monthRoleTargets, periodBounds } from './targetService';
+import { clearTenantFeaturesCache, getRewardFeatures, mergeFeatureKey, type RewardFeatures } from './tenantFeatures';
+import {
+  NO_PAYOUT, attainmentPercent, countDistance, displayPercent, nextTier, rateDistance, rewardMessage, tierReached, type Tier,
+} from './rewardMath';
 import type { RewardSettingsInput } from '../validators/rewardSchema';
 
 /**
  * M6-T09 (F-1231, F-1108, F-1110): the reward settings and the attainment of a month. Call inside the tenant context.
  *
  * Settings: the cash tiers live in `RewardTier` (one row per role and threshold, 100 or 120) and the rep pay and the badge
- * switch in `SystemConfig.features.rewards`. Nothing else holds a tier amount or a rep rate. `getRepPay` is the one read of
- * the rep pay: whatever creates commission entries (M7) and the month close (M10) calls it.
+ * switch in `SystemConfig.features.rewards`. Nothing else holds a tier amount or a rep rate.
  *
  * Attainment: actual / target of the month, on delivery-date numbers.
  *  - Call rep: orders the rep confirmed that got delivered, by delivery date in the month (P7).
@@ -30,25 +32,20 @@ import type { RewardSettingsInput } from '../validators/rewardSchema';
 
 export const REP_PAY_DEFAULTS = { baseCommission: '8.00', upsellPercent: '10.00' } as const;
 export const SETTINGS_NOTICE = 'Saved. Tier changes apply from the next month close. Commission and upsell changes apply to orders delivered after the save.';
-export const NO_PAYOUT = 'No payout';
-export const TOP_TIER = 'Top tier reached';
-export const DELIVERY_SUCCESS_METRIC = 'delivery_success_rate';
 
-interface StoredRewards { baseCommission?: string; upsellPercent?: string; badgesDisplay?: boolean }
+/** The rep pay of a stored settings object, with the defaults for what is not set. Pure. */
+const repPayOf = (stored: RewardFeatures) => ({
+  baseCommission: Money.parse(stored.baseCommission ?? REP_PAY_DEFAULTS.baseCommission),
+  upsellPercent: Money.parse(stored.upsellPercent ?? REP_PAY_DEFAULTS.upsellPercent),
+});
 
-const readStored = async (): Promise<StoredRewards> => {
-  const config = await prisma.systemConfig.findFirst({ select: { features: true } });
-  const features = (config?.features ?? {}) as { rewards?: StoredRewards };
-  return features.rewards ?? {};
-};
-
-/** The rep pay of the tenant: per delivered order the rep confirmed by call, and the share of the extra value. The one read. */
+/**
+ * The rep pay of the tenant: per delivered order the rep confirmed by call, and the share of the extra value they added.
+ * This is the one place the setting is read. GL posting still reads `User.commissionAmount` until M6-T10 / M7 switch commission
+ * entries to this function; until then a change here does not move a posted amount.
+ */
 export async function getRepPay() {
-  const stored = await readStored();
-  return {
-    baseCommission: Money.parse(stored.baseCommission ?? REP_PAY_DEFAULTS.baseCommission),
-    upsellPercent: Money.parse(stored.upsellPercent ?? REP_PAY_DEFAULTS.upsellPercent),
-  };
+  return repPayOf(await getRewardFeatures());
 }
 
 const tierView = (t: { amount: Prisma.Decimal; dayOff: boolean; payout: boolean } | undefined) =>
@@ -58,13 +55,13 @@ const tierView = (t: { amount: Prisma.Decimal; dayOff: boolean; payout: boolean 
 export async function getRewardSettings() {
   const [roles, stored, currency] = await Promise.all([
     prisma.role.findMany({
-      select: { id: true, name: true, presetRole: true, rewardTiers: { select: { threshold: true, amount: true, dayOff: true, payout: true } } },
+      select: { id: true, name: true, rewardTiers: { select: { threshold: true, amount: true, dayOff: true, payout: true } } },
       orderBy: { name: 'asc' },
     }),
-    readStored(),
+    getRewardFeatures(),
     getCurrency(),
   ]);
-  const pay = await getRepPay();
+  const pay = repPayOf(stored);
   return {
     currency,
     tiers: roles.map((r) => ({
@@ -102,77 +99,118 @@ export async function saveRewardSettings(input: RewardSettingsInput) {
   }
 
   await prisma.$transaction(async (tx) => {
-    for (const t of tiers) {
-      for (const [threshold, tier] of [[100, t.tier100], [120, t.tier120]] as const) {
-        const data = { amount: Money.parse(tier.amount), ...(tier.dayOff !== undefined && { dayOff: tier.dayOff }) };
-        await tx.rewardTier.upsert({
-          where: { tenantId_roleId_threshold: { tenantId, roleId: t.roleId, threshold } },
-          create: { tenantId, roleId: t.roleId, threshold, ...data },
-          update: data,
-        });
-      }
-    }
+    await Promise.all(tiers.flatMap((t) => ([[100, t.tier100], [120, t.tier120]] as const).map(([threshold, tier]) => {
+      const data = { amount: Money.parse(tier.amount), ...(tier.dayOff !== undefined && { dayOff: tier.dayOff }) };
+      return tx.rewardTier.upsert({
+        where: { tenantId_roleId_threshold: { tenantId, roleId: t.roleId, threshold } },
+        create: { tenantId, roleId: t.roleId, threshold, ...data },
+        update: data,
+      });
+    })));
     if (input.repPay || input.badgesDisplay !== undefined) {
-      const config = await tx.systemConfig.findFirst({ select: { id: true, features: true } });
-      const features = (config?.features ?? {}) as Record<string, unknown>;
-      const rewards: StoredRewards = {
-        ...((features.rewards as StoredRewards | undefined) ?? {}),
+      const rewards: RewardFeatures = {
+        ...(await getRewardFeatures()),
         ...(input.repPay && { baseCommission: Money.toApi(input.repPay.baseCommission), upsellPercent: Money.toApi(input.repPay.upsellPercent) }),
         ...(input.badgesDisplay !== undefined && { badgesDisplay: input.badgesDisplay }),
       };
-      const next = { ...features, rewards } as unknown as Prisma.InputJsonObject;
-      if (config) await tx.systemConfig.update({ where: { id: config.id }, data: { features: next } });
-      else await tx.systemConfig.create({ data: { tenantId, features: next } });
+      await mergeFeatureKey(tx, 'rewards', rewards as Prisma.InputJsonObject);
     }
   });
+  clearTenantFeaturesCache(tenantId);
   return { ...(await getRewardSettings()), saved: true };
 }
 
 // ---- Attainment ---------------------------------------------------------------------------------------------------
 
-type Tiers = Partial<Record<100 | 120, { amount: Prisma.Decimal; dayOff: boolean; payout: boolean }>>;
+type TierRow = { amount: Prisma.Decimal; dayOff: boolean; payout: boolean };
+type Tiers = Partial<Record<Tier, TierRow>>;
 
 const currentMonth = () => localDate(new Date(), getStoreTimeZone()).slice(0, 7);
-
-interface Holder { userId: number; roleId: number }
+const key = (userId: number, roleId: number) => `${userId}:${roleId}`;
 
 /**
- * Who is judged this month: everyone with a person target for it, and everyone who holds a role now whose role is measured
- * (a call rep or delivery role, a role with a target metric, or a role with a target this month). A holder of the Owner or
- * Finance role is not in the list and gets no "Set a target" warning.
+ * Who is judged this month: everyone with a live person target for it, and everyone who holds a role now whose role is
+ * measured (a call rep or delivery role, a role with a target metric, or a role with a target this month). A holder of the
+ * Owner or Finance role is not in the list and gets no "Set a target" warning. The filters go into the queries.
  */
-async function peopleOfMonth(monthStart: Date, userId?: number, roleId?: number) {
+async function peopleOfMonth(period: string, userId?: number, roleId?: number) {
   const [targets, holders, roles, roleTargets] = await Promise.all([
-    prisma.target.findMany({ where: { scope: 'person', periodStart: monthStart, userId: { not: null }, roleId: { not: null } } }),
-    prisma.roleAssignment.findMany({ where: { toDate: null }, select: { holderId: true, roleId: true } }),
+    monthPersonTargets(period, { userId, roleId }),
+    prisma.roleAssignment.findMany({
+      where: { toDate: null, ...(userId !== undefined && { holderId: userId }), ...(roleId !== undefined && { roleId }) },
+      select: { holderId: true, roleId: true },
+    }),
     prisma.role.findMany({ select: { id: true, presetRole: true, targetMetric: true } }),
-    prisma.target.findMany({ where: { scope: 'role', periodStart: monthStart, roleId: { not: null } }, select: { roleId: true } }),
+    monthRoleTargets(period),
   ]);
   const measured = new Set([
     ...roles.filter((r) => r.presetRole === 'sales_rep' || r.presetRole === 'delivery_agent' || r.targetMetric).map((r) => r.id),
     ...roleTargets.map((t) => t.roleId!),
   ]);
-  const pairs = new Map<string, Holder>();
-  for (const t of targets) pairs.set(`${t.userId}:${t.roleId}`, { userId: t.userId!, roleId: t.roleId! });
-  for (const h of holders) if (measured.has(h.roleId)) pairs.set(`${h.holderId}:${h.roleId}`, { userId: h.holderId, roleId: h.roleId });
-  const picked = [...pairs.values()].filter((p) => (userId === undefined || p.userId === userId) && (roleId === undefined || p.roleId === roleId));
-  // Several targets of one pair (a changed metric): the newest one judges.
-  const targetOf = new Map<string, (typeof targets)[number]>();
-  for (const t of [...targets].sort((a, b) => a.id - b.id)) targetOf.set(`${t.userId}:${t.roleId}`, t);
-  return { picked, targetOf };
+  const pairs = new Map<string, { userId: number; roleId: number }>();
+  for (const t of targets) pairs.set(key(t.userId!, t.roleId!), { userId: t.userId!, roleId: t.roleId! });
+  for (const h of holders) if (measured.has(h.roleId)) pairs.set(key(h.holderId, h.roleId), { userId: h.holderId, roleId: h.roleId });
+  // The targets come oldest first: a later one of the same pair (a changed metric) replaces the earlier.
+  const targetOf = new Map(targets.map((t) => [key(t.userId!, t.roleId!), t]));
+  return { picked: [...pairs.values()], targetOf };
 }
 
-type Basis = { kind: 'count' } | { kind: 'rate' } | null;
-
 /** How a target is measured: by its metric, else by the base role of the role. */
-const basisOf = (metric: string | null, preset: UserRole | null): Basis => {
-  if (metric === CONFIRMED_DELIVERED_METRIC) return { kind: 'count' };
-  if (metric === DELIVERY_SUCCESS_METRIC) return { kind: 'rate' };
-  if (metric) return null;
-  if (preset === 'sales_rep') return { kind: 'count' };
-  if (preset === 'delivery_agent') return { kind: 'rate' };
-  return null;
+const basisOf = (metric: string | null, preset: UserRole | null): MeasureBasis | null => {
+  if (metric) return METRIC_BASIS[metric] ?? null;
+  return preset === 'sales_rep' ? 'count' : preset === 'delivery_agent' ? 'rate' : null;
 };
+
+interface Distance { next: '100' | '120'; amount: number | null; unit: string; message: string }
+
+export interface AttainmentRow {
+  userId: number;
+  name: string;
+  kind: string;
+  roleId: number;
+  roleName: string;
+  payout: boolean;
+  metric: string | null;
+  unit: string | null;
+  target: string | null;
+  actual: number | null;
+  percent: number | null;
+  tier: 'none' | '100' | '120';
+  reward: { amount: string; dayOff: boolean } | null;
+  earned: boolean;
+  distance: Distance | null;
+  warning: string | null;
+  message: string;
+}
+
+/** What a measure gives: the actual shown, the exact percent of target, and for a rate the counts behind it. */
+interface Measure { actual: number; percent: Money.Money | null; rate: { delivered: number; closed: number } | null }
+
+/** The actual and percent of one person: a count against a count target, or a success rate against the success target. */
+function measure(
+  basis: MeasureBasis, target: Money.Money, delivered: number, outcome: { delivered: number; failed: number; returned: number } | undefined,
+): Measure {
+  if (basis === 'count') return { actual: delivered, percent: attainmentPercent(delivered, target), rate: null };
+  const counts = outcome ?? { delivered: 0, failed: 0, returned: 0 };
+  const closed = counts.delivered + counts.failed + counts.returned;
+  const success = closed > 0 ? Money.div(Money.mul(counts.delivered, 100), closed) : Money.ZERO;
+  return { actual: success.toDecimalPlaces(1, 1).toNumber(), percent: attainmentPercent(success, target), rate: { delivered: counts.delivered, closed } };
+}
+
+/** How far the next tier is (F-1108); null at the top. `prize` is the text of what that tier pays. */
+function distanceTo(basis: MeasureBasis, tier: Tier | null, m: Measure, target: Money.Money, prize: string | null): Distance | null {
+  const next = nextTier(tier);
+  if (next === null) return null;
+  if (basis === 'count') {
+    const n = countDistance(m.actual, target)[next];
+    return { next: String(next) as '100' | '120', amount: n, unit: 'confirmed orders', message: `${n} more confirmed orders that get delivered to reach ${next}%${prize ? ` (${prize})` : ''}` };
+  }
+  const n = rateDistance(m.rate!.delivered, m.rate!.closed, target, next);
+  return {
+    next: String(next) as '100' | '120', amount: n, unit: 'deliveries with no failure',
+    message: n === null ? `${next}% cannot be reached this month` : `${n} more deliveries with no failure to reach ${next}%`,
+  };
+}
 
 /**
  * GET /api/rewards/attainment. One row per person and role for the month (default: this month). The Owner and admin level
@@ -189,96 +227,71 @@ export async function attainment(actor: Requester, query: { period?: string; use
 
   const bounds = periodBounds('month', period);
   const { from, to } = monthRange(Number(match[1]), Number(match[2]), getStoreTimeZone(tenantId));
-  const { picked, targetOf } = await peopleOfMonth(bounds.start, userId, query.roleId);
+  const [{ picked, targetOf }, closed, currency] = await Promise.all([peopleOfMonth(period, userId, query.roleId), isMonthClosed(period), getCurrency()]);
+  const userIds = [...new Set(picked.map((p) => p.userId))];
+  const roleIds = [...new Set(picked.map((p) => p.roleId))];
 
-  const [users, roles, tierRows, closedMonth, currency] = await Promise.all([
-    prisma.user.findMany({ where: { id: { in: [...new Set(picked.map((p) => p.userId))] } }, select: { id: true, firstName: true, lastName: true, kind: true } }),
-    prisma.role.findMany({ where: { id: { in: [...new Set(picked.map((p) => p.roleId))] } }, select: { id: true, name: true, presetRole: true } }),
-    prisma.rewardTier.findMany({ where: { roleId: { in: [...new Set(picked.map((p) => p.roleId))] } } }),
-    prisma.target.findFirst({ where: { scope: 'month', periodStart: bounds.start, closedAt: { not: null } }, select: { id: true } }),
-    getCurrency(),
+  const [users, roles, tierRows] = await Promise.all([
+    prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, firstName: true, lastName: true, kind: true } }),
+    prisma.role.findMany({ where: { id: { in: roleIds } }, select: { id: true, name: true, presetRole: true } }),
+    prisma.rewardTier.findMany({ where: { roleId: { in: roleIds } } }),
   ]);
   const userById = new Map(users.map((u) => [u.id, u]));
   const roleById = new Map(roles.map((r) => [r.id, r]));
-  const tiersOf = (roleId: number): Tiers => Object.fromEntries(tierRows.filter((t) => t.roleId === roleId).map((t) => [t.threshold, t]));
-  const closed = closedMonth !== null;
+  const tiersOf = new Map<number, Tiers>();
+  for (const t of tierRows) tiersOf.set(t.roleId, { ...tiersOf.get(t.roleId), [t.threshold as Tier]: t });
 
-  // Delivered orders per confirming rep, by delivery date: one query for every rep.
-  const delivered = await prisma.order.groupBy({
-    by: ['confirmedById'],
-    where: { deletedAt: null, status: { notIn: DIGITAL }, AND: [{ status: 'delivered', deliveryDate: { gte: from, lt: to } }], confirmedById: { not: null } },
-    _count: { _all: true },
+  // What each row needs is read once for everyone who needs it, and not at all when no row does.
+  const basisByRow = picked.map((p) => {
+    const target = targetOf.get(key(p.userId, p.roleId));
+    return target ? basisOf(target.metric, roleById.get(p.roleId)?.presetRole ?? null) : null;
   });
-  const deliveredBy = new Map(delivered.map((d) => [d.confirmedById!, d._count._all]));
+  const idsOf = (basis: MeasureBasis) => [...new Set(picked.filter((_, i) => basisByRow[i] === basis).map((p) => p.userId))];
+  const countIds = idsOf('count');
+  const rateIds = idsOf('rate');
+  const [deliveredBy, outcomeBy] = await Promise.all([
+    countIds.length ? deliveredByRep(tenantId, from, to, countIds) : new Map<number, number>(),
+    rateIds.length ? outcomesByPartner(tenantId, from, to, rateIds) : new Map<number, { delivered: number; failed: number; returned: number }>(),
+  ]);
 
-  const money = (v: Money.MoneyInput) => Money.format(v, currency, { symbol: currency === 'GHS' ? 'GH₵' : undefined, wholeIfZero: true });
+  const money = (v: Money.MoneyInput) => Money.formatWithSign(v, currency);
 
-  const rows = await Promise.all(picked.map(async ({ userId: uid, roleId }) => {
+  const rows: AttainmentRow[] = [];
+  picked.forEach(({ userId: uid, roleId }, i) => {
     const user = userById.get(uid);
     const role = roleById.get(roleId);
-    if (!user || !role) return null;
-    const target = targetOf.get(`${uid}:${roleId}`) ?? null;
+    if (!user || !role) return;
+    const target = targetOf.get(key(uid, roleId)) ?? null;
     const human = user.kind === 'person';
-    const kind = user.kind === 'ai_agent' ? 'ai_agent' : user.kind === 'company' ? 'company' : 'person';
-    const base = {
-      userId: uid, name: fullName(user), kind, roleId, roleName: role.name, payout: human,
-      metric: target?.metric ?? null, unit: target?.unit ?? null,
-      target: target ? Money.toApi(target.value) : null,
-      actual: null as number | null, percent: null as number | null, tier: 'none' as TierKey,
-      reward: null as { amount: string; dayOff: boolean } | null,
-      earned: false, distance: null as null | { next: '100' | '120'; amount: number | null; unit: string; message: string },
-      warning: null as string | null, message: '' as string,
-    };
+    const row = (over: Partial<AttainmentRow>): AttainmentRow => ({
+      userId: uid, name: fullName(user), kind: user.kind, roleId, roleName: role.name, payout: human,
+      metric: target?.metric ?? null, unit: target?.unit ?? null, target: target ? Money.toApi(target.value) : null,
+      actual: null, percent: null, tier: 'none', reward: null, earned: false, distance: null, warning: null, message: '',
+      ...over,
+    });
 
-    if (!target) return { ...base, warning: SET_A_TARGET, message: human ? SET_A_TARGET : `${SET_A_TARGET}. ${NO_PAYOUT}` };
+    if (!target) return void rows.push(row({ warning: SET_A_TARGET, message: human ? SET_A_TARGET : `${SET_A_TARGET}. ${NO_PAYOUT}` }));
+    const basis = basisByRow[i];
+    if (!basis) return void rows.push(row({ warning: NO_DATA_FOR_METRIC, message: NO_DATA_FOR_METRIC }));
 
-    const basis = basisOf(target.metric, role.presetRole);
-    if (!basis) return { ...base, warning: NO_DATA_FOR_METRIC, message: NO_DATA_FOR_METRIC };
+    const m = measure(basis, target.value, deliveredBy.get(uid) ?? 0, outcomeBy.get(uid));
+    const tier = tierReached(m.percent);
+    const shown = { actual: m.actual, percent: m.percent === null ? null : displayPercent(m.percent), tier: tier === null ? 'none' as const : String(tier) as '100' | '120' };
+    // An AI agent or a company shows attainment and nothing to pay or to reach.
+    if (!human) return void rows.push(row({ ...shown, message: rewardMessage({ tier, reward: null, distance: null, closed, human, percent: shown.percent }) }));
 
-    let actual: number;
-    let percent: Money.Money | null;
-    let rateFacts: { delivered: number; closed: number } | null = null;
-    if (basis.kind === 'count') {
-      actual = deliveredBy.get(uid) ?? 0;
-      percent = attainmentPercent(actual, target.value);
-    } else {
-      const r = await rates(tenantId, from, to, { basis: 'delivery', partnerId: uid });
-      const counts: Record<string, number> = r.deliverySuccessRate.detail ?? {};
-      rateFacts = { delivered: counts.delivered ?? 0, closed: counts.closed ?? 0 };
-      const successPct = rateFacts.closed > 0 ? Money.div(Money.mul(rateFacts.delivered, 100), rateFacts.closed) : Money.ZERO;
-      actual = successPct.toDecimalPlaces(1, 1).toNumber();
-      percent = attainmentPercent(successPct, target.value);
-    }
-    const tier = tierReached(percent);
-    const tiers = tiersOf(roleId);
-    const row = { ...base, actual, percent: percent === null ? null : displayPercent(percent), tier, earned: false };
+    const tiers = tiersOf.get(roleId) ?? {};
+    const next = nextTier(tier);
+    const nextRow = next === null ? undefined : tiers[next];
+    const distance = distanceTo(basis, tier, m, target.value, nextRow ? money(nextRow.amount) : null);
+    const paid = tier === null ? undefined : tiers[tier];
+    const reward = paid && paid.payout ? { amount: Money.toApi(paid.amount), dayOff: paid.dayOff } : null;
+    rows.push(row({
+      ...shown, reward, distance, earned: closed && reward !== null,
+      message: rewardMessage({ tier, reward: reward && { ...reward, amount: money(reward.amount) }, distance: distance?.message ?? null, closed, human, percent: shown.percent }),
+    }));
+  });
 
-    // Distance to the next tier (F-1108). Top tier: none.
-    const next: '100' | '120' | null = tier === 'none' ? '100' : tier === '100' ? '120' : null;
-    let distance: typeof base.distance = null;
-    if (next && basis.kind === 'count') {
-      const d = countDistance(actual, target.value);
-      const n = next === '100' ? d.to100 : d.to120;
-      const prize = tiers[Number(next) as 100 | 120];
-      distance = { next, amount: n, unit: 'confirmed orders', message: `${n} more confirmed orders that get delivered to reach ${next}%${prize && human ? ` (${money(prize.amount)})` : ''}` };
-    } else if (next && rateFacts) {
-      const n = rateDistance(rateFacts.delivered, rateFacts.closed, target.value, Number(next) as 100 | 120);
-      distance = { next, amount: n, unit: 'deliveries with no failure', message: n === null ? `${next}% cannot be reached this month` : `${n} more deliveries with no failure to reach ${next}%` };
-    }
-
-    if (!human) return { ...row, payout: false, distance: null, message: `${NO_PAYOUT}. Attainment ${row.percent ?? 0}%` };
-
-    const tierRow = tier === 'none' ? undefined : tiers[Number(tier) as 100 | 120];
-    const reward = tierRow && tierRow.payout ? { amount: Money.toApi(tierRow.amount), dayOff: tierRow.dayOff } : null;
-    let message: string;
-    if (tier === 'none') message = distance ? distance.message : 'No tier reached yet';
-    else if (!reward) message = tier === '120' ? TOP_TIER : `${tier}% reached`;
-    else if (closed) message = `${tier === '120' ? `${TOP_TIER}. ` : ''}Earned ${money(reward.amount)}${reward.dayOff ? ' and a paid day off' : ''}`;
-    else message = `${tier === '120' ? `${TOP_TIER}. ` : ''}On track to earn ${money(reward.amount)}${reward.dayOff ? ' and a paid day off' : ''} at month close`;
-    return { ...row, reward, earned: closed && reward !== null, distance, message };
-  }));
-
-  const results = rows.filter((r): r is NonNullable<typeof r> => r !== null)
-    .sort((a, b) => a.roleName.localeCompare(b.roleName) || a.name.localeCompare(b.name));
-  return { period, monthStart: ymdOfUtc(bounds.start), closed, currency, results };
+  rows.sort((a, b) => a.roleName.localeCompare(b.roleName) || a.name.localeCompare(b.name));
+  return { period, monthStart: ymdOfUtc(bounds.start), closed, currency, results: rows };
 }
