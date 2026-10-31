@@ -1,22 +1,13 @@
 import { UserRole } from '@prisma/client';
 import prisma from '../utils/prisma';
 import { getEffectivePermissions } from '../middleware/auth';
+import { ROLE_NAME_BY_USER_ROLE } from '../config/defaultRoles';
+import { startOfUtcDay } from '../utils/startOfUtcDay';
 import { orderScope, Requester } from '../utils/authUtils';
 
 /** M3-T07: what the app shell needs per user: counts for the pills, menu keys, home route, role names (F-101, F-102, F-104). */
 
 type Permissions = Record<string, string[]>;
-
-/** Name shown for a base role when the person has no RoleAssignment (F-104). */
-const BASE_ROLE_NAME: Record<UserRole, string> = {
-  super_admin: 'Owner',
-  admin: 'Admin',
-  manager: 'Manager',
-  sales_rep: 'Call rep',
-  inventory_manager: 'Stock keeper',
-  delivery_agent: 'Delivery',
-  accountant: 'Finance clerk',
-};
 
 /** F-102 role home. Reps and agents stay on the current pages until the rep and agent apps ship (M7, M10). */
 const HOME_ROUTE: Record<UserRole, string> = {
@@ -71,15 +62,14 @@ export const homeRouteFor = (role: UserRole): string => HOME_ROUTE[role];
 
 /** Role names from RoleAssignment (running today), else the base role name. */
 async function roleList(userId: number, role: UserRole): Promise<Array<{ id: number | null; name: string }>> {
-  const now = new Date();
-  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const today = startOfUtcDay();
   const assignments = await prisma.roleAssignment.findMany({
     where: { holderId: userId, fromDate: { lte: today }, OR: [{ toDate: null }, { toDate: { gte: today } }] },
     include: { role: { select: { id: true, name: true } } },
     orderBy: { id: 'asc' },
   });
   const roles = assignments.map((a) => ({ id: a.role.id, name: a.role.name }));
-  return roles.length ? roles : [{ id: null, name: BASE_ROLE_NAME[role] }];
+  return roles.length ? roles : [{ id: null, name: ROLE_NAME_BY_USER_ROLE[role] }];
 }
 
 class NavService {

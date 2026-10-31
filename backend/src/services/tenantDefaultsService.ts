@@ -2,7 +2,7 @@ import prisma, { TransactionClient } from '../utils/prisma';
 import logger from '../utils/logger';
 import { runInTenant } from '../utils/tenantContext';
 import { DEFAULT_GL_ACCOUNTS, RETIRED_GL_CODES } from '../config/glAccounts';
-import { DEFAULT_ROLES } from '../config/defaultRoles';
+import { defaultRoleRows } from '../config/defaultRoles';
 import { seedDefaultEmailTemplates } from './emailTemplateService';
 import { ensureSystemUser } from './systemUserService';
 
@@ -48,7 +48,7 @@ export const grantAdminUpdateStock = (tenantId: string, db?: Pick<TransactionCli
 
 /**
  * Create what a tenant is missing: the chart of accounts, the default email
- * templates, the 7 default roles and the system user. Idempotent: re-running never creates duplicates (unique
+ * templates, the default roles (with preset and permission grid) and the system user. Idempotent: re-running never creates duplicates (unique
  * `(tenantId, code)` on accounts, `(name, tenantId)` on email templates and
  * `(tenantId, name)` on roles; the system user is found by kind first).
  * Runs inside the tenant context so the Prisma extension stamps the tenantId.
@@ -70,8 +70,11 @@ export async function seedTenantDefaults(tenantId: string): Promise<{ accounts: 
     }),
     seedDefaultEmailTemplates(tenantId),
     runInTenant(tenantId, async () => {
+      // Rows are only inserted here, never updated: this runs at every server boot. Existing tenants get the preset and grid
+      // from scripts/migrate-users-to-roles.ts.
+      const config = await prisma.systemConfig.findFirst({ select: { rolePermissions: true } });
       const result = await prisma.role.createMany({
-        data: DEFAULT_ROLES.map((r) => ({ ...r, tenantId, kpis: [] })),
+        data: defaultRoleRows(config?.rolePermissions).map((r) => ({ ...r, tenantId })),
         skipDuplicates: true,
       });
       return result.count;

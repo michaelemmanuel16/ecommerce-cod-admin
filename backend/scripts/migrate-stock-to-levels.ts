@@ -6,7 +6,7 @@ import { getSystemUserId } from '../src/services/systemUserService';
 import { fullName } from '../src/utils/nameUtils';
 import { rebuildCache } from '../src/services/stockService';
 import { grantAdminUpdateStock } from '../src/services/tenantDefaultsService';
-import { assertNotProduction, hasFlag, option } from './lib/scriptArgs';
+import { option, runPerTenant } from './lib/scriptArgs';
 
 // M4-T03 / M4-T04 (COD-38, F-650, F-660, F-657). Moves the legacy stock numbers into StockLocation / StockLevel.
 // Per tenant, inside the tenant context. A tenant that already has StockLevel rows is skipped (second run changes nothing).
@@ -351,28 +351,12 @@ function printReport(r: TenantReport, opts: MigrateOptions, log: (s: string) => 
   log(r.ok ? '  sums equal' : '  SUMS DIFFER');
 }
 
-async function main() {
-  if (!assertNotProduction()) return;
-  const opts: MigrateOptions = { dryRun: hasFlag('--dry-run'), defaultLocation: option('--default-location') ?? 'Logiswift' };
-  const only = option('--tenant');
-  const tenants = (await prismaBase.tenant.findMany({ select: { id: true }, orderBy: { id: 'asc' } })).filter((t) => !only || t.id === only);
-  console.log(opts.dryRun ? 'DRY RUN: nothing is written' : 'REAL RUN');
-  let failed = false;
-  for (const t of tenants) {
-    try {
-      const report = await migrateTenant(t.id, opts);
-      printReport(report, opts, console.log);
-      if (!report.ok) failed = true;
-    } catch (e) {
-      failed = true;
-      console.error(`Tenant ${t.id}: ${(e as Error).message}`);
-    }
-  }
-  if (failed) process.exitCode = 1;
-}
-
 if (require.main === module) {
-  main()
-    .catch((e) => { console.error(e); process.exitCode = 1; })
-    .finally(() => prismaBase.$disconnect());
+  const defaultLocation = option('--default-location') ?? 'Logiswift';
+  void runPerTenant(async (tenantId, dryRun) => {
+    const opts: MigrateOptions = { dryRun, defaultLocation };
+    const report = await migrateTenant(tenantId, opts);
+    printReport(report, opts, console.log);
+    return report.ok;
+  });
 }
