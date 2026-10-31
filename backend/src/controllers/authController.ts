@@ -13,6 +13,7 @@ import { adminService } from '../services/adminService';
 import { sendPasswordResetEmail } from '../services/emailService';
 import { SUBSCRIPTION_STATUS, SELF_SERVE_PLAN_NAMES } from '../config/billing';
 import { seedTenantDefaults } from '../services/tenantDefaultsService';
+import { assignPositionRole } from '../services/systemRoleService';
 import logger from '../utils/logger';
 import * as Money from '../utils/money';
 import { auditService } from '../services/auditService';
@@ -431,6 +432,8 @@ export const registerTenant = async (req: AuthRequest, res: Response, next: Next
 
     // A failed seed is logged, not fatal: the startup seed fills any gap
     await seedTenantDefaults(tenant.id).catch((err) => logger.error(`Seeding defaults failed for tenant ${tenant.id}:`, err));
+    // The owner holds the Owner role from the first day (F-1155). No role row (failed seed) is logged; the migration script fills it.
+    await runInTenant(tenant.id, () => assignPositionRole(prisma, user)).catch((err) => logger.error(`Owner role assignment failed for tenant ${tenant.id}:`, err));
 
     const { accessToken, refreshToken } = await runInTenantOf(user.tenantId, 'register-tenant', () =>
       sessionService.start({ ...user, tenantId: tenant.id }, requestMeta(req))

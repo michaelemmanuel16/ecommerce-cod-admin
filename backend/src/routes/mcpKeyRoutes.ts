@@ -1,5 +1,4 @@
 import { Router, Request, Response } from 'express';
-import path from 'path';
 import { z } from 'zod';
 import prisma from '../utils/prisma';
 import { authenticate, requireSuperAdmin } from '../middleware/auth';
@@ -7,7 +6,7 @@ import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { getTenantId } from '../utils/tenantContext';
 import { AuthRequest } from '../types';
 import { auditService } from '../services/auditService';
-import { createKey, revokeKey } from '../services/mcpKeyService';
+import { buildMcpConfig, createKey, revokeKey } from '../services/mcpKeyService';
 import { roleToolList } from '../config/defaultRoles';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
@@ -105,26 +104,7 @@ router.post('/', async (req: Request, res: Response) => {
       toolCount,
       expiresAt: key.expiresAt,
       createdAt: key.createdAt,
-      mcpConfig: {
-        remote: {
-          mcpServers: {
-            'cod-admin': {
-              type: 'http',
-              url: `${baseUrl}/mcp`,
-              headers: { Authorization: `Bearer ${rawKey}` },
-            },
-          },
-        },
-        local: {
-          mcpServers: {
-            'cod-admin': {
-              command: 'node',
-              args: [path.resolve(__dirname, '..', 'mcp', 'server.js')],
-              env: { COD_ADMIN_API_KEY: rawKey },
-            },
-          },
-        },
-      },
+      mcpConfig: buildMcpConfig(rawKey, baseUrl),
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

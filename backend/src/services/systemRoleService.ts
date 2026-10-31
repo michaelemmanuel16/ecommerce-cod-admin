@@ -2,6 +2,8 @@ import { Prisma, UserRole } from '@prisma/client';
 import prisma, { TransactionClient } from '../utils/prisma';
 import { withSoftDeleted } from '../utils/prismaExtensions';
 import { startOfUtcDay } from '../utils/startOfUtcDay';
+import { resolveTenantId } from '../utils/tenantContext';
+import logger from '../utils/logger';
 import { PermissionGrid } from '../config/defaultRolePermissions';
 import { ROLE_NAME_BY_USER_ROLE, defaultRoleRows } from '../config/defaultRoles';
 
@@ -90,4 +92,23 @@ export function unionPermissions(grids: Array<PermissionGrid | null | undefined>
     }
   }
   return Object.fromEntries(Object.entries(union).map(([r, s]) => [r, [...s]]));
+}
+
+/**
+ * Give a new staff user the position role mapped from their UserRole (F-1155, T02 carry-forward), from today. Call inside the
+ * tenant context. A tenant whose roles are not seeded yet gets a warning and no row: `scripts/migrate-users-to-roles.ts`
+ * (idempotent) fills it. Returns whether a row was written.
+ */
+export async function assignPositionRole(
+  db: Pick<TransactionClient, 'role' | 'roleAssignment'>,
+  user: { id: number; role: UserRole },
+): Promise<boolean> {
+  const name = ROLE_NAME_BY_USER_ROLE[user.role];
+  const role = await db.role.findFirst({ where: { name }, select: { id: true } });
+  if (!role) {
+    logger.warn(`Position role "${name}" is missing; user ${user.id} has no role assignment yet`);
+    return false;
+  }
+  await db.roleAssignment.create({ data: { tenantId: resolveTenantId(), roleId: role.id, holderId: user.id, fromDate: startOfUtcDay() } });
+  return true;
 }

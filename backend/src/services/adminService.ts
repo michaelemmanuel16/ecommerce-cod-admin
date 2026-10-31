@@ -20,6 +20,7 @@ import {
 } from '../utils/providerCrypto';
 import { getTenantId, resolveTenantId, withoutTenant } from '../utils/tenantContext';
 import { HUMAN_USERS_WHERE } from './systemUserService';
+import { assignPositionRole } from './systemRoleService';
 import { formTenantBySlug } from './tenantLookupService';
 import { clearCheckoutFormConfigCache } from './checkoutFormService';
 import { currencyOfTenant, getCurrency } from '../utils/currency';
@@ -470,32 +471,38 @@ export const adminService = {
 
     const hashedPassword = await bcrypt.hash(data.password, 10);
 
-    const user = await (data.tx ?? prisma).user.create({
-      data: {
-        email: data.email,
-        firstName: data.firstName,
-        lastName: data.lastName,
-        phoneNumber: data.phoneNumber,
-        role: data.role,
-        password: hashedPassword,
-        commissionAmount: data.commissionAmount || 0,
-        ...(data.kind && { kind: data.kind }),
-        ...(data.vehicleType && { vehicleType: data.vehicleType }),
-        ...(data.vehicleId && { vehicleId: data.vehicleId }),
-      },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        phoneNumber: true,
-        role: true,
-        isActive: true,
-        country: true,
-        commissionAmount: true,
-        createdAt: true,
-      } as any,
-    });
+    // M6-T03: the new user and their position role (F-1155) are written together.
+    const write = async (db: TransactionClient) => {
+      const created = await db.user.create({
+        data: {
+          email: data.email,
+          firstName: data.firstName,
+          lastName: data.lastName,
+          phoneNumber: data.phoneNumber,
+          role: data.role,
+          password: hashedPassword,
+          commissionAmount: data.commissionAmount || 0,
+          ...(data.kind && { kind: data.kind }),
+          ...(data.vehicleType && { vehicleType: data.vehicleType }),
+          ...(data.vehicleId && { vehicleId: data.vehicleId }),
+        },
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          phoneNumber: true,
+          role: true,
+          isActive: true,
+          country: true,
+          commissionAmount: true,
+          createdAt: true,
+        } as any,
+      });
+      await assignPositionRole(db, { id: (created as unknown as { id: number }).id, role: data.role });
+      return created;
+    };
+    const user = await (data.tx ? write(data.tx) : prisma.$transaction(write));
 
     if (!data.tx) await this.createAuditLog(requester, 'create', 'user', user.id.toString(), { email: user.email, role: user.role });
 
