@@ -2,7 +2,8 @@ import prisma, { TransactionClient } from '../utils/prisma';
 import logger from '../utils/logger';
 import { runInTenant } from '../utils/tenantContext';
 import { DEFAULT_GL_ACCOUNTS, RETIRED_GL_CODES } from '../config/glAccounts';
-import { defaultRoleRows } from '../config/defaultRoles';
+import { ROLE_NAME_BY_USER_ROLE, defaultRoleRows } from '../config/defaultRoles';
+import { startOfUtcDay } from '../utils/startOfUtcDay';
 import { seedDefaultEmailTemplates } from './emailTemplateService';
 import { ensureSystemUser } from './systemUserService';
 
@@ -53,9 +54,12 @@ export const grantAdminUpdateStock = (tenantId: string, db?: Pick<TransactionCli
  * `(tenantId, name)` on roles; the system user is found by kind first).
  * Runs inside the tenant context so the Prisma extension stamps the tenantId.
  *
+ * `ownerUserId` (signup only): the tenant's first user, who gets the Owner role in the same call, right after the roles exist. A
+ * failure there is thrown, not logged: nothing else would ever give the owner the role. Skipped if they already hold it.
+ *
  * SMS templates are not seeded: no default SMS content exists in the code.
  */
-export async function seedTenantDefaults(tenantId: string): Promise<{ accounts: number; emailTemplates: number; roles: number; systemUser: number }> {
+export async function seedTenantDefaults(tenantId: string, ownerUserId?: number): Promise<{ accounts: number; emailTemplates: number; roles: number; systemUser: number }> {
   const [accounts, emailTemplates, roles, systemUser] = await Promise.all([
     runInTenant(tenantId, async () => {
       const result = await prisma.account.createMany({
@@ -77,6 +81,12 @@ export async function seedTenantDefaults(tenantId: string): Promise<{ accounts: 
         data: defaultRoleRows(config?.rolePermissions).map((r) => ({ ...r, tenantId })),
         skipDuplicates: true,
       });
+      if (ownerUserId !== undefined) {
+        const owner = await prisma.role.findFirstOrThrow({ where: { name: ROLE_NAME_BY_USER_ROLE.super_admin }, select: { id: true } });
+        if (await prisma.roleAssignment.count({ where: { roleId: owner.id, holderId: ownerUserId, toDate: null } }) === 0) {
+          await prisma.roleAssignment.create({ data: { tenantId, roleId: owner.id, holderId: ownerUserId, fromDate: startOfUtcDay() } });
+        }
+      }
       return result.count;
     }),
     ensureSystemUser(tenantId).then(({ created }) => (created ? 1 : 0)),

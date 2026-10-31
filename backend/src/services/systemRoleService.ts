@@ -2,6 +2,7 @@ import { Prisma, UserRole } from '@prisma/client';
 import prisma, { TransactionClient } from '../utils/prisma';
 import { withSoftDeleted } from '../utils/prismaExtensions';
 import { startOfUtcDay } from '../utils/startOfUtcDay';
+import logger from '../utils/logger';
 import { PermissionGrid } from '../config/defaultRolePermissions';
 import { ROLE_NAME_BY_USER_ROLE, defaultRoleRows } from '../config/defaultRoles';
 
@@ -90,4 +91,16 @@ export function unionPermissions(grids: Array<PermissionGrid | null | undefined>
     }
   }
   return Object.fromEntries(Object.entries(union).map(([r, s]) => [r, [...s]]));
+}
+
+/**
+ * The id of the position role mapped from a UserRole (F-1155), or null when the tenant has not seeded its roles yet (a warning
+ * is logged; `scripts/migrate-users-to-roles.ts`, idempotent, fills the gap). A new user is created with a nested assignment
+ * to this role. Call inside the tenant context.
+ */
+export async function positionRoleId(db: Pick<TransactionClient, 'role'>, userRole: UserRole): Promise<number | null> {
+  const name = ROLE_NAME_BY_USER_ROLE[userRole];
+  const role = await db.role.findFirst({ where: { name }, select: { id: true } });
+  if (!role) logger.warn(`Position role "${name}" is missing; new ${userRole} users get no role assignment yet`);
+  return role?.id ?? null;
 }

@@ -429,8 +429,8 @@ export const registerTenant = async (req: AuthRequest, res: Response, next: Next
       return { tenant, user };
     });
 
-    // A failed seed is logged, not fatal: the startup seed fills any gap
-    await seedTenantDefaults(tenant.id).catch((err) => logger.error(`Seeding defaults failed for tenant ${tenant.id}:`, err));
+    // The owner holds the Owner role from the first day (F-1155); the seed gives it. Signup fails if the seed or the role fails.
+    await seedTenantDefaults(tenant.id, user.id);
 
     const { accessToken, refreshToken } = await runInTenantOf(user.tenantId, 'register-tenant', () =>
       sessionService.start({ ...user, tenantId: tenant.id }, requestMeta(req))
