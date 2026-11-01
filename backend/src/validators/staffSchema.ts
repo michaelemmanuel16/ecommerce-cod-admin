@@ -27,9 +27,14 @@ const personFields = {
   commissionAmount: z.number().min(0).max(1_000_000),
   vehicleType: text(50),
   vehicleId: text(50),
+  /** City of a delivery partner: orders in this city can be assigned to them (F-1158). */
+  location: text(100),
 };
 
-export const updateStaffSchema = z.object({ ...personFields, phoneNumber: text(30) }).partial().strict()
+/** How a person is paid (F-1158): a fixed amount per order, the delivery fee rule (M5), or nothing through the app. */
+export const PAY_METHODS = ['per_order', 'fee_rule', 'none'] as const;
+
+export const updateStaffSchema = z.object({ ...personFields, phoneNumber: text(30), payMethod: z.enum(PAY_METHODS) }).partial().strict()
   .refine((v) => Object.keys(v).length > 0, 'Nothing to update');
 
 /**
@@ -44,6 +49,7 @@ export const updateUserSchema = z.object({
   phoneNumber: text(30).nullish(),
   country: text(60).nullish(),
   isActive: z.boolean(),
+  payMethod: z.enum(PAY_METHODS),
   // Old forms may send a number as text.
   commissionAmount: z.coerce.number().min(0).max(1_000_000),
 }).partial();
@@ -59,8 +65,6 @@ export const permanentDeleteSchema = z.object({ confirm: z.string().trim().min(1
 
 export const INVITE_CHANNELS = ['email', 'whatsapp', 'sms'] as const;
 export type InviteChannel = (typeof INVITE_CHANNELS)[number];
-/** How a person is paid (F-1158): a fixed amount per order, the delivery fee rule (M5), or nothing through the app. */
-export const PAY_METHODS = ['per_order', 'fee_rule', 'none'] as const;
 
 /** POST /api/staff/invite. Give `roleId` (a role of the tenant) or `role` (a UserRole: its position role). */
 export const inviteStaffSchema = z.object({

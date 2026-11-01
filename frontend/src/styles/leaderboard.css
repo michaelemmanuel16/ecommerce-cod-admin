@@ -1,0 +1,87 @@
+/* Leaderboard page (M6-T16, F-1104 to F-1109). Built from docs/mockups/v2/index.html#board (podium, .lb2, .pct, .dist, .reward, .medal).
+   Tokens only; scoped under .v2. */
+.v2 .lb .head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.v2 .lb .headtools{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.v2 .lb .rolebar{padding:0;border:0}
+.v2 .lb-body{display:flex;flex-direction:column;gap:16px;margin-top:16px}
+.v2 .lb-body.busy{opacity:.6;transition:opacity .15s}
+.v2 .lb-note{margin:0;padding:12px 16px;border-radius:12px;background:var(--gold-soft);color:var(--warn-ink)}
+.v2 .lb .skelcard{margin-top:16px}
+
+/* podium */
+.v2 .podium{display:grid;grid-template-columns:1fr 1.15fr 1fr;gap:16px;align-items:end;padding:26px;border-radius:22px;background:radial-gradient(90% 140% at 50% 0%,color-mix(in srgb,var(--pine) 55%,black) 0%,color-mix(in srgb,var(--pine) 28%,black) 100%);color:white;position:relative;overflow:hidden}
+.v2 .podium .p{background:color-mix(in srgb,white 8%,transparent);border:1px solid color-mix(in srgb,white 14%,transparent);border-radius:18px;padding:18px;text-align:center;position:relative;min-width:0}
+.v2 .podium .p.first{padding-top:28px;background:color-mix(in srgb,white 14%,transparent)}
+.v2 .podium .crown{position:absolute;top:-16px;left:50%;transform:translateX(-50%);width:34px;height:34px;border-radius:50%;background:var(--gold);color:black;display:grid;place-items:center}
+.v2 .podium .face{width:62px;height:62px;border-radius:50%;margin:0 auto 10px;display:grid;place-items:center;font-weight:800;font-size:20px;border:3px solid color-mix(in srgb,white 50%,transparent);background:color-mix(in srgb,var(--pine) 60%,black);color:white}
+.v2 .podium .face.violet{background:color-mix(in srgb,var(--violet) 60%,black)}
+.v2 .podium .face.gold{background:var(--gold);color:black}
+.v2 .podium .first .face{width:76px;height:76px;border-color:var(--gold)}
+.v2 .podium h3{font-size:18px;overflow-wrap:anywhere}
+.v2 .podium .role{opacity:.8;font-size:13px}
+.v2 .podium .role .tag{margin-left:4px;vertical-align:1px}
+.v2 .podium .place{font-family:"Bricolage Grotesque",sans-serif;font-weight:800;font-size:13px;opacity:.8;margin-bottom:6px}
+.v2 .podium .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
+.v2 .podium .stats div{background:color-mix(in srgb,black 22%,transparent);border-radius:10px;padding:8px 4px;min-width:0}
+.v2 .podium .stats small{display:block;opacity:.75;font-size:11.5px}
+.v2 .podium .stats b{font-family:"Bricolage Grotesque",sans-serif;font-size:17px}
+
+/* ranking and side cards */
+.v2 .lb2{align-items:start;grid-template-columns:minmax(0,1.9fr) minmax(0,1fr)}
+.v2 .lb2 > *,.v2 .lb-side > *{min-width:0}
+.v2 .lb-side{gap:16px}
+.v2 .lb-table th{white-space:normal;vertical-align:bottom}
+.v2 .lb .tablewrap{overflow-x:auto}
+.v2 .lb-table td,.v2 .lb-table th{padding-left:12px;padding-right:12px}
+.v2 .lb-table td:first-child,.v2 .lb-table th:first-child{padding-left:20px}
+.v2 .lb-table td:last-child,.v2 .lb-table th:last-child{padding-right:20px}
+.v2 .lb-table .who > div{white-space:nowrap}
+.v2 .lb-table .who .tag{margin-left:4px;vertical-align:1px}
+.v2 .lb-sub{display:block;font-weight:400}
+.v2 .pct{display:flex;align-items:center;gap:10px}
+.v2 .pct .prog{margin-top:0;flex:1;min-width:44px}
+.v2 .pct b{min-width:44px;text-align:right}
+.v2 .lb-reason{color:var(--ink-3)}
+.v2 .lb .a.mint{background:var(--mint-soft);color:var(--ok-ink)}
+.v2 .lb .a.violet{background:var(--violet-soft);color:var(--violet)}
+.v2 .lb .a.gold{background:var(--gold-soft);color:var(--gold)}
+.v2 .lb .a.pine{background:var(--pine-soft);color:var(--pine)}
+.v2 .lb .a.coral{background:var(--coral-soft);color:var(--coral)}
+
+/* rewards */
+.v2 .lb-tiers{margin-top:6px}
+.v2 .reward{display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--line)}
+.v2 .reward .ico{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;flex:none}
+.v2 .reward .ico.violet{background:var(--violet-soft);color:var(--violet)}
+.v2 .reward .ico.mint{background:var(--mint-soft);color:var(--ok-ink)}
+.v2 .reward b{display:block}
+.v2 .reward small{color:var(--ink-3)}
+.v2 .dist{padding:4px 20px 16px}
+.v2 .dist h4{font-size:12.5px;font-weight:600;color:var(--ink-3);margin:12px 0 6px}
+.v2 .dist .row{display:flex;align-items:center;gap:10px;padding:8px 0}
+.v2 .dist .row .a{flex:none;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:11.5px}
+.v2 .dist .row > div:nth-child(2){min-width:0;flex:1}
+.v2 .dist .row b{display:block;font-size:13.5px}
+.v2 .dist .row small{display:block;color:var(--ink-3);font-size:12.5px}
+.v2 .dist .row .tag{margin-left:auto;flex:none}
+.v2 .lb-nopay{margin:8px 0 0;color:var(--ink-3);font-size:12.5px}
+
+/* badges */
+.v2 .lb-medals{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:14px 20px 20px}
+.v2 .medal{text-align:center;padding:12px 6px;border-radius:14px;border:1px solid var(--line);min-width:0}
+.v2 .medal .m{width:44px;height:44px;border-radius:50%;margin:0 auto 6px;display:grid;place-items:center;background:var(--hover);color:var(--ink-3)}
+.v2 .medal .m.pine{background:var(--pine-soft);color:var(--pine)}
+.v2 .medal .m.mint{background:var(--mint-soft);color:var(--ok-ink)}
+.v2 .medal .m.gold{background:var(--gold-soft);color:var(--gold)}
+.v2 .medal b{font-size:13px;line-height:1.3;display:block}
+.v2 .medal small{display:block;color:var(--ink-3);font-size:11.5px;overflow-wrap:anywhere}
+.v2 .medal.locked{opacity:.55}
+
+@media (max-width:1100px){
+  .v2 .lb2{grid-template-columns:minmax(0,1fr)}
+}
+@media (max-width:760px){
+  .v2 .podium{grid-template-columns:1fr;padding:22px 16px}
+  .v2 .podium .p,.v2 .podium .p.first{width:100%}
+  .v2 .lb .head{flex-direction:column}
+}

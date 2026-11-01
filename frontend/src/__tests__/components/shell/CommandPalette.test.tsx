@@ -225,10 +225,10 @@ describe('CommandPalette (M3-T35)', () => {
       expect(screen.getByTestId('where')).toHaveTextContent('/customers');
     });
 
-    it('G L does nothing yet (Leaderboard has no page); G T opens Targets', async () => {
+    it('G L opens the Leaderboard; G T opens Targets', async () => {
       renderPalette({ menu: [...MENU, 'leaderboard'] });
       await userEvent.keyboard('gl');
-      expect(screen.getByTestId('where')).toHaveTextContent('/customers');
+      expect(screen.getByTestId('where')).toHaveTextContent('/leaderboard');
       await userEvent.keyboard('gt');
       expect(screen.getByTestId('where')).toHaveTextContent('/targets');
     });

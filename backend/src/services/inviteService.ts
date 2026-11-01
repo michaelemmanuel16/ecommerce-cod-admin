@@ -15,7 +15,7 @@ import { sendInviteEmail } from './emailService';
 import { smsService } from './smsService';
 import { whatsappService } from './whatsappService';
 import { assertMayTouchRole, findRole } from './roleService';
-import { StaffRow, feeNotEditable, findStaff, payPolicyFor, staffSelect, staffStatus, staffView } from './staffService';
+import { StaffRow, findStaff, payMethodNotAllowed, payPolicyFor, staffSelect, staffStatus, staffView } from './staffService';
 import { VEHICLE_TYPES, normalizeVehicleType } from './deliveryPartnerAdminService';
 import type { RequestMeta } from './sessionService';
 import type { InviteChannel, inviteStaffSchema } from '../validators/staffSchema';
@@ -102,7 +102,7 @@ export async function inviteStaff(actor: Requester, input: InviteStaffInput) {
 
   const policy = payPolicyFor(base);
   const payMethod = input.payMethod ?? policy.defaultMethod;
-  if (!(policy.methods as readonly string[]).includes(payMethod)) throw feeNotEditable();
+  if (!(policy.methods as readonly string[]).includes(payMethod)) throw payMethodNotAllowed();
   const vehicleType = input.vehicleType ? normalizeVehicleType(input.vehicleType) : undefined;
   if (input.vehicleType && !vehicleType) {
     throw new AppError(`Vehicle type must be one of: ${VEHICLE_TYPES.join(', ')}`, 400, 'INVALID_VEHICLE_TYPE');
@@ -164,6 +164,26 @@ export async function revokeInvite(actor: Requester, id: number) {
   return staffView(row);
 }
 
+/** The filter of a person who can still accept: Invited (inactive, not deleted, invite date set) with this token. */
+const stillInvited = (tokenHash: string) =>
+  ({ inviteTokenHash: tokenHash, isActive: false, deletedAt: null, invitedAt: { not: null }, kind: 'person' as const });
+
+/** The person behind a token, or 400 (unknown or used, one message) or 410 (expired). Reads only. */
+async function findInvite(tokenHash: string) {
+  const invited = await withoutTenant('auth-accept-invite', () => prisma.user.findFirst({
+    where: stillInvited(tokenHash),
+    select: { id: true, tenantId: true, inviteExpiresAt: true },
+  }));
+  if (!invited) throw new AppError(INVALID_INVITE, 400, 'INVITE_INVALID');
+  if (isInviteExpired(invited.inviteExpiresAt)) throw new AppError(EXPIRED_INVITE, 410, 'INVITE_EXPIRED');
+  return invited;
+}
+
+/** Public. Is the link still good? The accept page asks when it opens, so a dead link says so before a password is typed. Writes nothing. */
+export async function checkInvite(token: string): Promise<void> {
+  await findInvite(hashInviteToken(token));
+}
+
 /**
  * Public. Spend the token: the person chooses a password and becomes active. One use: the claim is one conditional update on
  * a person who is still Invited (inactive, not deleted, invite date set), so two requests with the same token cannot both
@@ -172,13 +192,7 @@ export async function revokeInvite(actor: Requester, id: number) {
  */
 export async function acceptInvite(token: string, password: string, meta: RequestMeta) {
   const tokenHash = hashInviteToken(token);
-  const stillInvited = { inviteTokenHash: tokenHash, isActive: false, deletedAt: null, invitedAt: { not: null }, kind: 'person' as const };
-  const invited = await withoutTenant('auth-accept-invite', () => prisma.user.findFirst({
-    where: stillInvited,
-    select: { id: true, tenantId: true, inviteExpiresAt: true },
-  }));
-  if (!invited) throw new AppError(INVALID_INVITE, 400, 'INVITE_INVALID');
-  if (isInviteExpired(invited.inviteExpiresAt)) throw new AppError(EXPIRED_INVITE, 410, 'INVITE_EXPIRED');
+  const invited = await findInvite(tokenHash);
 
   const hashed = await bcrypt.hash(password, 10);
 
@@ -186,7 +200,7 @@ export async function acceptInvite(token: string, password: string, meta: Reques
     let user;
     try {
       user = await prisma.user.update({
-        where: stillInvited,
+        where: stillInvited(tokenHash),
         data: { password: hashed, isActive: true, inviteTokenHash: null, inviteExpiresAt: null, invitedAt: null, refreshToken: null },
       });
     } catch (error) {

@@ -75,8 +75,8 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Team',
     items: [
       { key: 'targets', label: 'Targets', icon: Target, to: '/targets' },
-      { key: 'leaderboard', label: 'Leaderboard', icon: Trophy, to: null },
-      { key: 'staff', label: 'Staff & roles', icon: UserCog, to: null },
+      { key: 'leaderboard', label: 'Leaderboard', icon: Trophy, to: '/leaderboard' },
+      { key: 'staff', label: 'Staff & roles', icon: UserCog, to: '/staff' },
       // Customer reps page: replaced by Staff & roles (M6). Old Sidebar: manager and above.
       { key: 'customerReps', label: 'Customer reps', icon: Phone, to: '/customer-reps', oldPageFor: isManagerUp },
     ],

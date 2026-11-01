@@ -1,0 +1,45 @@
+/* Staff page (M6-T20, F-1157 to F-1161). Built from docs/mockups/v2/staff.html. Tokens only; scoped under .v2. */
+.v2 .staff-head-actions{display:flex;gap:8px;flex-wrap:wrap}
+.v2 .staff-roles-slot:empty{display:none}
+.v2 .staff .card{margin-top:16px}
+.v2 .staff-filters{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:6px 20px 12px}
+.v2 .staff-search{display:flex;align-items:center;gap:8px;flex:1 1 240px;max-width:360px;border:1px solid var(--line);border-radius:12px;padding:0 12px;background:var(--card)}
+.v2 .staff-search svg{width:16px;height:16px;color:var(--ink-3);flex:none}
+.v2 .staff-search input{border:0;background:transparent;color:var(--ink);padding:9px 0;width:100%;outline:none;font:inherit}
+.v2 .staff-link{width:100%;font:inherit;font-size:13px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink)}
+.v2 .staff-erase{margin:0 0 14px;padding-left:18px;color:var(--ink-2);font-size:13.5px;display:grid;gap:6px}
+.v2 .tt2 td,.v2 .tt2 th{padding-left:14px;padding-right:14px}
+.v2 .tt2 td:first-child,.v2 .tt2 th:first-child{padding-left:20px}
+.v2 .tt2 td:last-child,.v2 .tt2 th:last-child{padding-right:20px}
+.v2 .tt2 tr.off{opacity:.55}
+.v2 .tt2 .who{min-width:200px}
+.v2 .tt2 .who small{display:block;color:var(--ink-3);font-size:12px}
+.v2 .tt2 .who .a.co{border-radius:9px}
+.v2 .tt2 td .tag{white-space:nowrap}
+.v2 .tt2 .rolechips{display:flex;gap:4px;flex-wrap:wrap}
+.v2 .tt2 .kb{display:grid;place-items:center;width:32px;height:32px;border-radius:9px;color:var(--ink-2)}
+.v2 .tt2 .kb:hover,.v2 .tt2 .kb:focus-visible{background:var(--hover)}
+.v2 .tt2 .kb svg{width:18px;height:18px}
+.v2 .menu.fixed button.dng{color:var(--coral)}
+/* Under 760px the table stacks: one card per person, the column name over its value. */
+@media (max-width:760px){
+  .v2 .staff .tablewrap{overflow:visible}
+  .v2 .tt2 thead{display:none}
+  .v2 .tt2,.v2 .tt2 tbody{display:block}
+  .v2 .tt2 tr{display:grid;grid-template-columns:1fr auto;gap:6px 10px;padding:14px 16px;border-bottom:1px solid var(--line)}
+  .v2 .tt2 td{display:block;padding:0;border:0;white-space:normal}
+  .v2 .tt2 td:first-child,.v2 .tt2 td:last-child{padding:0}
+  .v2 .tt2 td:nth-child(1){grid-column:1}
+  .v2 .tt2 td:nth-child(7){grid-column:2;grid-row:1;text-align:right}
+  .v2 .tt2 td:nth-child(n+2):nth-child(-n+6){grid-column:1 / -1;font-size:13px}
+  .v2 .tt2 td:nth-child(2)::before{content:'Roles: ';color:var(--ink-3)}
+  .v2 .tt2 td:nth-child(2){display:flex;gap:4px;flex-wrap:wrap;align-items:center}
+  .v2 .tt2 td:nth-child(4)::before{content:'Pay: ';color:var(--ink-3)}
+  .v2 .tt2 td:nth-child(5)::before{content:'Last active: ';color:var(--ink-3)}
+  .v2 .staff-filters{padding:6px 16px 12px}
+  .v2 .staff-search{max-width:none}
+}
+/* The person modal: two fields to a row (the mockup's .two2), one under 760px. The gap between fields is the .mb gap (14px) of every v2 modal; no margin of its own. */
+.v2 .dlg .two2{display:grid;grid-template-columns:1fr 1fr;gap:14px 12px}
+.v2 .dlg .mb .seg{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
+@media (max-width:760px){.v2 .dlg .two2{grid-template-columns:1fr}}
