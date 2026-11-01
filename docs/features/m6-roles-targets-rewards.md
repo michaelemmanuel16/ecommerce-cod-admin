@@ -108,6 +108,32 @@ New staff join by invite link only. Nobody types a password for another person. 
 
 ---
 
+## COD-56 — Permissions: tool switches, permission grid, role union (M6-T04)
+**Date:** 2026-11-01 | **Type:** feat | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-56-t04-permissions`, merge 54717d6b, HEAD^2 4b1b3c27, cleanup 34a05b89) | **Commits:** 34574203, 4ceea128, ed049131, 7a987d78, 7e5f8ca1, ed702175
+
+### Summary
+Each role now has 16 tool switches and an advanced permission matrix. A person's access is the union of the roles they hold. Plan task: M6-T04. This closes COD-56.
+
+### Changes
+- **Tool switches (`config/roleToolRules.ts`, `PUT /api/roles/:id/tools`):** one table of 16 switches (7 read, 9 write). Each switch grants a set of matrix cells. A write switch needs its read switch, so turning off a read switch while its write switch is on gives a dependency error. "Update order status" grants `orders:update` and `orders:update_status`.
+- **Permission matrix (`GET/PUT /api/roles/:id/permissions`, `rolePermissionService`):** the Owner edits the cells of a role. Switch writes and grid writes go through one `saveGrid`, so both keep the last-manager guard (the last role that gives `users:update` to an active holder cannot lose it). The Settings matrix save checks every role before it writes (`saveMatrix`).
+- **Union of roles (`permissionService`):** a person gets every cell of every position role they hold. The grid fallback is the tenant matrix, and the middleware, the checks, the role views and the MCP keys all read it. An admin cannot give a role with cells the admin does not have (`assertGridWithin`, 403 `GRID_ABOVE_ACTOR`) and cannot give a role to themselves (403 `SELF_ASSIGN`).
+- **One access invalidation (`accessService.invalidateAccess`):** every access change (switches, grid, assign, unassign, the user edit that changes a position role) clears the per-tenant permission and key caches after the commit and tells the holders. The next request uses the new access. There is no 60-second wait.
+- **Active check:** `authenticate` refuses a valid token at once (401) when the user is deactivated or soft-deleted.
+- **MCP:** a key's tools are the registry tools of its role (`registryToolsOfRole`). The key list shows the tool count of the role.
+- **Owner race fix (4ceea128):** unassign locks the Owner holders (`FOR UPDATE`), so two calls at once cannot remove the last Owner.
+- **Storage:** `Role.tools` is stored for the system role only. Other roles derive their switches from their cells.
+
+### Verification
+- Combined post-merge run on 780f8524/ecb4f120 (T04, T10, T15 together): backend `tsc`, lint and build OK. Unit 131 suites / 1744 tests pass. Integration 30 suites / 395 tests pass. Frontend build and lint OK; vitest 176 files / 1432 tests pass.
+- Note: an earlier full run had one failure in `m6StaffApi` (Owner reactivate of an invited person got 403). It did not repeat in 15 runs. The test now prints the reply body. The later full run passed.
+
+### Open points
+- Phase 7 tickets (each needs a data migration): stop reading `systemConfig.rolePermissions`; one grid for the Owner and legacy roles (roleKind).
+- The switch and matrix screens are T21.
+
+---
+
 ## COD-57 — Target service (M6-T07)
 **Date:** 2026-11-01 | **Type:** feat | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-57-t07-targets`, merge 2e37b9b1) | **Commits:** 4508bbce, 2dff0328
 
@@ -174,6 +200,83 @@ The one place reward tiers and rep pay live, and each person's progress toward t
 
 ### Open points
 - A person who left a role mid-month is skipped by the live-target rule; T10 judges them on their own target at month close (F-1110).
+
+---
+
+## COD-58 — Month close (M6-T10)
+**Date:** 2026-11-01 | **Type:** feat | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-58-t10-close`, merge c4ba8447, HEAD^2 65790ad9) | **Commits:** 2b8307e0, 13eb08b8, 883cf1f1, 65790ad9
+
+### Summary
+At the end of a month, attainment becomes reward entries and the month is locked. Plan task: M6-T10. COD-58 is still In Progress (T11 and the screens left).
+
+### Changes
+- **Plan (`periodCloseService`):** the plan is `rewardService.computeAttainment` for the month. The preview and the run read the same rule. A human holder at 100% or more gets one `CommissionEntry` of kind `reward` for the tier reached (the 120% amount only, not both), with the day off as a note. It posts DR 5050 / CR 2020 on the last day of the month (`postEntry`).
+- **Lock:** the month, role, person and month targets of that month get `closedAt`, so T07 refuses edits. The month target is the lock. A month with no month target gives 409 `NOTHING_TO_CLOSE`.
+- **One transaction per tenant and month,** under an advisory lock. It is safe to repeat: an entry exists once per tenant, person, reward, month and role (a unique key). A month already closed returns what it holds and creates nothing.
+- **Failure:** any failure that is not a 4xx stops the run with nothing written and opens a Finding. A read failure gives 502 `KPI_UNAVAILABLE`. Nothing is paid on partial data.
+- **Security review fix (65790ad9):** the 502 reply is generic. The raw error text goes only to the log and the Finding, not to the API reply.
+- **No clawback:** a return after close does not take a reward back.
+- **Routes (`periodCloseRoutes`):** `POST /api/period-close/:period/preview` and `POST /api/period-close/:period`. Both need `settings:update` and the Owner check.
+- **Schedule (`queues/periodCloseQueue.ts`):** a job runs on day 1 at 03:00 Africa/Accra. For each tenant it closes the month that ended, as that tenant's system user. The previous month is worked out in the tenant time zone, not the server zone. A tenant with nothing to close is skipped.
+- **Shared code:** a small date helper in `kpi/dates.ts`; read helpers in `targetService` and `rewardService`.
+
+- **Frontend and database:** no screens, no migration.
+- **Key files:** `services/periodCloseService.ts`, `queues/periodCloseQueue.ts`, `routes/periodCloseRoutes.ts`, `controllers/periodCloseController.ts`, `__tests__/integration/m6PeriodClose.test.ts`.
+
+### Verification
+- Combined post-merge run on 780f8524/ecb4f120 (T04, T10, T15 together): backend `tsc`, lint and build OK. Unit 131 suites / 1744 tests pass. Integration 30 suites / 395 tests pass. Frontend build and lint OK; vitest 176 files / 1432 tests pass.
+
+### Open points
+- The month close screen (preview and confirm) is not built yet.
+
+---
+
+## COD-58 — Leaderboard and badges service (M6-T11)
+**Date:** 2026-11-01 | **Type:** feat | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-58-t11-leaderboard`, merge c2e05be7, HEAD^2 b3852ba1) | **Commits:** 4e1d0e27, 2f893d1c (merge of T10), b3852ba1
+
+### Summary
+A ranked board per period and the badges people earn at month close. Plan task: M6-T11. With T09 and T10 this completes the COD-58 backend.
+
+### Changes
+- **Leaderboard (`GET /api/leaderboard`, `leaderboardService`, `leaderboardMath`):** ranks people by target attainment for a period. It needs the `targets:view` cell, which every role has. The Owner, Admin and Manager see every row. Anyone else sees their own row only.
+- **Badges (`GET /api/badges`, `badgeService`):** read only. Badges are written by the month close and never by hand.
+- **Badges inside the close transaction (b3852ba1):** `awardMonthBadges` counts and writes through the caller's client, so inside the close transaction it sees its own rows. `closeMonth` awards the badges inside the advisory-lock transaction, after the reward entries and before the targets close. The run result carries the new badge count. A failed close writes no badge.
+- **Progress alias:** `GET /api/rewards/progress` is an alias. It calls the same function as the leaderboard for one person's attainment. A person sees their own; the Owner level sees anyone.
+- **Validation:** new schemas in `validators/rewardSchema.ts`.
+
+- **Frontend and database:** no screens. No migration; badges use the existing `BadgeAward` table.
+- **Key files:** `services/leaderboardService.ts`, `services/leaderboardMath.ts`, `services/badgeService.ts`, `routes/leaderboardRoutes.ts`, `routes/badgeRoutes.ts`, `__tests__/integration/m6Leaderboard.test.ts`, `__tests__/unit/leaderboardMath.test.ts`.
+
+### Verification
+T11_VERIFY_PLACEHOLDER
+
+### Open points
+- The leaderboard and badge screens are not built yet.
+
+---
+
+## COD-59 — Targets page (M6-T15)
+**Date:** 2026-11-01 | **Type:** feat | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-59-t15-targets-page`, merge 9c10e087, HEAD^2 216d99fe) | **Commits:** 2c54b3f1, 216d99fe, follow-up fix 780f8524
+
+### Summary
+The Targets page: the North Star, the year tree, and role groups with an add-target dialog. Plan task: M6-T15.
+
+### Changes
+- **One tree read:** every role target hangs under the revenue month, so the page reads one tree (`targetService`, `northStarService`).
+- **One status rule (`targetStatus.ts`):** the backend decides the status and the colour of each target. The page shows them and does not work them out. Actuals come from `targetActuals.ts`; `rewardService` shares the rule.
+- **Follow-up fix (780f8524):** the `localDate` import was lost in the merge and is restored. The `lockParent` comment is back in place.
+
+- **Page (`pages/Targets.tsx`, route `/targets`):** `NorthStarCard`, `RoleGroups`, `TargetDialog`, `model.ts`, `services/targets.service.ts`, `styles/targets.css`.
+- **Navigation:** the nav model and the command palette point to the new page.
+- **Narrow screens:** the table stacks at 760 px.
+- **Database:** no migration.
+- **Key files:** `frontend/src/pages/Targets.tsx`, `frontend/src/pages/targets/*`, `backend/src/services/targetStatus.ts`, `backend/src/services/targetActuals.ts`, `backend/src/__tests__/integration/m6TargetsTree.test.ts`, `frontend/src/__tests__/pages/Targets.test.tsx`.
+
+### Verification
+- Combined post-merge run on 780f8524/ecb4f120 (T04, T10, T15 together): backend `tsc`, lint and build OK. Unit 131 suites / 1744 tests pass. Integration 30 suites / 395 tests pass. Frontend build and lint OK; vitest 176 files / 1432 tests pass.
+
+### Open points
+- The screenshots came from a fixture proxy, not the real backend. The real-backend browser check is pending at the milestone QA.
 
 ---
 

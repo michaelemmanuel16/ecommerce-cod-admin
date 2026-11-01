@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authenticate, requireResourcePermission } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import * as rewardController from '../controllers/rewardController';
+import * as leaderboardController from '../controllers/leaderboardController';
 
 const router = Router();
 
@@ -14,5 +15,7 @@ router.use(tenantRateLimiter);
 router.get('/settings', requireResourcePermission('settings', 'view'), rewardController.getSettings);
 router.put('/settings', requireResourcePermission('settings', 'update'), rewardController.putSettings);
 router.get('/attainment', rewardController.getAttainment);
+// F-1108: one person's attainment, the same function (a person sees their own, the Owner level sees anyone)
+router.get('/progress', leaderboardController.getProgress);
 
 export default router;

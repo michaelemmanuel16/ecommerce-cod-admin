@@ -156,6 +156,10 @@ export const requireResourcePermission = (resource: string, ...actions: string[]
 
       const action = actions.join(' or ');
       logger.info(`[AuthMiddleware] User ${req.user.id} (${req.user.role}) lacks ${action} on ${resource}`);
+      // PERMISSION_DEBUG=1: log the grid the check saw, to catch an unexpected 403 (COD-56).
+      if (process.env.PERMISSION_DEBUG === '1') {
+        logger.info(`[AuthMiddleware] PERMISSION_DEBUG ${req.method} ${req.path} user ${req.user.id}: ${JSON.stringify(await getUserPermissions(req.user))}`);
+      }
       res.status(403).json({
         error: `Forbidden: Cannot ${action} ${resource}`,
         code: 'INSUFFICIENT_PERMISSION',
