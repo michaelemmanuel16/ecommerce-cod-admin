@@ -28,7 +28,6 @@ const monthOf = (period: string, metric = 'revenue') =>
   prismaBase.target.findFirstOrThrow({ where: { tenantId: A(), scope: 'month', metric, periodStart: new Date(`${period}-01`) } });
 
 let northStar: { id: number };
-let ordersQ4: { id: number };
 let roleId: number;
 let otherRoleId: number;
 let anna: number;
@@ -96,26 +95,26 @@ describe('hierarchy and sum checks', () => {
     await rejects(inA(() => targets.deleteTarget(northStar.id)), 409, /Remove the targets under it/);
   });
 
-  it('a role target needs a month target of the same metric (no orphans)', async () => {
-    await rejects(inA(() => targets.saveTarget({ scope: 'role', metric: 'no_such_metric', unit: 'count', value: 5, period: '2026-10', roleId })), 400, /needs a month target/);
-    const oct = await monthOf('2026-10');
-    await rejects(inA(() => targets.saveTarget({ scope: 'role', ...orders({ value: 5, period: '2026-10', roleId, parentId: oct.id }) })), 400, /same metric/);
+  it('a role target needs a revenue month to sit under (no orphans)', async () => {
+    await rejects(inA(() => targets.saveTarget({ scope: 'role', ...orders({ value: 5, period: '2027-01', roleId }) })), 400, /needs a month target/);
   });
 
-  it('builds the delivered-orders tree: 2,169 for the year, 723 a month in Q4', async () => {
-    const ns = await inA(() => targets.saveTarget({ scope: 'north_star', ...orders({ value: 2169, period: '2026' }) }));
-    const q = await inA(() => targets.setChildren(ns.id, [
-      { period: '2026-Q1', value: 0 }, { period: '2026-Q2', value: 0 }, { period: '2026-Q3', value: 0 }, { period: '2026-Q4', value: 2169 },
-    ]));
-    ordersQ4 = q[3];
-    const months = await inA(() => targets.setChildren(ordersQ4.id, [{ period: '2026-10', value: 723 }, { period: '2026-11', value: 723 }, { period: '2026-12', value: 723 }]));
-    expect(months).toHaveLength(3);
+  it('a count or a rate role target saves under the revenue month; a revenue sum ignores them', async () => {
+    const count = await inA(() => targets.saveTarget({ scope: 'role', ...orders({ value: 723, period: '2026-10', roleId }) }));
+    const oct = await monthOf('2026-10');
+    expect(count.parentId).toBe(oct.id);
+    const rate = await inA(() => targets.saveTarget({ scope: 'role', metric: 'delivery_success_rate', unit: 'percent', value: 60, period: '2026-10', roleId: otherRoleId }));
+    expect(rate.parentId).toBe(oct.id);
+    // 723 orders and 60 percent sit under a month of 180,000 revenue, and do not count in it
+    await inA(() => targets.saveTarget({ scope: 'role', metric: 'revenue', unit: 'currency', value: 100_000, period: '2026-10', roleId }));
+    await inA(() => targets.saveTarget({ scope: 'role', metric: 'revenue', unit: 'currency', value: 80_000, period: '2026-10', roleId: otherRoleId }));
+    await rejects(inA(() => targets.saveTarget({ scope: 'role', metric: 'revenue', unit: 'currency', value: 80_001, period: '2026-10', roleId: otherRoleId })), 400, /Difference: 1\.00/);
+    await prismaBase.target.deleteMany({ where: { tenantId: A(), scope: 'role', metric: { in: ['revenue', 'delivery_success_rate'] } } });
   });
 });
 
 describe('role pool, person targets and "Set a target"', () => {
   it('a holder with no target shows "Set a target"; no automatic proration', async () => {
-    await inA(() => targets.saveTarget({ scope: 'role', ...orders({ value: 723, period: '2026-10', roleId }) }));
     await inA(() => targets.saveTarget({ scope: 'role', ...orders({ value: 723, period: '2026-11', roleId }) }));
     const rows = await inA(() => targets.roleHolderTargets(roleId, '2026-10'));
     expect(rows).toHaveLength(2);
@@ -124,7 +123,7 @@ describe('role pool, person targets and "Set a target"', () => {
   });
 
   it('a role target over its month is rejected with the difference', async () => {
-    await rejects(inA(() => targets.saveTarget({ scope: 'role', ...orders({ value: 800, period: '2026-12', roleId: otherRoleId }) })), 400, /over by 77\.00.*Difference: 77\.00/);
+    await rejects(inA(() => targets.saveTarget({ scope: 'role', metric: 'revenue', unit: 'currency', value: 200_000, period: '2026-12', roleId: otherRoleId })), 400, /over by 20000\.00.*Difference: 20000\.00/);
   });
 
   it('person targets link to the role target; over the role is rejected; the rest is the pool', async () => {
@@ -173,12 +172,12 @@ describe('role pool, person targets and "Set a target"', () => {
 describe('concurrent writes', () => {
   it('two role targets that together exceed their month: one is saved, one is rejected', async () => {
     const results = await Promise.allSettled([
-      inA(() => targets.saveTarget({ scope: 'role', ...orders({ value: 400, period: '2026-12', roleId }) })),
-      inA(() => targets.saveTarget({ scope: 'role', ...orders({ value: 400, period: '2026-12', roleId: otherRoleId }) })),
+      inA(() => targets.saveTarget({ scope: 'role', metric: 'revenue', unit: 'currency', value: 100_000, period: '2026-12', roleId })),
+      inA(() => targets.saveTarget({ scope: 'role', metric: 'revenue', unit: 'currency', value: 100_000, period: '2026-12', roleId: otherRoleId })),
     ]);
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     const failed = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
-    expect(failed.reason).toMatchObject({ statusCode: 400, message: expect.stringMatching(/Difference: 77\.00/) });
+    expect(failed.reason).toMatchObject({ statusCode: 400, message: expect.stringMatching(/Difference: 20000\.00/) });
   });
 });
 
@@ -216,6 +215,8 @@ describe('closed month', () => {
     const q4 = await prismaBase.target.findFirstOrThrow({ where: { tenantId: A(), scope: 'quarter', metric: 'revenue', periodStart: new Date('2026-10-01') } });
     await rejects(inA(() => targets.setChildren(q4.id, [{ period: '2026-10', value: 190_000 }, { period: '2026-11', value: 170_000 }])), 409, /closed/);
     await rejects(inA(() => targets.saveTarget({ scope: 'person', ...orders({ value: 300, period: '2026-10', roleId, userId: anna }) })), 409, /closed/);
+    await rejects(inA(() => targets.saveTarget({ scope: 'role', metric: 'delivery_success_rate', unit: 'percent', value: 61, period: '2026-10', roleId: otherRoleId })), 409, /closed/);
+    await rejects(inA(() => targets.saveTarget({ scope: 'role', ...orders({ value: 700, period: '2026-10', roleId }) })), 409, /closed/);
     const person = await prismaBase.target.findFirstOrThrow({ where: { tenantId: A(), scope: 'person', userId: anna } });
     await rejects(inA(() => targets.deleteTarget(person.id)), 409, /closed/);
   });

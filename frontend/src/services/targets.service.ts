@@ -6,6 +6,7 @@ import apiClient from './api';
  * numbers; "pool" and "allocated" stay strings, so read them with Number().
  */
 
+/** The keys of backend `TargetStatus` (services/targetStatus.ts); the model test pins the set. */
 export type StatusKey = 'revenue_hit' | 'hit_margin_missed' | 'ahead' | 'on_track' | 'behind';
 
 export interface Actuals {
@@ -80,6 +81,8 @@ export interface AttainmentRow {
   tier: 'none' | '100' | '120';
   reward: { amount: number; dayOff: boolean } | null;
   earned: boolean;
+  /** The tree's status word for this month's progress; null when the month has not started or there is no percent. */
+  status: { key: StatusKey; label: string } | null;
   distance: { next: '100' | '120'; amount: number | null; unit: string; message: string } | null;
   warning: string | null;
   message: string;

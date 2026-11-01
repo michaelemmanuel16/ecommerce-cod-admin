@@ -134,11 +134,12 @@ async function closedMonths(tx: Db, tenantId: string, start: Date, end: Date) {
 const monthClosed = async (tx: Db, tenantId: string, start: Date, end: Date) => (await closedMonths(tx, tenantId, start, end)).length > 0;
 
 /** Targets that sit under `parent` and still count: a person target cut short by an unassign is released, so it does not. */
-const underParent = (tenantId: string, parent: Pick<Target, 'id' | 'scope' | 'periodEnd'>): Prisma.TargetWhereInput => ({
-  tenantId, parentId: parent.id, ...(parent.scope === 'role' ? { periodEnd: { gte: parent.periodEnd } } : {}),
+const underParent = (tenantId: string, parent: Pick<Target, 'id' | 'scope' | 'periodEnd' | 'metric'>): Prisma.TargetWhereInput => ({
+  // Only children of the parent's own metric add up to it: a month of revenue holds role targets of orders and rates too.
+  tenantId, parentId: parent.id, metric: parent.metric, ...(parent.scope === 'role' ? { periodEnd: { gte: parent.periodEnd } } : {}),
 });
 
-const childSum = async (tx: Db, tenantId: string, parent: Pick<Target, 'id' | 'scope' | 'periodEnd'>, exceptId?: number) => {
+const childSum = async (tx: Db, tenantId: string, parent: Pick<Target, 'id' | 'scope' | 'periodEnd' | 'metric'>, exceptId?: number) => {
   const r = await tx.target.aggregate({
     where: { ...underParent(tenantId, parent), ...(exceptId ? { id: { not: exceptId } } : {}) }, _sum: { value: true }, _count: true,
   });
@@ -154,6 +155,10 @@ const findSlots = (tx: Db, tenantId: string, slot: Pick<Row, 'scope' | 'metric' 
 // ---- The one write path ---------------------------------------------------------------------------------------------
 
 /** The parent of a role or person target: the named one, else the one that covers the period with the same metric. Locked. */
+/** The revenue month is the spine of every role target (M6-T15): a role target of orders or a rate sits under it. A person sits under the role target of the same metric. */
+const SPINE_METRIC = 'revenue';
+const SPINE_METRIC_OF = (row: Pick<Row, 'scope' | 'metric'>): string => (row.scope === 'role' ? SPINE_METRIC : row.metric);
+
 async function lockParent(tx: Db, tenantId: string, row: Row): Promise<Target | null> {
   const need = PARENT[row.scope];
   if (!need) return null;
@@ -162,7 +167,7 @@ async function lockParent(tx: Db, tenantId: string, row: Row): Promise<Target | 
       tenantId,
       ...(row.parentId !== undefined
         ? { id: row.parentId }
-        : { scope: need, metric: row.metric, periodStart: { lte: row.start }, periodEnd: { gte: row.start }, ...(row.scope === 'person' ? { roleId: row.roleId } : { roleId: null, userId: null }) }),
+        : { scope: need, metric: SPINE_METRIC_OF(row), periodStart: { lte: row.start }, periodEnd: { gte: row.start }, ...(row.scope === 'person' ? { roleId: row.roleId } : { roleId: null, userId: null }) }),
     },
   });
   if (!found) {
@@ -170,7 +175,7 @@ async function lockParent(tx: Db, tenantId: string, row: Row): Promise<Target | 
     throw new AppError(`A ${row.scope} target needs a ${need} target for this period and metric first`, 400, 'NO_PARENT');
   }
   if (found.scope !== need) throw new AppError(`A ${row.scope} target sits under a ${need} target`, 400, 'WRONG_PARENT_SCOPE');
-  if (found.metric !== row.metric) throw new AppError(`The parent target is "${found.metric}"; a child uses the same metric`, 400, 'METRIC_MISMATCH');
+  if (found.metric !== SPINE_METRIC_OF(row)) throw new AppError(`The parent target is "${found.metric}"; a child uses the same metric`, 400, 'METRIC_MISMATCH');
   const outside = row.start < found.periodStart || row.start > found.periodEnd
     || (ymdOfUtc(found.periodStart) !== ymdOfUtc(row.start) && (row.scope === 'role' || row.scope === 'person'));
   if (outside) throw new AppError('The child period is outside the parent period', 400, 'INVALID_PERIOD');
@@ -191,8 +196,10 @@ async function saveRow(tx: Db, tenantId: string, row: Row): Promise<Target> {
   const [existing] = await findSlots(tx, tenantId, row, [row.start]);
   if (existing?.closedAt) throw closedError();
 
-  if (parent) assertSum(parent.scope, Money.add((await childSum(tx, tenantId, parent, existing?.id)).sum, row.value), parent.value);
-  if (existing) {
+  // Counts and money add up under their parent; a rate does not, and a child of another metric is not compared with it.
+  const adds = row.unit !== 'percent';
+  if (parent && adds && parent.metric === row.metric) assertSum(parent.scope, Money.add((await childSum(tx, tenantId, parent, existing?.id)).sum, row.value), parent.value);
+  if (existing && adds) {
     const kids = await childSum(tx, tenantId, existing);
     if (kids.count > 0) assertSum(existing.scope, kids.sum, row.value);
   }
@@ -214,12 +221,12 @@ async function saveRow(tx: Db, tenantId: string, row: Row): Promise<Target> {
 }
 
 /** A parent whose value moves must still cover what sits under it (exactly for quarters, at most for months and roles). */
-async function assertCoversChildren(tx: Db, tenantId: string, moved: Map<number, { scope: TargetScope; next: Money.Money }>) {
+async function assertCoversChildren(tx: Db, tenantId: string, moved: Map<number, { scope: TargetScope; metric: string; next: Money.Money }>) {
   if (moved.size === 0) return;
-  const under = await tx.target.groupBy({ by: ['parentId'], where: { tenantId, parentId: { in: [...moved.keys()] } }, _sum: { value: true } });
+  const under = await tx.target.groupBy({ by: ['parentId', 'metric'], where: { tenantId, parentId: { in: [...moved.keys()] } }, _sum: { value: true } });
   for (const g of under) {
     const parent = moved.get(g.parentId!)!;
-    assertSum(parent.scope, Money.orZero(g._sum.value), parent.next);
+    if (g.metric === parent.metric) assertSum(parent.scope, Money.orZero(g._sum.value), parent.next);
   }
 }
 
@@ -254,7 +261,7 @@ async function setRows(tx: Db, tenantId: string, op: Extract<WriteOp, { kind: 's
   }
   assertSum(parent.scope, Money.add(Money.sum(values.values()), fresh), parent.value);
 
-  await assertCoversChildren(tx, tenantId, new Map(changes.filter((c) => c.row && !c.row.value.eq(c.child.value)).map((c) => [c.row!.id, { scope: c.row!.scope, next: c.child.value }])));
+  await assertCoversChildren(tx, tenantId, new Map(changes.filter((c) => c.row && !c.row.value.eq(c.child.value)).map((c) => [c.row!.id, { scope: c.row!.scope, metric: c.row!.metric, next: c.child.value }])));
 
   const saved: Target[] = [];
   for (const { row, child } of changes) {
@@ -295,12 +302,12 @@ async function planRows(tx: Db, tenantId: string, op: Extract<WriteOp, { kind: '
     return { qi, value, start: utcDate(op.year, n), end: utcDate(op.year, n + 1, 0) };
   }));
   // One pass: a closed month must keep its value; a month that moves must still hold the role targets under it.
-  const moved = new Map<number, { scope: TargetScope; next: Money.Money }>();
+  const moved = new Map<number, { scope: TargetScope; metric: string; next: Money.Money }>();
   for (const m of months) {
     const row = at('month', m.start);
     if (!row || row.value.eq(m.value)) continue;
     if (row.closedAt) throw closedError();
-    moved.set(row.id, { scope: 'month', next: m.value });
+    moved.set(row.id, { scope: 'month', metric: row.metric, next: m.value });
   }
   await assertCoversChildren(tx, tenantId, moved);
 
@@ -446,42 +453,57 @@ export async function deleteTarget(id: number): Promise<void> {
 const liveHolderTargets = (roleId: number, month: { start: Date; end: Date }): Prisma.TargetWhereInput =>
   ({ scope: 'person', roleId, periodStart: month.start, periodEnd: { gte: month.end } });
 
-/** The role's target for a month (read, or given), what its persons hold, and what is left (the pool). Null when the role has no target. */
-export async function rolePool(roleId: number, month: string, metric?: string, given?: Target) {
-  const bounds = periodBounds('role', month);
-  const role = given ?? await prisma.target.findFirst({
-    where: { scope: 'role', roleId, periodStart: bounds.start, ...(metric ? { metric } : {}) }, orderBy: { createdAt: 'asc' },
-  });
-  if (!role) return null;
-  const persons = await prisma.target.aggregate({ where: { ...liveHolderTargets(roleId, bounds), metric: role.metric }, _sum: { value: true } });
-  const allocated = Money.orZero(persons._sum.value);
-  return { target: role, metric: role.metric, unit: role.unit, total: money(role.value), allocated: money(allocated), pool: money(Money.sub(role.value, allocated)) };
-}
+/** A role can hold targets of several metrics; the page shows the real goal (orders, a rate) before revenue. */
+const primaryRoleTarget = (rows: Target[]): Target | undefined => rows.find((t) => t.metric !== SPINE_METRIC) ?? rows[0];
 
-/** One role for a month: its pool and each holder's target. The screens and the pool route read this. */
-export async function roleView(roleId: number, month: string, target?: Target) {
-  const [pool, holders] = await Promise.all([rolePool(roleId, month, undefined, target), roleHolderTargets(roleId, month)]);
-  return { roleId, month, pool: pool && { metric: pool.metric, unit: pool.unit, total: pool.total, allocated: pool.allocated, pool: pool.pool }, holders };
-}
-
-/** Each current holder of a role (a person, an AI agent or a company) with their target for the month, or "Set a target" when the owner has not set one. */
-export async function roleHolderTargets(roleId: number, month: string) {
+/**
+ * Roles for a month in a few queries: each role's target (the one given, else its primary one), what its persons hold, the pool, and
+ * each current holder (a person, an AI agent or a company) with their target for it, or "Set a target" when the owner has not set one.
+ * The pool route and the Targets page read this.
+ */
+export async function roleViews(roleIds: number[], month: string, given: Map<number, Target> = new Map()) {
   const bounds = periodBounds('role', month);
-  const [holders, targets] = await Promise.all([
-    prisma.roleAssignment.findMany({
-      where: { roleId, toDate: null }, select: { holder: { select: holderSelect } },
-    }),
-    prisma.target.findMany({ where: liveHolderTargets(roleId, bounds) }),
+  const [roleTargets, assignments, persons] = await Promise.all([
+    given.size === roleIds.length ? [] : prisma.target.findMany({ where: { scope: 'role', roleId: { in: roleIds }, periodStart: bounds.start }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] }),
+    prisma.roleAssignment.findMany({ where: { roleId: { in: roleIds }, toDate: null }, select: { roleId: true, holder: { select: holderSelect } } }),
+    prisma.target.findMany({ where: { scope: 'person', roleId: { in: roleIds }, periodStart: bounds.start, periodEnd: { gte: bounds.end } } }),
   ]);
-  const byUser = new Map(targets.map((t) => [t.userId, t]));
-  return holders.map(({ holder }) => {
-    const mine = byUser.get(holder.id);
+  return roleIds.map((roleId) => {
+    const target = given.get(roleId) ?? primaryRoleTarget(roleTargets.filter((t) => t.roleId === roleId)) ?? null;
+    const mine = persons.filter((t) => t.roleId === roleId && (!target || t.metric === target.metric));
+    const allocated = Money.sum(mine.map((t) => t.value));
+    const byUser = new Map(mine.map((t) => [t.userId, t]));
+    const holders = assignments.filter((a) => a.roleId === roleId).map(({ holder }) => {
+      const own = byUser.get(holder.id);
+      const view = holderView(holder);
+      return {
+        userId: holder.id, name: view.name, kind: holder.kind, typeLabel: view.typeLabel,
+        target: own ? { id: own.id, metric: own.metric, unit: own.unit, value: money(own.value) } : null,
+        label: own ? null : SET_A_TARGET,
+      };
+    });
     return {
-      userId: holder.id, name: holderView(holder).name, kind: holder.kind, typeLabel: holderView(holder).typeLabel,
-      target: mine ? { id: mine.id, metric: mine.metric, unit: mine.unit, value: money(mine.value) } : null,
-      label: mine ? null : SET_A_TARGET,
+      roleId, month, target, holders,
+      pool: target && { metric: target.metric, unit: target.unit, total: money(target.value), allocated: money(allocated), pool: money(Money.sub(target.value, allocated)) },
     };
   });
+}
+
+/** One role for a month (see `roleViews`). */
+export async function roleView(roleId: number, month: string) {
+  const [{ target, ...rest }] = await roleViews([roleId], month);
+  return rest;
+}
+
+/** The role's target for a month, what its persons hold, and what is left (the pool). Null when the role has no target. */
+export async function rolePool(roleId: number, month: string) {
+  const [view] = await roleViews([roleId], month);
+  return view.pool && { target: view.target!, ...view.pool };
+}
+
+/** Each current holder of a role with their target for the month. */
+export async function roleHolderTargets(roleId: number, month: string) {
+  return (await roleViews([roleId], month))[0].holders;
 }
 
 export interface ReleasedTargets {

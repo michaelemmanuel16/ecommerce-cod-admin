@@ -59,19 +59,40 @@ describe('Targets page: the tree', () => {
 
   it('a future month shows its target only: no margin, no status', async () => {
     renderPage();
-    const nov = await screen.findByRole('button', { name: 'November target GH₵180k, open Finance' });
+    const nov = await screen.findByRole('button', { name: 'November target GH₵180k, show its targets' });
     expect(nov).toHaveTextContent('Nov');
     expect(nov).toHaveTextContent('180k');
     expect(nov.querySelector('em')).toBeNull();
-    const oct = screen.getByRole('button', { name: 'October GH₵92k delivered, open Finance' });
+    const oct = screen.getByRole('button', { name: 'October GH₵92k delivered, show its targets' });
     expect(oct.querySelector('em')).toHaveTextContent('-16%');
   });
 
-  it('a month click opens Finance for that month', async () => {
+  it('a month cell loads the role table for that month; the selected one has the outline; a future month has targets and no progress', async () => {
     renderPage();
-    await userEvent.click(await screen.findByRole('button', { name: 'October GH₵92k delivered, open Finance' }));
+    const oct = await screen.findByRole('button', { name: 'October GH₵92k delivered, show its targets' });
+    expect(oct).toHaveAttribute('aria-pressed', 'true');
+    expect(oct).toHaveClass('sel');
+    await userEvent.click(screen.getByRole('button', { name: 'November target GH₵180k, show its targets' }));
+    expect(await screen.findByText('November targets by role')).toBeInTheDocument();
+    expect(svc.tree).toHaveBeenLastCalledWith(2026, '2026-11');
+    expect(screen.getByRole('button', { name: 'November target GH₵180k, show its targets' })).toHaveClass('sel');
+    expect(oct).not.toHaveClass('sel');
+    const card = screen.getByText('November targets by role').closest('.card') as HTMLElement;
+    expect(within(card).queryAllByRole('progressbar')).toHaveLength(0); // no progress for a month that has not started
+    expect(within(card).queryByText(/Daily target:/)).not.toBeInTheDocument();
+    expect(within(card).getByText('423 confirmed and delivered')).toBeInTheDocument(); // the targets still show
+  });
+
+  it('the Finance button of the role table opens Finance for the chosen month', async () => {
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: 'October in Finance' }));
     expect(useFinancialStore.getState().dateRange).toEqual({ startDate: '2026-10-01', endDate: '2026-10-31' });
     expect(navigated).toHaveBeenCalledWith('/finance');
+  });
+
+  it('the header pill is gold while behind the pace', async () => {
+    renderPage();
+    expect((await screen.findByText(/77% done/)).className).toContain('warn');
   });
 
   it('without a North Star it says so and has no dead button', async () => {
@@ -101,9 +122,9 @@ describe('Targets page: targets by role', () => {
     expect(within(card).getByText(/Feeds October GH₵180k: 723 delivered orders × GH₵249 planned order value/)).toBeInTheDocument();
   });
 
-  it('a role with no holder reads Vacant; a role with neither target nor holder is not listed', async () => {
+  it('a role with no holder reads Vacant once; a role with neither target nor holder is not listed', async () => {
     const card = await callRep();
-    expect(within(card).getAllByText('Vacant').length).toBeGreaterThanOrEqual(1);
+    expect(within(card).getAllByText('Vacant')).toHaveLength(1);
     expect(within(card).getByText('Delivery')).toBeInTheDocument();
     expect(within(card).queryByText('Stock keeper')).not.toBeInTheDocument();
   });
@@ -133,12 +154,30 @@ describe('Targets page: targets by role', () => {
     expect(within(card).getByText('363 of 723 · 50% of role target')).toBeInTheDocument();
   });
 
+  it('one status gives one colour: the 44% row is Behind with a gold bar and a gold pill, the 60% row is Ahead with a green one', async () => {
+    const card = await callRep();
+    const agent = within(card).getByText('Confirm agent').closest('tr') as HTMLElement;
+    expect(within(agent).getByText('Behind').className).toContain('warn');
+    expect(within(agent).getByRole('progressbar').firstElementChild).toHaveClass('gold');
+    const adwoa = within(card).getByText('Adwoa Darko').closest('tr') as HTMLElement;
+    expect(within(adwoa).getByText('Ahead').className).toContain('ok');
+    expect(within(adwoa).getByRole('progressbar').firstElementChild).not.toHaveClass('gold');
+    expect(within(adwoa).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '60');
+  });
+
+  it('cells carry their column name for the stacked table at narrow widths', async () => {
+    const card = await callRep();
+    const adwoa = within(card).getByText('Adwoa Darko').closest('tr') as HTMLElement;
+    expect([...adwoa.querySelectorAll('td[data-label]')].map((c) => c.getAttribute('data-label'))).toEqual(['Who', 'Their target', 'Progress', 'Status', 'Reward at 100%']);
+  });
+
   it('with the reward reads failing, the table still shows with a dash in the reward cell', async () => {
     svc.rewardSettings.mockRejectedValue(new Error('403'));
     svc.attainment.mockRejectedValue(new Error('500'));
     const card = await callRep();
     const adwoa = within(card).getByText('Adwoa Darko').closest('tr') as HTMLElement;
-    expect(within(adwoa).getByText('—', { selector: '.tg-reward' })).toBeInTheDocument();
+    const dash = within(adwoa).getByText('—', { selector: '.tg-reward' });
+    expect(dash).toHaveAttribute('title', 'Needs Settings access');
   });
 
   it('daily targets list with their numbers; a metric with no data says so', async () => {

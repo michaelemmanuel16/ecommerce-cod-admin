@@ -1,40 +1,46 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import { Button, ConfirmDialog, Skeleton, useToast } from '../components/ui-v2';
 import { usePermissions } from '../hooks/usePermissions';
 import { useV2Page } from '../components/shell/useV2Page';
-import { targetsService, type DailyProgress } from '../services/targets.service';
+import { useFinancialStore } from '../stores/financialStore';
+import { targetsService, type DailyProgress, type RoleRow } from '../services/targets.service';
 import { todayYmd } from '../utils/format';
 import { apiMessage } from './orders/importText';
 import { BlockError } from './dashboard/blocks/Frame';
-import { refreshBlocks, useBlock } from './financial/profit/useBlock';
+import { useBlock } from './financial/profit/useBlock';
 import { NorthStarCard } from './targets/NorthStarCard';
-import { RoleGroups } from './targets/RoleGroups';
+import { RoleGroups, type DailyRow } from './targets/RoleGroups';
 import { TargetDialog } from './targets/TargetDialog';
 import { buildGroups, METRICS, type HolderLine, type RoleGroup, type TargetForm } from './targets/model';
 
-/** The daily activity targets the page lists (F-1103). The key is the metric the API stores. */
 const DAILY_METRICS = METRICS.daily;
+const NO_ROLES: RoleRow[] = [];
 
-interface Pending { id: number; title: string; text: string }
+interface Pending { id: number; title: string; text: string; /** What to ask again after the delete. */ daily: boolean }
 
 /**
  * The Targets page (M6-T15, F-1100 to F-1103), built from docs/mockups/v2/index.html#targets: the North Star with its quarters and
- * months, then this month's targets by role. Each block asks on its own, so a failing reward read never blanks the tree.
- * "Edit North Star" is not here: the setup wizard that owns it is M6-T17.
+ * months, then the targets by role of the chosen month (this month at first; a month cell of the tree changes it). Each block asks on its
+ * own, so a failing reward read never blanks the tree. "Edit North Star" is not here: the setup wizard that owns it is M6-T17.
  */
 export function Targets() {
   useV2Page();
   const say = useToast();
+  const navigate = useNavigate();
+  const setDateRange = useFinancialStore((s) => s.setDateRange);
   const { can } = usePermissions();
   const canEdit = can('users', 'update');
   const today = todayYmd();
-  const year = Number(today.slice(0, 4));
-  const month = today.slice(0, 7);
+  const currentMonth = today.slice(0, 7);
+  const [month, setMonth] = useState(currentMonth);
+  const year = Number(month.slice(0, 4));
+  const started = month <= currentMonth;
 
   const tree = useBlock(`targets|tree|${month}`, () => targetsService.tree(year, month));
-  // These three are extras: when one fails the table still shows, with "—" where it would have written the figure
-  const attainment = useBlock(`targets|attainment|${month}`, () => targetsService.attainment(month).catch(() => null));
+  // These are extras: when one fails the table still shows, with "—" where it would have written the figure
+  const attainment = useBlock(`targets|attainment|${month}`, () => targetsService.attainment(month).catch(() => null), started);
   const settings = useBlock('targets|rewards', () => targetsService.rewardSettings().catch(() => null));
   const calculators = useBlock(`targets|calculators|${month}`, () => targetsService.calculators(month).catch(() => null));
   const daily = useBlock(`targets|daily|${today}`, () =>
@@ -45,36 +51,47 @@ export function Targets() {
 
   const data = tree.data;
   const currency = data?.currency ?? 'GHS';
-  const roles = data?.roles ?? [];
-  const monthNode = data?.months.find((m) => m.periodStart.startsWith(month));
+  const roles = data?.roles ?? NO_ROLES;
   const groups = useMemo(
-    () => buildGroups(roles, attainment.data ?? null, settings.data ?? null, monthNode?.actuals?.pace ?? null, currency),
-    [roles, attainment.data, settings.data, monthNode, currency],
+    () => buildGroups(roles, started ? attainment.data ?? null : null, settings.data ?? null, currency),
+    [roles, started, attainment.data, settings.data, currency],
+  );
+  // Daily targets are not monthly: they show with this month only, and only the ones that are set
+  const dailyRows = useMemo<DailyRow[]>(
+    () => (month !== currentMonth ? [] : DAILY_METRICS.flatMap((m, i) => {
+      const progress = daily.data?.[i];
+      return progress && progress.target !== null ? [{ label: m.label, progress }] : [];
+    })),
+    [month, currentMonth, daily.data],
   );
 
   const blank = (patch: Partial<TargetForm> = {}): TargetForm => ({ scope: 'role', roleId: '', userId: '', metric: 'revenue', period: month, value: '', ...patch });
-  const openAdd = () => setDialog({ initial: blank(), editing: false });
-  const openRow = (group: RoleGroup, line: HolderLine | null) => {
-    const own = line ? line.holder.target : group.role.target;
-    setDialog({
-      editing: own !== null && own !== undefined,
-      initial: blank({
-        scope: line ? 'person' : 'role', roleId: String(group.role.roleId), userId: line ? String(line.holder.userId) : '',
-        metric: own?.metric ?? 'revenue', value: own ? String(own.value) : '',
-      }),
-    });
-  };
+  /** The form for something that may already have a target: an edit when it has one, else a new one with the same fields filled in. */
+  const editOf = (own: { metric: string; value: number } | null | undefined, patch: Partial<TargetForm>) => setDialog({
+    editing: own != null,
+    initial: blank({ ...patch, ...(own && { metric: own.metric, value: String(own.value) }) }),
+  });
+  const openRow = (group: RoleGroup, line: HolderLine | null) => editOf(
+    line ? line.holder.target : group.role.target,
+    { scope: line ? 'person' : 'role', roleId: String(group.role.roleId), userId: line ? String(line.holder.userId) : '' },
+  );
   const openDaily = (metric: string) => {
     const current = daily.data?.find((d) => d?.metric === metric)?.target;
-    setDialog({ editing: current != null, initial: blank({ scope: 'daily', metric, period: today, value: current != null ? String(current) : '' }) });
+    editOf(current == null ? null : { metric, value: current }, { scope: 'daily', metric, period: today });
   };
 
+  /** A saved or deleted target changes the tree rows and the progress of a role target or a person; a daily one only its own rows. */
+  const refresh = (dailyOnly: boolean) => {
+    if (dailyOnly) { daily.retry(); return; }
+    tree.retry();
+    attainment.retry();
+  };
   const askRemove = (line: HolderLine) => setPending({
-    id: line.targetId!, title: `Delete the target of ${line.holder.name}?`,
+    id: line.targetId as number, title: `Delete the target of ${line.holder.name}?`, daily: false,
     text: 'Their share goes back to the role pool. Nothing else changes.',
   });
   const askRemoveDaily = (p: DailyProgress) => setPending({
-    id: p.id!, title: 'Delete this daily target?',
+    id: p.id as number, title: 'Delete this daily target?', daily: true,
     text: 'The Dashboard quest goes back to its default target.',
   });
   const remove = async () => {
@@ -84,10 +101,15 @@ export function Targets() {
     try {
       await targetsService.remove(p.id);
       say('Target deleted');
-      refreshBlocks();
+      refresh(p.daily);
     } catch (err) {
       say(await apiMessage(err, 'The target could not be deleted.'));
     }
+  };
+  const openFinance = () => {
+    const last = new Date(Date.UTC(year, Number(month.slice(5)), 0)).getUTCDate();
+    setDateRange(`${month}-01`, `${month}-${String(last).padStart(2, '0')}`);
+    navigate('/finance');
   };
 
   return (
@@ -99,7 +121,7 @@ export function Targets() {
         </div>
         {canEdit && (
           <div className="tg-head-actions">
-            <Button variant="primary" onClick={openAdd}><Plus />Add target</Button>
+            <Button variant="primary" onClick={() => setDialog({ initial: blank(), editing: false })}><Plus />Add target</Button>
           </div>
         )}
       </div>
@@ -110,11 +132,11 @@ export function Targets() {
         <Skeleton height={320} className="skelcard" />
       ) : (
         <>
-          <NorthStarCard tree={data} />
+          <NorthStarCard tree={data} selected={month} onSelect={setMonth} />
           <RoleGroups
-            month={month} groups={groups} currency={currency} feeds={calculators.data ?? null}
-            daily={DAILY_METRICS.map((m, i) => ({ label: m.label, progress: daily.data?.[i] ?? null }))}
+            month={month} groups={groups} currency={currency} feeds={calculators.data ?? null} daily={dailyRows}
             canEdit={canEdit} actions={{ edit: openRow, remove: askRemove }} onEditDaily={openDaily} onRemoveDaily={askRemoveDaily}
+            onOpenFinance={openFinance}
           />
         </>
       )}
@@ -122,7 +144,7 @@ export function Targets() {
       {dialog && (
         <TargetDialog
           open onClose={() => setDialog(null)} roles={roles} initial={dialog.initial} editing={dialog.editing}
-          onSaved={(message) => { say(message); refreshBlocks(); }}
+          onSaved={(message, scope) => { say(message); refresh(scope === 'daily'); }}
         />
       )}
       <ConfirmDialog open={pending !== null} onClose={() => setPending(null)} onConfirm={remove} action="Delete" count={1} noun="target" title={pending?.title}>

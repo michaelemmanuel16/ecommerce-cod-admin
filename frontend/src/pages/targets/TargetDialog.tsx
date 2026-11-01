@@ -9,7 +9,7 @@ export interface TargetDialogProps {
   open: boolean;
   onClose: () => void;
   /** Called after a save, so the page can ask again and say it saved. */
-  onSaved: (message: string) => void;
+  onSaved: (message: string, scope: TargetScopeChoice) => void;
   roles: RoleRow[];
   /** What the form starts with (an edit, or a role/person picked from a row). */
   initial: TargetForm;
@@ -47,7 +47,7 @@ export function TargetDialog({ open, onClose, onSaved, roles, initial, editing }
         ...(form.scope !== 'daily' && { roleId: Number(form.roleId) }),
         ...(form.scope === 'person' && { userId: Number(form.userId) }),
       });
-      onSaved(editing ? 'Target saved' : 'Target added');
+      onSaved(editing ? 'Target saved' : 'Target added', form.scope);
       onClose();
     } catch (err) {
       setServerError(await apiMessage(err, 'The target could not be saved. Try again.'));

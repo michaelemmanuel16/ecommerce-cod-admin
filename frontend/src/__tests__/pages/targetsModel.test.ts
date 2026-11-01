@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { attainmentStatus, chipText, marginText, validateTarget, type TargetForm } from '../../pages/targets/model';
+import { STATUS_TONE, barClass, chipText, marginText, northStarTag, validateTarget, type TargetForm } from '../../pages/targets/model';
+import { TREE } from '../fixtures/targetsTree';
 
 const form = (patch: Partial<TargetForm> = {}): TargetForm => ({ scope: 'role', roleId: '7', userId: '', metric: 'revenue', period: '2026-10', value: '100', ...patch });
 
@@ -23,13 +24,15 @@ describe('targets model', () => {
     expect(chipText({ points: 1, tag: 'ahead' })).toBe('1 pt ahead');
     expect(chipText({ points: 0, tag: 'on_pace' })).toBe('on pace');
   });
-  it('attainmentStatus: 3-point split against the pace; 100% is Hit; no percent has none', () => {
-    expect(attainmentStatus(null, 50)).toBeNull();
-    expect(attainmentStatus(100, 50)?.label).toBe('Hit');
-    expect(attainmentStatus(57, 55)?.label).toBe('On track');
-    expect(attainmentStatus(58, 55)?.label).toBe('Ahead');
-    expect(attainmentStatus(62, 55)?.label).toBe('Ahead');
-    expect(attainmentStatus(44, 55)).toMatchObject({ label: 'Behind', tone: 'bad' });
-    expect(attainmentStatus(52, 55)).toMatchObject({ label: 'Behind', tone: 'warn' });
+  it('STATUS_TONE has exactly the keys of the backend TargetStatus (services/targetStatus.ts); bars take the tone of the key', () => {
+    expect(Object.keys(STATUS_TONE).sort()).toEqual(['ahead', 'behind', 'hit_margin_missed', 'on_track', 'revenue_hit']);
+    expect(STATUS_TONE.behind).toBe('warn');
+    expect(barClass(STATUS_TONE.behind)).toBe('gold');
+    expect(barClass(STATUS_TONE.ahead)).toBe('');
+  });
+  it('the North Star pill is gold when behind the pace and green when ahead', () => {
+    const ns = TREE.northStar!;
+    expect(northStarTag(ns, 35)).toMatchObject({ text: '77% done · 3 pts behind · margin 12% of 35%', tone: 'warn' });
+    expect(northStarTag({ ...ns, actuals: { ...ns.actuals!, chip: { points: 1, tag: 'ahead' } } }, 35)?.tone).toBe('ok');
   });
 });

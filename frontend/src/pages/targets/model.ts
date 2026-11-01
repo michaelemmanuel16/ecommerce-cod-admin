@@ -1,21 +1,28 @@
 import type { Actuals, Attainment, AttainmentRow, Holder, RewardSettings, RoleRow, StatusKey, TreeNode } from '../../services/targets.service';
 import type { TagTone } from '../../components/ui-v2';
-import { MONTHS, compactMoney, initials, plural, wholeMoney } from '../dashboard/format';
+import { MONTHS, compactMoney, initials, monthName as monthOfDay, plural, wholeMoney } from '../dashboard/format';
 
 // Display rules of the Targets page (M6-T15, F-1101 to F-1103). Nothing here calculates a KPI: the API sends the numbers and the
-// status keys; this file turns them into the words of the mockup.
+// status keys; this file turns them into the words of the mockup. One status key gives one tone, for the pill and the bar alike.
 
 export const NO_PAYOUT = 'No payout';
 export const VACANT = 'Vacant';
 export const NO_DATA = 'No data for this metric';
 export const SET_A_TARGET = 'Set a target';
+export const NEEDS_SETTINGS = 'Needs Settings access';
 
-export const monthName = (ym: string): string => MONTHS[Number(ym.slice(5, 7)) - 1];
-export const shortMonth = (ym: string): string => monthName(ym).slice(0, 3);
+const NUMBER = new Intl.NumberFormat('en-GB');
+export const formatCount = (n: number): string => NUMBER.format(n);
+
+/** "October" from 'YYYY-MM'. */
+export const monthName = (ym: string): string => monthOfDay(`${ym}-01`);
+export const shortMonth = (ym: string): string => MONTHS[Number(ym.slice(5, 7)) - 1].slice(0, 3);
 
 export const STATUS_TONE: Record<StatusKey, TagTone> = {
   revenue_hit: 'ok', hit_margin_missed: 'warn', ahead: 'ok', on_track: 'ok', behind: 'warn',
 };
+/** The bar of a progress cell has the tone of its status: ok is the default mint, warn is gold. */
+export const barClass = (tone: TagTone | undefined): string => (tone === 'warn' ? 'gold' : tone === 'bad' ? 'coral' : '');
 
 /** "12% of 35%" for a margin; "n/a" when the books hold nothing for the period. */
 export const marginText = (pct: number | null, target: number): string => (pct === null ? 'n/a' : `${Math.round(pct)}% of ${target}%`);
@@ -30,12 +37,12 @@ export function chipText(chip: Actuals['chip']): string | null {
   return `${chip.points} ${chip.points === 1 ? 'pt' : 'pts'} ${chip.tag}`;
 }
 
-/** The tag of the North Star card: "77% done · 3 pts behind · margin 12% of 35%". */
+/** The tag of the North Star card: "77% done · 3 pts behind · margin 12% of 35%". Its colour is the pace chip's: behind is gold. */
 export function northStarTag(node: TreeNode, marginTarget: number): { text: string; tone: TagTone } | null {
   const a = node.actuals;
   if (!a || a.state === 'future' || a.percent === null) return null;
   const parts = [`${Math.round(a.percent)}% done`, chipText(a.chip), `margin ${marginText(a.marginPct, marginTarget)}`].filter(Boolean);
-  return { text: parts.join(' · '), tone: a.status ? STATUS_TONE[a.status.key] : 'n' };
+  return { text: parts.join(' · '), tone: a.chip?.tag === 'behind' ? 'warn' : 'ok' };
 }
 
 export const northStarTitle = (node: TreeNode, marginTarget: number, currency: string): string =>
@@ -55,9 +62,6 @@ export function monthClass(a: Actuals | undefined): 'hit' | 'miss' | 'cur' | '' 
   return a.status?.key === 'revenue_hit' || a.status?.key === 'hit_margin_missed' ? 'hit' : 'miss';
 }
 
-/** The ymd bounds of a month node, for the Finance date control. */
-export const monthBounds = (node: Pick<TreeNode, 'periodStart' | 'periodEnd'>) => ({ from: node.periodStart, to: node.periodEnd });
-
 // ---- Role groups -------------------------------------------------------------------------------------------------------
 
 export interface HolderLine {
@@ -68,9 +72,13 @@ export interface HolderLine {
   row: AttainmentRow | null;
   /** Bar width, percent (capped at 100); null = no bar. */
   bar: number | null;
+  /** The metric has no data source (T09 says so). */
+  noData: boolean;
   detail: string;
-  status: { label: string; tone: TagTone } | null;
+  status: { key: StatusKey; label: string; tone: TagTone } | null;
   reward: string;
+  /** Why the reward cell is a dash, when it is one. */
+  rewardTitle?: string;
   targetId: number | null;
 }
 
@@ -78,7 +86,7 @@ export interface RoleGroup {
   role: RoleRow;
   holderCount: string;
   vacant: boolean;
-  roleTargetText: string | null;
+  roleTargetText: string;
   /** The group bar: sum of the holders' actuals against the role target; only for count targets. */
   bar: { percent: number; text: string } | null;
   lines: HolderLine[];
@@ -86,39 +94,29 @@ export interface RoleGroup {
 
 const unitWords = (metric: string | null, unit: string | null): string => {
   if (metric === 'delivery_success_rate' || unit === 'percent') return '% delivery success';
-  if (metric === 'revenue' || unit === 'money') return '';
   return ' confirmed and delivered';
 };
 
 /** "423 confirmed and delivered", "60% delivery success", "GH₵100,000". */
 export function targetWords(t: { metric: string; unit: string; value: number }, currency: string): string {
   if (t.metric === 'revenue' || t.unit === 'money' || t.unit === 'currency') return wholeMoney(t.value, currency);
-  return `${new Intl.NumberFormat('en-GB').format(t.value)}${unitWords(t.metric, t.unit)}`;
+  return `${formatCount(t.value)}${unitWords(t.metric, t.unit)}`;
 }
 
-/** Ahead / On track / Behind against how much of the month is gone (the same 3-point split as the Dashboard). */
-export function attainmentStatus(percent: number | null, pace: number | null): { label: string; tone: TagTone } | null {
-  if (percent === null) return null;
-  if (percent >= 100) return { label: 'Hit', tone: 'ok' };
-  if (pace === null) return { label: 'On track', tone: 'n' };
-  const gap = percent - pace;
-  if (gap >= 3) return { label: 'Ahead', tone: 'ok' };
-  return gap >= 0 ? { label: 'On track', tone: 'ok' } : { label: 'Behind', tone: percent < pace - 3 ? 'bad' : 'warn' };
-}
-
-const rewardLine = (role: RoleRow, holder: Holder, row: AttainmentRow | null, settings: RewardSettings | null, currency: string): string => {
-  if (holder.kind !== 'person' || (row && !row.payout)) return NO_PAYOUT;
-  const tier = settings?.tiers.find((t) => t.roleId === role.roleId)?.tier100;
-  if (!tier || !tier.payout) return '—';
-  return `${wholeMoney(tier.amount, currency)} bonus`;
+const rewardLine = (role: RoleRow, holder: Holder, row: AttainmentRow | null, settings: RewardSettings | null, currency: string): Pick<HolderLine, 'reward' | 'rewardTitle'> => {
+  if (holder.kind !== 'person' || (row && !row.payout)) return { reward: NO_PAYOUT };
+  if (!settings) return { reward: '—', rewardTitle: NEEDS_SETTINGS };
+  const tier = settings.tiers.find((t) => t.roleId === role.roleId)?.tier100;
+  return !tier || !tier.payout ? { reward: '—' } : { reward: `${wholeMoney(tier.amount, currency)} bonus` };
 };
 
 /**
- * One group per role that has a role target or a holder. Progress and status come from the attainment (T09), the reward at 100% from
- * the Rewards setting: nothing is typed here. A role with no holder reads "Vacant". An AI agent or a company sits in its role's group
- * and shows "No payout".
+ * One group per role that has a role target or a holder. Progress and status come from the attainment (T09, the tree's status
+ * words), the reward at 100% from the Rewards setting: nothing is typed here. A role with no holder reads "Vacant" once, in its header.
+ * An AI agent or a company sits in its role's group and shows "No payout". A month that has not started has targets and no progress
+ * (pass `attainment` null).
  */
-export function buildGroups(roles: RoleRow[], attainment: Attainment | null, settings: RewardSettings | null, pace: number | null, currency: string): RoleGroup[] {
+export function buildGroups(roles: RoleRow[], attainment: Attainment | null, settings: RewardSettings | null, currency: string): RoleGroup[] {
   return roles
     .filter((r) => r.target !== null || r.holders.length > 0)
     .map((role) => {
@@ -126,29 +124,24 @@ export function buildGroups(roles: RoleRow[], attainment: Attainment | null, set
       const lines = role.holders.map((holder): HolderLine => {
         const row = rows.get(holder.userId) ?? null;
         const mine = holder.target;
-        const percent = row?.percent ?? null;
         const noData = row?.warning === NO_DATA;
-        const detail = !mine ? ''
-          : noData ? NO_DATA
-            : row && row.actual !== null && row.target !== null ? `${row.actual} of ${row.target}${row.unit === 'percent' ? '%' : ''}` : '—';
+        const percent = row?.percent ?? null;
+        const detail = !mine ? '' : noData ? NO_DATA : row && row.actual !== null && row.target !== null ? `${row.actual} of ${row.target}${row.unit === 'percent' ? '%' : ''}` : '—';
         return {
           holder, initials: initials(holder.name), targetText: mine ? targetWords(mine, currency) : null, row,
-          bar: percent === null ? null : Math.min(percent, 100), detail,
-          status: noData ? null : attainmentStatus(percent, pace), reward: rewardLine(role, holder, row, settings, currency), targetId: mine?.id ?? null,
+          bar: percent === null || noData ? null : Math.min(percent, 100), noData, detail,
+          status: row?.status ? { ...row.status, tone: STATUS_TONE[row.status.key] } : null,
+          ...rewardLine(role, holder, row, settings, currency), targetId: mine?.id ?? null,
         };
       });
       const counted = lines.filter((l) => l.row?.target && l.row.unit !== 'percent' && l.row.actual !== null);
       const roleTarget = role.target?.value ?? null;
-      const bar = roleTarget && counted.length > 0
-        ? (() => {
-          const done = counted.reduce((n, l) => n + (l.row!.actual ?? 0), 0);
-          const percent = Math.round((done / roleTarget) * 100);
-          return { percent, text: `${done} of ${roleTarget} · ${percent}% of role target` };
-        })()
-        : null;
+      const done = counted.reduce((n, l) => n + (l.row?.actual ?? 0), 0);
+      const percent = roleTarget ? Math.round((done / roleTarget) * 100) : 0;
       return {
         role, holderCount: plural(role.holders.length, 'holder'), vacant: role.holders.length === 0,
-        roleTargetText: role.target ? `Role target: ${targetWords(role.target, currency)}` : null, bar, lines,
+        roleTargetText: role.target ? `Role target: ${targetWords(role.target, currency)}` : `${SET_A_TARGET} for this role`,
+        bar: roleTarget && counted.length > 0 ? { percent, text: `${done} of ${roleTarget} · ${percent}% of role target` } : null, lines,
       };
     });
 }
@@ -167,10 +160,16 @@ export interface TargetForm {
   value: string;
 }
 
-/** The metrics the form offers: those of a role or person target, and the daily activity metrics (F-1103). */
+const ROLE_METRICS = [
+  { key: 'revenue', label: 'Delivered revenue', unit: 'money' },
+  { key: 'delivered_orders', label: 'Confirmed orders that get delivered', unit: 'count' },
+  { key: 'delivery_success_rate', label: 'Delivery success rate', unit: 'percent' },
+];
+
+/** The metrics the form offers: those of a role or person target (all sit under the revenue month), and the daily activity metrics (F-1103). */
 export const METRICS: Record<TargetScopeChoice, Array<{ key: string; label: string; unit: string }>> = {
-  role: [{ key: 'revenue', label: 'Delivered revenue', unit: 'money' }, { key: 'delivered_orders', label: 'Confirmed orders that get delivered', unit: 'count' }, { key: 'delivery_success_rate', label: 'Delivery success rate', unit: 'percent' }],
-  person: [{ key: 'revenue', label: 'Delivered revenue', unit: 'money' }, { key: 'delivered_orders', label: 'Confirmed orders that get delivered', unit: 'count' }, { key: 'delivery_success_rate', label: 'Delivery success rate', unit: 'percent' }],
+  role: ROLE_METRICS,
+  person: ROLE_METRICS,
   daily: [{ key: 'failed_delivery_calls_per_day', label: 'Failed delivery calls', unit: 'count' }, { key: 'calls_made_per_day', label: 'Calls made', unit: 'count' }],
 };
 

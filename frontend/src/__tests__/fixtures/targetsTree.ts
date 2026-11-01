@@ -54,8 +54,8 @@ export const TREE: Tree = {
 export const ATTAINMENT: Attainment = {
   period: '2026-10', closed: false, currency: 'GHS',
   results: [
-    { userId: 101, name: 'Adwoa Darko', kind: 'person', roleId: 7, roleName: 'Call rep', payout: true, metric: 'delivered_orders', unit: 'count', target: 423, actual: 253, percent: 60, tier: 'none', reward: null, earned: false, distance: null, warning: null, message: '' },
-    { userId: 102, name: 'Confirm agent', kind: 'ai_agent', roleId: 7, roleName: 'Call rep', payout: false, metric: 'delivered_orders', unit: 'count', target: 250, actual: 110, percent: 44, tier: 'none', reward: null, earned: false, distance: null, warning: null, message: 'No payout' },
+    { userId: 101, name: 'Adwoa Darko', kind: 'person', roleId: 7, roleName: 'Call rep', payout: true, metric: 'delivered_orders', unit: 'count', target: 423, actual: 253, percent: 60, tier: 'none', reward: null, earned: false, status: { key: 'ahead', label: 'Ahead' }, distance: null, warning: null, message: '' },
+    { userId: 102, name: 'Confirm agent', kind: 'ai_agent', roleId: 7, roleName: 'Call rep', payout: false, metric: 'delivered_orders', unit: 'count', target: 250, actual: 110, percent: 44, tier: 'none', reward: null, earned: false, status: { key: 'behind', label: 'Behind' }, distance: null, warning: null, message: 'No payout' },
   ],
 };
 

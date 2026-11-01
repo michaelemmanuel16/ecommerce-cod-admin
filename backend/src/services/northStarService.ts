@@ -8,7 +8,7 @@ import { isOwnerRole } from '../config/defaultRoles';
 import { actualsOf } from './targetActuals';
 import { autoPlannedAov, plannedAovBounds, plannedAovWindow } from './kpi/leadership';
 import { topProductByDelivered } from './finance/profitService';
-import { deleteTarget, replanYear, roleView, saveTarget, saveTargets, type TargetInput } from './targetService';
+import { deleteTarget, replanYear, roleViews, saveTarget, saveTargets, type TargetInput } from './targetService';
 import { GrowthMode, assertRate, maxCostPerOrder, monthSplit, ordersDelivered, ordersPerDay, ordersToTakeIn, planQuarters } from './northStarMath';
 
 /**
@@ -184,29 +184,27 @@ const view = (t: Target) => ({
 export async function getTree(year: number, month?: string, metric = REVENUE_METRIC) {
   const monthStart = month === undefined ? null : monthParts(month);
   if (monthStart && monthStart[0] !== year) throw new AppError(`Invalid month "${month}" for ${year}`, 400, 'INVALID_PERIOD');
-  const rows = await prisma.target.findMany({
-    where: { metric, roleId: null, userId: null, scope: { in: ['north_star', 'quarter', 'month'] }, periodStart: { gte: utcDate(year, 1), lte: utcDate(year, 12, 31) } },
-    orderBy: [{ periodStart: 'asc' }, { createdAt: 'asc' }],
-  });
-  const marginTarget = (await rateOf(DRIVER_METRICS.netMargin, year, DEFAULT_NET_MARGIN)).value;
-  const measured = metric === REVENUE_METRIC ? await actualsOf(rows, year, marginTarget) : null;
+  const [rows, marginTarget, roles] = await Promise.all([
+    prisma.target.findMany({
+      where: { metric, roleId: null, userId: null, scope: { in: ['north_star', 'quarter', 'month'] }, periodStart: { gte: utcDate(year, 1), lte: utcDate(year, 12, 31) } },
+      orderBy: [{ periodStart: 'asc' }, { createdAt: 'asc' }],
+    }),
+    rateOf(DRIVER_METRICS.netMargin, year, DEFAULT_NET_MARGIN).then((r) => r.value),
+    monthStart ? prisma.role.findMany({ select: { id: true, name: true, presetRole: true }, orderBy: { name: 'asc' } }) : [],
+  ]);
+  const [measured, views] = await Promise.all([
+    metric === REVENUE_METRIC ? actualsOf(rows, year, marginTarget) : null,
+    month !== undefined ? roleViews(roles.filter((r) => !isOwnerRole(r)).map((r) => r.id), month) : [],
+  ]);
   const node = (t: Target) => ({ ...view(t), ...(measured && { actuals: measured.actuals.get(t.id) }) });
   const of = (scope: string) => rows.filter((r) => r.scope === scope).map(node);
-  const tree = {
+  const names = new Map(roles.map((r) => [r.id, r.name]));
+  return {
     year, metric, currency: measured?.currency ?? null, marginTarget, northStar: of('north_star')[0] ?? null, quarters: of('quarter'), months: of('month'),
-    roles: undefined as undefined | unknown[],
+    roles: month === undefined ? undefined : views.map(({ target, ...rest }) => ({
+      ...rest, roleName: names.get(rest.roleId) ?? null, target: target ? view(target) : null
+    })),
   };
-  if (month !== undefined && monthStart) {
-    const [roles, roleTargets] = await Promise.all([
-      prisma.role.findMany({ select: { id: true, name: true, presetRole: true }, orderBy: { name: 'asc' } }),
-      prisma.target.findMany({ where: { scope: 'role', periodStart: utcDate(...monthStart) }, orderBy: { id: 'asc' } }),
-    ]);
-    tree.roles = await Promise.all(roles.filter((r) => !isOwnerRole(r)).map(async (r) => {
-      const target = roleTargets.find((t) => t.roleId === r.id);
-      return { roleName: r.name, target: target ? view(target) : null, ...(await roleView(r.id, month, target)) };
-    }));
-  }
-  return tree;
 }
 
 /** The North Star and its driver rows change only through `saveNorthStar` and `saveDrivers` (the Owner's routes). */
