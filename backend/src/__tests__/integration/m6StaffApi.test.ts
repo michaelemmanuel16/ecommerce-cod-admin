@@ -231,8 +231,10 @@ describe('deactivate and reactivate', () => {
     const other = await mkPerson('peer', 'admin');
     expect((await api.post(pair.a.users.admin.token, `/api/staff/${other.id}/deactivate`)).status).toBe(403);
     const invited = await mkPerson('inv2', 'sales_rep', { isActive: false, invitedAt: new Date(), password: '!' });
-    expect((await api.post(ownerA, `/api/staff/${invited.id}/deactivate`)).status).toBe(409);
-    expect((await api.post(ownerA, `/api/staff/${invited.id}/reactivate`)).status).toBe(409);
+    // Status with body, so a failure shows which check answered (a 403 here was seen once in a full run and never reproduced).
+    const answer = async (path: string) => { const r = await api.post(ownerA, path); return { status: r.status, body: r.body }; };
+    expect(await answer(`/api/staff/${invited.id}/deactivate`)).toMatchObject({ status: 409 });
+    expect(await answer(`/api/staff/${invited.id}/reactivate`)).toMatchObject({ status: 409 });
     // another tenant's person is not found
     const foreign = await mkPerson('foreign', 'sales_rep', {}, pair.b.id);
     expect((await api.post(ownerA, `/api/staff/${foreign.id}/deactivate`)).status).toBe(404);
