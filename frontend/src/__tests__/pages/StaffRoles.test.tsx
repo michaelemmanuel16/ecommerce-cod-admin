@@ -17,7 +17,7 @@ vi.mock('../../services/staff.service', async (orig) => {
 });
 const rolesSvc = vi.hoisted(() => ({ overview: vi.fn(), assignments: vi.fn(), create: vi.fn(), remove: vi.fn(), assign: vi.fn(), unassign: vi.fn() }));
 vi.mock('../../services/roles.service', async (orig) => ({ ...(await orig<typeof import('../../services/roles.service')>()), rolesService: rolesSvc }));
-const targetsSvc = vi.hoisted(() => ({ tree: vi.fn(), attainment: vi.fn() }));
+const targetsSvc = vi.hoisted(() => ({ tree: vi.fn(), attainment: vi.fn(), rewardSettings: vi.fn() }));
 vi.mock('../../services/targets.service', () => ({ targetsService: targetsSvc }));
 
 let permitted = true;
@@ -68,6 +68,7 @@ beforeEach(() => {
   rolesSvc.assignments.mockResolvedValue([]);
   targetsSvc.tree.mockResolvedValue(null);
   targetsSvc.attainment.mockResolvedValue(null);
+  targetsSvc.rewardSettings.mockResolvedValue(null);
 });
 
 describe('Staff page: role cards', () => {
@@ -152,12 +153,11 @@ describe('Staff page: role detail and history', () => {
     expect(await screen.findByText('Nobody has left this role.')).toBeInTheDocument();
   });
 
-  it('shows the tools summary and the place for the switches', async () => {
+  it('shows the tools count and the 16 switches (the switches are tested in StaffRoleTools)', async () => {
     renderPage();
     await screen.findByRole('button', { name: 'Call rep role' });
     expect(within(detail()).getByText('2 of 16 on')).toBeInTheDocument();
-    expect(within(detail()).getByText('View orders')).toBeInTheDocument();
-    expect(detail().querySelector('[data-slot="role-tools"]')).not.toBeNull();
+    expect(within(detail()).getAllByRole('switch', { name: /^(View|Export|Update|Assign|Call|Message|Edit|Adjust|Record|Manage) / })).toHaveLength(16);
   });
 
   it('Remove asks first, then ends the assignment and asks again', async () => {

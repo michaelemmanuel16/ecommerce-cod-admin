@@ -20,7 +20,7 @@ vi.mock('../../services/staff.service', async (orig) => {
 const rolesSvc = vi.hoisted(() => ({ overview: vi.fn(), assignments: vi.fn() }));
 vi.mock('../../services/roles.service', async (orig) => ({ ...(await orig<typeof import('../../services/roles.service')>()), rolesService: rolesSvc }));
 // The role cards read this month's targets for progress; these tests are about the table
-vi.mock('../../services/targets.service', () => ({ targetsService: { tree: () => Promise.resolve(null), attainment: () => Promise.resolve(null) } }));
+vi.mock('../../services/targets.service', () => ({ targetsService: { tree: () => Promise.resolve(null), attainment: () => Promise.resolve(null), rewardSettings: () => Promise.resolve(null) } }));
 const reassign = vi.hoisted(() => vi.fn());
 vi.mock('../../pages/staff/reassign', () => ({ reassignOpenOrders: reassign }));
 

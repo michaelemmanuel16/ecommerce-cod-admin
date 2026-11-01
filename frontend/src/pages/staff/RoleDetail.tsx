@@ -1,13 +1,19 @@
 import { useRef, useState } from 'react';
-import { Bot, Building2, ChevronDown, Mail, UserPlus, Wrench } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Bot, Building2, ChevronDown, Mail, Smartphone, UserPlus, Wrench } from 'lucide-react';
 import { Button, Card, Skeleton, Tag } from '../../components/ui-v2';
 import type { RoleAssignment, RoleCard, RoleHolder } from '../../services/roles.service';
+import { canOpenPath } from '../../components/shell/navModel';
+import { useAuthStore } from '../../stores/authStore';
 import { initials } from '../../utils/people';
 import { formatDate } from '../../utils/format';
 import { FloatingMenu } from '../orders/FloatingMenu';
 import { AssignBox, type AssignKind } from './AssignBox';
 import { STATUS_LABEL, STATUS_TONE, TYPE_LABEL, TYPE_TONE } from './model';
-import { avatarClass, targetOf, toolLabel, type RoleProgress } from './roleModel';
+import { AdvancedPermissions } from './AdvancedPermissions';
+import { RewardRule } from './RewardRule';
+import { ToolSwitches } from './ToolSwitches';
+import { avatarClass, targetOf, type RoleProgress } from './roleModel';
 
 export type AssignChoice = 'person' | AssignKind;
 
@@ -18,12 +24,14 @@ interface RoleDetailProps {
   progress: RoleProgress | undefined;
   /** The assignments of the role; undefined while they load. */
   history: RoleAssignment[] | undefined;
-  can: { assign: boolean; remove: boolean; erase: boolean };
+  can: { assign: boolean; remove: boolean; erase: boolean; tools: boolean };
   /** The box under the name, open for an AI agent or a company. */
   assigning: AssignKind | null;
   onChoose: (choice: AssignChoice) => void;
   onCloseAssign: () => void;
   onAssigned: () => void;
+  /** A tool switch or the permission grid was saved: the cards read the roles again. */
+  onChanged: () => void;
   onRemove: (holder: RoleHolder) => void;
   onDelete: () => void;
 }
@@ -35,13 +43,16 @@ const CHOICES: Array<{ id: AssignChoice; title: string; text: (role: RoleCard) =
 ];
 
 /** The detail of the selected role (F-1151): the Assign menu, the monthly target, the holders, the tools summary and the history of holders who left. */
-export function RoleDetail({ role, monthName, currency, progress, history, can, assigning, onChoose, onCloseAssign, onAssigned, onRemove, onDelete }: RoleDetailProps) {
+export function RoleDetail({ role, monthName, currency, progress, history, can, assigning, onChoose, onCloseAssign, onAssigned, onChanged, onRemove, onDelete }: RoleDetailProps) {
   const trigger = useRef<HTMLButtonElement>(null);
   const [menu, setMenu] = useState(false);
   const target = targetOf(role, currency);
   const vacant = role.holders.length === 0;
   const left = (history ?? []).filter((a) => !a.current);
   const owner = role.presetRole === 'super_admin';
+  const { user, menu: appMenu, homeRoute } = useAuthStore();
+  // The delivery agents' phone screens (/m) open for the people the Agent stock page opens for (App.tsx MobileGate). The call-rep screen has no route yet (M7).
+  const phoneView = role.presetRole === 'delivery_agent' && !!user && !!appMenu && canOpenPath('/agent-inventory', appMenu, user.role, homeRoute);
 
   return (
     <Card className="detail" aria-label={`${role.name} role`}>
@@ -98,15 +109,22 @@ export function RoleDetail({ role, monthName, currency, progress, history, can, 
         )}
       </div>
 
-      <div className="dsec">
-        <h4><span>Allowed tools</span><span>{role.toolCount} of {role.toolTotal} on</span></h4>
-        {/* M6-T21 puts the read and write switches and the Advanced permissions panel here. */}
-        <div className="dbox" data-slot="role-tools">
-          {role.tools.length === 0 ? <small>No tools are on. People in this role can sign in and see nothing.</small> : (
-            <div className="toolchips">{role.tools.map((t) => <Tag key={t}>{toolLabel(t)}</Tag>)}</div>
-          )}
+      {phoneView && (
+        <div className="dsec">
+          <h4>Phone view</h4>
+          <div className="dbox">
+            <div className="row">
+              <span><b>What riders see on their phone</b><small className="dsub">Today's orders, cash to collect and a one-tap status update.</small></span>
+              <Link className="btn" to="/m"><Smartphone aria-hidden="true" />Open delivery agent phone view</Link>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
+
+      <RewardRule role={role} />
+
+      <div className="dsec"><ToolSwitches role={role} editable={can.tools} onChanged={onChanged} /></div>
+      <div className="dsec"><AdvancedPermissions role={role} editable={can.tools} onChanged={onChanged} /></div>
 
       <div className="dsec">
         <h4>History</h4>

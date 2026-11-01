@@ -49,8 +49,8 @@
 .v2 .sechead h2{font-size:16px;font-weight:700}
 .v2 .sechead-tools{display:flex;align-items:center;gap:12px}
 .v2 .legend{display:flex;gap:6px}
-.v2 .staff-roles .mdl{display:grid;grid-template-columns:1.1fr 1fr;gap:16px;align-items:start}
-.v2 .staff-roles .roles{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.v2 .staff-roles .mdl{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:16px;align-items:start}
+.v2 .staff-roles .roles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
 .v2 .staff-roles-skel{height:320px;border-radius:16px;background:var(--hover)}
 .v2 .rolecard{padding:16px;display:flex;flex-direction:column;gap:14px;text-align:left;cursor:pointer;transition:border-color .15s,box-shadow .15s;margin-top:0}
 .v2 .rolecard:hover{background:var(--hover)}
@@ -96,7 +96,36 @@
 .v2 .hlist .who .nm{flex:1}
 .v2 .hlist .who.off{opacity:.7}
 .v2 .hlist .who small{color:var(--ink-3);font-size:12px;white-space:nowrap}
-.v2 .toolchips{display:flex;gap:6px;flex-wrap:wrap}
+/* Reward rule, allowed tools and Advanced permissions (M6-T21) */
+.v2 .dbox .tier{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px}
+.v2 .dbox .tier b{margin-left:auto;color:var(--gold)}
+.v2 .detail h4 a.mini{margin:-4px 0;text-decoration:none;color:inherit}
+.v2 .dbox a.btn{padding:6px 11px;font-size:13px;text-decoration:none;color:inherit;display:inline-flex;align-items:center;gap:6px}
+.v2 .tgroup{margin-bottom:14px}
+.v2 .tgroup>p{font-size:12.5px;font-weight:600;color:var(--ink-2);margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.v2 .tgroup>p svg{width:15px;height:15px;color:var(--ink-3)}
+.v2 .tlist{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.v2 .trow{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:11px;font-size:13px}
+.v2 .trow span{min-width:0}
+.v2 .trow .sw,.v2 .pcell{position:relative}
+.v2 .sw input:disabled+.tg{opacity:.55;cursor:not-allowed}
+.v2 .detail .err{color:var(--coral);font-size:12.5px;margin-top:6px}
+.v2 .advperm{margin:0;box-shadow:none}
+.v2 .advperm-head{display:flex;align-items:center;justify-content:space-between;width:100%;background:none;border:0;cursor:pointer;color:inherit;text-align:left;padding:0}
+.v2 .advperm-head>span{display:flex;align-items:center;gap:8px}
+.v2 .advperm-head svg{width:16px;height:16px;transition:transform .15s}
+.v2 .advperm-head svg.up{transform:rotate(180deg)}
+.v2 .advperm-body{padding-top:12px;display:flex;flex-direction:column;gap:12px}
+.v2 .advperm-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.v2 .advperm-grid{display:flex;flex-direction:column;gap:8px}
+.v2 .advperm .prow{display:flex;flex-direction:column;gap:6px;padding:8px 10px;border:1px solid var(--line);border-radius:11px}
+.v2 .advperm .prow>b{font-size:13px;text-transform:capitalize}
+.v2 .advperm .pcells{display:flex;flex-wrap:wrap;gap:6px 14px}
+.v2 .advperm .pcell{font-weight:500;font-size:12.5px;gap:7px}
+.v2 .advperm .pcell .tg{width:30px;height:18px}
+.v2 .advperm .pcell .tg::after{top:2px;left:2px;width:14px;height:14px}
+.v2 .advperm .pcell input:checked+.tg::after{transform:translateX(12px)}
+.v2 .advperm-save{display:flex;justify-content:flex-end}
 .v2 .ddel{padding-bottom:4px}
 .v2 .dfootnote{margin:16px 20px 20px;padding:10px 12px;border-radius:12px;background:var(--hover);color:var(--ink-2);font-size:12.5px;display:flex;gap:8px}
 .v2 .dfootnote svg{flex:none;width:15px;height:15px;margin-top:2px}

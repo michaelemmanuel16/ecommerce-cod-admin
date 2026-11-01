@@ -151,8 +151,8 @@ export function RoleCards({ roles, failed, currency, can, onInvite, onChanged, o
           {role && (
             <RoleDetail
               role={role} monthName={monthName(month)} currency={currency} progress={progress.get(role.id)} history={history.data}
-              can={{ assign: can.create, remove: can.update, erase: can.owner }} assigning={assigning}
-              onChoose={choose} onCloseAssign={() => setAssigning(null)} onAssigned={changed}
+              can={{ assign: can.create, remove: can.update, erase: can.owner, tools: can.owner }} assigning={assigning}
+              onChoose={choose} onCloseAssign={() => setAssigning(null)} onAssigned={changed} onChanged={onChanged}
               onRemove={setRemoving} onDelete={() => setDeleting(true)}
             />
           )}

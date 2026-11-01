@@ -65,6 +65,17 @@ export interface NewRole {
   copyToolsFromRoleId?: number;
 }
 
+/** The permission matrix of a role: resource -> actions. */
+export type PermissionGrid = Record<string, string[]>;
+
+/** GET /api/roles/:id/permissions (M6-T04): the grid, the cells that exist, and whether the grid differs from the tool switches. */
+export interface RolePermissions {
+  permissions: PermissionGrid;
+  catalog: PermissionGrid;
+  custom: boolean;
+  saved: boolean;
+}
+
 const quiet = { quiet: true } as const;
 
 export const rolesService = {
@@ -80,6 +91,16 @@ export const rolesService = {
   },
   async remove(roleId: number): Promise<void> {
     await apiClient.delete(`/api/roles/${roleId}`, quiet);
+  },
+  /** Replaces the tool switches (the Owner only). A write tool without its read tool answers 400 "Needs View orders". */
+  async setTools(roleId: number, tools: string[]): Promise<RoleCard> {
+    return (await apiClient.put(`/api/roles/${roleId}/tools`, { tools }, quiet)).data.role;
+  },
+  async permissions(roleId: number): Promise<RolePermissions> {
+    return (await apiClient.get(`/api/roles/${roleId}/permissions`, { skipCache: true, quiet: true })).data;
+  },
+  async savePermissions(roleId: number, permissions: PermissionGrid): Promise<PermissionGrid> {
+    return (await apiClient.put(`/api/roles/${roleId}/permissions`, { permissions }, quiet)).data.permissions;
   },
   async assign(roleId: number, body: AssignBody): Promise<AssignResult> {
     return (await apiClient.post(`/api/roles/${roleId}/assign`, body, quiet)).data;
