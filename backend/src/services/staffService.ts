@@ -35,7 +35,7 @@ const CLOSED_ORDER_STATUSES: OrderStatus[] = ['delivered', 'digital_delivered', 
 
 export const staffSelect = {
   id: true, firstName: true, lastName: true, email: true, phoneNumber: true, kind: true, role: true, isActive: true,
-  invitedAt: true, deletedAt: true, lastLogin: true, createdAt: true, commissionAmount: true, vehicleType: true, vehicleId: true,
+  invitedAt: true, deletedAt: true, lastLogin: true, createdAt: true, commissionAmount: true, vehicleType: true, vehicleId: true, location: true, preferences: true,
   roleAssignments: { where: { toDate: null }, select: { role: { select: { id: true, name: true } } } },
 } satisfies Prisma.UserSelect;
 
@@ -66,8 +66,10 @@ export const feeNotEditable = () =>
 const feeRuleOf = (u: { id: number; role: UserRole }) =>
   payPolicyFor(u.role).amountEditable ? null : { editable: false, url: `/api/delivery-partners/${u.id}/fee-rules` };
 
-export const staffView = ({ roleAssignments, commissionAmount, ...u }: StaffRow) => ({
+export const staffView = ({ roleAssignments, commissionAmount, preferences, ...u }: StaffRow) => ({
   ...u,
+  /** How the person is paid; null until one is set (an older user). */
+  payMethod: ((preferences ?? {}) as { payMethod?: string }).payMethod ?? null,
   name: fullName(u),
   status: staffStatus(u),
   commissionAmount: commissionAmount?.toString() ?? null,
@@ -135,7 +137,9 @@ export async function listStaff(query: StaffQuery) {
 export async function updateStaff(actor: Requester, id: number, input: UpdateStaffInput): Promise<StaffView> {
   const target = await findStaff(id);
   if (staffStatus(target) === 'deleted') throw new AppError('Restore this person before editing', 409, 'STAFF_DELETED');
-  if (!payPolicyFor(input.role ?? target.role).amountEditable && input.commissionAmount !== undefined) throw feeNotEditable();
+  const policy = payPolicyFor(input.role ?? target.role);
+  if (!policy.amountEditable && input.commissionAmount !== undefined) throw feeNotEditable();
+  if (input.payMethod !== undefined && !(policy.methods as readonly string[]).includes(input.payMethod)) throw feeNotEditable();
   return staffView(await adminService.updateUser(actor, id, input, { select: staffSelect }) as StaffRow);
 }
 

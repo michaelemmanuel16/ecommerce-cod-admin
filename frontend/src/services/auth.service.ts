@@ -45,8 +45,14 @@ export const authService = {
 
   /** Spend an invite link: choose a password, become active and be signed in (M6-T06, F-1158). */
   async acceptInvite(token: string, password: string): Promise<LoginResponse> {
-    const response = await apiClient.post('/api/auth/accept-invite', { token, password });
+    // quiet: the page shows a refusal once, in its own text (the client's error toast would be a second one)
+    const response = await apiClient.post('/api/auth/accept-invite', { token, password }, { quiet: true });
     return response.data;
+  },
+
+  /** Is the invite link still good? The accept page asks when it opens. Refusals are 400 (unknown or used) and 410 (expired). */
+  async checkInvite(token: string): Promise<void> {
+    await apiClient.post('/api/auth/check-invite', { token }, { quiet: true });
   },
 
   async getProfile(): Promise<User> {

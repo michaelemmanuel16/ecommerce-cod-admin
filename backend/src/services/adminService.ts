@@ -568,13 +568,13 @@ export const adminService = {
 
     const parsed = updateUserSchema.safeParse(data);
     if (!parsed.success) throw new AppError(formatIssues(parsed.error, 'body'), 400, 'VALIDATION_ERROR');
-    const { name, ...input } = parsed.data;
+    const { name, payMethod, ...input } = parsed.data;
 
     // withSoftDeleted bypasses the soft-delete auto-inject so this lookup
     // can find inactive users — admins must be able to reactivate them.
     const targetUser = await withSoftDeleted(() => prisma.user.findUnique({
       where: { id: userId },
-      select: { role: true, isActive: true, invitedAt: true, deletedAt: true }
+      select: { role: true, isActive: true, invitedAt: true, deletedAt: true, preferences: true }
     }));
 
     if (!targetUser) {
@@ -609,6 +609,11 @@ export const adminService = {
       ...input,
       // An inactive person cannot accept an invite: the link dies with the deactivation.
       ...(deactivating && { inviteTokenHash: null, inviteExpiresAt: null }),
+      // How the person is paid lives in preferences (F-1158); the amount per order follows it (none or the fee rule: no amount).
+      ...(payMethod !== undefined && {
+        preferences: { ...((targetUser.preferences ?? {}) as Prisma.JsonObject), payMethod },
+        ...(payMethod !== 'per_order' && input.commissionAmount === undefined && { commissionAmount: 0 }),
+      }),
       // "First Last" in one field: the first word is the first name.
       ...(name !== undefined && { firstName: firstName || 'Unknown', lastName: rest.join(' ') }),
     };

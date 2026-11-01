@@ -132,6 +132,35 @@ describe('invite -> accept -> login -> me', () => {
   });
 });
 
+describe('check-invite (the accept page asks on load)', () => {
+  const check = (token: string) => request(app).post('/api/auth/check-invite').send({ token });
+
+  it('a good link is 200 and nothing changes; unknown and used are the same 400; expired is 410; no token is 400', async () => {
+    const res = await invite();
+    const raw = tokenOf(res.body.link);
+    const before = await dbUser(res.body.staff.id);
+    expect((await check(raw)).body).toEqual({ valid: true });
+    expect(await dbUser(res.body.staff.id)).toEqual(before);
+    expect((await accept(raw)).status).toBe(200);
+    const used = await check(raw);
+    const unknown = await check('f'.repeat(64));
+    expect([used.status, unknown.status]).toEqual([400, 400]);
+    expect(used.body.message).toBe(unknown.body.message);
+    const late = await invite();
+    await prismaBase.user.update({ where: { id: late.body.staff.id }, data: { inviteExpiresAt: new Date(Date.now() - 1000) } });
+    const expired = await check(tokenOf(late.body.link));
+    expect(expired.status).toBe(410);
+    expect(expired.body.message).toContain('Ask for a new invite');
+    expect((await request(app).post('/api/auth/check-invite').send({})).status).toBe(400);
+  });
+
+  it('a revoked or deactivated person link is 400', async () => {
+    const res = await invite();
+    await api.post(ownerA, `/api/staff/${res.body.staff.id}/revoke-invite`);
+    expect((await check(tokenOf(res.body.link))).status).toBe(400);
+  });
+});
+
 describe('who may invite what', () => {
   it('email already used is 409 EMAIL_EXISTS; a rep cannot invite; needs a login', async () => {
     const taken = await invite({ email: pair.a.users.admin.email });

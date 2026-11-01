@@ -10,7 +10,7 @@ import { generateAccessToken, verifyRefreshToken } from '../utils/jwt';
 import { AppError } from '../middleware/errorHandler';
 import navService from '../services/navService';
 import { sendPasswordResetEmail } from '../services/emailService';
-import { acceptInvite as acceptInviteToken } from '../services/inviteService';
+import { acceptInvite as acceptInviteToken, checkInvite as checkInviteToken } from '../services/inviteService';
 import { SUBSCRIPTION_STATUS, SELF_SERVE_PLAN_NAMES } from '../config/billing';
 import { seedTenantDefaults } from '../services/tenantDefaultsService';
 import logger from '../utils/logger';
@@ -264,6 +264,12 @@ export const acceptInvite = handler(async (req, res) => {
   const { token, password } = req.body;
   const user = await acceptInviteToken(token, password, requestMeta(req));
   res.json({ message: 'Login successful', ...await sessionService.signIn(user, requestMeta(req)) });
+});
+
+/** POST /api/auth/check-invite (public): is this invite link still good? 200, or the same 400 and 410 as accept. Writes nothing. */
+export const checkInvite = handler(async (req, res) => {
+  await checkInviteToken(req.body.token);
+  res.json({ valid: true });
 });
 
 export const me = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {

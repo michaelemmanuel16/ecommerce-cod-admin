@@ -334,6 +334,31 @@ describe('deactivate and reactivate', () => {
   });
 });
 
+describe('edit: city and how the person is paid (T20)', () => {
+  it('saves the city and the pay method, reads them back, and moves the amount with the method', async () => {
+    const rep = await mkPerson('payer', 'sales_rep', { commissionAmount: 8 });
+    const res = await api.put(ownerA, `/api/staff/${rep.id}`, { payMethod: 'none', location: 'Kumasi' });
+    expect(res.status).toBe(200);
+    expect(res.body.staff).toMatchObject({ payMethod: 'none', location: 'Kumasi', commissionAmount: '0' });
+    expect(res.body.staff).not.toHaveProperty('preferences');
+    const back = await api.put(ownerA, `/api/staff/${rep.id}`, { payMethod: 'per_order', commissionAmount: 9 });
+    expect(back.body.staff).toMatchObject({ payMethod: 'per_order', commissionAmount: '9', location: 'Kumasi' });
+    // other preferences are kept
+    const keep = await mkPerson('prefs', 'sales_rep', { preferences: { onboardingCompleted: true } });
+    await api.put(ownerA, `/api/staff/${keep.id}`, { payMethod: 'none' });
+    expect((await prismaBase.user.findUniqueOrThrow({ where: { id: keep.id } })).preferences).toMatchObject({ onboardingCompleted: true, payMethod: 'none' });
+    expect((await api.put(ownerA, `/api/staff/${rep.id}`, { payMethod: 'barter' })).status).toBe(400);
+  });
+
+  it('a delivery partner has no per-order pay: payMethod per_order is refused with FEE_NOT_EDITABLE', async () => {
+    const partner = await mkPerson('dpay', 'delivery_agent');
+    const res = await api.put(ownerA, `/api/staff/${partner.id}`, { payMethod: 'per_order' });
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(res.body)).toContain('FEE_NOT_EDITABLE');
+    expect((await api.put(ownerA, `/api/staff/${partner.id}`, { payMethod: 'fee_rule', location: 'Tema' })).status).toBe(200);
+  });
+});
+
 describe('delete and permanent delete', () => {
   it('soft delete: Deleted tab, no login, restore with reactivate; a person deleted while invited is restored as invited', async () => {
     const p = await mkPerson('sdel', 'sales_rep', { preferences: { onboardingCompleted: true } });
