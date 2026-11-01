@@ -519,7 +519,7 @@ Security tests across tenants, permissions and invites, two browser flows, and t
 ---
 
 ## COD-60 — Staff pay card (M6-T22)
-**Date:** 2026-11-01 | **Type:** feat | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-60-t22-pay-card`, merge c494cd52, HEAD^2 5df2096b) | **Commits:** 5df2096b, follow-up 63996e36 (on the T21 branch, in HEAD)
+**Date:** 2026-11-01 | **Type:** feat | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-60-t22-pay-card`, merge c494cd52, HEAD^2 5df2096b) | **Commits:** 5df2096b, follow-up 63996e36 (on the M6 branch)
 
 ### Summary
 A Pay card on the Staff page for reps and delivery partners. It opens the same payout form as Finance. Plan task: M6-T22.
