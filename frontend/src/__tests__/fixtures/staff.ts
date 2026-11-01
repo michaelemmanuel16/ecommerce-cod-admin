@@ -1,4 +1,5 @@
-import type { StaffList, StaffRow } from '../../services/staff.service';
+import type { RoleCard, RoleHolder } from '../../services/roles.service';
+import type { StaffList, StaffRole, StaffRow } from '../../services/staff.service';
 
 const person = (over: Partial<StaffRow> & Pick<StaffRow, 'id' | 'name'>): StaffRow => ({
   firstName: over.name.split(' ')[0], lastName: over.name.split(' ')[1] ?? '', email: `${over.name.toLowerCase().replace(' ', '.')}@example.com`,
@@ -21,9 +22,19 @@ export const STAFF: StaffList = {
   staff: [ADWOA, KOFI, ROBO, AKUA, YAA],
 };
 
-export const ROLES = [
+export const ROLES: StaffRole[] = [
   { roleId: 1, name: 'Call rep', presetRole: 'sales_rep' },
   { roleId: 2, name: 'Delivery', presetRole: 'delivery_agent' },
   { roleId: 3, name: 'Finance clerk', presetRole: 'accountant' },
 ];
 export const COMPANY = { currency: 'GHS', baseCommission: 8, upsellPercent: 10 };
+
+/** A role card of GET /api/roles/overview, for a role of ROLES. */
+export const roleCard = (role: StaffRole, over: Partial<RoleCard> = {}): RoleCard => ({
+  id: role.roleId, name: role.name, area: null, contract: null, presetRole: role.presetRole, isSystem: false,
+  tools: ['view_orders', 'view_customers'], toolCount: 2, toolTotal: 16, holderCount: 0, custom: false, holders: [], target: null, ...over,
+});
+
+export const holder = (over: Partial<RoleHolder> & Pick<RoleHolder, 'id' | 'name'>): RoleHolder => ({
+  assignmentId: over.id * 10, since: '2026-10-01T00:00:00.000Z', email: `${over.id}@example.com`, kind: 'person', typeLabel: 'Human', status: 'active', ...over,
+});

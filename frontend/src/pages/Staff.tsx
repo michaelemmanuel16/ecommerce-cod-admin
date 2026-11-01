@@ -5,6 +5,7 @@ import { Button, Card, ConfirmDialog, EmptyState, Select, Skeleton, Tabs, useToa
 import { useV2Page } from '../components/shell/useV2Page';
 import { usePermissions } from '../hooks/usePermissions';
 import { useAuthStore } from '../stores/authStore';
+import { rolesService, toStaffRoles } from '../services/roles.service';
 import { companyRepPay, staffService, type InviteResult, type StaffRow } from '../services/staff.service';
 import { SEARCH_DEBOUNCE_MS } from '../utils/urlState';
 import { apiMessage } from './orders/importText';
@@ -15,6 +16,7 @@ import { InviteLinkDialog } from './staff/InviteLinkDialog';
 import { PermanentDeleteModal } from './staff/PermanentDeleteModal';
 import { PersonModal } from './staff/PersonModal';
 import { ResetPasswordModal } from './staff/ResetPasswordModal';
+import { RoleCards } from './staff/RoleCards';
 import type { RowAction } from './staff/RowMenu';
 import { TeamTable } from './staff/TeamTable';
 import { headerText, parseView, tabCount, TABS, writeView, type StaffView, type TabId } from './staff/model';
@@ -31,7 +33,7 @@ const CONFIRM_TEXT: Record<Confirm['kind'], { action: string; noun: string; text
 
 /**
  * The Staff page (M6-T20, F-1157 to F-1161, F-1165), built from docs/mockups/v2/staff.html: the team table with tabs, filters,
- * the invite and edit modals and the row actions. The role cards of M6-T19 go in the slot above the table. The tab, the role,
+ * the invite and edit modals and the row actions. The role cards of M6-T19 (F-1151, F-1152, F-1156) sit above the table. The tab, the role,
  * the search and the open invite modal are in the URL; the North Star wizard links to `?invite=1`.
  */
 export function Staff() {
@@ -57,7 +59,8 @@ export function Staff() {
 
   const list = useBlock(`staff|${view.tab}|${view.role}|${view.q}`, () =>
     staffService.list({ ...(view.tab !== 'all' && { status: view.tab }), ...(view.role && { role: view.role }), ...(view.q && { q: view.q }) }));
-  const roles = useBlock('staff|roles', () => staffService.roles());
+  const overview = useBlock('staff|roles', () => rolesService.overview());
+  const roles = useMemo(() => (overview.data ? toStaffRoles(overview.data) : []), [overview.data]);
   const pay = useBlock('staff|pay', () => companyRepPay());
 
   const [editing, setEditing] = useState<StaffRow | null>(null);
@@ -67,6 +70,8 @@ export function Staff() {
   const [deactivating, setDeactivating] = useState<Deactivating | null>(null);
   const [unsent, setUnsent] = useState<{ name: string; reason?: string; link: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  // The role an invite starts on, when it was opened from a role card
+  const [inviteRole, setInviteRole] = useState<number | undefined>();
 
   const currency = pay.data?.currency ?? 'GHS';
   const company = pay.data ?? null;
@@ -159,8 +164,12 @@ export function Staff() {
         )}
       </div>
 
-      {/* M6-T19 puts the role cards here. */}
-      <div className="staff-roles-slot" data-slot="role-cards" />
+      <RoleCards
+        roles={overview.data} failed={overview.status === 'failed'} currency={currency} onRetry={overview.retry}
+        can={{ create: can('users', 'create'), update: allowed.update, owner: isOwner }}
+        onInvite={(roleId) => { setInviteRole(roleId); patch({ invite: true }); }}
+        onChanged={() => { overview.retry(); list.retry(); }}
+      />
 
       <Card title="People, agents and companies" aside={counts ? headerText(counts) : undefined}>
         <Tabs items={tabs} value={view.tab} label="Team status" onChange={(id) => patch({ tab: id as TabId })} />
@@ -171,7 +180,7 @@ export function Staff() {
           </label>
           <Select compact label="Filter by role" value={view.role} onChange={(e) => patch({ role: e.target.value })}>
             <option value="">All roles</option>
-            {(roles.data ?? []).map((r) => <option key={r.roleId} value={r.roleId}>{r.name}</option>)}
+            {roles.map((r) => <option key={r.roleId} value={r.roleId}>{r.name}</option>)}
           </Select>
         </div>
         {list.status === 'failed' && !list.data ? (
@@ -191,13 +200,13 @@ export function Staff() {
 
       {view.invite && (
         <PersonModal
-          roles={roles.data ?? []} company={company} currency={currency} onClose={() => patch({ invite: false })}
-          onInvited={(r) => { patch({ invite: false }); reportInvite(r); list.retry(); }} onSaved={() => undefined}
+          roles={roles} roleId={inviteRole} company={company} currency={currency} onClose={() => { setInviteRole(undefined); patch({ invite: false }); }}
+          onInvited={(r) => { setInviteRole(undefined); patch({ invite: false }); reportInvite(r); overview.retry(); list.retry(); }} onSaved={() => undefined}
         />
       )}
       {editing && (
         <PersonModal
-          row={editing} roles={roles.data ?? []} company={company} currency={currency} onClose={() => setEditing(null)}
+          row={editing} roles={roles} company={company} currency={currency} onClose={() => setEditing(null)}
           onInvited={() => undefined} onSaved={(r) => { setEditing(null); say(`${r.name} saved`); list.retry(); }}
         />
       )}

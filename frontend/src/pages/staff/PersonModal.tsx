@@ -10,6 +10,8 @@ interface PersonModalProps {
   /** The person being edited; none means an invite. */
   row?: StaffRow;
   roles: StaffRole[];
+  /** An invite starts on this role (the Assign menu of a role card). */
+  roleId?: number;
   /** The company rep rule of Settings, Rewards. */
   company: { baseCommission: number; upsellPercent: number } | null;
   currency: string;
@@ -49,10 +51,10 @@ function formOf(row: StaffRow, roles: StaffRole[], company: PersonModalProps['co
  * Invite a person (F-1158) and edit a person (F-1159) in one modal, built from the Person modal of docs/mockups/v2/staff.html.
  * A delivery partner has no amount here: its fee is one rule per partner (Deliveries), and the modal links to it.
  */
-export function PersonModal({ row, roles, company, currency, onClose, onInvited, onSaved }: PersonModalProps) {
+export function PersonModal({ row, roles, roleId, company, currency, onClose, onInvited, onSaved }: PersonModalProps) {
   const say = useToast();
   const editing = row !== undefined;
-  const [form, setForm] = useState<PersonForm>(() => (row ? formOf(row, roles, company) : blankForm()));
+  const [form, setForm] = useState<PersonForm>(() => (row ? formOf(row, roles, company) : { ...blankForm(), roleId: roleId ? String(roleId) : '' }));
   const [touched, setTouched] = useState(false);
   const [busy, setBusy] = useState(false);
   // Roles load after the page: once they are there, an edit picks its role (and an invite its first)

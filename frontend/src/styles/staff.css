@@ -1,7 +1,6 @@
-/* Staff page (M6-T20, F-1157 to F-1161). Built from docs/mockups/v2/staff.html. Tokens only; scoped under .v2. */
+/* Staff page (M6-T20, F-1157 to F-1161; M6-T19 role cards, F-1151). Built from docs/mockups/v2/staff.html. Tokens only; scoped under .v2. */
 .v2 .staff-head-actions{display:flex;gap:8px;flex-wrap:wrap}
-.v2 .staff-roles-slot:empty{display:none}
-.v2 .staff .card{margin-top:16px}
+.v2 .staff>.card{margin-top:16px}
 .v2 .staff-filters{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:6px 20px 12px}
 .v2 .staff-search{display:flex;align-items:center;gap:8px;flex:1 1 240px;max-width:360px;border:1px solid var(--line);border-radius:12px;padding:0 12px;background:var(--card)}
 .v2 .staff-search svg{width:16px;height:16px;color:var(--ink-3);flex:none}
@@ -43,3 +42,78 @@
 .v2 .dlg .two2{display:grid;grid-template-columns:1fr 1fr;gap:14px 12px}
 .v2 .dlg .mb .seg{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
 @media (max-width:760px){.v2 .dlg .two2{grid-template-columns:1fr}}
+
+/* Role cards and the role detail (M6-T19, F-1151). Ported from the style block of docs/mockups/v2/staff.html; tokens only. */
+.v2 .staff-roles{margin-top:16px}
+.v2 .sechead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.v2 .sechead h2{font-size:16px;font-weight:700}
+.v2 .sechead-tools{display:flex;align-items:center;gap:12px}
+.v2 .legend{display:flex;gap:6px}
+.v2 .staff-roles .mdl{display:grid;grid-template-columns:1.1fr 1fr;gap:16px;align-items:start}
+.v2 .staff-roles .roles{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.v2 .staff-roles-skel{height:320px;border-radius:16px;background:var(--hover)}
+.v2 .rolecard{padding:16px;display:flex;flex-direction:column;gap:14px;text-align:left;cursor:pointer;transition:border-color .15s,box-shadow .15s;margin-top:0}
+.v2 .rolecard:hover{background:var(--hover)}
+.v2 .rolecard:focus-visible{outline:2px solid var(--pine);outline-offset:2px}
+.v2 .rolecard.on{border-color:var(--pine);box-shadow:0 0 0 3px var(--pine-soft)}
+.v2 .rc-top{display:flex;align-items:center;gap:10px}
+.v2 .rc-top .tag{margin-left:auto}
+.v2 .rc-top b{display:block;font-family:"Bricolage Grotesque";font-size:16px}
+.v2 .rc-top small{color:var(--ink-3);font-size:12px}
+.v2 .rc-ic{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;background:var(--pine-soft);color:var(--pine);flex:none}
+.v2 .rc-ic svg{width:18px;height:18px}
+.v2 .holders{display:flex;flex-direction:column;gap:8px}
+.v2 .holders .who{gap:9px}
+.v2 .holders .who .a,.v2 .hlist .who .a{width:28px;height:28px;font-size:11px;flex:none;border-radius:50%;display:grid;place-items:center;font-weight:700}
+.v2 .holders .who .nm,.v2 .hlist .who .nm{min-width:0;font-weight:500;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.v2 .holders .tag{margin-left:auto;font-size:11.5px;padding:1px 7px}
+.v2 .staff-roles .who .a.pine{background:var(--pine-soft);color:var(--pine)}
+.v2 .staff-roles .who .a.gold{background:var(--gold-soft);color:var(--gold)}
+.v2 .staff-roles .who .a.violet,.v2 .staff-roles .who .a.ai{background:var(--violet-soft);color:var(--violet)}
+.v2 .staff-roles .who .a.coral{background:var(--coral-soft);color:var(--coral)}
+.v2 .staff-roles .who .a.mint{background:var(--mint-soft);color:var(--ok-ink)}
+.v2 .staff-roles .who .a.co{border-radius:9px;background:var(--gold-soft);color:var(--warn-ink)}
+.v2 .vacant{border:1.5px dashed var(--line);border-radius:12px;padding:12px;display:flex;align-items:center;gap:10px;color:var(--ink-2);font-size:13px}
+.v2 .vacant svg{color:var(--gold);flex:none;width:18px;height:18px}
+.v2 .rc-tgt small,.v2 .dsub{color:var(--ink-3);font-size:12px}
+.v2 .rc-tgt b{display:block;font-size:13.5px;margin-top:1px}
+.v2 .rc-tgt .prog{margin-top:9px}
+.v2 .rc-tgt .dsub{display:block;margin-top:6px}
+.v2 .rc-foot{display:flex;align-items:center;gap:7px;color:var(--ink-2);font-size:12.5px;padding-top:12px;border-top:1px solid var(--line);margin-top:auto}
+.v2 .rc-foot svg{width:15px;height:15px;color:var(--ink-3)}
+.v2 .detail .sub{padding:4px 20px 0;color:var(--ink-2);font-size:13px}
+.v2 .detail .sub:empty{display:none}
+.v2 .detail .ct .btn svg{width:16px;height:16px}
+.v2 .dsec{padding:16px 20px 0}
+.v2 .dsec>h4{font-size:12.5px;font-weight:600;color:var(--ink-3);margin-bottom:8px;display:flex;justify-content:space-between}
+.v2 .dbox{border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.v2 .dbox .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.v2 .dbox b{font-size:14px}
+.v2 .dbox small{color:var(--ink-3);font-size:12.5px}
+.v2 .dbox .dsub{display:block;margin-top:8px}
+.v2 .hlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.v2 .hlist .who{gap:9px}
+.v2 .hlist .who .nm{flex:1}
+.v2 .hlist .who.off{opacity:.7}
+.v2 .hlist .who small{color:var(--ink-3);font-size:12px;white-space:nowrap}
+.v2 .toolchips{display:flex;gap:6px;flex-wrap:wrap}
+.v2 .ddel{padding-bottom:4px}
+.v2 .dfootnote{margin:16px 20px 20px;padding:10px 12px;border-radius:12px;background:var(--hover);color:var(--ink-2);font-size:12.5px;display:flex;gap:8px}
+.v2 .dfootnote svg{flex:none;width:15px;height:15px;margin-top:2px}
+.v2 .rolemenu button{align-items:flex-start;gap:11px;padding:9px 10px}
+.v2 .rolemenu .mi{flex:none;width:30px;height:30px;border-radius:9px;display:grid;place-items:center}
+.v2 .rolemenu .mi svg{width:16px;height:16px;color:inherit}
+.v2 .rolemenu .mi.pine{background:var(--pine-soft);color:var(--pine)}
+.v2 .rolemenu .mi.violet{background:var(--violet-soft);color:var(--violet)}
+.v2 .rolemenu .mi.gold{background:var(--gold-soft);color:var(--gold)}
+.v2 .rolemenu b{display:block;font-size:13.5px}
+.v2 .rolemenu small{color:var(--ink-3);font-size:12px;line-height:1.35;display:block}
+.v2 .assignbox{margin:14px 20px 0;padding:14px;border:1px solid var(--pine);border-radius:14px;background:var(--pine-soft)}
+.v2 .assignbox p{font-size:13px;color:var(--ink);margin-bottom:10px}
+.v2 .assignbox .line{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
+.v2 .assignbox .line .fl{flex:1;min-width:180px}
+.v2 .keyrow{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;padding:9px 12px;border-radius:11px;background:var(--card);color:var(--ink);border:1px solid var(--line);flex:1;min-width:160px}
+.v2 .done-note{margin-top:10px;font-size:12.5px;color:var(--pine);font-weight:600;display:flex;gap:6px;align-items:center}
+.v2 .done-note svg{width:15px;height:15px;flex:none}
+@media (max-width:1100px){.v2 .staff-roles .mdl{grid-template-columns:1fr}}
+@media (max-width:760px){.v2 .staff-roles .roles{grid-template-columns:1fr}}

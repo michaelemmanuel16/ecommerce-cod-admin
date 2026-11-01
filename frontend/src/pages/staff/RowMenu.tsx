@@ -13,7 +13,7 @@ interface RowMenuProps {
 }
 
 /** The actions of a row (F-1160, F-1165): which ones show depends on the person's status and kind. */
-export function actionsOf(row: StaffRow, can: RowMenuProps['can']): Array<{ action: RowAction; label: string; danger?: boolean }> {
+function actionsOf(row: StaffRow, can: RowMenuProps['can']): Array<{ action: RowAction; label: string; danger?: boolean }> {
   const out: Array<{ action: RowAction; label: string; danger?: boolean }> = [];
   const human = row.kind === 'person';
   if (row.status === 'deleted') {

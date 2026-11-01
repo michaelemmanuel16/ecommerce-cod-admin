@@ -2,7 +2,7 @@ import apiClient from './api';
 
 /**
  * The Staff page API (M6-T20): GET /api/staff with its tab counts (T05), the invite, resend and revoke of T06, the row actions,
- * the workload and the role list. Every call is `quiet`: the page says a refusal once, in its own toast.
+ * the workload. Every call is `quiet`: the page says a refusal once, in its own toast.
  * The API client turns money strings under money keys into numbers; `commissionAmount` is one of them.
  */
 
@@ -90,11 +90,6 @@ export const staffService = {
   },
   async workload(): Promise<WorkloadRow[]> {
     return (await apiClient.get('/api/staff/workload', { skipCache: true, quiet: true })).data.workload;
-  },
-  /** The roles of the tenant for the role select, from the role overview (users:view). */
-  async roles(): Promise<StaffRole[]> {
-    const rows: Array<{ id: number; name: string; presetRole: string | null }> = (await apiClient.get('/api/roles/overview', quiet)).data.roles;
-    return rows.map((r) => ({ roleId: r.id, name: r.name, presetRole: r.presetRole }));
   },
   async invite(body: InviteBody): Promise<InviteResult> {
     return (await apiClient.post('/api/staff/invite', body, quiet)).data;
