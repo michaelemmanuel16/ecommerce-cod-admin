@@ -1,5 +1,6 @@
 import type { Calculators, GrowthMode, TreeNode } from '../../services/targets.service';
-import { compactMoney, monthName as monthOfDay } from '../dashboard/format';
+import { compactMoney, compactNumber, monthName as monthOfDay } from '../dashboard/format';
+import { parseMoney } from '../../utils/money';
 import { formatCount } from '../targets/model';
 
 // Pure rules of the North Star wizard and the Settings tab (M6-T17, F-1111 to F-1113). The API does the arithmetic (split, calculators);
@@ -60,8 +61,11 @@ export function calculatorLine(c: Calculators, currency: string): string {
     + `÷ ${c.daysInMonth} days in ${monthOfDay(`${c.month}-01`)} = ${c.ordersPerDay} a day.`;
 }
 
-/** The months of a quarter in words under its tile: "GH₵120k a month". */
-export const perMonth = (monthly: string | number, currency: string): string => `${compactMoney(monthly, currency)} a month`;
+/** The months of a quarter in words under its tile: "GH₵120k a month", or each month when they differ (kept past months): "GH₵180k · 280k · 280k". */
+export const perMonth = (months: Array<string | number>, currency: string): string =>
+  months.every((m) => Number(m) === Number(months[0]))
+    ? `${compactMoney(months[0], currency)} a month`
+    : [compactMoney(months[0], currency), ...months.slice(1).map((m) => compactNumber(parseMoney(m)))].join(' · ');
 
 /** Where the wizard opens: the step in the address, else the first store step not done, else the saved North Star step. */
 export function startStep(opts: { asked: number | null; store: boolean; partner: boolean; saved: number }): number {

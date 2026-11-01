@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { ToastProvider } from '../../components/ui-v2';
 import { Onboarding } from '../../pages/Onboarding';
 import { NorthStarTab } from '../../pages/settings/NorthStarTab';
+import { perMonth } from '../../pages/northStar/model';
 import { useAuthStore } from '../../stores/authStore';
 import { useConfigStore } from '../../stores/configStore';
 import type { OnboardingStatus } from '../../services/onboarding.service';
@@ -71,6 +72,9 @@ describe('wizard step 3: Set your North Star', () => {
     await waitFor(() => expect(within(quarterTile(1)).getByText('GH₵360k')).toBeInTheDocument());
     expect(within(quarterTile(4)).getByText('GH₵540k')).toBeInTheDocument();
     expect(within(quarterTile(1)).getByText('GH₵120k a month')).toBeInTheDocument();
+    // months that differ (a kept past month) are each shown, not the first one as "a month"
+    expect(perMonth(['180000.00', '280000.00', '280000.00'], 'GHS')).toBe('GH₵180k · 280k · 280k');
+    expect(perMonth(['120000.00', '120000.00', '120000.00'], 'GHS')).toBe('GH₵120k a month');
     expect(screen.getByLabelText('Confirmation rate target (%)')).toHaveValue('70');
     expect(screen.getByLabelText('Delivery success target (%)')).toHaveValue('60');
     expect(screen.getByLabelText('Net margin target (%)')).toHaveValue('35');

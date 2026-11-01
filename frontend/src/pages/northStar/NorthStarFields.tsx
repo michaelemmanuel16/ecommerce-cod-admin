@@ -51,7 +51,7 @@ export function NorthStarFields({ draft: d, editable, tiles = 'two' }: Props) {
             ) : (
               <b className="num">{d.preview ? compactMoney(d.preview.quarters[i], d.currency) : '…'}</b>
             )}
-            <small>{d.preview ? perMonth(d.preview.months[i][0], d.currency) : ''}</small>
+            <small>{d.preview ? perMonth(d.preview.months[i], d.currency) : ''}</small>
           </div>
         ))}
       </div>
