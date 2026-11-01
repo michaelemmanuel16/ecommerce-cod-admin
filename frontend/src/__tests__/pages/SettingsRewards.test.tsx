@@ -6,10 +6,12 @@ import { Settings } from '../../pages/Settings';
 import { ToastProvider } from '../../components/ui-v2';
 import { useAuthStore } from '../../stores/authStore';
 import type { RewardSettings } from '../../services/targets.service';
+import { checkoutFormsService } from '../../services/checkout-forms.service';
 import { SAVED } from '../fixtures/northStar';
 
 const targets = vi.hoisted(() => ({ rewardSettings: vi.fn(), saveRewardSettings: vi.fn(), drivers: vi.fn(), tree: vi.fn(), preview: vi.fn(), calculators: vi.fn() }));
 vi.mock('../../services/targets.service', async (orig) => ({ ...(await orig<typeof import('../../services/targets.service')>()), targetsService: targets }));
+vi.mock('../../services/checkout-forms.service', () => ({ checkoutFormsService: { getCheckoutForms: vi.fn() } }));
 vi.mock('../../services/admin.service', () => ({ adminService: { getSystemConfig: vi.fn().mockResolvedValue({}) } }));
 vi.mock('../../components/admin/UserManagementTable', () => ({ UserManagementTable: () => <div /> }));
 vi.mock('../../components/admin/RolePermissionsMatrix', () => ({ RolePermissionsMatrix: () => <div /> }));
@@ -50,6 +52,10 @@ beforeEach(() => {
   targets.rewardSettings.mockResolvedValue(API);
   targets.saveRewardSettings.mockResolvedValue(API);
   targets.tree.mockResolvedValue(SAVED);
+  vi.mocked(checkoutFormsService.getCheckoutForms).mockResolvedValue([
+    { id: 1, currency: 'GHS', packages: [{ name: 'Pair', price: 410 }, { name: 'Single', price: 205 }], upsells: [{ name: 'Gift box', price: 35, isActive: true }, { name: 'Hidden', price: 9, isActive: false }] },
+    { id: 2, currency: 'GHS', packages: [{ name: 'Single', price: 205 }], upsells: [] },
+  ] as never);
   signIn('super_admin');
 });
 
@@ -126,9 +132,34 @@ describe('Settings, Rewards tab (M6-T18, F-1231)', () => {
     expect(await field('Call rep reward at 100 percent')).toBeInTheDocument();
   });
 
-  it('shows no 80% tier, airtime or hard-coded tier text', async () => {
+  it('shows the 3PL flag, read only, and no airtime or 80% payout tier', async () => {
     renderAt();
     await field('Call rep reward at 100 percent');
-    expect(document.body.textContent ?? '').not.toMatch(/80\s?%|airtime/i);
+    expect(screen.getByText('3PL below 80% of target')).toBeInTheDocument();
+    expect(screen.getByText('Contract review')).toBeInTheDocument();
+    expect(document.body.textContent ?? '').not.toMatch(/airtime/i);
+    // no input of any kind for an 80% tier
+    expect(screen.queryByRole('textbox', { name: /80/ })).not.toBeInTheDocument();
+    // the only 80% text on the page is the flag row
+    expect((document.body.textContent ?? '').match(/80\s?%/g)).toHaveLength(1);
+  });
+
+  it('lists what reps can offer from the checkout forms, once each, in the store currency', async () => {
+    renderAt();
+    expect(await screen.findByText('Pair GH₵410')).toHaveClass('tag', 'n');
+    expect(screen.getAllByText('Single GH₵205')).toHaveLength(1);
+    expect(screen.getByText('Gift box GH₵35')).toHaveClass('tag', 'v');
+    expect(screen.queryByText(/Hidden/)).not.toBeInTheDocument();
+  });
+
+  it('shows an empty state when the store has no checkout form', async () => {
+    vi.mocked(checkoutFormsService.getCheckoutForms).mockResolvedValue([]);
+    renderAt();
+    expect(await screen.findByText(/No checkout form yet/)).toBeInTheDocument();
+  });
+
+  it('tells the owner when a save takes effect', async () => {
+    renderAt();
+    expect(await screen.findByText(/New tier amounts apply from the next month close\. A new commission or upsell share applies to orders delivered after you save\./)).toBeInTheDocument();
   });
 });
