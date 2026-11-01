@@ -92,7 +92,7 @@ export const readOnly = (catalog: PermissionGrid): PermissionGrid =>
 
 /** Same cells, whatever the order. */
 export const sameGrid = (a: PermissionGrid, b: PermissionGrid): boolean => {
-  const norm = (g: PermissionGrid) => JSON.stringify(Object.entries(g).filter(([, v]) => v.length).map(([r, v]) => [r, [...v].sort()]).sort(([x], [y]) => x.localeCompare(y)));
+  const norm = (g: PermissionGrid) => JSON.stringify(Object.entries(g).filter(([, v]) => v.length).sort(([x], [y]) => x.localeCompare(y)).map(([r, v]) => [r, [...v].sort()]));
   return norm(a) === norm(b);
 };
 
