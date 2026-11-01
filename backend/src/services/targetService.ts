@@ -9,7 +9,6 @@ import * as Money from '../utils/money';
 import { auditService } from './auditService';
 import { createNotification, findTenantAdmins } from './notificationService';
 import { holderSelect, holderView } from './roleService';
-import { HUMAN_USERS_WHERE } from './systemUserService';
 import { failedDeliveryCalls, FAILED_CALLS_METRIC } from './kpi/daily';
 import { DAY_MS, endOfDay, getStoreTimeZone, MONTH_RE, parseYmd, startOfDay, utcDate, utcDateOfYmd, ymdOfUtc } from './kpi/dates';
 
@@ -465,12 +464,12 @@ export async function roleView(roleId: number, month: string, target?: Target) {
   return { roleId, month, pool: pool && { metric: pool.metric, unit: pool.unit, total: pool.total, allocated: pool.allocated, pool: pool.pool }, holders };
 }
 
-/** Each current holder of a role with their target for the month, or "Set a target" when the owner has not set one. */
+/** Each current holder of a role (a person, an AI agent or a company) with their target for the month, or "Set a target" when the owner has not set one. */
 export async function roleHolderTargets(roleId: number, month: string) {
   const bounds = periodBounds('role', month);
   const [holders, targets] = await Promise.all([
     prisma.roleAssignment.findMany({
-      where: { roleId, toDate: null, holder: { ...HUMAN_USERS_WHERE } }, select: { holder: { select: holderSelect } },
+      where: { roleId, toDate: null }, select: { holder: { select: holderSelect } },
     }),
     prisma.target.findMany({ where: liveHolderTargets(roleId, bounds) }),
   ]);
@@ -478,7 +477,7 @@ export async function roleHolderTargets(roleId: number, month: string) {
   return holders.map(({ holder }) => {
     const mine = byUser.get(holder.id);
     return {
-      userId: holder.id, name: holderView(holder).name,
+      userId: holder.id, name: holderView(holder).name, kind: holder.kind, typeLabel: holderView(holder).typeLabel,
       target: mine ? { id: mine.id, metric: mine.metric, unit: mine.unit, value: money(mine.value) } : null,
       label: mine ? null : SET_A_TARGET,
     };
@@ -542,7 +541,7 @@ export async function dailyTargetProgress(metric: string, date: string, userId?:
   const source = DAILY_SOURCES[metric];
   const zone = getStoreTimeZone(tenantId);
   const actual = source ? await source(tenantId, startOfDay(date, zone), endOfDay(date, zone)) : null;
-  return { metric, date, target: target ? Number(target.value) : null, actual, message: source ? null : NO_DATA_FOR_METRIC };
+  return { metric, date, id: target?.id ?? null, unit: target?.unit ?? null, target: target ? Number(target.value) : null, actual, message: source ? null : NO_DATA_FOR_METRIC };
 }
 
 // ---- Month reads for rewards (M6-T09) -------------------------------------------------------------------------------

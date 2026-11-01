@@ -4,6 +4,8 @@ import { resolveTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
 import * as Money from '../utils/money';
 import { daysInMonth, getStoreTimeZone, localDate, MONTH_RE, parseYmd, utcDate, ymdOfUtc } from './kpi/dates';
+import { isOwnerRole } from '../config/defaultRoles';
+import { actualsOf } from './targetActuals';
 import { autoPlannedAov, plannedAovBounds, plannedAovWindow } from './kpi/leadership';
 import { topProductByDelivered } from './finance/profitService';
 import { deleteTarget, replanYear, roleView, saveTarget, saveTargets, type TargetInput } from './targetService';
@@ -174,7 +176,11 @@ const view = (t: Target) => ({
   parentId: t.parentId, closed: t.closedAt !== null,
 });
 
-/** The year's tree (revenue North Star, quarters, months). With `month` ('YYYY-MM'): the role targets of that month with their pool and holders. */
+/**
+ * The year's tree (North Star, quarters, months). For the revenue tree each node also carries `actuals`: delivered revenue, margin and
+ * status for a past or current period, nothing for a future one (F-1101). With `month` ('YYYY-MM'): every role (not the Owner) with
+ * its target for that month, pool and holders; a role with no holder reads as vacant on the page.
+ */
 export async function getTree(year: number, month?: string, metric = REVENUE_METRIC) {
   const monthStart = month === undefined ? null : monthParts(month);
   if (monthStart && monthStart[0] !== year) throw new AppError(`Invalid month "${month}" for ${year}`, 400, 'INVALID_PERIOD');
@@ -182,15 +188,23 @@ export async function getTree(year: number, month?: string, metric = REVENUE_MET
     where: { metric, roleId: null, userId: null, scope: { in: ['north_star', 'quarter', 'month'] }, periodStart: { gte: utcDate(year, 1), lte: utcDate(year, 12, 31) } },
     orderBy: [{ periodStart: 'asc' }, { createdAt: 'asc' }],
   });
-  const of = (scope: string) => rows.filter((r) => r.scope === scope).map(view);
-  const tree = { year, metric, northStar: of('north_star')[0] ?? null, quarters: of('quarter'), months: of('month'), roles: undefined as undefined | unknown[] };
+  const marginTarget = (await rateOf(DRIVER_METRICS.netMargin, year, DEFAULT_NET_MARGIN)).value;
+  const measured = metric === REVENUE_METRIC ? await actualsOf(rows, year, marginTarget) : null;
+  const node = (t: Target) => ({ ...view(t), ...(measured && { actuals: measured.actuals.get(t.id) }) });
+  const of = (scope: string) => rows.filter((r) => r.scope === scope).map(node);
+  const tree = {
+    year, metric, currency: measured?.currency ?? null, marginTarget, northStar: of('north_star')[0] ?? null, quarters: of('quarter'), months: of('month'),
+    roles: undefined as undefined | unknown[],
+  };
   if (month !== undefined && monthStart) {
-    // The role targets of the month, with names; the pool and holders of each role are read side by side.
-    const roleTargets = await prisma.target.findMany({ where: { scope: 'role', periodStart: utcDate(...monthStart) }, orderBy: { id: 'asc' } });
-    const names = new Map((await prisma.role.findMany({ where: { id: { in: roleTargets.map((t) => t.roleId!) } }, select: { id: true, name: true } })).map((r) => [r.id, r.name]));
-    tree.roles = await Promise.all(roleTargets.map(async (t) => ({
-      roleName: names.get(t.roleId!) ?? null, target: view(t), ...(await roleView(t.roleId!, month, t)),
-    })));
+    const [roles, roleTargets] = await Promise.all([
+      prisma.role.findMany({ select: { id: true, name: true, presetRole: true }, orderBy: { name: 'asc' } }),
+      prisma.target.findMany({ where: { scope: 'role', periodStart: utcDate(...monthStart) }, orderBy: { id: 'asc' } }),
+    ]);
+    tree.roles = await Promise.all(roles.filter((r) => !isOwnerRole(r)).map(async (r) => {
+      const target = roleTargets.find((t) => t.roleId === r.id);
+      return { roleName: r.name, target: target ? view(target) : null, ...(await roleView(r.id, month, target)) };
+    }));
   }
   return tree;
 }
