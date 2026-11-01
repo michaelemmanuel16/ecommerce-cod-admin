@@ -96,6 +96,7 @@ import roleRoutes from './routes/roleRoutes';
 import staffRoutes from './routes/staffRoutes';
 import targetRoutes from './routes/targetRoutes';
 import rewardRoutes from './routes/rewardRoutes';
+import periodCloseRoutes from './routes/periodCloseRoutes';
 import auditRoutes from './routes/auditRoutes';
 import navRoutes from './routes/navRoutes';
 import searchRoutes from './routes/searchRoutes';
@@ -120,6 +121,7 @@ import { setupFxRateCron } from './queues/fxRateQueue';
 import { setupFinancialReconciliationCron } from './queues/financialReconciliationQueue';
 import { setupLedgerCheckCron } from './queues/ledgerCheckQueue';
 import { setupStockCheckCron } from './queues/stockCheckQueue';
+import { setupPeriodCloseCron } from './queues/periodCloseQueue';
 import { setupMessageCleanupCron } from './queues/messageCleanupQueue';
 import { setupPendingCheckoutCleanupCron } from './queues/pendingCheckoutCleanupQueue';
 import * as Money from './utils/money';
@@ -312,6 +314,7 @@ app.use('/api/roles', apiLimiter, roleRoutes);
 app.use('/api/staff', apiLimiter, staffRoutes);
 app.use('/api/targets', apiLimiter, targetRoutes);
 app.use('/api/rewards', apiLimiter, rewardRoutes);
+app.use('/api/period-close', apiLimiter, periodCloseRoutes);
 app.use('/api/audit-log', apiLimiter, auditRoutes);
 app.use('/api/nav', apiLimiter, navRoutes);
 app.use('/api/search', apiLimiter, searchRoutes);
@@ -380,6 +383,9 @@ if (process.env.NODE_ENV !== 'test') {
 
     // Setup nightly product-total versus stock-levels check (M4-T17)
     await setupStockCheckCron();
+
+    // Setup month close: day 1 at 03:00 Accra, the month that ended (M6-T10)
+    await setupPeriodCloseCron();
 
     // Setup Message Log Cleanup Cron Job
     await setupMessageCleanupCron();

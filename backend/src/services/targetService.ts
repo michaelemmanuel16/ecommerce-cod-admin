@@ -549,12 +549,15 @@ export async function dailyTargetProgress(metric: string, date: string, userId?:
 
 /**
  * The live person targets of a month, oldest first: the `liveHolderTargets` rule (a target cut short by an unassign is
- * released and does not count), for every role or one `roleId`, every person or one `userId`.
+ * released and does not count, unless `includeReleased`), for every role or one `roleId`, every person or one `userId`.
  */
-export function monthPersonTargets(period: string, filter: { userId?: number; roleId?: number } = {}) {
+export function monthPersonTargets(period: string, filter: { userId?: number; roleId?: number; includeReleased?: boolean } = {}) {
+  const bounds = periodBounds('person', period);
   // liveHolderTargets names the role; the spread after it widens that to any role unless one is asked for.
+  // includeReleased (a past month, F-1110): every person target that covered part of the month, for the person who held it.
+  const month: Prisma.TargetWhereInput = filter.includeReleased ? { scope: 'person', periodStart: bounds.start } : liveHolderTargets(0, bounds);
   return prisma.target.findMany({
-    where: { ...liveHolderTargets(0, periodBounds('person', period)), roleId: filter.roleId ?? { not: null }, userId: filter.userId ?? { not: null } },
+    where: { ...month, roleId: filter.roleId ?? { not: null }, userId: filter.userId ?? { not: null } },
     orderBy: { id: 'asc' },
   });
 }
