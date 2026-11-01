@@ -1,6 +1,7 @@
 import { UserRole } from '@prisma/client';
 import { ALL_TOOL_NAMES, TOOL_PERMISSIONS } from './toolPermissions';
 import { PermissionGrid } from './defaultRolePermissions';
+import { roleToolList } from './defaultRoles';
 
 /**
  * M6-T04 (F-1153): the 16 tool switches of a role. `Role.tools` stores the keys of the switches that are on. Each switch is a
@@ -37,10 +38,14 @@ export const ROLE_TOOL_TOTAL = ROLE_TOOLS.length;
 const BY_KEY = new Map(ROLE_TOOLS.map((t) => [t.key, t]));
 export const isRoleTool = (key: string): boolean => BY_KEY.has(key);
 
-const grants = (grid: PermissionGrid, cell: string): boolean => {
+/** "orders:view" -> ["orders", "view"]. */
+export const splitCell = (cell: string): [string, string] => {
   const [resource, action] = cell.split(':');
-  return (grid[resource] ?? []).includes(action);
+  return [resource, action];
 };
+
+/** Does the grid give `action` on `resource`? */
+export const grants = (grid: PermissionGrid, resource: string, action: string): boolean => (grid[resource] ?? []).includes(action);
 
 /** The names of the read switches a set of switches lacks ("View orders"), in table order. */
 export function missingReadTools(keys: readonly string[]): string[] {
@@ -55,7 +60,7 @@ export function missingReadTools(keys: readonly string[]): string[] {
 
 /** The switches a grid turns on: those whose cells are all granted. */
 export const switchesOn = (grid: PermissionGrid): string[] =>
-  ROLE_TOOLS.filter((t) => t.cells.every((c) => grants(grid, c))).map((t) => t.key);
+  ROLE_TOOLS.filter((t) => t.cells.every((c) => grants(grid, ...splitCell(c)))).map((t) => t.key);
 
 /**
  * The grid after the switches become `keys`. A switch that was on and is now off loses its cells, except a cell another switch
@@ -64,18 +69,17 @@ export const switchesOn = (grid: PermissionGrid): string[] =>
 export function applySwitches(grid: PermissionGrid, keys: readonly string[]): PermissionGrid {
   const next: PermissionGrid = Object.fromEntries(Object.entries(grid).map(([r, a]) => [r, [...a]]));
   const wanted = new Set(keys);
-  const needed = new Set(ROLE_TOOLS.filter((t) => wanted.has(t.key)).flatMap((t) => t.cells));
+  const needed = new Map(ROLE_TOOLS.filter((t) => wanted.has(t.key)).flatMap((t) => t.cells).map((c) => [c, splitCell(c)] as const));
   const wasOn = new Set(switchesOn(grid));
   for (const tool of ROLE_TOOLS) {
     if (!wasOn.has(tool.key) || wanted.has(tool.key)) continue;
     for (const cell of tool.cells) {
       if (needed.has(cell)) continue;
-      const [resource, action] = cell.split(':');
+      const [resource, action] = splitCell(cell);
       next[resource] = (next[resource] ?? []).filter((a) => a !== action);
     }
   }
-  for (const cell of needed) {
-    const [resource, action] = cell.split(':');
+  for (const [resource, action] of needed.values()) {
     next[resource] ??= [];
     if (!next[resource].includes(action)) next[resource].push(action);
   }
@@ -107,13 +111,13 @@ export const hasOwnGrid = (role: { permissions: unknown }): boolean => isGrid(ro
 
 /** The registry tools (MCP) a grid allows: those whose cell in TOOL_PERMISSIONS the grid grants. */
 export const registryToolsForGrid = (grid: PermissionGrid): string[] =>
-  ALL_TOOL_NAMES.filter((t) => grants(grid, TOOL_PERMISSIONS[t]));
+  ALL_TOOL_NAMES.filter((t) => grants(grid, ...splitCell(TOOL_PERMISSIONS[t])));
 
 /**
  * The registry tools an MCP key of this role may call (F-1153). A system role (Legacy MCP) keeps its stored list of registry
  * names; every other role gets the tools its grid allows.
  */
 export function registryToolsOfRole(role: GridSource & { isSystem: boolean; tools: unknown }, matrix: Record<string, PermissionGrid>): string[] {
-  if (role.isSystem) return (Array.isArray(role.tools) ? role.tools : []).filter((t): t is string => typeof t === 'string' && t in TOOL_PERMISSIONS);
+  if (role.isSystem) return roleToolList(role.tools).filter((t) => t in TOOL_PERMISSIONS);
   return registryToolsForGrid(gridOfRole(role, matrix));
 }

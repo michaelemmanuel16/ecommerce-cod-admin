@@ -3,7 +3,7 @@ import prisma, { TransactionClient } from '../utils/prisma';
 import { withSoftDeleted } from '../utils/prismaExtensions';
 import { startOfUtcDay } from '../utils/startOfUtcDay';
 import logger from '../utils/logger';
-import { unionPermissions } from '../config/defaultRolePermissions';
+import { invalidateAccess } from './accessService';
 import { resolveTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
 import { ROLE_NAME_BY_USER_ROLE, defaultRoleRows } from '../config/defaultRoles';
@@ -78,12 +78,13 @@ export async function assignUsersToPositionRoles(tenantId: string, db: Db = pris
       result.assigned[u.role] = (result.assigned[u.role] ?? 0) + 1;
       if (id != null) rows.push({ tenantId, roleId: id, holderId: u.id, fromDate: startOfUtcDay(u.createdAt) });
     }
-    if (!dryRun && rows.length) await db.roleAssignment.createMany({ data: rows });
+    if (!dryRun && rows.length) {
+      await db.roleAssignment.createMany({ data: rows });
+      await invalidateAccess();
+    }
     return result;
   });
 }
-
-export { unionPermissions };
 
 /**
  * The id of the position role mapped from a UserRole (F-1155), or null when the tenant has not seeded its roles yet (a warning

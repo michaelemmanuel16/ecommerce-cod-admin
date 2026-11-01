@@ -2,8 +2,7 @@ import { createHash, randomBytes } from 'crypto';
 import { PrismaClient, UserKind } from '@prisma/client';
 import type { AccessFacts } from '../services/toolAccessService';
 import { registryToolsOfRole } from '../config/roleToolRules';
-import { getTenantMatrix } from '../middleware/auth';
-import { runInTenant } from '../utils/tenantContext';
+import { getTenantMatrix } from '../services/permissionService';
 import { MCP_CONFIG } from './config';
 
 /**
@@ -122,7 +121,7 @@ export async function validateKey(apiKey: string): Promise<McpPrincipal> {
     roleId: mcpKey.roleId,
     access: {
       baseRole: mcpKey.user.role,
-      roleTools: registryToolsOfRole(mcpKey.role, await runInTenant(mcpKey.tenantId, getTenantMatrix)),
+      roleTools: registryToolsOfRole(mcpKey.role, await getTenantMatrix(mcpKey.tenantId)),
     },
   };
   if (authCache.size >= AUTH_CACHE_MAX) authCache.delete(authCache.keys().next().value!);
@@ -139,10 +138,11 @@ export function evictKey(keyHash: string): void {
 }
 
 /**
- * Clear the auth cache (useful for testing).
+ * Clear the auth cache: one tenant's keys, or all of them when no tenant is given (tests, platform paths).
  */
-export function clearAuthCache(): void {
-  authCache.clear();
+export function clearAuthCache(tenantId?: string | null): void {
+  if (!tenantId) return authCache.clear();
+  for (const [hash, entry] of authCache) if (entry.principal.tenantId === tenantId) authCache.delete(hash);
 }
 
 /**

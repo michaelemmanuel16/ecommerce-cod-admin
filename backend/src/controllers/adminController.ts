@@ -55,22 +55,8 @@ export const getRolePermissions = async (req: AuthRequest, res: Response, next: 
 
 export const updateRolePermissions = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
+    // The save drops cached access and tells the holders' browsers (rolePermissionService.saveGrid)
     const saved = await adminService.updateRolePermissions(req.user!, req.body);
-
-    // Clear permissions cache
-    const { clearPermissionsCache } = await import('../middleware/auth');
-    clearPermissionsCache();
-
-    // Notify via socket
-    const { getSocketInstance } = await import('../utils/socketInstance');
-    const { emitPermissionsUpdated } = await import('../sockets');
-    const io = getSocketInstance();
-
-    if (io) {
-      const updatedRoles = Object.keys(req.body);
-      emitPermissionsUpdated(io, updatedRoles);
-    }
-
     res.json(saved);
   } catch (error) {
     next(error);

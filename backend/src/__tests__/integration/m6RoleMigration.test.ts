@@ -9,7 +9,7 @@ import { UserRole } from '@prisma/client';
 import { prismaBase } from '../../utils/prisma';
 import { clearPermissionsCache, getEffectivePermissions } from '../../middleware/auth';
 import { runInTenant } from '../../utils/tenantContext';
-import { unionPermissions } from '../../services/systemRoleService';
+import { unionPermissions } from '../../config/defaultRolePermissions';
 import { deleteRole } from '../../services/roleService';
 import { DEFAULT_ROLES, ROLE_NAME_BY_USER_ROLE } from '../../config/defaultRoles';
 import { createTenant, deleteTenantRows, mkUser } from './helpers/twoTenants';

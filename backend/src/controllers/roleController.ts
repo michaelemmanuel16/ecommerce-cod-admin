@@ -1,33 +1,11 @@
-import { NextFunction, RequestHandler, Response } from 'express';
-import { z } from 'zod';
-import { AuthRequest } from '../types';
-import { AppError } from '../middleware/errorHandler';
 import { auditService } from '../services/auditService';
 import * as roleService from '../services/roleService';
 import * as assignmentService from '../services/roleAssignmentService';
 import * as permissionService from '../services/rolePermissionService';
-import { clearPermissionsCache } from '../middleware/auth';
 import { resolveTenantId } from '../utils/tenantContext';
-import { formatIssues } from '../tools/shared';
+import { AuthRequest } from '../types';
+import { actorOf, handler, idParam, parse } from './helpers';
 import { assignSchema, createRoleSchema, setPermissionsSchema, setToolsSchema, updateRoleSchema } from '../validators/roleSchema';
-
-/** An async handler whose errors go to the error middleware. */
-const handler = (fn: (req: AuthRequest, res: Response) => Promise<void>): RequestHandler =>
-  (req, res, next: NextFunction) => { fn(req as AuthRequest, res).catch(next); };
-
-const idParam = (raw: string, what = 'role'): number => {
-  const id = parseInt(raw, 10);
-  if (!Number.isInteger(id) || id <= 0) throw new AppError(`Invalid ${what} ID`, 400);
-  return id;
-};
-
-const parse = <T extends z.ZodTypeAny>(schema: T, body: unknown): z.infer<T> => {
-  const parsed = schema.safeParse(body);
-  if (!parsed.success) throw new AppError(formatIssues(parsed.error, 'body'), 400, 'VALIDATION_ERROR');
-  return parsed.data;
-};
-
-const actorOf = (req: AuthRequest) => ({ id: req.user!.id, role: req.user!.role });
 
 /** Every role change writes an audit row. */
 const audit = (req: AuthRequest, action: string, roleId: number, metadata: Record<string, unknown> = {}) =>
@@ -57,27 +35,15 @@ export const update = handler(async (req, res) => {
   const id = idParam(req.params.id);
   const input = parse(updateRoleSchema, req.body);
   const role = await roleService.updateRole(actorOf(req), id, input);
-  clearPermissionsCache(); // the base role decides the grid of a role that has none of its own
   await audit(req, 'role_update', id, { fields: Object.keys(input) });
   res.json({ role });
 });
-
-/** A role's grid changed: drop the cached permissions and tell the browsers of its holders, so access changes at once. */
-async function permissionsChanged(roleId: number): Promise<void> {
-  clearPermissionsCache();
-  const { getSocketInstance } = await import('../utils/socketInstance');
-  const { emitPermissionsUpdated } = await import('../sockets');
-  const io = getSocketInstance();
-  if (io) emitPermissionsUpdated(io, await permissionService.holderBaseRoles(roleId));
-}
 
 /** PUT /api/roles/:id/tools: `{tools: [...]}` replaces the switches. A write tool without its read tool is 400 ("Needs View orders"). */
 export const setTools = handler(async (req, res) => {
   const id = idParam(req.params.id);
   const { tools } = parse(setToolsSchema, req.body);
-  const before = (await roleService.getRole(id)).tools;
-  const role = await permissionService.setRoleTools(actorOf(req), id, tools);
-  await permissionsChanged(id);
+  const { role, before } = await permissionService.setRoleTools(actorOf(req), id, tools);
   await audit(req, 'role_tools_update', id, { before, after: role.tools });
   res.json({ role });
 });
@@ -92,7 +58,6 @@ export const setPermissions = handler(async (req, res) => {
   const id = idParam(req.params.id);
   const { permissions } = parse(setPermissionsSchema, req.body);
   const { before, after } = await permissionService.setRolePermissions(actorOf(req), id, permissions);
-  await permissionsChanged(id);
   await audit(req, 'role_permissions_update', id, { before, after });
   res.json({ permissions: after });
 });
@@ -114,7 +79,6 @@ export const assign = handler(async (req, res) => {
   const id = idParam(req.params.id);
   const input = parse(assignSchema, req.body);
   const result = await assignmentService.assignToRole(actorOf(req), id, input);
-  clearPermissionsCache();
   const apiKey = 'apiKey' in result ? result.apiKey : undefined;
   await audit(req, 'role_assign', id, {
     type: input.type, holderId: result.holder.id, assignmentId: result.assignment.id,
@@ -129,7 +93,6 @@ export const unassign = handler(async (req, res) => {
   const id = idParam(req.params.id);
   const assignmentId = idParam(req.params.assignmentId, 'assignment');
   const result = await assignmentService.unassign(actorOf(req), id, assignmentId);
-  clearPermissionsCache();
   await audit(req, 'role_unassign', id, { assignmentId, holderId: result.assignment.holderId, revokedKeys: result.revokedKeys });
   res.json(result);
 });

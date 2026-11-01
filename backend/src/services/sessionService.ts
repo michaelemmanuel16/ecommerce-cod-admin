@@ -6,7 +6,7 @@ import { deviceLabel } from '../utils/deviceLabel';
 import { AppError } from '../middleware/errorHandler';
 import { runInTenantOf } from '../utils/tenantContext';
 import * as Money from '../utils/money';
-import { getUserPermissions } from '../middleware/auth';
+import { getUserPermissions } from './permissionService';
 import type { User } from '@prisma/client';
 
 /**

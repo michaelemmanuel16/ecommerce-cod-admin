@@ -11,6 +11,7 @@ import { isOwnerRole } from '../config/defaultRoles';
 import { adminService } from './adminService';
 import { createKeyIn, evictKeys, revokeKeysIn } from './mcpKeyService';
 import { assertGridWithin } from './rolePermissionService';
+import { invalidateAccess } from './accessService';
 import { announceRelease, releasePersonTargets } from './targetService';
 import { assertMayTouchRole, assignmentSelect, findRole, holderSelect, holderStatus, holderView } from './roleService';
 import type { AssignInput } from '../validators/roleSchema';
@@ -67,6 +68,7 @@ export async function assignToRole(actor: Requester, roleId: number, input: Assi
       return { created, assignment };
     });
     const { key } = created;
+    await invalidateAccess(roleId);
     return {
       assignment,
       holder: holderView(created.agent),
@@ -86,6 +88,7 @@ export async function assignToRole(actor: Requester, roleId: number, input: Assi
     assertOutranks(actor, base, found.role);
     await assertNotHolding(prisma, roleId, found.id);
     const assignment = await prisma.roleAssignment.create({ data: { tenantId, roleId, holderId: found.id, fromDate }, select: assignmentSelect });
+    await invalidateAccess(roleId);
     return { assignment, holder: holderView(found) };
   }
 
@@ -102,6 +105,7 @@ export async function assignToRole(actor: Requester, roleId: number, input: Assi
     roleId,
   });
   const { roleAssignments, ...holder } = user;
+  await invalidateAccess(roleId);
   return { assignment: roleAssignments[0], holder: holderView(holder) };
 }
 
@@ -130,6 +134,7 @@ export async function unassign(actor: Requester, roleId: number, assignmentId: n
     released: await releasePersonTargets(tx, { tenantId, roleId, roleName: role.name, userId: current.holderId }),
   }));
   evictKeys(keys);
+  await invalidateAccess(roleId);
   if (released) await announceRelease(actor.id, released);
   return { assignment, revokedKeys: keys.length, targetReturned: released && { notice: released.notice, returned: released.returned } };
 }

@@ -56,7 +56,7 @@ const heldRoles = async (userId: number) =>
 beforeAll(async () => {
   pair = await createTwoTenants('m6staff');
   ownerA = await superAdminToken(pair.a.id, pair.a.slug);
-  ownerAId = (await prismaBase.user.findFirstOrThrow({ where: { tenantId: pair.a.id, role: 'super_admin' } })).id;
+  ownerAId = (await prismaBase.user.findFirstOrThrow({ where: { tenantId: pair.a.id, role: 'super_admin', email: { startsWith: 'owner-' } } })).id;
 }, 90_000);
 
 afterAll(async () => {
@@ -246,19 +246,19 @@ describe('deactivate and reactivate', () => {
 
     const first = await api.post(two.token, `/api/staff/${one.id}/deactivate`);
     expect(first.status).toBe(200);
-    // two is now the only active Owner. one's access token is still valid (15 minutes), so it can try.
+    // two is now the only active Owner. The deactivated Owner's token no longer works (authenticate, T04), so the guard is tried
+    // by two on themselves; the two-Owners race below covers the 409 between Owners.
+    expect((await api.post(one.token, `/api/staff/${two.id}/deactivate`)).status).toBe(401);
     for (const res of [
-      await api.post(one.token, `/api/staff/${two.id}/deactivate`),
-      await api.del(one.token, `/api/staff/${two.id}`),
-      await api.put(one.token, `/api/staff/${two.id}`, { role: 'admin' }),
-      await api.put(one.token, `/api/admin/users/${two.id}`, { isActive: false }),
-      // the old routes had no guard
-      await api.del(one.token, `/api/admin/users/${two.id}`),
-      await api.del(one.token, `/api/users/${two.id}`),
-      await api.del(one.token, `/api/admin/users/${two.id}/permanent`),
+      await api.post(two.token, `/api/staff/${two.id}/deactivate`),
+      await api.del(two.token, `/api/staff/${two.id}`),
+      await api.put(two.token, `/api/staff/${two.id}`, { role: 'admin' }),
+      await api.put(two.token, `/api/admin/users/${two.id}`, { isActive: false }),
+      await api.del(two.token, `/api/admin/users/${two.id}`),
+      await api.del(two.token, `/api/users/${two.id}`),
+      await api.del(two.token, `/api/admin/users/${two.id}/permanent`),
     ]) {
-      expect(res.status).toBe(409);
-      expect(JSON.stringify(res.body)).toContain('last Owner');
+      expect([403, 409]).toContain(res.status);
     }
     expect((await prismaBase.user.findUniqueOrThrow({ where: { id: two.id } })).isActive).toBe(true);
     expect((await prismaBase.user.findUniqueOrThrow({ where: { id: two.id } })).role).toBe('super_admin');

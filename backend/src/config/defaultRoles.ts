@@ -1,6 +1,5 @@
 import { UserRole } from '@prisma/client';
 import { ALL_TOOL_NAMES, ToolName } from './toolPermissions';
-import { switchesOn } from './roleToolRules';
 import { PermissionGrid, mergeRolePermissions } from './defaultRolePermissions';
 
 /** M2-T02: the roles every tenant starts with. M6 extends the shape (F-1150). */
@@ -68,6 +67,10 @@ export const ROLE_NAME_BY_USER_ROLE = Object.fromEntries(
 ) as Record<UserRole, string>;
 
 /** The Owner role is the one built from `super_admin`. It can never be deleted (F-1150). */
+/** A role seeded for a UserRole (Owner, Admin, Manager, Call rep, ...): its name is the mapped name of its base role. Marketing is not one. */
+export const isPositionRole = (role: { name: string; presetRole: UserRole | null }): boolean =>
+  role.presetRole !== null && ROLE_NAME_BY_USER_ROLE[role.presetRole] === role.name;
+
 export const isOwnerRole = (role: { presetRole: UserRole | null }): boolean => role.presetRole === 'super_admin';
 
 /**
@@ -78,7 +81,7 @@ export function defaultRoleRows(stored: unknown) {
   const grids = mergeRolePermissions(stored);
   return DEFAULT_ROLES.map((r) => {
     const permissions = r.permissions ?? (r.presetRole ? grids[r.presetRole] : undefined);
-    // The switches that are on follow the grid (M6-T04); the system role keeps its list of registry tool names.
-    return { ...r, kpis: [], permissions, tools: r.tools ?? switchesOn(permissions ?? {}) };
+    // Only the system role stores `tools` (registry tool names); the switches of every other role are read from its grid (M6-T04).
+    return { ...r, kpis: [], permissions };
   });
 }

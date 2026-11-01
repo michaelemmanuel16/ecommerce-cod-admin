@@ -3,11 +3,11 @@ import { z } from 'zod';
 import prisma from '../utils/prisma';
 import { authenticate, requireSuperAdmin } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
-import { getTenantId } from '../utils/tenantContext';
 import { auditService } from '../services/auditService';
 import { buildMcpConfig, createKey, revokeKey } from '../services/mcpKeyService';
 import { registryToolsOfRole } from '../config/roleToolRules';
-import { getTenantMatrix } from '../middleware/auth';
+import { getTenantMatrix } from '../services/permissionService';
+import { getTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
 
 const router = Router();
@@ -53,7 +53,7 @@ router.get('/', async (_req: Request, res: Response) => {
       orderBy: { createdAt: 'desc' },
     });
 
-    const matrix = await getTenantMatrix();
+    const matrix = await getTenantMatrix(getTenantId() ?? null);
     res.json({
       keys: keys.map(({ role, ...key }) => ({
         ...key,

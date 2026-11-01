@@ -2,98 +2,14 @@ import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../types';
 import { verifyAccessToken } from '../utils/jwt';
 import { UserRole } from '@prisma/client';
-import prisma from '../utils/prisma';
 import logger from '../utils/logger';
-import { enterTenant, getTenantId, withoutTenant } from '../utils/tenantContext';
+import { enterTenant, withoutTenant } from '../utils/tenantContext';
 import { isPlatformAdmin } from '../utils/platformAdmin';
 import { canSeeCost } from '../utils/costAccess';
-import { ROLE_NAME_BY_USER_ROLE } from '../config/defaultRoles';
-import { gridOfRole, hasOwnGrid } from '../config/roleToolRules';
-import { PermissionGrid, defaultRolePermissions, mergeRolePermissions, unionPermissions } from '../config/defaultRolePermissions';
+import { getUserPermissions, hasPermission, isUserActive } from '../services/permissionService';
 
-// Per-tenant cache for role permissions to avoid database hits on every request.
-// Keyed by tenantId to prevent cross-tenant permission leakage.
-const permissionsCache = new Map<string, { data: any; timestamp: number }>();
-const CACHE_TTL = 60000; // 1 minute
-
-// M6-T04: the grids of the roles a person holds now, per tenant and user, cached for the same minute.
-const heldGridsCache = new Map<string, { data: PermissionGrid[]; timestamp: number }>();
-
-async function getPermissionsFromDatabase() {
-  const now = Date.now();
-  const tenantId = getTenantId() || '__global__';
-
-  const cached = permissionsCache.get(tenantId);
-  if (cached && (now - cached.timestamp) < CACHE_TTL) {
-    return cached.data;
-  }
-
-  let permissions: any;
-  try {
-    // The tenant's own row only (SystemConfig.tenantId is unique). No tenant reads the tenantId-null row.
-    const config = await prisma.systemConfig.findFirst({ where: { tenantId: getTenantId() ?? null } });
-
-    if (!config || !config.rolePermissions) {
-      logger.info('[auth.getPermissionsFromDatabase] No config or rolePermissions found, using defaults');
-      permissions = defaultRolePermissions();
-    } else {
-      logger.info('[auth.getPermissionsFromDatabase] Loaded permissions from database, merging with defaults');
-      // Merge stored permissions with defaults so new resources (e.g. calls, gl)
-      // are available even if the tenant saved permissions before those resources existed.
-      permissions = mergeRolePermissions(config.rolePermissions);
-    }
-  } catch (error) {
-    logger.error('[auth.getPermissionsFromDatabase] Error fetching from database, using defaults:', error);
-    permissions = defaultRolePermissions();
-  }
-
-  // M6-T04: the grid of the position role mapped from a UserRole is the one store; the saved matrix and the defaults only fill a role
-  // that has no grid yet. So a user with no role of their own (an AI agent, the system user) follows the same grid as the people with one.
-  try {
-    if (getTenantId()) {
-      const mapped = await prisma.role.findMany({
-        where: { presetRole: { not: null }, name: { in: Object.values(ROLE_NAME_BY_USER_ROLE) } },
-        select: { name: true, presetRole: true, permissions: true },
-      });
-      for (const r of mapped) {
-        if (r.presetRole && ROLE_NAME_BY_USER_ROLE[r.presetRole] === r.name && r.permissions && typeof r.permissions === 'object' && !Array.isArray(r.permissions)) {
-          permissions[r.presetRole] = r.permissions;
-        }
-      }
-    }
-  } catch (error) {
-    logger.error('[auth.getPermissionsFromDatabase] Error reading role grids, using the saved matrix:', error);
-  }
-
-  permissionsCache.set(tenantId, { data: permissions, timestamp: now });
-
-  // Evict stale entries to prevent unbounded growth
-  if (permissionsCache.size > 100) {
-    for (const [key, entry] of permissionsCache) {
-      if (now - entry.timestamp > CACHE_TTL) permissionsCache.delete(key);
-    }
-  }
-
-  return permissions;
-}
-
-/**
- * One read per request: is the user still active (not deactivated, not soft-deleted)? The default user filter hides an inactive
- * row, so no row means no. The same read brings the roles the user holds, which fill the permission cache the checks use next.
- * Call inside the tenant context.
- */
-async function isUserActive(tenantId: string, userId: number): Promise<boolean> {
-  const [user, matrix] = await Promise.all([
-    prisma.user.findFirst({
-      where: { id: userId, isActive: true },
-      select: { roleAssignments: { where: { toDate: null }, select: heldAssignmentSelect } },
-    }),
-    getPermissionsFromDatabase(),
-  ]);
-  if (!user) return false;
-  cacheHeldGrids(tenantId, userId, gridsOf(user.roleAssignments, matrix));
-  return true;
-}
+// The permission checks live in permissionService; the middleware keeps the names callers already import.
+export { clearPermissionsCache, getEffectivePermissions, getUserPermissions, hasPermission } from '../services/permissionService';
 
 export const authenticate = (req: AuthRequest, res: Response, next: NextFunction): void => {
   try {
@@ -219,72 +135,6 @@ export const requirePermission = (allowedRoles: UserRole[]) => {
  * matrix for its base role. A role with neither (the Legacy MCP role) gives nothing. Empty when the user holds no role that
  * gives a grid, or the lookup cannot run (no tenant context).
  */
-const heldAssignmentSelect = { role: { select: { permissions: true, presetRole: true } } } as const;
-type HeldAssignment = { role: { permissions: unknown; presetRole: UserRole | null } };
-
-/** The grid of each held role, by the one rule (gridOfRole). A role with no grid and no base role (the Legacy role) gives none. */
-function gridsOf(assignments: HeldAssignment[], matrix: Record<string, PermissionGrid>): PermissionGrid[] {
-  return assignments.filter(({ role }) => hasOwnGrid(role) || role.presetRole).map(({ role }) => gridOfRole(role, matrix));
-}
-
-/** The tenant's matrix per base role (saved matrix over defaults, position-role grids over both). Call inside the tenant context. */
-export const getTenantMatrix = (): Promise<Record<string, PermissionGrid>> => getPermissionsFromDatabase();
-
-function cacheHeldGrids(tenantId: string, userId: number, grids: PermissionGrid[]): void {
-  const now = Date.now();
-  heldGridsCache.set(`${tenantId}:${userId}`, { data: grids, timestamp: now });
-  if (heldGridsCache.size > 5000) {
-    for (const [k, entry] of heldGridsCache) if (now - entry.timestamp > CACHE_TTL) heldGridsCache.delete(k);
-  }
-}
-
-async function heldRoleGrids(userId: number): Promise<PermissionGrid[]> {
-  const tenantId = getTenantId();
-  if (!tenantId) return [];
-  const cached = heldGridsCache.get(`${tenantId}:${userId}`);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) return cached.data;
-
-  const [assignments, matrix] = await Promise.all([
-    prisma.roleAssignment.findMany({ where: { holderId: userId, toDate: null }, select: heldAssignmentSelect }),
-    getPermissionsFromDatabase(),
-  ]);
-  const grids = gridsOf(assignments, matrix);
-  cacheHeldGrids(tenantId, userId, grids);
-  return grids;
-}
-
-/**
- * What a user may do (M6-T04, F-1155): the union of the grids of the roles they hold. A user with no such role (an AI agent
- * on a key, the system user, a caller that passes only a base role) gets the matrix of their base role, as before.
- */
-export async function getUserPermissions(user: { id?: number; role: UserRole | string }): Promise<Record<string, string[]>> {
-  if (user.id !== undefined) {
-    const grids = await heldRoleGrids(user.id);
-    if (grids.length) return unionPermissions(grids);
-  }
-  return getEffectivePermissions(user.role);
-}
-
-/**
- * Permission check used by requireResourcePermission and the services:
- * super_admin always passes, other users need the action in the union of the roles they hold (else their base role's matrix).
- */
-export async function hasPermission(
-  user: { id?: number; role: UserRole | string },
-  resource: string,
-  action: string
-): Promise<boolean> {
-  if (user.role === 'super_admin') return true;
-  const list = (await getUserPermissions(user))[resource];
-  return Array.isArray(list) && list.includes(action);
-}
-
-/** The role's permissions as the checks above see them: the tenant's saved matrix merged over the defaults. */
-export async function getEffectivePermissions(role: UserRole | string): Promise<Record<string, string[]>> {
-  const permissions = await getPermissionsFromDatabase();
-  return permissions[role] ?? {};
-}
-
 // Resource-action permission middleware (SystemConfig.rolePermissions). Several actions mean "any of them".
 export const requireResourcePermission = (resource: string, ...actions: string[]) => {
   return async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
@@ -402,12 +252,6 @@ export const requireEitherPermission = (checks: Array<{ resource: string, action
       res.status(500).json({ error: 'Failed to check permissions' });
     }
   };
-};
-
-// Helper to clear permissions cache (call after updating permissions)
-export const clearPermissionsCache = (): void => {
-  permissionsCache.clear();
-  heldGridsCache.clear();
 };
 
 export const requireSuperAdmin = (req: AuthRequest, res: Response, next: NextFunction): void => {

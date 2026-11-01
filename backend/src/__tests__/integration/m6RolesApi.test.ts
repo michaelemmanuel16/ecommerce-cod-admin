@@ -3,8 +3,7 @@
  * (person, AI agent with a role-limited MCP key, company), unassign with history, two tenants, and the position role
  * every new staff user gets.
  */
-import { getTenantMatrix } from '../../middleware/auth';
-import { runInTenant } from '../../utils/tenantContext';
+import { getTenantMatrix } from '../../services/permissionService';
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from '@jest/globals';
 import '../mocks/logger.mock';
 import '../mocks/socketInstance.mock';
@@ -14,8 +13,8 @@ import { prismaBase } from '../../utils/prisma';
 import { bearer, superAdminToken } from './helpers/superAdminToken';
 import { createTwoTenants, deleteTenantRows, TwoTenants } from './helpers/twoTenants';
 import { clearAuthCache, validateKey, disconnectPrisma } from '../../mcp/auth';
-import { ROLE_TOOL_TOTAL, registryToolsOfRole } from '../../config/roleToolRules';
-import { DEFAULT_ROLES, roleToolList } from '../../config/defaultRoles';
+import { ROLE_TOOL_TOTAL, gridOfRole, registryToolsOfRole, switchesOn } from '../../config/roleToolRules';
+import { DEFAULT_ROLES } from '../../config/defaultRoles';
 import { startOfUtcDay } from '../../utils/startOfUtcDay';
 
 jest.setTimeout(90_000);
@@ -136,7 +135,9 @@ describe('POST /api/roles (F-1156)', () => {
     const callRep = await roleOf(A(), 'Call rep');
     const res = await api.post(ownerA, '/api/roles', { name: uniq('Rep copy'), copyToolsFromRoleId: callRep.id });
     expect(res.status).toBe(201);
-    expect(res.body.role.tools).toEqual(roleToolList(callRep.tools));
+    // the switches are read from the grid; a non-system role stores no `tools`
+    expect(res.body.role.tools).toEqual(switchesOn(gridOfRole(callRep, await getTenantMatrix(A()))));
+    expect((await roleOf(A(), res.body.role.name)).tools).toBeNull();
     expect(res.body.role.toolCount).toBe(7);
     const foreign = await api.post(ownerA, '/api/roles', { name: uniq('Foreign copy'), copyToolsFromRoleId: pair.b.ids.legacyRole });
     expect(foreign.status).toBe(400);
@@ -265,7 +266,7 @@ describe('assign a person (F-1152)', () => {
 describe('assign an AI agent (F-1152)', () => {
   it('makes an ai_agent user, an assignment and a key whose tools are exactly the role tools; the key is shown once', async () => {
     const role = await roleOf(A(), 'Call rep');
-    const matrix = await runInTenant(A(), getTenantMatrix);
+    const matrix = await getTenantMatrix(A());
     const res = await assign(role.id, { type: 'ai_agent', name: 'Claude Desktop' });
     expect(res.status).toBe(201);
     const { key } = res.body.apiKey;

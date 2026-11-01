@@ -1,6 +1,6 @@
 import { UserRole } from '@prisma/client';
 import prisma from '../utils/prisma';
-import { getUserPermissions } from '../middleware/auth';
+import { getUserPermissions } from './permissionService';
 import { ROLE_NAME_BY_USER_ROLE } from '../config/defaultRoles';
 import { startOfUtcDay } from '../utils/startOfUtcDay';
 import { orderScope, Requester } from '../utils/authUtils';

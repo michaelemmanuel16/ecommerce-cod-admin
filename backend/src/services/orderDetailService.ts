@@ -1,7 +1,7 @@
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { Requester } from '../utils/authUtils';
-import { hasPermission } from '../middleware/auth';
+import { hasPermission } from './permissionService';
 import * as Money from '../utils/money';
 import { formatOrderNumber } from '../utils/orderNumber';
 import { withSoftDeleted } from '../utils/prismaExtensions';

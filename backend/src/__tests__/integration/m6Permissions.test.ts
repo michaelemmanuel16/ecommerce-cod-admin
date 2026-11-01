@@ -69,7 +69,7 @@ describe('PUT /api/roles/:id/tools', () => {
     const res = await api.put(ownerA, `/api/roles/${role.id}/tools`, { tools: ['update_order_status'] });
     expect(res.status).toBe(400);
     expect(message(res)).toBe('Needs View orders');
-    expect((await prismaBase.role.findUniqueOrThrow({ where: { id: role.id } })).tools).toEqual([]);
+    expect((await prismaBase.role.findUniqueOrThrow({ where: { id: role.id } })).permissions).toEqual({});
   });
 
   it('turning switches on writes their cells into the grid, in one save, with an audit row', async () => {
@@ -78,7 +78,7 @@ describe('PUT /api/roles/:id/tools', () => {
     expect(ok.status).toBe(200);
     expect(ok.body.role).toMatchObject({ tools: ['view_orders', 'update_order_status'], toolCount: 2, toolTotal: 16, custom: false });
     const row = await prismaBase.role.findUniqueOrThrow({ where: { id: role.id } });
-    expect(row.tools).toEqual(['view_orders', 'update_order_status']);
+    expect(row.tools).toBeNull(); // not stored: the switches are read from the grid
     expect(row.permissions).toMatchObject({ orders: expect.arrayContaining(['view', 'update', 'update_status']) });
     const grid = (await api.get(ownerA, `/api/roles/${role.id}/permissions`)).body.permissions;
     expect(grid.orders.sort()).toEqual(['update', 'update_status', 'view']);
@@ -385,7 +385,6 @@ describe('switch writes share the grid guard and clear access at once', () => {
     expect(blocked.status).toBe(409);
     expect(blocked.body.code).toBe('LAST_USER_MANAGER');
     const row = await prismaBase.role.findUniqueOrThrow({ where: { id: role.id } });
-    expect(row.tools).toEqual(['manage_team']);
     expect((row.permissions as any).users.sort()).toEqual(['create', 'update']);
   });
 
@@ -422,6 +421,34 @@ describe('one grid fallback for the checks and the middleware', () => {
     expect(denied.status).toBe(403);
     expect(denied.body.code).toBe('GRID_ABOVE_ACTOR');
     expect((await api.get(owner.token, `/api/roles/${role.id}/permissions`)).body.permissions.financial).toEqual(['view', 'update']);
+  });
+});
+
+describe('one access invalidation (A1)', () => {
+  it('assigning a role to a signed-in user shows the new cell at once; unassigning removes it at once', async () => {
+    const role = await newRole(ownerA);
+    await setGrid(ownerA, role.id, { users: ['view'] });
+    const person = await mkUser(pair.a.id, 'invalidate', 'manager');
+    // warm the person's cache: no users:view yet
+    expect((await api.get(person.token, '/api/roles/overview')).status).toBe(403);
+    const given = await assignExisting(ownerA, role.id, person.id);
+    expect(given.status).toBe(201);
+    expect((await api.get(person.token, '/api/roles/overview')).status).toBe(200);
+    expect((await api.del(ownerA, `/api/roles/${role.id}/assignments/${given.body.assignment.id}`)).status).toBe(200);
+    expect((await api.get(person.token, '/api/roles/overview')).status).toBe(403);
+  });
+
+  it('a change in one tenant leaves the cached access of another tenant alone', async () => {
+    const before = await meOf(pair.b.users.salesRep.token); // warms tenant B
+    const role = await newRole(ownerA);
+    await setGrid(ownerA, role.id, { orders: ['view'] }); // invalidates tenant A only
+    const cached = await prismaBase.role.findFirstOrThrow({ where: { tenantId: pair.b.id, name: 'Call rep' } });
+    // change B's grid straight in the database: B still answers from its cache, so A's invalidation did not touch it
+    await prismaBase.role.update({ where: { id: cached.id }, data: { permissions: { orders: ['delete'] } } });
+    expect(await meOf(pair.b.users.salesRep.token)).toEqual(before);
+    clearPermissionsCache();
+    await prismaBase.role.update({ where: { id: cached.id }, data: { permissions: before } });
+    clearPermissionsCache();
   });
 });
 
