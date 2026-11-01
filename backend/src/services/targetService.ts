@@ -1,5 +1,5 @@
 import { Prisma, Target, TargetScope } from '@prisma/client';
-import prisma, { prismaBase } from '../utils/prisma';
+import prisma, { prismaBase, type TransactionClient } from '../utils/prisma';
 import { resolveTenantId } from '../utils/tenantContext';
 import { startOfUtcDay } from '../utils/startOfUtcDay';
 import { fullName } from '../utils/nameUtils';
@@ -11,7 +11,7 @@ import { createNotification, findTenantAdmins } from './notificationService';
 import { holderSelect, holderView } from './roleService';
 import { HUMAN_USERS_WHERE } from './systemUserService';
 import { failedDeliveryCalls, FAILED_CALLS_METRIC } from './kpi/daily';
-import { DAY_MS, endOfDay, getStoreTimeZone, MONTH_RE, parseYmd, startOfDay, utcDate, utcDateOfYmd, ymdOfUtc } from './kpi/dates';
+import { DAY_MS, currentMonth, endOfDay, getStoreTimeZone, MONTH_RE, parseYmd, startOfDay, utcDate, utcDateOfYmd, ymdOfUtc } from './kpi/dates';
 
 /**
  * M6-T07 (F-1100, F-1103): the target tree on the one `Target` table.
@@ -549,12 +549,15 @@ export async function dailyTargetProgress(metric: string, date: string, userId?:
 
 /**
  * The live person targets of a month, oldest first: the `liveHolderTargets` rule (a target cut short by an unassign is
- * released and does not count), for every role or one `roleId`, every person or one `userId`.
+ * released and does not count) for the current month; a past month includes the released ones, for every role or one `roleId`, every person or one `userId`.
  */
 export function monthPersonTargets(period: string, filter: { userId?: number; roleId?: number } = {}) {
+  const bounds = periodBounds('person', period);
   // liveHolderTargets names the role; the spread after it widens that to any role unless one is asked for.
+  // A past month (F-1110) judges every person target that covered part of the month, for the person who held it.
+  const month: Prisma.TargetWhereInput = period < currentMonth() ? { scope: 'person', periodStart: bounds.start } : liveHolderTargets(0, bounds);
   return prisma.target.findMany({
-    where: { ...liveHolderTargets(0, periodBounds('person', period)), roleId: filter.roleId ?? { not: null }, userId: filter.userId ?? { not: null } },
+    where: { ...month, roleId: filter.roleId ?? { not: null }, userId: filter.userId ?? { not: null } },
     orderBy: { id: 'asc' },
   });
 }
@@ -565,7 +568,7 @@ export function monthRoleTargets(period: string) {
 }
 
 /** True when the month is closed: a month target that touches it has `closedAt` (the `closedMonths` rule, read without a lock). */
-export async function isMonthClosed(period: string): Promise<boolean> {
+export async function isMonthClosed(period: string, db: Pick<TransactionClient, 'target'> = prisma): Promise<boolean> {
   const { start, end } = periodBounds('month', period);
-  return (await prisma.target.count({ where: { scope: 'month', periodStart: { lte: end }, periodEnd: { gte: start }, closedAt: { not: null } } })) > 0;
+  return (await db.target.count({ where: { scope: 'month', periodStart: { lte: end }, periodEnd: { gte: start }, closedAt: { not: null } } })) > 0;
 }
