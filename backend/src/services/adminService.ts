@@ -25,6 +25,7 @@ import { eraseUser } from './staffService';
 import { updateUserSchema } from '../validators/staffSchema';
 import { formatIssues } from '../tools/shared';
 import { saveMatrix } from './rolePermissionService';
+import { invalidateAccess } from './accessService';
 import { getTenantMatrix } from './permissionService';
 import { ROLE_NAME_BY_USER_ROLE } from '../config/defaultRoles';
 import { assignmentSelect } from './roleService';
@@ -625,6 +626,9 @@ export const adminService = {
     } catch (error) {
       throw emailConflictOf(error) ?? error;
     }
+
+    // The role change is committed: drop the cached access now, so the person's next request uses the new position role.
+    if (roleChanged) await invalidateAccess();
 
     await this.createAuditLog(requester, 'update', 'user', userId.toString(), { changes: Object.keys(data) });
 

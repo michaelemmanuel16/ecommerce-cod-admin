@@ -452,6 +452,23 @@ describe('one access invalidation (A1)', () => {
   });
 });
 
+describe('a role change through the user edit takes effect at once', () => {
+  it('PUT /api/staff/:id and PUT /api/admin/users/:id: the next request of the signed-in user uses the new position role', async () => {
+    for (const route of ['/api/staff', '/api/admin/users']) {
+      const rep = await mkUser(pair.a.id, 'role-edit', 'sales_rep');
+      const callRep = await roleOf(pair.a.id, 'Call rep');
+      await prismaBase.roleAssignment.create({ data: { tenantId: pair.a.id, roleId: callRep.id, holderId: rep.id, fromDate: startOfUtcDay() } });
+      clearPermissionsCache();
+      const before = await meOf(rep.token); // warms the cache: a rep has no gl
+      expect(before.gl ?? []).toEqual([]);
+      const res = await api.put(ownerA, `${route}/${rep.id}`, { role: 'accountant' });
+      expect(res.status).toBe(200);
+      const after = await meOf(rep.token);
+      expect(after.gl).toEqual(expect.arrayContaining(['view'])); // the Finance clerk grid, no 60 s wait
+    }
+  });
+});
+
 describe('authenticate refuses a user who is no longer active', () => {
   it('a valid token gets 401 at once after the user is deactivated or soft-deleted; reactivating restores it', async () => {
     const person = await mkUser(pair.a.id, 'goes-away', 'admin');
