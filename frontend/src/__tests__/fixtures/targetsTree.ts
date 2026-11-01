@@ -62,6 +62,7 @@ export const ATTAINMENT: Attainment = {
 export const SETTINGS: RewardSettings = {
   currency: 'GHS',
   tiers: [{ roleId: 7, roleName: 'Call rep', tier100: { amount: 300, dayOff: false, payout: true }, tier120: { amount: 500, dayOff: true, payout: true } }],
+  repPay: { baseCommission: 8, upsellPercent: '10.00' }, badgesDisplay: true, noPayout: ['ai_agent', 'company'], notice: 'Saved.',
 };
 
 export const CALCULATORS: Calculators = {
