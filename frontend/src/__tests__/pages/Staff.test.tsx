@@ -7,16 +7,20 @@ import { Staff } from '../../pages/Staff';
 import { clearBlockCache } from '../../pages/financial/profit/useBlock';
 import { useAuthStore } from '../../stores/authStore';
 import { NAV_GROUPS } from '../../components/shell/navModel';
-import { ADWOA, AKUA, COMPANY, KOFI, ROBO, ROLES, STAFF, YAA } from '../fixtures/staff';
+import { ADWOA, AKUA, COMPANY, KOFI, ROBO, ROLES, STAFF, YAA, roleCard } from '../fixtures/staff';
 
 const svc = vi.hoisted(() => ({
-  list: vi.fn(), workload: vi.fn(), roles: vi.fn(), invite: vi.fn(), resend: vi.fn(), revoke: vi.fn(), update: vi.fn(),
+  list: vi.fn(), workload: vi.fn(), invite: vi.fn(), resend: vi.fn(), revoke: vi.fn(), update: vi.fn(),
   resetPassword: vi.fn(), deactivate: vi.fn(), reactivate: vi.fn(), remove: vi.fn(), removePermanently: vi.fn(), companyRepPay: vi.fn(),
 }));
 vi.mock('../../services/staff.service', async (orig) => {
   const { companyRepPay, ...staffService } = svc;
   return { ...(await orig<typeof import('../../services/staff.service')>()), staffService, companyRepPay };
 });
+const rolesSvc = vi.hoisted(() => ({ overview: vi.fn(), assignments: vi.fn() }));
+vi.mock('../../services/roles.service', async (orig) => ({ ...(await orig<typeof import('../../services/roles.service')>()), rolesService: rolesSvc }));
+// The role cards read this month's targets for progress; these tests are about the table
+vi.mock('../../services/targets.service', () => ({ targetsService: { tree: () => Promise.resolve(null), attainment: () => Promise.resolve(null) } }));
 const reassign = vi.hoisted(() => vi.fn());
 vi.mock('../../pages/staff/reassign', () => ({ reassignOpenOrders: reassign }));
 
@@ -44,7 +48,8 @@ beforeEach(() => {
   reassign.mockReset();
   copy.mockReset();
   svc.list.mockResolvedValue(STAFF);
-  svc.roles.mockResolvedValue(ROLES);
+  rolesSvc.overview.mockResolvedValue(ROLES.map((r) => roleCard(r)));
+  rolesSvc.assignments.mockResolvedValue([]);
   svc.companyRepPay.mockResolvedValue(COMPANY);
   svc.workload.mockResolvedValue([]);
 });
@@ -166,7 +171,7 @@ describe('Staff page: invite', () => {
   });
 
   it('an invite starts on the Call rep role, not on the first role of the list (Owner)', async () => {
-    svc.roles.mockResolvedValue([{ roleId: 9, name: 'Owner', presetRole: 'super_admin' }, ...ROLES]);
+    rolesSvc.overview.mockResolvedValue([roleCard({ roleId: 9, name: 'Owner', presetRole: 'super_admin' }), ...ROLES.map((r) => roleCard(r))]);
     renderPage('/staff?invite=1');
     expect(await screen.findByLabelText('Role')).toHaveValue('1');
   });
