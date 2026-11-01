@@ -239,6 +239,7 @@ describe('a failed read stops the close', () => {
       const res = await api.post(ownerA, '/api/period-close/2026-08');
       expect(res.status).toBe(502);
       expect(res.body.code).toBe('KPI_UNAVAILABLE');
+      expect(JSON.stringify(res.body)).not.toContain('KPI store unavailable'); // the cause stays in the log and the Finding
     } finally {
       spy.mockRestore();
     }

@@ -118,7 +118,8 @@ export async function runPeriodClose(period: string, actorUserId: number) {
     return await closeMonth(period, actorUserId, tenantId);
   } catch (error) {
     if (error instanceof AppError && error.statusCode < 500) throw error;
-    const message = error instanceof Error ? error.message : String(error);
+    // The reply stays generic; a read failure's own text (`detail`) goes only to the log and the Finding.
+    const message = (error as { detail?: string }).detail ?? (error instanceof Error ? error.message : String(error));
     logger.error(`Month close ${period} stopped`, { tenantId, error: message });
     await openCloseFinding(tenantId, period, `Month close ${period} stopped, nothing was written. ${message}`);
     throw error;
@@ -138,8 +139,8 @@ async function closeMonth(period: string, actorUserId: number, tenantId: string)
   try {
     planned = await plan(period);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new AppError(`Month close ${period} stopped: attainment could not be read (${message}). Nothing was written.`, 502, 'KPI_UNAVAILABLE');
+    const detail = error instanceof Error ? error.message : String(error);
+    throw Object.assign(new AppError(`Month close ${period} stopped: attainment could not be read. Nothing was written.`, 502, 'KPI_UNAVAILABLE'), { detail });
   }
 
   const earnedAt = periodBounds('month', period).end; // the last day of the month
