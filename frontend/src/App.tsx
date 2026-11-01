@@ -36,6 +36,7 @@ const CustomerReps = lazy(() => import('./pages/CustomerReps').then(m => ({ defa
 const Financial = lazy(() => import('./pages/Financial').then(m => ({ default: m.Financial })));
 const Findings = lazy(() => import('./pages/financial/Findings').then(m => ({ default: m.Findings })));
 const Targets = lazy(() => import('./pages/Targets').then(m => ({ default: m.Targets })));
+const Leaderboard = lazy(() => import('./pages/Leaderboard').then(m => ({ default: m.Leaderboard })));
 const Reports = lazy(() => import('./pages/Reports').then(m => ({ default: m.Reports })));
 const Workflows = lazy(() => import('./pages/Workflows').then(m => ({ default: m.Workflows })));
 const WorkflowWizard = lazy(() => import('./pages/WorkflowWizard').then(m => ({ default: m.WorkflowWizard })));
@@ -319,6 +320,9 @@ function App() {
             } />
             <Route path="targets" element={
               <Suspense fallback={<Loading />}><Targets /></Suspense>
+            } />
+            <Route path="leaderboard" element={
+              <Suspense fallback={<Loading />}><Leaderboard /></Suspense>
             } />
             <Route path="workflows" element={
               <Suspense fallback={<Loading />}><Workflows /></Suspense>
