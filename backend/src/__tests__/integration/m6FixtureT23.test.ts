@@ -3,7 +3,8 @@
  *  - a 30-day month: 180,000 / 249 = 723, / (0.70 x 0.60) = 1,721, / 30 = 58 (a 31-day month gives 56, in m6NorthStar)
  *  - year pace on the quarter plan with real orders: done 76.7%, pace 75.5%, chip "1 pt ahead"
  *  - leaderboard side of the contract with the dashboard "Top this month": the top 3 by percent of the role target.
- *    The dashboard half is added after T12 is merged (the `top` block is not in dashboardService on this base).
+ *    The dashboard half (M6-T24, now that T12 is merged): "Top this month" on the owner dashboard and the Leaderboard give the
+ *    same userIds and percents for the same month.
  */
 import { describe, it, expect, beforeAll, afterAll, jest } from '@jest/globals';
 import '../mocks/logger.mock';
@@ -16,6 +17,7 @@ import * as northStar from '../../services/northStarService';
 import { leadership } from '../../services/kpi/leadership';
 import { paceChip } from '../../services/kpi/status';
 import { leaderboard } from '../../services/leaderboardService';
+import { clearDashboardCache, ownerDashboard } from '../../services/dashboardService';
 
 jest.setTimeout(120_000);
 
@@ -76,5 +78,40 @@ describe('leaderboard side of the "Top this month" contract', () => {
     const board = await inA(() => leaderboard(owner, { role: 'call_rep', period: '2026-10' }));
     const top3 = board.rows.slice(0, 3).map((r: Record<string, any>) => ({ rank: r.rank, percent: r.percent }));
     expect(top3).toEqual([{ rank: 1, percent: 90 }, { rank: 2, percent: 70 }, { rank: 3, percent: 50 }]);
+  });
+});
+
+describe('dashboard half of the "Top this month" contract (M6-T24)', () => {
+  it('the dashboard block and the two Leaderboard boards give the same userIds, ranks order and percents for October', async () => {
+    const callRepRole = (await prismaBase.role.findFirstOrThrow({ where: { tenantId: A(), name: 'Call rep' } })).id;
+    const deliveryRole = (await prismaBase.role.findFirstOrThrow({ where: { tenantId: A(), name: 'Delivery' } })).id;
+    const customer = (await prismaBase.order.findFirstOrThrow({ where: { tenantId: A() } })).customerId;
+    const w = world(A(), () => customer, () => callRepRole, () => deliveryRole);
+    // a Delivery partner joins the call reps of the test above: 12 of 20 closed = 60% against a 70% target = 85.7% of target
+    const partner = await w.user('kwabena', 'delivery_agent', 'person', deliveryRole);
+    await w.target(partner.id, deliveryRole, OCT, 'delivery_success_rate', 70);
+    await w.closed(partner.id, 12, 'delivered', '2026-10-14T10:00:00Z');
+    await w.closed(partner.id, 8, 'returned', '2026-10-14T10:00:00Z');
+
+    clearDashboardCache();
+    const dash: any = await ownerDashboard(A(), { asOf: '2026-10-17' });
+    expect(dash.topThisMonth.month).toBe('2026-10');
+
+    const owner = { id: pair.a.users.admin.id, role: 'super_admin' } as never;
+    const boards = await Promise.all((['call_rep', 'delivery'] as const).map((role) => inA(() => leaderboard(owner, { role, period: '2026-10' }))));
+    const fromBoards = boards
+      .flatMap((b) => b.rows as Array<Record<string, any>>)
+      .filter((r) => r.ranked && r.percent !== null)
+      .sort((x, y) => y.percent - x.percent)
+      .slice(0, 3)
+      .map((r) => ({ userId: r.userId, percent: r.percent }));
+    const fromDashboard = dash.topThisMonth.people.map((p: Record<string, any>) => ({ userId: p.userId, percent: p.percent }));
+
+    expect(fromDashboard).toHaveLength(3);
+    expect(fromDashboard).toEqual(fromBoards);
+    expect(dash.topThisMonth.people.map((p: Record<string, any>) => p.rank)).toEqual([1, 2, 3]);
+    // the partner (85.7%) sits between kojo (70) and ama (90): ama, partner, kojo
+    expect(fromDashboard.map((p: { percent: number }) => p.percent)).toEqual([90, 85.7, 70]);
+    expect(fromDashboard[1].userId).toBe(partner.id);
   });
 });
