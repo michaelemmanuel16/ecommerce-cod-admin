@@ -24,11 +24,11 @@ import * as Money from '../utils/money';
 import { CONFIRMED, ratePercent, wholeRate } from './kpi/rates';
 import { timeToFirstCall } from './kpi/timeToFirstCall';
 import { repRates, RepRates } from './kpi/reps';
+import { CONFIRMED_DELIVERED_METRIC } from '../config/targetMetrics';
 
 const NOT_REACHABLE = ['not_reachable', 'no_answer'];
 
-/** The Target metric for P7. No earlier code names it; the Targets editor (M6) writes it. */
-export const CONFIRMED_DELIVERED_METRIC = 'confirmed_delivered';
+export { CONFIRMED_DELIVERED_METRIC };
 
 interface TargetHit { target: number; actual: number; percent: number | null }
 
