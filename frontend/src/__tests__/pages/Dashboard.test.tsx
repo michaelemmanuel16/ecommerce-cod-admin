@@ -235,3 +235,77 @@ describe('socket refetch (F-201)', () => {
     expect(getOwner).toHaveBeenCalledTimes(3);
   });
 });
+
+describe('Top this month (M6-T12, F-208)', () => {
+  beforeEach(() => {
+    useAuthStore.setState({
+      user: { id: 1, role: 'admin', firstName: 'Manny', lastName: 'A', isPlatformAdmin: false } as never,
+      menu: ['dashboard', 'orders', 'finance', 'reports', 'deliveries', 'leaderboard'],
+      homeRoute: '/',
+    });
+  });
+
+  const card = async () => within(await screen.findByRole('list', { name: 'Top this month' }));
+
+  it('renders the three people with rank, role, main number and percent of target', async () => {
+    getOwner.mockResolvedValue(data());
+    renderPage();
+    const list = await card();
+    const rows = list.getAllByRole('listitem');
+    expect(rows).toHaveLength(3);
+    expect(within(rows[0]).getByText('Esi Badu')).toBeInTheDocument();
+    expect(within(rows[0]).getByText('Delivery · 55% delivery success')).toBeInTheDocument();
+    expect(within(rows[0]).getByText('92% of target')).toBeInTheDocument();
+    expect(within(rows[0]).getByLabelText('Rank 1')).toBeInTheDocument();
+    expect(within(rows[2]).getByText('Call rep · 253 confirmed and delivered')).toBeInTheDocument();
+    expect(within(rows[2]).getByText('60% of target')).toBeInTheDocument();
+  });
+
+  it('renders fewer than three when fewer have a target, with an AI agent and a company tagged', async () => {
+    const d = data();
+    d.topThisMonth.people = [
+      { rank: 1, userId: 1, name: 'Confirm agent', kind: 'ai_agent', roleName: 'Call rep', family: 'call_rep', percent: 44, main: { unit: 'confirmed_delivered', value: 328 } },
+      { rank: 2, userId: 2, name: 'Logiswift', kind: 'company', roleName: 'Delivery', family: 'delivery', percent: 75, main: { unit: 'delivery_success', value: 45 } },
+    ];
+    getOwner.mockResolvedValue(d);
+    renderPage();
+    const rows = (await card()).getAllByRole('listitem');
+    expect(rows).toHaveLength(2);
+    expect(within(rows[0]).getByText('AI agent')).toBeInTheDocument();
+    expect(within(rows[1]).getByText('Company')).toBeInTheDocument();
+  });
+
+  it('shows an empty state when no one has a target', async () => {
+    const d = data();
+    d.topThisMonth = { month: '2026-10', people: [] };
+    getOwner.mockResolvedValue(d);
+    renderPage();
+    expect(await screen.findByText(/No one has a target this month yet/)).toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: 'Top this month' })).toBeNull();
+  });
+
+  it('the Leaderboard button links to /leaderboard', async () => {
+    getOwner.mockResolvedValue(data());
+    renderPage();
+    await card();
+    expect(screen.getByRole('link', { name: 'Leaderboard' })).toHaveAttribute('href', '/leaderboard');
+  });
+
+  it('a failed block shows its own error with Retry and leaves the other blocks', async () => {
+    const d = data();
+    d.topThisMonth = { error: { code: 'block_failed', errorId: 'abcdef12-0000' } };
+    getOwner.mockResolvedValue(d);
+    renderPage();
+    expect(await screen.findByText('Top this month did not load')).toBeInTheDocument();
+    expect(screen.getByText('Recent orders')).toBeInTheDocument();
+  });
+
+  it('a server without the block shows no card', async () => {
+    const d = data();
+    delete d.topThisMonth;
+    getOwner.mockResolvedValue(d);
+    renderPage();
+    await screen.findByText('Recent orders');
+    expect(screen.queryByText('Top this month')).toBeNull();
+  });
+});

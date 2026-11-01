@@ -72,6 +72,17 @@
 .v2 .drv b{display:block;font-family:"Bricolage Grotesque",sans-serif;font-size:20px;font-weight:700}
 .v2 .drv em{font-style:normal;font-size:12px;color:var(--ink-3)}
 
+/* top this month (M6-T12): rank chip, the list, the two-column row with the recent orders */
+.v2 .dash .two{grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);align-items:start}
+.v2 .dash .two.solo{grid-template-columns:minmax(0,1fr)}
+.v2 .rank{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-weight:800;font-family:"Bricolage Grotesque",sans-serif;background:var(--hover);flex:none}
+.v2 .rank.first{background:var(--gold-soft);color:var(--gold)}
+.v2 .who .a.mint{background:var(--mint-soft);color:var(--ok-ink)}
+.v2 .who .tag{margin-left:4px;vertical-align:1px}
+.v2 .topmonth .toplist{list-style:none;margin:0;padding:10px 20px 18px;display:flex;flex-direction:column;gap:12px}
+.v2 .topmonth .who > div:nth-child(3){min-width:0;flex:1}
+.v2 .topmonth .pctag{margin-left:auto;flex:none;white-space:nowrap}
+
 /* recent orders */
 .v2 .rtable table{margin-top:8px}
 .v2 .who{display:flex;align-items:center;gap:10px}
@@ -102,6 +113,7 @@
 .v2 .blockerr .errid{color:var(--ink-3)}
 
 @media (max-width:1100px){
+  .v2 .dash .two{grid-template-columns:minmax(0,1fr)}
   .v2 .ladder{grid-template-columns:1fr}
   .v2 .quests{grid-template-columns:1fr 1fr}
   .v2 .kpis.three{grid-template-columns:repeat(2,1fr)}

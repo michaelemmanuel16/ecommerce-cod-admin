@@ -296,3 +296,43 @@ export async function leaderboard(actor: Requester, query: { role: Family; perio
 
 const tierView = (t: TierRow | undefined) => (t ? { amount: Money.toApi(t.amount), dayOff: t.dayOff, payout: t.payout } : null);
 
+
+// ---- Top this month (dashboard, F-208) ----------------------------------------------------------------------------------
+
+export interface TopPerson {
+  rank: number;
+  userId: number;
+  name: string;
+  kind: string;
+  roleName: string;
+  family: Family;
+  /** Percent of the person's own target, one decimal. */
+  percent: number;
+  /** The role's own number: delivery success percent, or confirmed orders that got delivered. */
+  main: { unit: 'delivery_success' | 'confirmed_delivered'; value: number };
+}
+
+/**
+ * The top people of a month by percent of their own role target, across both roles (F-208): call reps and the Delivery role,
+ * persons, AI agents (under the role they hold) and companies. Fewer than `limit` when fewer have a target; none when nobody has.
+ * Not ranked people (no target, too early) never appear. A tie on percent goes to the person with more closed orders (a call
+ * rep's closed orders are the orders they confirmed that were delivered), then to the name, so the order is always the same.
+ * Reuses `boardBase`, the numbers of the Leaderboard page. Call inside the tenant context.
+ */
+export async function topThisMonth(month: string, limit = 3): Promise<TopPerson[]> {
+  const zone = getStoreTimeZone(resolveTenantId());
+  const spec = resolvePeriod(month, zone);
+  const families: Family[] = ['call_rep', 'delivery'];
+  const boards = await Promise.all(families.map(async (family) => ({ family, rows: await boardBase(family, spec) })));
+  const people = boards.flatMap(({ family, rows }) => rows
+    .filter((b) => b.percent !== null && b.m !== null)
+    .map((b) => ({
+      family, b, percent: displayPercent(b.percent!),
+      volume: family === 'delivery' ? b.closed : b.delivered,
+    })));
+  people.sort((x, y) => y.percent - x.percent || y.volume - x.volume || x.b.name.localeCompare(y.b.name));
+  return people.slice(0, limit).map(({ family, b, percent }, i) => ({
+    rank: i + 1, userId: b.userId, name: b.name, kind: b.kind, roleName: b.roleName, family, percent,
+    main: family === 'delivery' ? { unit: 'delivery_success' as const, value: b.m!.actual } : { unit: 'confirmed_delivered' as const, value: b.delivered },
+  }));
+}

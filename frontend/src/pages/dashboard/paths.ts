@@ -5,4 +5,5 @@ export const PATHS = {
   deliveries: '/delivery-agents',
   finance: '/finance',
   targets: null as string | null,
+  leaderboard: '/leaderboard' as string | null,
 };
