@@ -69,10 +69,10 @@ export function localDate(instant: Date, zone: string): string {
   return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
 }
 
-/** UTC calendar date 'YYYY-MM-DD' of an instant (a Postgres DATE column read as UTC midnight). */
 /** The month of `now` in the store zone, 'YYYY-MM'. */
 export const currentMonth = (now: Date = new Date(), zone: string = getStoreTimeZone()): string => localDate(now, zone).slice(0, 7);
 
+/** UTC calendar date 'YYYY-MM-DD' of an instant (a Postgres DATE column read as UTC midnight). */
 export const ymdOfUtc = (instant: Date): string => localDate(instant, 'UTC');
 
 /** The UTC midnight of 'YYYY-MM-DD': the value a Postgres DATE column holds and Prisma reads back. */
