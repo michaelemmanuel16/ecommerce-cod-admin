@@ -66,6 +66,10 @@ const counts = async () => ({
   entries: await prismaBase.commissionEntry.count({ where: { tenantId: pair.a.id, kind: 'reward' } }),
   journals: await prismaBase.journalEntry.count({ where: { tenantId: pair.a.id, sourceType: 'commission_accrual' } }),
   closed: await prismaBase.target.count({ where: { tenantId: pair.a.id, closedAt: { not: null } } }),
+  // Journal line totals: a second run must move no money, not only add no row.
+  lines: await prismaBase.accountTransaction.aggregate({
+    where: { tenantId: pair.a.id, journalEntry: { sourceType: 'commission_accrual' } }, _sum: { debitAmount: true, creditAmount: true }, _count: true,
+  }).then((a) => ({ debit: String(a._sum.debitAmount), credit: String(a._sum.creditAmount), count: a._count })),
 });
 
 let r1: Awaited<ReturnType<typeof mkUser>>; // exactly 100 percent
