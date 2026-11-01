@@ -324,6 +324,23 @@ describe('the old "mark COD deposited" route', () => {
       .rejects.toThrow();
     expect(await balance('1010')).toBe(b1010 + 350);
   });
+
+  it('is not skipped when a verified deposit has the same number as the first transaction (separate id lists)', async () => {
+    const [other, partner] = [(await mkPartner(tenantId, 'other-number')).id, (await mkPartner(tenantId, 'same-number')).id];
+    await prismaBase.feeRule.create({ data: { tenantId, partnerUserId: partner, outcome: 'delivered', amount: 25, validFrom: new Date('2026-01-01') } });
+    const orders = [await deliver(other), await deliver(partner)];
+    await sync(orders);
+    const [transaction] = await prismaBase.transaction.findMany({ where: { orderId: orders[1], type: 'cod_collection' } });
+    // Another partner's verified deposit, numbered like that transaction (the two id lists are separate sequences)
+    const created = await deposit(other, 200, 'REF-SAME-1');
+    await inTenant(() => agentReconciliationService.verifyDeposit(created.id, ADMIN.userId!));
+    await prismaBase.journalEntry.updateMany({ where: { tenantId, sourceType: 'agent_deposit', sourceId: created.id }, data: { sourceId: transaction.id } });
+    const b1015 = await balance('1015');
+
+    await inTenant(() => financialService.markCODAsDeposited([String(transaction.id)], 'DEP-SAME-1', { id: ADMIN.userId!, role: 'super_admin' } as any));
+
+    expect(await balance('1015')).toBe(b1015 - 175);
+  });
 });
 
 describe('after the whole chain', () => {

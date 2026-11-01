@@ -62,7 +62,9 @@ export function PersonModal({ row, roles, roleId, company, currency, onClose, on
     setForm((f) => (f.roleId || roles.length === 0 ? f : { ...f, roleId: row ? formOf(row, roles, company).roleId : String(firstChoice(roles).roleId) }));
   }, [roles, row, company]);
 
-  const role = roles.find((r) => String(r.roleId) === form.roleId);
+  // The frame where the roles arrive, before the effect above runs, must not show the first option of the list (Owner)
+  const roleValue = form.roleId || (!row && roles.length > 0 ? String(firstChoice(roles).roleId) : '');
+  const role = roles.find((r) => String(r.roleId) === roleValue);
   const delivery = isDeliveryRole(role?.presetRole);
   const errors = useMemo(() => validatePerson(form, { invite: !editing, delivery }), [form, editing, delivery]);
   const set = (patch: Partial<PersonForm>) => setForm((f) => ({ ...f, ...patch }));
@@ -91,7 +93,7 @@ export function PersonModal({ row, roles, roleId, company, currency, onClose, on
         onSaved(saved);
       } else {
         const result = await staffService.invite({
-          name: form.name.trim(), email: form.email.trim(), roleId: Number(form.roleId), channel: form.channel, payMethod,
+          name: form.name.trim(), email: form.email.trim(), roleId: Number(roleValue), channel: form.channel, payMethod,
           ...(form.phone.trim() && { phoneNumber: form.phone.trim() }),
           ...(amount !== undefined && { amount }),
           ...(delivery && { vehicleType: form.vehicleType, ...(form.vehicleId.trim() && { vehicleId: form.vehicleId.trim() }) }),
@@ -117,7 +119,7 @@ export function PersonModal({ row, roles, roleId, company, currency, onClose, on
       </div>
       <div className="two2">
         <Input label="Phone" type="tel" value={form.phone} onChange={(e) => set({ phone: e.target.value })} error={shown('phone')} placeholder="024 555 0100" optional />
-        <Select label="Role" value={form.roleId} onChange={(e) => set({ roleId: e.target.value })} error={shown('roleId')}>
+        <Select label="Role" value={roleValue} onChange={(e) => set({ roleId: e.target.value })} error={shown('roleId')}>
           {roles.map((r) => <option key={r.roleId} value={r.roleId} disabled={editing && r.presetRole === null}>{r.name}</option>)}
         </Select>
       </div>
