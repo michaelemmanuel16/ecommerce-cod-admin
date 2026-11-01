@@ -95,6 +95,19 @@ export interface Attainment { period: string; closed: boolean; currency: string;
 export interface RewardSettings {
   currency: string;
   tiers: Array<{ roleId: number; roleName: string; tier100: { amount: number; dayOff: boolean; payout: boolean } | null; tier120: { amount: number; dayOff: boolean; payout: boolean } | null }>;
+  /** Rep pay. The API sends the percent as a string (it is not a money key); the commission is a number. */
+  repPay: { baseCommission: number | string; upsellPercent: number | string };
+  badgesDisplay: boolean;
+  /** Fixed: kinds of holder that get no payout (AI agents, companies). */
+  noPayout: string[];
+  notice: string;
+}
+
+/** PUT /api/rewards/settings: both tiers of a role go together; amounts as the person typed them. */
+export interface RewardSettingsInput {
+  tiers?: Array<{ roleId: number; tier100: { amount: string; dayOff?: boolean }; tier120: { amount: string; dayOff?: boolean } }>;
+  repPay?: { baseCommission: string; upsellPercent: string };
+  badgesDisplay?: boolean;
 }
 
 export type GrowthMode = 'even' | 'grow' | 'custom';
@@ -193,6 +206,9 @@ export const targetsService = {
   },
   async rewardSettings(): Promise<RewardSettings> {
     return (await apiClient.get('/api/rewards/settings', { quiet: true })).data;
+  },
+  async saveRewardSettings(input: RewardSettingsInput): Promise<RewardSettings> {
+    return (await apiClient.put('/api/rewards/settings', input, { quiet: true })).data;
   },
   async save(input: SaveTargetInput): Promise<void> {
     await apiClient.post('/api/targets', input, { quiet: true });

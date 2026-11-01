@@ -84,14 +84,14 @@ describe('Settings shell: tabs by permission (F-1220)', () => {
   it('an admin with settings:view sees the view-only tabs and no owner tabs', () => {
     signIn('admin', { settings: ['view'] });
     renderAt();
-    expect(tabNames()).toEqual(['Profile', 'Security', 'Business details', 'Currencies & FX', 'Order statuses', 'Notifications']);
+    expect(tabNames()).toEqual(['Profile', 'Security', 'Business details', 'Currencies & FX', 'Order statuses', 'Notifications', 'Rewards']);
   });
 
   it('the owner sees every tab, the old ones under "Moving soon"', () => {
     signIn('super_admin');
     renderAt();
     expect(tabNames()).toEqual([
-      'Profile', 'Security', 'Business details', 'Currencies & FX', 'Order statuses', 'Notifications', 'North Star & targets', 'Billing & plans',
+      'Profile', 'Security', 'Business details', 'Currencies & FX', 'Order statuses', 'Notifications', 'North Star & targets', 'Rewards', 'Billing & plans',
       'User management', 'Role permissions', 'Integrations', 'Checkout forms',
     ]);
     expect(screen.getByText('Moving soon')).toBeInTheDocument();

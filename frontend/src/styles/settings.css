@@ -84,3 +84,24 @@
 .v2 .usage .setbar{margin-top:10px;justify-content:flex-start}
 @media (max-width:1100px){.v2 .plans{grid-template-columns:repeat(2,1fr)}}
 @media (max-width:760px){.v2 .plans{grid-template-columns:1fr}}
+
+/* Rewards (M6-T18). Copied from the style block of docs/mockups/v2/settings.html (.sub .rin .reward .medals .opserr). */
+.v2 .sub{padding:18px 20px 0;font-weight:600}
+.v2 .sub small{display:block;color:var(--ink-3);font-weight:400;margin-top:1px}
+.v2 .rin{display:flex;align-items:center;gap:6px;color:var(--ink-3);font-weight:700}
+.v2 .rin input{width:76px;text-align:right;font:800 16px "Bricolage Grotesque";padding:6px 10px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:11px}
+.v2 .rin input[readonly]{background:var(--hover);color:var(--ink-2)}
+.v2 .rin input[aria-invalid=true]{border-color:var(--coral)}
+.v2 .reward{display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--line)}
+.v2 .reward:last-child{border:0}
+.v2 .reward .ico{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;flex:none}
+.v2 .reward b{display:block}
+.v2 .reward small{color:var(--ink-3)}
+.v2 .reward .cost{margin-left:auto;text-align:right}
+.v2 .medals{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:14px 20px 12px}
+.v2 .medal{text-align:center;padding:12px 6px;border-radius:14px;border:1px solid var(--line)}
+.v2 .medal .m{width:44px;height:44px;border-radius:50%;margin:0 auto 6px;display:grid;place-items:center}
+.v2 .medal b{display:block;font-size:13.5px}
+.v2 .medal small{display:block;color:var(--ink-3);font-size:11.5px}
+.v2 .opserr{margin:12px 20px 0;padding:10px 12px;border-radius:12px;background:var(--coral-soft);color:var(--coral);font-weight:500;font-size:13px}
+@media (max-width:760px){.v2 .medals{grid-template-columns:1fr}}

@@ -18,6 +18,7 @@ import { BusinessTab } from './settings/BusinessTab';
 import { StatusesTab } from './settings/StatusesTab';
 import { BillingTab } from './settings/BillingTab';
 import { NorthStarTab } from './settings/NorthStarTab';
+import { RewardsTab } from './settings/RewardsTab';
 import { SETTINGS_TABS, type SettingsTab, type TabDef } from './settings/tabs';
 
 const KNOWN: SettingsTab[] = SETTINGS_TABS.map((t) => t.id);
@@ -135,6 +136,7 @@ export function Settings() {
       case 'statuses': return <StatusesTab />;
       case 'notifications': return <NotificationsPointer />;
       case 'north-star': return <NorthStarTab editable={def.editable(access)} />;
+      case 'rewards': return <RewardsTab editable={def.editable(access)} />;
       case 'billing': return <BillingTab />;
       case 'users': return <Old><UserManagementTable /></Old>;
       case 'permissions': return <Old><RolePermissionsMatrix /></Old>;
