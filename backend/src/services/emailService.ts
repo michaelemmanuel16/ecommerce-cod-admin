@@ -205,13 +205,16 @@ async function sendViaResend(config: EmailConfig, options: SendEmailOptions): Pr
     resendApiKey = config.apiKey;
   }
   const from = options.from || `${config.fromName} <${config.fromEmail}>`;
-  await resendClient.emails.send({
+  // The Resend SDK does not throw when the API refuses a message: it answers `{ data, error }`. Without this check a refused
+  // send (unverified domain, bad key) read as sent, and the invite said "sent" when nothing went out.
+  const { error } = await resendClient.emails.send({
     from,
     to: options.to,
     subject: options.subject,
     html: options.html,
     headers: options.headers,
   });
+  if (error) throw new Error(`Resend refused the message: ${error.message}`);
 }
 
 async function sendViaSmtp(config: EmailConfig, options: SendEmailOptions): Promise<void> {

@@ -1,5 +1,6 @@
 import React from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { authService } from '../services/auth.service';
 import { useAuthStore } from '../stores/authStore';
 import { Button } from '../components/ui-v2';
 import { AuthLayout } from '../components/auth/AuthLayout';
@@ -11,6 +12,10 @@ import { validateNewPassword, type NewPasswordErrors } from '../lib/passwordRule
 /** Shown for a link with no token, and when the API gives no text of its own. */
 const LINK_NOT_VALID = 'This invite link is not valid. Ask for a new invite.';
 
+/** The API's own sentence for a dead link, else the plain one. */
+const refusalText = (error: unknown): string =>
+  (error as { response?: { data?: { message?: string } } })?.response?.data?.message ?? LINK_NOT_VALID;
+
 export const AcceptInvite: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -20,10 +25,25 @@ export const AcceptInvite: React.FC = () => {
   const [errorMessage, setErrorMessage] = React.useState('');
   // The API's own text once it says the link is dead (expired: 410; unknown or used: 400).
   const [deadMessage, setDeadMessage] = React.useState<string | null>(null);
+  // The link is checked when the page opens, so a used or expired one says so before a password is typed.
+  const [checked, setChecked] = React.useState(false);
+  React.useEffect(() => {
+    if (!token) return;
+    let live = true;
+    authService.checkInvite(token).then(
+      () => { if (live) setChecked(true); },
+      (error) => { if (live) setDeadMessage(refusalText(error)); },
+    );
+    return () => { live = false; };
+  }, [token]);
 
   const [password, setPassword] = React.useState('');
   const [confirm, setConfirm] = React.useState('');
   const [errors, setErrors] = React.useState<NewPasswordErrors>({});
+
+  if (token && !deadMessage && !checked) {
+    return <AuthLayout title="Checking your link"><p className="authfoot" role="status">One moment.</p></AuthLayout>;
+  }
 
   if (!token || deadMessage) {
     return (
@@ -43,9 +63,8 @@ export const AcceptInvite: React.FC = () => {
       await acceptInvite(token, password);
       navigate('/');
     } catch (error) {
-      const response = (error as { response?: { status?: number; data?: { message?: string } } })?.response;
-      const status = response?.status;
-      if (status === 410 || status === 400) setDeadMessage(response?.data?.message ?? LINK_NOT_VALID);
+      const status = (error as { response?: { status?: number } })?.response?.status;
+      if (status === 410 || status === 400) setDeadMessage(refusalText(error));
       else if (status === 429) setErrorMessage('Too many attempts. Wait a few minutes and try again.');
       else setErrorMessage('Something went wrong. Try again.');
     }
