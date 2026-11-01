@@ -126,10 +126,13 @@ export async function setOwnerPrefs(userId: number, patch: Record<string, unknow
  */
 export async function saveNorthStarProgress(userId: number, input: { step: number; done?: boolean }) {
   if (!Number.isInteger(input.step) || input.step < 3 || input.step > 6) throw new AppError('Step must be 3 to 6', 400);
-  const done = input.done === true;
+  const row = await prisma.user.findUnique({ where: { id: userId }, select: { preferences: true } });
+  const prefs = (row?.preferences as Record<string, unknown> | null) ?? {};
+  // Once step 6 is done it stays done: "Edit North Star" re-runs the wizard and must not bring the menu item back.
+  const done = input.done === true || prefs.northStarDone === true;
   await setOwnerPrefs(userId, {
     northStarStep: input.step, northStarDone: done,
-    onboardingCompleted: true, onboardingCompletedAt: new Date().toISOString(),
+    onboardingCompleted: true, onboardingCompletedAt: prefs.onboardingCompletedAt ?? new Date().toISOString(),
   });
   return { step: input.step, done };
 }

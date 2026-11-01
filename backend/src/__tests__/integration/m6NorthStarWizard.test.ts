@@ -107,6 +107,9 @@ describe('wizard progress (Owner preferences) and the menu item', () => {
     expect((await post(owner, '/api/onboarding/north-star', { step: 6, done: true })).status).toBe(200);
     expect((await get(owner, '/api/onboarding/status')).body.northStar).toEqual({ step: 6, done: true });
     expect(await menu()).not.toContain('setupNorthStar');
+    // "Edit North Star" re-runs the wizard from step 3: it stays done and the menu item does not come back
+    expect((await post(owner, '/api/onboarding/north-star', { step: 3 })).body).toEqual({ step: 3, done: true });
+    expect(await menu()).not.toContain('setupNorthStar');
   });
 
   it('only the Owner saves progress; another tenant keeps its own', async () => {
