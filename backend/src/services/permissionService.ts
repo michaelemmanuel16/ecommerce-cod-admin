@@ -1,6 +1,5 @@
 import { UserRole } from '@prisma/client';
 import prisma from '../utils/prisma';
-import logger from '../utils/logger';
 import { getTenantId, runInTenant } from '../utils/tenantContext';
 import { isPositionRole } from '../config/defaultRoles';
 import { gridOfRole, hasOwnGrid, grants } from '../config/roleToolRules';
@@ -23,6 +22,11 @@ const GLOBAL = '__global__';
 const matrixCache = new Map<string, { promise: Promise<Matrix>; timestamp: number }>();
 /** The union of each user's held role grids per tenant; `null` = the user holds no role that gives a grid. */
 const heldCache = new Map<string, Map<number, { grid: PermissionGrid | null; timestamp: number }>>();
+/**
+ * Bumped by every `clearPermissionsCache`. A read that started before a clear may finish after it; it carries the epoch it
+ * started in and stores nothing if the epoch moved, so old data never lands in the cache after an invalidation.
+ */
+let epoch = 0;
 
 /** O(1) eviction of the oldest entry when a map is full (insertion order). */
 function setBounded<K, V>(map: Map<K, V>, key: K, value: V, max: number): void {
@@ -31,25 +35,18 @@ function setBounded<K, V>(map: Map<K, V>, key: K, value: V, max: number): void {
 }
 
 async function loadMatrix(tenantId: string | null): Promise<Matrix> {
-  let matrix: Matrix;
-  try {
-    // The tenant's own row only (SystemConfig.tenantId is unique). No tenant reads the tenantId-null row.
-    const config = await prisma.systemConfig.findFirst({ where: { tenantId } });
-    matrix = config?.rolePermissions ? mergeRolePermissions(config.rolePermissions) : defaultRolePermissions();
-  } catch (error) {
-    logger.error('[permissionService] Error fetching the saved matrix, using defaults:', error);
-    matrix = defaultRolePermissions();
-  }
+  // A failed read throws. It must not fall back to the defaults: a default grid is a real-looking answer (a role the tenant
+  // narrowed would get its old cells back, a role they widened would be refused with a 403). The caller answers 500, the failed
+  // promise is not cached (getTenantMatrix), and the next request reads again.
+  // The tenant's own row only (SystemConfig.tenantId is unique). No tenant reads the tenantId-null row.
+  const config = await prisma.systemConfig.findFirst({ where: { tenantId } });
+  const matrix: Matrix = config?.rolePermissions ? mergeRolePermissions(config.rolePermissions) : defaultRolePermissions();
   // The grid of the position role mapped from a UserRole is the one store; the saved matrix and the defaults only fill a role
   // that has no grid yet. So a user with no role of their own (an AI agent, the system user) follows the same grid as the people with one.
   if (tenantId) {
-    try {
-      const mapped = await prisma.role.findMany({ where: { presetRole: { not: null } }, select: { name: true, presetRole: true, permissions: true } });
-      for (const r of mapped) {
-        if (r.presetRole && isPositionRole(r) && hasOwnGrid(r)) matrix[r.presetRole] = r.permissions as PermissionGrid;
-      }
-    } catch (error) {
-      logger.error('[permissionService] Error reading role grids, using the saved matrix:', error);
+    const mapped = await prisma.role.findMany({ where: { presetRole: { not: null } }, select: { name: true, presetRole: true, permissions: true } });
+    for (const r of mapped) {
+      if (r.presetRole && isPositionRole(r) && hasOwnGrid(r)) matrix[r.presetRole] = r.permissions as PermissionGrid;
     }
   }
   return matrix;
@@ -93,8 +90,10 @@ function unionOf(assignments: HeldAssignment[], matrix: Matrix): PermissionGrid 
   return grids.length ? unionPermissions(grids) : null;
 }
 
-const cacheHeld = (tenantId: string, userId: number, grid: PermissionGrid | null) =>
+const cacheHeld = (tenantId: string, userId: number, grid: PermissionGrid | null, startedIn: number) => {
+  if (startedIn !== epoch) return; // the cache was cleared while this read ran: its data may be old
   setBounded(heldOf(tenantId), userId, { grid, timestamp: Date.now() }, MAX_USERS_PER_TENANT);
+};
 
 /**
  * `authenticate`: is the user still active (not deactivated, not soft-deleted)? The default user filter hides an inactive row, so
@@ -105,24 +104,26 @@ export async function isUserActive(tenantId: string, userId: number): Promise<bo
   if (freshHeld(tenantId, userId)) {
     return (await prisma.user.findFirst({ where: { id: userId, isActive: true }, select: { id: true } })) !== null;
   }
+  const startedIn = epoch;
   const [user, matrix] = await Promise.all([
     prisma.user.findFirst({ where: { id: userId, isActive: true }, select: { roleAssignments: { where: { toDate: null }, select: heldAssignmentSelect } } }),
     getTenantMatrix(tenantId),
   ]);
   if (!user) return false;
-  cacheHeld(tenantId, userId, unionOf(user.roleAssignments, matrix));
+  cacheHeld(tenantId, userId, unionOf(user.roleAssignments, matrix), startedIn);
   return true;
 }
 
 async function heldGrid(tenantId: string, userId: number): Promise<PermissionGrid | null> {
   const cached = freshHeld(tenantId, userId);
   if (cached) return cached.grid;
+  const startedIn = epoch;
   const [assignments, matrix] = await Promise.all([
     prisma.roleAssignment.findMany({ where: { holderId: userId, toDate: null }, select: heldAssignmentSelect }),
     getTenantMatrix(tenantId),
   ]);
   const grid = unionOf(assignments, matrix);
-  cacheHeld(tenantId, userId, grid);
+  cacheHeld(tenantId, userId, grid, startedIn);
   return grid;
 }
 
@@ -150,6 +151,7 @@ export async function hasPermission(user: { id?: number; role: UserRole | string
  * tenant's cache goes.
  */
 export function clearPermissionsCache(tenantId: string | null | undefined = getTenantId()): void {
+  epoch++;
   if (!tenantId) {
     matrixCache.clear();
     heldCache.clear();
