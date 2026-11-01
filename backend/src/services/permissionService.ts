@@ -58,7 +58,7 @@ export function getTenantMatrix(tenantId: string | null): Promise<Matrix> {
   const cached = matrixCache.get(key);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) return cached.promise;
   const promise = (tenantId ? runInTenant(tenantId, () => loadMatrix(tenantId)) : loadMatrix(null)).catch((error) => {
-    matrixCache.delete(key); // a failed read is not cached
+    if (matrixCache.get(key)?.promise === promise) matrixCache.delete(key); // a failed read is not cached; a newer read stays
     throw error;
   });
   setBounded(matrixCache, key, { promise, timestamp: Date.now() }, MAX_TENANTS);
