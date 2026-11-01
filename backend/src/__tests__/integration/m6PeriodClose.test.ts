@@ -167,6 +167,7 @@ describe('preview and run (September)', () => {
     const res = await api.post(ownerA, '/api/period-close/2026-09');
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ period: '2026-09', alreadyClosed: false, created: 3, total: '1100.00' });
+    expect(res.body.badges).toBeGreaterThan(0);
     expect(res.body.entries.map((e: { userId: number }) => e.userId).sort()).toEqual([r1.id, r2.id, leaver.id].sort());
 
     const entries = await prismaBase.commissionEntry.findMany({ where: { tenantId: pair.a.id, kind: 'reward', period: '2026-09' } });
@@ -196,8 +197,19 @@ describe('preview and run (September)', () => {
     expect(await prismaBase.target.count({ where: { tenantId: pair.a.id, periodStart: SEP.start, scope: { in: ['month', 'role', 'person'] }, closedAt: null } })).toBe(0);
   });
 
+  it('the close awards the result badges of the month inside the close: Top of month to rank 1 (a tie: both), Beat by 20 percent', async () => {
+    const awards = await prismaBase.badgeAward.findMany({ where: { tenantId: pair.a.id, period: '2026-09' } });
+    const held = (key: string) => awards.filter((a) => a.key === key).map((a) => a.userId).sort();
+    // r2 and the AI agent both did 130 percent: rank 1 twice, so both hold Top of month; r1 at exactly 100 is rank 4 and has none
+    expect(held('top_of_month')).toEqual([r2.id, ai.id].sort());
+    expect(held('beat_target_20')).toEqual([r2.id, ai.id].sort());
+    expect(awards.some((a) => a.userId === r3.id)).toBe(false);
+    expect(awards.some((a) => a.key === 'hit_target_3_months')).toBe(false);
+  });
+
   it('a second run changes nothing: same entries, no new journal lines, nothing created', async () => {
     const mid = await counts();
+    const badgesBefore = await prismaBase.badgeAward.count({ where: { tenantId: pair.a.id, period: '2026-09' } });
     const first = await prismaBase.commissionEntry.findMany({ where: { tenantId: pair.a.id, kind: 'reward', period: '2026-09' }, orderBy: { id: 'asc' } });
     const res = await api.post(ownerA, '/api/period-close/2026-09');
     expect(res.status).toBe(200);
@@ -208,6 +220,8 @@ describe('preview and run (September)', () => {
     await prismaBase.target.updateMany({ where: { tenantId: pair.a.id, periodStart: SEP.start }, data: { closedAt: null } });
     const again = await api.post(ownerA, '/api/period-close/2026-09');
     expect(again.body.created).toBe(0);
+    expect(again.body.badges).toBe(0); // the same badges are not awarded again
+    expect(await prismaBase.badgeAward.count({ where: { tenantId: pair.a.id, period: '2026-09' } })).toBe(badgesBefore);
     expect((await counts()).entries).toBe(mid.entries);
     expect((await counts()).journals).toBe(mid.journals);
   });
@@ -298,6 +312,7 @@ describe('a ledger failure inside the run', () => {
     await personTarget(r1.id, callRepRole.id, JUN, 5);
     await delivered(r1.id, 5, '2026-06-12T10:00:00Z');
     const before = await counts();
+    expect(await prismaBase.badgeAward.count({ where: { tenantId: pair.a.id, period: '2026-06' } })).toBe(0);
     const spy = jest.spyOn(commissionService, 'postEntry').mockRejectedValueOnce(new Error('ledger down'));
     try {
       const res = await api.post(ownerA, '/api/period-close/2026-06');
@@ -306,9 +321,12 @@ describe('a ledger failure inside the run', () => {
       spy.mockRestore();
     }
     expect(await counts()).toEqual(before);
+    expect(await prismaBase.badgeAward.count({ where: { tenantId: pair.a.id, period: '2026-06' } })).toBe(0); // a failed close leaves no badge
     const finding = await prismaBase.finding.findFirstOrThrow({ where: { tenantId: pair.a.id, subjectType: 'period_close', subjectId: '2026-06' } });
     expect(finding.note).toContain('ledger down');
     expect((await api.post(ownerA, '/api/period-close/2026-06')).body).toMatchObject({ created: 1, alreadyClosed: false });
+    const june = await prismaBase.badgeAward.findMany({ where: { tenantId: pair.a.id, period: '2026-06' } });
+    expect(june.map((a) => [a.userId, a.key])).toEqual([[r1.id, 'top_of_month']]);
   });
 });
 

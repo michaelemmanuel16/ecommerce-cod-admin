@@ -1,4 +1,4 @@
-import prisma from '../utils/prisma';
+import prisma, { type TransactionClient } from '../utils/prisma';
 import { resolveTenantId } from '../utils/tenantContext';
 import { Requester, isManagerUp } from '../utils/authUtils';
 import { fullName } from '../utils/nameUtils';
@@ -27,13 +27,14 @@ const monthBefore = (period: string, back: number): string => {
   return d.toISOString().slice(0, 7);
 };
 
-type Db = Pick<typeof prisma, 'badgeAward'>;
+type Db = Pick<TransactionClient, 'badgeAward'>;
 
 /**
  * Give the badges a month earned: Top of month (rank 1 per role family, every tied first place), Hit target 3 months running,
  * Beat target by 20 percent, and, for delivery, Zero unpaid over 8 days. Safe to run twice: the unique key (tenant, user, key,
  * period) and `skipDuplicates` mean a badge is never awarded twice for one period. `db` is the client of the caller (the close
- * transaction); the numbers are read outside it. Returns how many awards were new.
+ * transaction): the numbers are read outside it, and the awards are counted and written through it, so the count sees the rows
+ * of its own transaction. Returns how many awards were new.
  */
 export async function awardMonthBadges(period: string, db: Db = prisma): Promise<{ awarded: number; byKey: Partial<Record<BadgeKey, number>> }> {
   if (!MONTH_RE.test(period)) throw new RangeError(`Period must be a month like 2026-10, got ${period}`);
@@ -68,9 +69,9 @@ export async function awardMonthBadges(period: string, db: Db = prisma): Promise
   const unique = [...new Map(wanted.map((w) => [`${w.userId}:${w.key}`, w])).values()];
   if (!unique.length) return { awarded: 0, byKey: {} };
   // createMany does not say which rows were new, so count them from the table around the insert.
-  const before = await prisma.badgeAward.count({ where: { period } });
+  const before = await db.badgeAward.count({ where: { period } });
   await db.badgeAward.createMany({ data: unique.map((w) => ({ tenantId, userId: w.userId, key: w.key, period })), skipDuplicates: true });
-  const after = await prisma.badgeAward.count({ where: { period } });
+  const after = await db.badgeAward.count({ where: { period } });
   const byKey: Partial<Record<BadgeKey, number>> = {};
   for (const w of unique) byKey[w.key] = (byKey[w.key] ?? 0) + 1;
   return { awarded: after - before, byKey };

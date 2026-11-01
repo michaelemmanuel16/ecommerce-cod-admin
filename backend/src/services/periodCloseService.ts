@@ -9,6 +9,7 @@ import { currentMonth, getStoreTimeZone, MONTH_RE } from './kpi/dates';
 import { openFindingOnce } from './findingService';
 import { postEntry } from './commissionService';
 import { computeAttainment } from './rewardService';
+import { awardMonthBadges } from './badgeService';
 import { getSystemUserId } from './systemUserService';
 import { isMonthClosed, periodBounds } from './targetService';
 
@@ -164,11 +165,13 @@ async function closeMonth(period: string, actorUserId: number, tenantId: string)
       }
       if (entry.journalEntryId === null) await postEntry(tx, entry.id, actorUserId);
     }
+    // Result badges of the month (F-1109), written with the entries: a close that fails writes no badge.
+    const { awarded: badges } = await awardMonthBadges(period, tx);
     const closed = await tx.target.updateMany({
       where: { periodStart: start, scope: { in: ['month', 'role', 'person'] }, closedAt: null },
       data: { closedAt: new Date() },
     });
-    return { alreadyClosed: false, created, closedTargets: closed.count };
+    return { alreadyClosed: false, created, closedTargets: closed.count, badges };
   }, { timeout: 60_000, maxWait: 10_000 });
 
   return closeResult(period, head);

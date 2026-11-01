@@ -393,6 +393,22 @@ describe('badges (F-1109)', () => {
     expect(await heldBy(who.plain.id)).toEqual([]);
   });
 
+  it('inside a transaction the count is the transaction\'s own: awarded is above 0, and a rollback leaves no badge', async () => {
+    const { default: prisma } = await import('../../utils/prisma');
+    const marker = new Error('roll back');
+    await expect(runInTenant(tenantId, () => prisma.$transaction(async (tx) => {
+      const inside = await awardMonthBadges('2026-08', tx);
+      expect(inside.awarded).toBeGreaterThan(0);
+      expect(await tx.badgeAward.count({ where: { period: '2026-08' } })).toBe(inside.awarded);
+      throw marker;
+    }))).rejects.toBe(marker);
+    expect(await prismaBase.badgeAward.count({ where: { tenantId, period: '2026-08' } })).toBe(0);
+    const committed = await runInTenant(tenantId, () => prisma.$transaction((tx) => awardMonthBadges('2026-08', tx)));
+    expect(committed.awarded).toBeGreaterThan(0);
+    expect(await prismaBase.badgeAward.count({ where: { tenantId, period: '2026-08' } })).toBe(committed.awarded);
+    expect((await runInTenant(tenantId, () => awardMonthBadges('2026-08'))).awarded).toBe(0);
+  });
+
   it('GET /api/badges lists every badge with holders and month, or "Locked, no one yet"; filters by user and period', async () => {
     const all = await api.get(ownerToken, '/api/badges');
     expect(all.status).toBe(200);
