@@ -3,7 +3,7 @@ import { AppError } from '../middleware/errorHandler';
 import { Prisma, PaymentStatus } from '@prisma/client';
 import logger from '../utils/logger';
 import { checkResourceOwnership, Requester } from '../utils/authUtils';
-import { hasPermission } from '../middleware/auth';
+import { hasPermission } from './permissionService';
 import { getSocketInstance } from '../utils/socketInstance';
 import {
   emitExpenseCreated,

@@ -3,6 +3,8 @@
  * A key always has a user and a role: the API requires a role, validateKey refuses a key without one, and a role
  * that a key uses cannot be deleted.
  */
+import { registryToolsForGrid } from '../../config/roleToolRules';
+import { defaultRolePermissions } from '../../config/defaultRolePermissions';
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from '@jest/globals';
 import '../mocks/logger.mock';
 import '../mocks/socketInstance.mock';
@@ -87,7 +89,7 @@ describe('POST /api/mcp-keys', () => {
     const res = await createKey('Claude Desktop', 'Call rep');
     expect(res.status).toBe(201);
     expect(res.body.key).toMatch(/^mcp_[0-9a-f]{64}$/);
-    expect(res.body).toMatchObject({ label: 'Claude Desktop', roleId: role, roleName: 'Call rep', toolCount: 4 });
+    expect(res.body).toMatchObject({ label: 'Claude Desktop', roleId: role, roleName: 'Call rep', toolCount: registryToolsForGrid(defaultRolePermissions().sales_rep).length });
 
     const row = await prismaBase.mcpApiKey.findUniqueOrThrow({ where: { id: res.body.id }, include: { user: true } });
     expect(row.keyHash).toBe(hashApiKey(res.body.key));
@@ -120,7 +122,7 @@ describe('GET and DELETE /api/mcp-keys', () => {
     const res = await request(app).get('/api/mcp-keys').set(bearer(ownerA));
     expect(res.status).toBe(200);
     const mine = res.body.keys.find((k: any) => k.id === created.body.id);
-    expect(mine).toMatchObject({ label: 'Listed key', roleName: 'Delivery', toolCount: 3, keyPrefix: created.body.key.slice(0, 12), lastUsedAt: null });
+    expect(mine).toMatchObject({ label: 'Listed key', roleName: 'Delivery', toolCount: registryToolsForGrid(defaultRolePermissions().delivery_agent).length, keyPrefix: created.body.key.slice(0, 12), lastUsedAt: null });
     expectNoSecrets(res.body, created.body.key);
   });
 

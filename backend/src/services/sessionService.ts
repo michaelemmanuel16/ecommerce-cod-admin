@@ -6,7 +6,7 @@ import { deviceLabel } from '../utils/deviceLabel';
 import { AppError } from '../middleware/errorHandler';
 import { runInTenantOf } from '../utils/tenantContext';
 import * as Money from '../utils/money';
-import { adminService } from './adminService';
+import { getUserPermissions } from './permissionService';
 import type { User } from '@prisma/client';
 
 /**
@@ -60,7 +60,9 @@ export const sessionService = {
         await prisma.user.update({ where: { id: user.id }, data: { refreshToken, lastLogin: new Date() } });
         return { accessToken, refreshToken };
       };
-      const [tokens, allPermissions] = await Promise.all([startSession(), adminService.getRolePermissions() as Promise<Record<string, any>>]);
+      // The union of the roles the user holds: the same function as GET /api/auth/me (M6-T04)
+      const tokens = await startSession();
+      const permissions = await getUserPermissions({ id: user.id, role: user.role });
       return {
         user: {
           id: user.id,
@@ -73,7 +75,7 @@ export const sessionService = {
           preferences: user.preferences,
         },
         tokens,
-        permissions: allPermissions[user.role] || {},
+        permissions,
       };
     });
   },

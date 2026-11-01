@@ -24,6 +24,10 @@ import { assertNotLastOwner, assignPositionRole, positionRoleId } from './system
 import { eraseUser } from './staffService';
 import { updateUserSchema } from '../validators/staffSchema';
 import { formatIssues } from '../tools/shared';
+import { saveMatrix } from './rolePermissionService';
+import { invalidateAccess } from './accessService';
+import { getTenantMatrix } from './permissionService';
+import { ROLE_NAME_BY_USER_ROLE } from '../config/defaultRoles';
 import { assignmentSelect } from './roleService';
 import { emailConflictOf } from '../utils/prismaErrors';
 import { newInviteToken } from '../utils/inviteToken';
@@ -353,26 +357,22 @@ export const adminService = {
     return updatedConfig;
   },
 
-  // Role Permissions
+  // Role Permissions (the Settings matrix). Since M6-T04 it is a thin layer on the grid of the position role mapped from each
+  // UserRole (Owner, Admin, Manager, Call rep, ...): `Role.permissions` is the one store, nothing is copied.
   async getRolePermissions(_requester?: Requester) {
     // Permissions are needed for login/register response, so we allow read access
     // Note: Update requires strict admin privilege
-    const config = await this.getSystemConfig();
-    return config.rolePermissions || this.getDefaultPermissions();
+    const matrix = await getTenantMatrix(getTenantId() ?? null);
+    return Object.fromEntries((Object.keys(ROLE_NAME_BY_USER_ROLE) as UserRole[]).map((r) => [r, matrix[r] ?? {}])) as Record<UserRole, Record<string, string[]>>;
   },
 
   async updateRolePermissions(requester: Requester, permissions: any) {
     await this.checkAdminPrivilege(requester, 'super_admin');
+    if (!permissions || typeof permissions !== 'object' || Array.isArray(permissions)) throw new AppError('Permissions must be an object of roles', 400);
+    await saveMatrix(requester, permissions);
     const config = await this.getSystemConfig();
-
-    const result = await prisma.systemConfig.update({
-      where: { id: config.id },
-      data: { rolePermissions: permissions },
-    });
-
     await this.createAuditLog(requester, 'update', 'role_permissions', config.id.toString(), { permissions });
-
-    return result;
+    return this.getRolePermissions(requester);
   },
 
   getDefaultPermissions() {
@@ -626,6 +626,9 @@ export const adminService = {
     } catch (error) {
       throw emailConflictOf(error) ?? error;
     }
+
+    // The role change is committed: drop the cached access now, so the person's next request uses the new position role.
+    if (roleChanged) await invalidateAccess();
 
     await this.createAuditLog(requester, 'update', 'user', userId.toString(), { changes: Object.keys(data) });
 

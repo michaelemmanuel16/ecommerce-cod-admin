@@ -10,6 +10,8 @@ import { AppError } from '../middleware/errorHandler';
 import { isOwnerRole } from '../config/defaultRoles';
 import { adminService } from './adminService';
 import { createKeyIn, evictKeys, revokeKeysIn } from './mcpKeyService';
+import { assertGridWithin } from './rolePermissionService';
+import { invalidateAccess } from './accessService';
 import { announceRelease, releasePersonTargets } from './targetService';
 import { assertMayTouchRole, assignmentSelect, findRole, holderSelect, holderStatus, holderView } from './roleService';
 import type { AssignInput } from '../validators/roleSchema';
@@ -52,6 +54,8 @@ export async function assignToRole(actor: Requester, roleId: number, input: Assi
   const role = await findRole(roleId);
   const base = baseRoleOf(role);
   const fromDate = startOfUtcDay();
+  // A person below the Owner may not give a role above their own access, or give one to themselves (union of roles, T04).
+  await assertGridWithin(actor, role, input.type === 'existing' ? input.holderId : input.type === 'ai_agent' ? input.userId : undefined);
 
   if (input.type === 'ai_agent') {
     if (!isOwner(actor)) throw new AppError('Only the Owner can connect an AI agent', 403);
@@ -64,6 +68,7 @@ export async function assignToRole(actor: Requester, roleId: number, input: Assi
       return { created, assignment };
     });
     const { key } = created;
+    await invalidateAccess(roleId);
     return {
       assignment,
       holder: holderView(created.agent),
@@ -83,6 +88,7 @@ export async function assignToRole(actor: Requester, roleId: number, input: Assi
     assertOutranks(actor, base, found.role);
     await assertNotHolding(prisma, roleId, found.id);
     const assignment = await prisma.roleAssignment.create({ data: { tenantId, roleId, holderId: found.id, fromDate }, select: assignmentSelect });
+    await invalidateAccess(roleId);
     return { assignment, holder: holderView(found) };
   }
 
@@ -99,6 +105,7 @@ export async function assignToRole(actor: Requester, roleId: number, input: Assi
     roleId,
   });
   const { roleAssignments, ...holder } = user;
+  await invalidateAccess(roleId);
   return { assignment: roleAssignments[0], holder: holderView(holder) };
 }
 
@@ -131,6 +138,7 @@ export async function unassign(actor: Requester, roleId: number, assignmentId: n
     };
   });
   evictKeys(keys);
+  await invalidateAccess(roleId);
   if (released) await announceRelease(actor.id, released);
   return { assignment, revokedKeys: keys.length, targetReturned: released && { notice: released.notice, returned: released.returned } };
 }

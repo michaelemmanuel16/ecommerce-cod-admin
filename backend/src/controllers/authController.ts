@@ -392,8 +392,13 @@ export const registerTenant = async (req: AuthRequest, res: Response, next: Next
       return { tenant, user };
     });
 
-    // The owner holds the Owner role from the first day (F-1155); the seed gives it. Signup fails if the seed or the role fails.
-    await seedTenantDefaults(tenant.id, user.id);
+    // The owner holds the Owner role from the first day (F-1155); the seed gives it. The tenant is committed already, so a failed
+    // seed is logged and signup goes on: a retry with the same email would be refused. The next start-up seed fills what is missing.
+    try {
+      await seedTenantDefaults(tenant.id, user.id);
+    } catch (seedError) {
+      logger.error('Tenant defaults seed failed at signup; the start-up seed will retry', { tenantId: tenant.id, error: seedError });
+    }
 
     const { accessToken, refreshToken } = await runInTenantOf(user.tenantId, 'register-tenant', () =>
       sessionService.start({ ...user, tenantId: tenant.id }, requestMeta(req))

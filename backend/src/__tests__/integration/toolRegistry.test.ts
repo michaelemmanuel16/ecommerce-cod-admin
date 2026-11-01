@@ -46,7 +46,7 @@ const write = defineTool({
 
 beforeAll(async () => {
   pair = await createTwoTenants('toolreg');
-  ownerRoleId = (await prismaBase.role.create({ data: { tenantId: pair.a.id, name: 'Test owner', tools: ['orders_search', 'products_inventory'] } })).id;
+  ownerRoleId = (await prismaBase.role.create({ data: { tenantId: pair.a.id, name: 'Test owner', permissions: { orders: ['view'], products: ['view'] } } })).id;
   emptyRoleId = (await prismaBase.role.create({ data: { tenantId: pair.a.id, name: 'Test empty', tools: [] } })).id;
 }, 30000);
 

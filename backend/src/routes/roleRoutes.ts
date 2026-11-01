@@ -17,6 +17,10 @@ router.post('/', requireSuperAdmin, roleController.create);
 router.get('/:id', requireResourcePermission('users', 'view'), roleController.get);
 router.put('/:id', requireResourcePermission('users', 'update'), roleController.update);
 router.delete('/:id', requireSuperAdmin, roleController.remove);
+// M6-T04 (F-1153, F-1154): tool switches and the permission matrix are the Owner's.
+router.put('/:id/tools', requireSuperAdmin, roleController.setTools);
+router.get('/:id/permissions', requireResourcePermission('users', 'view'), roleController.getPermissions);
+router.put('/:id/permissions', requireSuperAdmin, roleController.setPermissions);
 router.get('/:id/assignments', requireResourcePermission('users', 'view'), roleController.assignments);
 router.post('/:id/assign', requireResourcePermission('users', 'create'), roleController.assign);
 router.delete('/:id/assignments/:assignmentId', requireResourcePermission('users', 'update'), roleController.unassign);

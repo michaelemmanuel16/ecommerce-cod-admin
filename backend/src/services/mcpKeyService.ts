@@ -1,9 +1,10 @@
 import { randomBytes } from 'crypto';
 import path from 'path';
-import { Prisma } from '@prisma/client';
+import { Prisma, UserRole } from '@prisma/client';
 import { prismaBase } from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
-import { roleToolList } from '../config/defaultRoles';
+import { registryToolsOfRole } from '../config/roleToolRules';
+import { getTenantMatrix } from './permissionService';
 import { evictKey, generateMcpKey, hashApiKey } from '../mcp/auth';
 import { createAiAgentUser } from './systemUserService';
 import { holderSelect } from './roleService';
@@ -12,7 +13,7 @@ export const MAX_KEYS_PER_TENANT = 5;
 const DEFAULT_EXPIRY_DAYS = 90;
 
 type KeyParams = { tenantId: string; label: string; roleId: number; userId?: number; expiresInDays?: number };
-type KeyRole = { id: number; name: string; tools: unknown };
+type KeyRole = { id: number; name: string; tools: unknown; isSystem: boolean; permissions: unknown; presetRole: UserRole | null };
 
 /**
  * Make an MCP key for a tenant, inside the caller's transaction `tx` (an un-extended client, so every lookup names the tenant).
@@ -26,7 +27,7 @@ export async function createKeyIn(tx: Prisma.TransactionClient, p: KeyParams, lo
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + (p.expiresInDays ?? DEFAULT_EXPIRY_DAYS));
 
-  const role = loaded ?? await tx.role.findFirst({ where: { id: p.roleId, tenantId }, select: { id: true, name: true, tools: true } });
+  const role = loaded ?? await tx.role.findFirst({ where: { id: p.roleId, tenantId }, select: { id: true, name: true, tools: true, isSystem: true, permissions: true, presetRole: true } });
   if (!role) throw new AppError('Role not found', 400);
 
   let agent = p.userId === undefined
@@ -46,7 +47,7 @@ export async function createKeyIn(tx: Prisma.TransactionClient, p: KeyParams, lo
   const key = await tx.mcpApiKey.create({
     data: { tenantId, keyHash: hashApiKey(rawKey), keyPrefix: rawKey.substring(0, 12), label, expiresAt, userId: agent.id, roleId: role.id },
   });
-  return { key, rawKey, agent, roleName: role.name, toolCount: roleToolList(role.tools).length };
+  return { key, rawKey, agent, roleName: role.name, toolCount: registryToolsOfRole(role, await getTenantMatrix(tenantId)).length };
 }
 
 /** Make an MCP key for a tenant (see createKeyIn); the checks, the key limit and the writes share one transaction. */

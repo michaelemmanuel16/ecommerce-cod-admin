@@ -47,6 +47,13 @@ export async function grantAdminUpdateStatus(tenantId: string): Promise<void> {
 export const grantAdminUpdateStock = (tenantId: string, db?: Pick<TransactionClient, 'systemConfig'>, dryRun?: boolean): Promise<GrantResult> =>
   grantAdminCell(tenantId, 'products', 'update_stock', db, dryRun);
 
+/** The oldest active super_admin person, when the Owner role has no current holder; else null. Call inside the tenant context. */
+async function oldestOwnerCandidate(ownerRoleId: number): Promise<number | null> {
+  if (await prisma.roleAssignment.count({ where: { roleId: ownerRoleId, toDate: null } }) > 0) return null;
+  const user = await prisma.user.findFirst({ where: { role: 'super_admin', kind: 'person', isActive: true }, orderBy: { id: 'asc' }, select: { id: true } });
+  return user?.id ?? null;
+}
+
 /**
  * Create what a tenant is missing: the chart of accounts, the default email
  * templates, the default roles (with preset and permission grid) and the system user. Idempotent: re-running never creates duplicates (unique
@@ -54,8 +61,9 @@ export const grantAdminUpdateStock = (tenantId: string, db?: Pick<TransactionCli
  * `(tenantId, name)` on roles; the system user is found by kind first).
  * Runs inside the tenant context so the Prisma extension stamps the tenantId.
  *
- * `ownerUserId` (signup only): the tenant's first user, who gets the Owner role in the same call, right after the roles exist. A
- * failure there is thrown, not logged: nothing else would ever give the owner the role. Skipped if they already hold it.
+ * `ownerUserId` (signup): the tenant's first user, who gets the Owner role in the same call, right after the roles exist. Skipped
+ * if they already hold it. Without it (the start-up seed, a backfill), an Owner role with no current holder is given to the
+ * tenant's oldest active super_admin.
  *
  * SMS templates are not seeded: no default SMS content exists in the code.
  */
@@ -81,11 +89,14 @@ export async function seedTenantDefaults(tenantId: string, ownerUserId?: number)
         data: defaultRoleRows(config?.rolePermissions).map((r) => ({ ...r, tenantId })),
         skipDuplicates: true,
       });
-      if (ownerUserId !== undefined) {
-        const owner = await prisma.role.findFirstOrThrow({ where: { name: ROLE_NAME_BY_USER_ROLE.super_admin }, select: { id: true } });
-        if (await prisma.roleAssignment.count({ where: { roleId: owner.id, holderId: ownerUserId, toDate: null } }) === 0) {
-          await prisma.roleAssignment.create({ data: { tenantId, roleId: owner.id, holderId: ownerUserId, fromDate: startOfUtcDay() } });
-        }
+      const owner = await prisma.role.findFirstOrThrow({ where: { name: ROLE_NAME_BY_USER_ROLE.super_admin }, select: { id: true } });
+      // Signup names the owner. Any other run fills an Owner role that has no holder, so a signup whose seed failed gets its role
+      // at the next start.
+      const holderId = ownerUserId ?? await oldestOwnerCandidate(owner.id);
+      const alreadyHolds = ownerUserId !== undefined
+        && await prisma.roleAssignment.count({ where: { roleId: owner.id, holderId: ownerUserId, toDate: null } }) > 0;
+      if (holderId !== null && !alreadyHolds) {
+        await prisma.roleAssignment.create({ data: { tenantId, roleId: owner.id, holderId, fromDate: startOfUtcDay() } });
       }
       return result.count;
     }),

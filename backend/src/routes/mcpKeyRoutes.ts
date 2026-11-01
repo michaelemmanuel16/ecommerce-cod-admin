@@ -3,10 +3,11 @@ import { z } from 'zod';
 import prisma from '../utils/prisma';
 import { authenticate, requireSuperAdmin } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
-import { getTenantId } from '../utils/tenantContext';
 import { auditService } from '../services/auditService';
 import { buildMcpConfig, createKey, revokeKey } from '../services/mcpKeyService';
-import { roleToolList } from '../config/defaultRoles';
+import { registryToolsOfRole } from '../config/roleToolRules';
+import { getTenantMatrix } from '../services/permissionService';
+import { getTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
 
 const router = Router();
@@ -47,16 +48,17 @@ router.get('/', async (_req: Request, res: Response) => {
         revokedAt: true,
         userId: true,
         roleId: true,
-        role: { select: { name: true, tools: true } },
+        role: { select: { name: true, tools: true, isSystem: true, permissions: true, presetRole: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
 
+    const matrix = await getTenantMatrix(getTenantId() ?? null);
     res.json({
       keys: keys.map(({ role, ...key }) => ({
         ...key,
         roleName: role?.name ?? null,
-        toolCount: roleToolList(role?.tools).length,
+        toolCount: role ? registryToolsOfRole(role, matrix).length : 0,
       })),
     });
   } catch (error) {

@@ -170,6 +170,8 @@ describe('FinancialService', () => {
 
   describe('expense rows by role (F-917)', () => {
     beforeEach(() => {
+      // no held roles: the permission check falls back to the base role's matrix
+      prismaMock.roleAssignment.findMany.mockResolvedValue([] as any);
       prismaMock.expense.findMany.mockResolvedValue([] as any);
       prismaMock.expense.count.mockResolvedValue(0 as any);
       prismaMock.expense.aggregate.mockResolvedValue({ _sum: { amount: null } } as any);

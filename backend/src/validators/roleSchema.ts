@@ -33,6 +33,13 @@ export const createRoleSchema = z.object({
 export const updateRoleSchema = z.object(roleFields).partial().strict()
   .refine((v) => Object.keys(v).length > 0, 'Nothing to update');
 
+/** M6-T04: the tool switches (registry tool names) and the permission matrix (resource -> actions) of a role. Names are checked in the service. */
+export const setToolsSchema = z.object({ tools: z.array(text(60).min(1)).max(50) }).strict();
+
+export const setPermissionsSchema = z.object({
+  permissions: z.record(text(40).min(1), z.array(text(40).min(1)).max(20)),
+}).strict();
+
 const email = z.string().trim().toLowerCase().email('Email is not valid').max(254);
 const phone = text(30).optional();
 const name = text(100).min(1, 'Name is required');

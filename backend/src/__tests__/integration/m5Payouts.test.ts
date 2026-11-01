@@ -3,6 +3,7 @@
  * Fixture numbers: Adwoa owed GH₵2,034 and Nana GH₵134, payable 2,168 (account 2020).
  * A payout lists the payee's open entries, marks them paid, posts DR 2020 / CR 1010 and stores method, reference and recorder.
  */
+import { setRoleGrid } from './helpers/roleGrid';
 import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import request from 'supertest';
 import app from '../../server';
@@ -306,13 +307,7 @@ describe('permission and tenant (F-939)', () => {
   });
 
   it('a role with payouts:view only cannot create when the tenant takes create away', async () => {
-    await prismaBase.systemConfig.upsert({
-      where: { tenantId },
-      update: { rolePermissions: { manager: { payouts: ['view'] } } },
-      create: { tenantId, rolePermissions: { manager: { payouts: ['view'] } } } as any,
-    });
-    const { clearPermissionsCache } = await import('../../middleware/auth');
-    clearPermissionsCache();
+    await setRoleGrid(tenantId, 'manager', { payouts: ['view'] });
     const post = await request(app).post('/api/payouts').set(bearer(U.manager.token)).send(payoutBody({ payeeId: U.nana.id }));
     expect(post.status).toBe(403);
     expect((await request(app).get('/api/payouts').set(bearer(U.manager.token))).status).toBe(200);

@@ -1,31 +1,11 @@
-import { NextFunction, RequestHandler, Response } from 'express';
-import { z } from 'zod';
-import { AuthRequest } from '../types';
-import { AppError } from '../middleware/errorHandler';
 import { auditService } from '../services/auditService';
 import * as roleService from '../services/roleService';
 import * as assignmentService from '../services/roleAssignmentService';
+import * as permissionService from '../services/rolePermissionService';
 import { resolveTenantId } from '../utils/tenantContext';
-import { formatIssues } from '../tools/shared';
-import { assignSchema, createRoleSchema, updateRoleSchema } from '../validators/roleSchema';
-
-/** An async handler whose errors go to the error middleware. */
-const handler = (fn: (req: AuthRequest, res: Response) => Promise<void>): RequestHandler =>
-  (req, res, next: NextFunction) => { fn(req as AuthRequest, res).catch(next); };
-
-const idParam = (raw: string, what = 'role'): number => {
-  const id = parseInt(raw, 10);
-  if (!Number.isInteger(id) || id <= 0) throw new AppError(`Invalid ${what} ID`, 400);
-  return id;
-};
-
-const parse = <T extends z.ZodTypeAny>(schema: T, body: unknown): z.infer<T> => {
-  const parsed = schema.safeParse(body);
-  if (!parsed.success) throw new AppError(formatIssues(parsed.error, 'body'), 400, 'VALIDATION_ERROR');
-  return parsed.data;
-};
-
-const actorOf = (req: AuthRequest) => ({ id: req.user!.id, role: req.user!.role });
+import { AuthRequest } from '../types';
+import { actorOf, handler, idParam, parse } from './helpers';
+import { assignSchema, createRoleSchema, setPermissionsSchema, setToolsSchema, updateRoleSchema } from '../validators/roleSchema';
 
 /** Every role change writes an audit row. */
 const audit = (req: AuthRequest, action: string, roleId: number, metadata: Record<string, unknown> = {}) =>
@@ -57,6 +37,29 @@ export const update = handler(async (req, res) => {
   const role = await roleService.updateRole(actorOf(req), id, input);
   await audit(req, 'role_update', id, { fields: Object.keys(input) });
   res.json({ role });
+});
+
+/** PUT /api/roles/:id/tools: `{tools: [...]}` replaces the switches. A write tool without its read tool is 400 ("Needs View orders"). */
+export const setTools = handler(async (req, res) => {
+  const id = idParam(req.params.id);
+  const { tools } = parse(setToolsSchema, req.body);
+  const { role, before } = await permissionService.setRoleTools(actorOf(req), id, tools);
+  await audit(req, 'role_tools_update', id, { before, after: role.tools });
+  res.json({ role });
+});
+
+/** GET /api/roles/:id/permissions: the grid of the role and the cells that may be set. */
+export const getPermissions = handler(async (req, res) => {
+  res.json(await permissionService.getRolePermissions(idParam(req.params.id)));
+});
+
+/** PUT /api/roles/:id/permissions: `{permissions: {resource: [actions]}}` replaces the grid. Clears the cache and tells the holders' browsers. */
+export const setPermissions = handler(async (req, res) => {
+  const id = idParam(req.params.id);
+  const { permissions } = parse(setPermissionsSchema, req.body);
+  const { before, after } = await permissionService.setRolePermissions(actorOf(req), id, permissions);
+  await audit(req, 'role_permissions_update', id, { before, after });
+  res.json({ permissions: after });
 });
 
 export const remove = handler(async (req, res) => {

@@ -2,6 +2,7 @@
  * M5-T08 (COD-49): Findings service and API (F-909): list, filter, assign, explain, write off, and the auto-close of a
  * short_pay Finding when a later settlement clears its cause. Two tenants.
  */
+import { setRoleGrid } from './helpers/roleGrid';
 import { describe, it, expect, beforeAll, afterAll, jest } from '@jest/globals';
 import '../mocks/logger.mock';
 import request from 'supertest';
@@ -41,11 +42,7 @@ beforeAll(async () => {
   rep = await mkUser(tenantId, 'frep', 'sales_rep');
   otherOwner = await mkUser(otherTenantId, 'fother', 'super_admin');
   // The accountant holds financial:update in this tenant (the matrix is the tenant's to change)
-  await prismaBase.systemConfig.upsert({
-    where: { tenantId },
-    update: { rolePermissions: { accountant: { financial: ['view', 'create', 'update'] } } },
-    create: { tenantId, rolePermissions: { accountant: { financial: ['view', 'create', 'update'] } } } as any,
-  });
+  await setRoleGrid(tenantId, 'accountant', { financial: ['view', 'create', 'update'] });
 }, 60000);
 
 afterAll(async () => {

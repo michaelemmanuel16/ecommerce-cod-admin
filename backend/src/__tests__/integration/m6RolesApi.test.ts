@@ -3,6 +3,7 @@
  * (person, AI agent with a role-limited MCP key, company), unassign with history, two tenants, and the position role
  * every new staff user gets.
  */
+import { getTenantMatrix } from '../../services/permissionService';
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from '@jest/globals';
 import '../mocks/logger.mock';
 import '../mocks/socketInstance.mock';
@@ -12,8 +13,8 @@ import { prismaBase } from '../../utils/prisma';
 import { bearer, superAdminToken } from './helpers/superAdminToken';
 import { createTwoTenants, deleteTenantRows, TwoTenants } from './helpers/twoTenants';
 import { clearAuthCache, validateKey, disconnectPrisma } from '../../mcp/auth';
-import { ALL_TOOL_NAMES } from '../../config/toolPermissions';
-import { DEFAULT_ROLES, roleToolList } from '../../config/defaultRoles';
+import { ROLE_TOOL_TOTAL, gridOfRole, registryToolsOfRole, switchesOn } from '../../config/roleToolRules';
+import { DEFAULT_ROLES } from '../../config/defaultRoles';
 import { startOfUtcDay } from '../../utils/startOfUtcDay';
 
 jest.setTimeout(90_000);
@@ -92,7 +93,7 @@ describe('GET /api/roles', () => {
     const roles = res.body.roles as any[];
     expect(roles.map((r) => r.name)).toEqual(expect.arrayContaining(DEFAULT_ROLES.map((r) => r.name)));
     const owner = roles.find((r) => r.name === 'Owner');
-    expect(owner).toMatchObject({ id: pair.a.ids.role, isSystem: false, toolCount: ALL_TOOL_NAMES.length, toolTotal: ALL_TOOL_NAMES.length, holderCount: 1 });
+    expect(owner).toMatchObject({ id: pair.a.ids.role, isSystem: false, toolCount: ROLE_TOOL_TOTAL, toolTotal: ROLE_TOOL_TOTAL, holderCount: 1 });
     expect(owner.area).toBeDefined();
     const idsB = (await prismaBase.role.findMany({ where: { tenantId: pair.b.id } })).map((r) => r.id);
     expect(roles.some((r) => idsB.includes(r.id))).toBe(false);
@@ -134,8 +135,10 @@ describe('POST /api/roles (F-1156)', () => {
     const callRep = await roleOf(A(), 'Call rep');
     const res = await api.post(ownerA, '/api/roles', { name: uniq('Rep copy'), copyToolsFromRoleId: callRep.id });
     expect(res.status).toBe(201);
-    expect(res.body.role.tools).toEqual(roleToolList(callRep.tools));
-    expect(res.body.role.toolCount).toBe(4);
+    // the switches are read from the grid; a non-system role stores no `tools`
+    expect(res.body.role.tools).toEqual(switchesOn(gridOfRole(callRep, await getTenantMatrix(A()))));
+    expect((await roleOf(A(), res.body.role.name)).tools).toBeNull();
+    expect(res.body.role.toolCount).toBe(7);
     const foreign = await api.post(ownerA, '/api/roles', { name: uniq('Foreign copy'), copyToolsFromRoleId: pair.b.ids.legacyRole });
     expect(foreign.status).toBe(400);
   });
@@ -263,18 +266,19 @@ describe('assign a person (F-1152)', () => {
 describe('assign an AI agent (F-1152)', () => {
   it('makes an ai_agent user, an assignment and a key whose tools are exactly the role tools; the key is shown once', async () => {
     const role = await roleOf(A(), 'Call rep');
+    const matrix = await getTenantMatrix(A());
     const res = await assign(role.id, { type: 'ai_agent', name: 'Claude Desktop' });
     expect(res.status).toBe(201);
     const { key } = res.body.apiKey;
     expect(key).toMatch(/^mcp_[0-9a-f]{64}$/);
-    expect(res.body.apiKey).toMatchObject({ toolCount: 4, roleId: role.id });
+    expect(res.body.apiKey).toMatchObject({ toolCount: registryToolsOfRole(role, matrix).length, roleId: role.id });
     expect(res.body.holder).toMatchObject({ kind: 'ai_agent', typeLabel: 'AI agent', name: 'Claude Desktop' });
 
     clearAuthCache();
     const principal = await validateKey(key);
     expect(principal.roleId).toBe(role.id);
     expect(principal.userId).toBe(res.body.holder.id);
-    expect([...principal.access.roleTools].sort()).toEqual([...roleToolList(role.tools)].sort());
+    expect([...principal.access.roleTools].sort()).toEqual([...registryToolsOfRole(role, matrix)].sort());
 
     const assignment = await prismaBase.roleAssignment.findFirstOrThrow({ where: { holderId: res.body.holder.id } });
     expect(assignment).toMatchObject({ roleId: role.id, toDate: null, tenantId: A() });
@@ -371,7 +375,7 @@ describe('overview (F-1151)', () => {
     expect(card.holderCount).toBe(3);
     expect(card.holders.map((h: any) => h.typeLabel).sort()).toEqual(['Company', 'Human', 'Human']);
     expect(card.holders.find((h: any) => h.name === 'Esi Owusu').status).toBe('invited');
-    expect(card).toMatchObject({ toolCount: 0, toolTotal: ALL_TOOL_NAMES.length });
+    expect(card).toMatchObject({ toolCount: 0, toolTotal: ROLE_TOOL_TOTAL });
     expect(card.target).toMatchObject({ metric: 'orders', value: '723' });
     for (const h of card.holders) expect(h).not.toHaveProperty('password');
 
@@ -380,7 +384,7 @@ describe('overview (F-1151)', () => {
     expect(cards.some((c) => c.id === pair.a.ids.legacyRole)).toBe(false);
     const owner = cards.find((c) => c.id === pair.a.ids.role);
     expect(owner.holderCount).toBe(1);
-    expect(owner.toolCount).toBe(ALL_TOOL_NAMES.length);
+    expect(owner.toolCount).toBe(ROLE_TOOL_TOTAL);
   });
 
   it('never shows tenant B holders to tenant A, and the reverse', async () => {

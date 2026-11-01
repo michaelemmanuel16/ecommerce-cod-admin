@@ -73,10 +73,10 @@ describe('GET /api/auth/me', () => {
 
   it('roles come from RoleAssignment (two-tenant: only the tenant\'s own roles)', async () => {
     const a = await request(app).get('/api/auth/me').set(bearer(pair.a.users.admin.token));
-    expect(a.body.roles).toEqual([{ id: pair.a.ids.role, name: 'Owner' }]);
+    expect(a.body.roles).toEqual([{ id: pair.a.ids.adminRole, name: 'Admin' }]);
     const b = await request(app).get('/api/auth/me').set(bearer(pair.b.users.admin.token));
-    expect(b.body.roles).toEqual([{ id: pair.b.ids.role, name: 'Owner' }]);
-    expect(pair.a.ids.role).not.toBe(pair.b.ids.role);
+    expect(b.body.roles).toEqual([{ id: pair.b.ids.adminRole, name: 'Admin' }]);
+    expect(pair.a.ids.adminRole).not.toBe(pair.b.ids.adminRole);
   });
 
   it('an assignment that ended is ignored', async () => {
@@ -97,7 +97,8 @@ describe('GET /api/auth/me', () => {
 describe('default permission matrix', () => {
   it('has marketing:view for owner, admin, manager only; sales_rep cannot delete customers; force_status is super_admin only', async () => {
     const defaults = adminService.getDefaultPermissions() as Record<string, Record<string, string[]>>;
-    for (const role of ['super_admin', 'admin', 'manager']) expect(defaults[role].marketing).toEqual(['view']);
+    for (const role of ['super_admin', 'admin']) expect(defaults[role].marketing).toEqual(['view', 'update']);
+    expect(defaults.manager.marketing).toEqual(['view']);
     for (const role of ['sales_rep', 'inventory_manager', 'delivery_agent', 'accountant']) expect(defaults[role].marketing).toEqual([]);
     expect(defaults.sales_rep.customers).not.toContain('delete');
     expect(defaults.manager.customers).toContain('delete');

@@ -3,6 +3,7 @@
  * 30-second cache per tenant and range, the permission trimming for a manager, and the 1-second budget. Numbers fixture,
  * clock fixed at 17 October 2026, 13:00.
  */
+import { setRoleGrid } from './helpers/roleGrid';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, jest } from '@jest/globals';
 import '../mocks/logger.mock';
 import '../mocks/socketInstance.mock';
@@ -28,8 +29,7 @@ let managerToken: string;
 
 const dash = async (options: Parameters<typeof ownerDashboard>[1] = {}) => (await ownerDashboard(tenantId, options)) as any;
 const setManagerPermissions = async (resources: Record<string, string[]>) => {
-  await prismaBase.systemConfig.updateMany({ where: { tenantId }, data: { rolePermissions: { manager: resources } as any } });
-  clearPermissionsCache();
+  await setRoleGrid(tenantId, 'manager', resources);
 };
 
 beforeAll(async () => {
@@ -52,8 +52,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   jest.useRealTimers();
-  await prismaBase.systemConfig.updateMany({ where: { tenantId }, data: { rolePermissions: undefined } });
-  clearPermissionsCache();
+  await setRoleGrid(tenantId, 'manager');
   await deleteFixtureRows(prismaBase, tenantId);
   await prismaBase.tenant.deleteMany({ where: { slug: FIXTURE_SLUG } });
   await prismaBase.$disconnect();

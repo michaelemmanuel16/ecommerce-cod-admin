@@ -3,9 +3,9 @@ import prisma, { TransactionClient } from '../utils/prisma';
 import { withSoftDeleted } from '../utils/prismaExtensions';
 import { startOfUtcDay } from '../utils/startOfUtcDay';
 import logger from '../utils/logger';
+import { invalidateAccess } from './accessService';
 import { resolveTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
-import { PermissionGrid } from '../config/defaultRolePermissions';
 import { ROLE_NAME_BY_USER_ROLE, defaultRoleRows } from '../config/defaultRoles';
 
 type Db = Pick<TransactionClient, 'role' | 'roleAssignment' | 'systemConfig' | 'user'>;
@@ -78,21 +78,12 @@ export async function assignUsersToPositionRoles(tenantId: string, db: Db = pris
       result.assigned[u.role] = (result.assigned[u.role] ?? 0) + 1;
       if (id != null) rows.push({ tenantId, roleId: id, holderId: u.id, fromDate: startOfUtcDay(u.createdAt) });
     }
-    if (!dryRun && rows.length) await db.roleAssignment.createMany({ data: rows });
+    if (!dryRun && rows.length) {
+      await db.roleAssignment.createMany({ data: rows });
+      await invalidateAccess();
+    }
     return result;
   });
-}
-
-/** Union of the permission grids of the roles a person holds (F-1155). M6-T04 puts this behind the middleware. */
-export function unionPermissions(grids: Array<PermissionGrid | null | undefined>): PermissionGrid {
-  const union: Record<string, Set<string>> = {};
-  for (const grid of grids) {
-    for (const [resource, actions] of Object.entries(grid ?? {})) {
-      union[resource] ??= new Set();
-      for (const a of actions) union[resource].add(a);
-    }
-  }
-  return Object.fromEntries(Object.entries(union).map(([r, s]) => [r, [...s]]));
 }
 
 /**

@@ -255,12 +255,22 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
     })),
   ]);
 
-  // Roles come from seedTenantDefaults in wave 1; the harness adds one assignment (admin holds Owner).
-  const ownerRole = await prismaBase.role.findFirstOrThrow({ where: { tenantId, name: 'Owner' } });
+  // Roles come from seedTenantDefaults in wave 1. The harness gives the admin user the Admin role (so its permissions are an
+  // admin's, as in production) and adds an Owner user who holds the Owner role.
+  const [ownerRole, adminRole] = await Promise.all([
+    prismaBase.role.findFirstOrThrow({ where: { tenantId, name: 'Owner' } }),
+    prismaBase.role.findFirstOrThrow({ where: { tenantId, name: 'Admin' } }),
+  ]);
   ids.role = ownerRole.id;
+  ids.adminRole = adminRole.id;
+  const ownerUser = await prismaBase.user.create({
+    data: { email: `ownerholder-${tag}@codadmin.test`, password: 'x', firstName: `Owner${marker}`, lastName: `Last${marker}`, role: 'super_admin', tenantId },
+  });
+  ids.ownerUser = ownerUser.id;
   await seed('roleAssignment', prismaBase.roleAssignment.create({
-    data: { tenantId, roleId: ownerRole.id, holderId: admin.id, fromDate: new Date() },
+    data: { tenantId, roleId: ownerRole.id, holderId: ownerUser.id, fromDate: new Date() },
   }));
+  await prismaBase.roleAssignment.create({ data: { tenantId, roleId: adminRole.id, holderId: admin.id, fromDate: new Date() } });
   await seed('userSession', prismaBase.userSession.create({
     data: { tenantId, userId: admin.id, tokenHash: `hash-${tag}`, deviceLabel: 'Chrome on macOS', ip: '127.0.0.1' },
   }));

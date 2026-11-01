@@ -18,7 +18,7 @@ import { ORDER_EVENT_INCLUDE } from './orderSideEffects';
 import { getAvailableMany, RESERVING } from './stockService';
 import assignmentService from './assignmentService';
 import { transitionOrder, allowedTransitions, actorOf, ownsOrder, TransitionActor, TransitionOptions } from './orderStateMachine';
-import { hasPermission } from '../middleware/auth';
+import { hasPermission } from './permissionService';
 import { findAndReactivateCustomerByPhone, findCustomerByPhoneIncludingArchived } from '../utils/customerLookup';
 import { auditService } from './auditService';
 import * as Money from '../utils/money';

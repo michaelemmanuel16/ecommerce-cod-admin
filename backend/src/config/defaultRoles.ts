@@ -7,7 +7,8 @@ export interface DefaultRole {
   name: string;
   area: string;
   contract: { purpose: string };
-  tools: ToolName[];
+  /** Only the system role keeps a fixed list (registry tool names). Every other role's switches come from its grid. */
+  tools?: ToolName[];
   isSystem: boolean;
   /** M6 (F-1155): the UserRole this role is the position role of (its base preset); none on a role that maps to no UserRole. */
   presetRole?: UserRole;
@@ -27,39 +28,33 @@ const ADDED_AFTER_LEGACY: readonly ToolName[] = ['partner_payout_record'];
 
 export const DEFAULT_ROLES: DefaultRole[] = [
   {
-    name: 'Owner', presetRole: 'super_admin', area: 'Management', isSystem: false, tools: [...ALL_TOOL_NAMES],
+    name: 'Owner', presetRole: 'super_admin', area: 'Management', isSystem: false,
     contract: { purpose: 'Runs the business and sees everything.' },
   },
   {
     name: 'Call rep', presetRole: 'sales_rep', area: 'Sales', isSystem: false,
-    tools: ['customers_lookup', 'orders_search', 'orders_summary', 'reps_status'],
     contract: { purpose: 'Calls new customers and confirms their orders.' },
   },
   {
     name: 'Delivery', presetRole: 'delivery_agent', area: 'Delivery', isSystem: false,
-    tools: ['deliveries_active', 'orders_search', 'agents_status'],
     contract: { purpose: 'Delivers orders and collects the cash.' },
   },
   {
     name: 'Finance clerk', presetRole: 'accountant', area: 'Finance', isSystem: false,
-    tools: ['financial_summary', 'orders_summary', 'analytics_daily', 'analytics_weekly', 'analytics_monthly'],
     contract: { purpose: 'Keeps the books and checks cash from deliveries.' },
   },
   {
     // No UserRole value: its holders keep base role `manager` (PRD F-1155).
     name: 'Marketing', presetRole: 'manager', area: 'Marketing', isSystem: false,
     permissions: { orders: ['view'], customers: ['view'], analytics: ['view', 'export'], marketing: ['view', 'update'] },
-    tools: ['analytics_daily', 'analytics_weekly', 'analytics_monthly', 'orders_summary', 'customers_lookup'],
     contract: { purpose: 'Runs ads and reads what they bring in.' },
   },
   {
     name: 'Stock keeper', presetRole: 'inventory_manager', area: 'Stock', isSystem: false,
-    tools: ['products_inventory', 'orders_search'],
     contract: { purpose: 'Counts stock and prepares orders for dispatch.' },
   },
-  // No tools until M6-T04 adds the 16 tool switches.
-  { name: 'Admin', presetRole: 'admin', area: 'Management', isSystem: false, tools: [], contract: { purpose: 'Runs the daily work of the business.' } },
-  { name: 'Manager', presetRole: 'manager', area: 'Management', isSystem: false, tools: [], contract: { purpose: 'Leads the team and reads the numbers.' } },
+  { name: 'Admin', presetRole: 'admin', area: 'Management', isSystem: false, contract: { purpose: 'Runs the daily work of the business.' } },
+  { name: 'Manager', presetRole: 'manager', area: 'Management', isSystem: false, contract: { purpose: 'Leads the team and reads the numbers.' } },
   {
     name: LEGACY_MCP_ROLE_NAME, area: 'Integrations', isSystem: true, tools: ALL_TOOL_NAMES.filter((t) => !ADDED_AFTER_LEGACY.includes(t)),
     contract: { purpose: 'Old MCP keys keep working with all 14 tools until the owner tightens them.' },
@@ -72,6 +67,10 @@ export const ROLE_NAME_BY_USER_ROLE = Object.fromEntries(
 ) as Record<UserRole, string>;
 
 /** The Owner role is the one built from `super_admin`. It can never be deleted (F-1150). */
+/** A role seeded for a UserRole (Owner, Admin, Manager, Call rep, ...): its name is the mapped name of its base role. Marketing is not one. */
+export const isPositionRole = (role: { name: string; presetRole: UserRole | null }): boolean =>
+  role.presetRole !== null && ROLE_NAME_BY_USER_ROLE[role.presetRole] === role.name;
+
 export const isOwnerRole = (role: { presetRole: UserRole | null }): boolean => role.presetRole === 'super_admin';
 
 /**
@@ -80,5 +79,9 @@ export const isOwnerRole = (role: { presetRole: UserRole | null }): boolean => r
  */
 export function defaultRoleRows(stored: unknown) {
   const grids = mergeRolePermissions(stored);
-  return DEFAULT_ROLES.map((r) => ({ ...r, kpis: [], permissions: r.permissions ?? (r.presetRole ? grids[r.presetRole] : undefined) }));
+  return DEFAULT_ROLES.map((r) => {
+    const permissions = r.permissions ?? (r.presetRole ? grids[r.presetRole] : undefined);
+    // Only the system role stores `tools` (registry tool names); the switches of every other role are read from its grid (M6-T04).
+    return { ...r, kpis: [], permissions };
+  });
 }
