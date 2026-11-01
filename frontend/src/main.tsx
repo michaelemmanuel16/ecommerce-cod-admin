@@ -13,6 +13,7 @@ import './styles/customers.css';
 import './styles/deliveries.css';
 import './styles/financeOverview.css';
 import './styles/inventory.css';
+import './styles/targets.css';
 import './styles/products.css';
 import './styles/onboarding.css';
 import './styles/reports.css';

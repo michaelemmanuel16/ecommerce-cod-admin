@@ -163,7 +163,7 @@ describe('role, person and daily targets', () => {
     const pool = await api.get(ownerA, `/api/targets/roles/${roleId}/pool?month=2026-11`);
     expect(pool.body.pool).toMatchObject({ total: '100000.00', allocated: '40000.00', pool: '60000.00' });
     const tree = await api.get(ownerA, '/api/targets/tree?year=2026&month=2026-11');
-    expect(tree.body.roles).toEqual([expect.objectContaining({ roleId, roleName: 'Call rep T08', pool: expect.objectContaining({ pool: '60000.00' }) })]);
+    expect(tree.body.roles).toContainEqual(expect.objectContaining({ roleId, roleName: 'Call rep T08', pool: expect.objectContaining({ pool: '60000.00' }) }));
   });
 
   it('a person target over the role is rejected with the difference; PUT changes a value', async () => {

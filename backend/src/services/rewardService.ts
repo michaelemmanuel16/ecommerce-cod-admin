@@ -9,6 +9,7 @@ import * as Money from '../utils/money';
 import { deliveredByRep, outcomesByPartner } from './kpi/rates';
 import { currentMonth, getStoreTimeZone, monthRange, ymdOfUtc, MONTH_RE } from './kpi/dates';
 import { METRIC_BASIS, type MeasureBasis } from '../config/targetMetrics';
+import { monthStatus } from './targetActuals';
 import { NO_DATA_FOR_METRIC, SET_A_TARGET, isMonthClosed, monthPersonTargets, monthRoleTargets, periodBounds } from './targetService';
 import { clearTenantFeaturesCache, getRewardFeatures, mergeFeatureKey, type RewardFeatures } from './tenantFeatures';
 import {
@@ -300,5 +301,7 @@ export async function computeAttainment(period: string, filter: { userId?: numbe
   });
 
   rows.sort((a, b) => a.roleName.localeCompare(b.roleName) || a.name.localeCompare(b.name));
-  return { period, monthStart: ymdOfUtc(bounds.start), closed, currency, results: rows };
+  // The status words are the tree's (`targetStatus`), so a row and a month of the Targets page never disagree.
+  const today = localDate(new Date(), getStoreTimeZone(tenantId));
+  return { period, monthStart: ymdOfUtc(bounds.start), closed, currency, results: rows.map((r) => ({ ...r, status: monthStatus(r.percent, period, today) })) };
 }
