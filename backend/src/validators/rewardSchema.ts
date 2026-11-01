@@ -31,3 +31,21 @@ export const attainmentQuerySchema = z.object({
   userId: z.coerce.number().int().positive().optional(),
   roleId: z.coerce.number().int().positive().optional(),
 });
+
+/** M6-T11: `GET /api/leaderboard`. `period`: today, week, month (default), year or a month like 2026-10. */
+export const leaderboardQuerySchema = z.object({
+  role: z.enum(['call_rep', 'delivery']),
+  period: z.union([z.enum(['today', 'week', 'month', 'year']), z.string().regex(MONTH_RE, 'Period must be today, week, month, year or a month like 2026-10')]).optional(),
+});
+
+/** M6-T11: `GET /api/badges`. */
+export const badgesQuerySchema = z.object({
+  userId: z.coerce.number().int().positive().optional(),
+  period: z.string().regex(MONTH_RE, 'Period must be a month like 2026-10').optional(),
+});
+
+/** F-1108: `GET /api/rewards/progress`. A person's attainment this month (or `period`). */
+export const progressQuerySchema = z.object({
+  userId: z.coerce.number().int().positive().optional(),
+  period: z.string().regex(MONTH_RE, 'Period must be a month like 2026-10').optional(),
+});

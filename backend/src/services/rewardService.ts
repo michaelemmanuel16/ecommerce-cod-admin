@@ -156,7 +156,7 @@ async function peopleOfMonth(period: string, userId?: number, roleId?: number) {
 }
 
 /** How a target is measured: by its metric, else by the base role of the role. */
-const basisOf = (metric: string | null, preset: UserRole | null): MeasureBasis | null => {
+export const basisOf = (metric: string | null, preset: UserRole | null): MeasureBasis | null => {
   if (metric) return METRIC_BASIS[metric] ?? null;
   return preset === 'sales_rep' ? 'count' : preset === 'delivery_agent' ? 'rate' : null;
 };
@@ -184,10 +184,10 @@ export interface AttainmentRow {
 }
 
 /** What a measure gives: the actual shown, the exact percent of target, and for a rate the counts behind it. */
-interface Measure { actual: number; percent: Money.Money | null; rate: { delivered: number; closed: number } | null }
+export interface Measure { actual: number; percent: Money.Money | null; rate: { delivered: number; closed: number } | null }
 
 /** The actual and percent of one person: a count against a count target, or a success rate against the success target. */
-function measure(
+export function measure(
   basis: MeasureBasis, target: Money.Money, delivered: number, outcome: { delivered: number; failed: number; returned: number } | undefined,
 ): Measure {
   if (basis === 'count') return { actual: delivered, percent: attainmentPercent(delivered, target), rate: null };
@@ -198,7 +198,7 @@ function measure(
 }
 
 /** How far the next tier is (F-1108); null at the top. `prize` is the text of what that tier pays. */
-function distanceTo(basis: MeasureBasis, tier: Tier | null, m: Measure, target: Money.Money, prize: string | null): Distance | null {
+export function distanceTo(basis: MeasureBasis, tier: Tier | null, m: Measure, target: Money.Money, prize: string | null): Distance | null {
   const next = nextTier(tier);
   if (next === null) return null;
   if (basis === 'count') {
