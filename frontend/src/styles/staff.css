@@ -15,6 +15,7 @@
 .v2 .tt2 .who{min-width:200px}
 .v2 .tt2 .who small{display:block;color:var(--ink-3);font-size:12px}
 .v2 .tt2 .who .a.co{border-radius:9px}
+.v2 .tt2 td .tag{white-space:nowrap}
 .v2 .tt2 .rolechips{display:flex;gap:4px;flex-wrap:wrap}
 .v2 .tt2 .kb{display:grid;place-items:center;width:32px;height:32px;border-radius:9px;color:var(--ink-2)}
 .v2 .tt2 .kb:hover,.v2 .tt2 .kb:focus-visible{background:var(--hover)}
@@ -38,8 +39,7 @@
   .v2 .staff-filters{padding:6px 16px 12px}
   .v2 .staff-search{max-width:none}
 }
-/* The person modal: two fields to a row (the mockup's .two2), one under 760px */
-.v2 .dlg .two2{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
-.v2 .dlg .mb .fl{margin-bottom:12px}
+/* The person modal: two fields to a row (the mockup's .two2), one under 760px. The gap between fields is the .mb gap (14px) of every v2 modal; no margin of its own. */
+.v2 .dlg .two2{display:grid;grid-template-columns:1fr 1fr;gap:14px 12px}
 .v2 .dlg .mb .seg{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
 @media (max-width:760px){.v2 .dlg .two2{grid-template-columns:1fr}}

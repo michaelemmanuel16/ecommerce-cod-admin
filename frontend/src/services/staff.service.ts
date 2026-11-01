@@ -24,6 +24,8 @@ export interface StaffRow {
   status: StaffStatus;
   isActive: boolean;
   lastLogin: string | null;
+  /** The last sign-in of a person, or the last use of an AI agent's key. */
+  lastActiveAt: string | null;
   invitedAt: string | null;
   commissionAmount: number | null;
   vehicleType: string | null;
@@ -31,8 +33,8 @@ export interface StaffRow {
   location: string | null;
   payMethod: PayMethod | null;
   positions: Array<{ id: number; name: string }>;
-  /** A delivery partner's fee is a rule, not a field of the person. */
-  feeRule: { editable: false; url: string } | null;
+  /** A delivery partner's fee is a rule, not a field of the person. `delivered` is the rule in force today for a delivered order. */
+  feeRule: { editable: false; url: string; delivered: { basis: 'flat' | 'percent'; amount: number } | null } | null;
 }
 
 export interface StaffList {

@@ -1,6 +1,7 @@
-import { Prisma, UserRole, OrderStatus } from '@prisma/client';
+import { FeeBasis, Prisma, UserRole, OrderStatus } from '@prisma/client';
 import type { z } from 'zod';
 import prisma, { prismaBase } from '../utils/prisma';
+import * as Money from '../utils/money';
 import { withSoftDeleted } from '../utils/prismaExtensions';
 import { resolveTenantId } from '../utils/tenantContext';
 import { fullName } from '../utils/nameUtils';
@@ -9,13 +10,17 @@ import { Requester, assertMayManage } from '../utils/authUtils';
 import { AppError } from '../middleware/errorHandler';
 import { adminService } from './adminService';
 import { holderStatus } from './roleService';
+import { currentFeeRules, storeToday } from './feeRuleService';
+import { evictKeys } from './mcpKeyService';
 import { assertNotLastOwner } from './systemRoleService';
 import { PAY_METHODS } from '../validators/staffSchema';
 import type { StaffStatus, staffQuerySchema, updateStaffSchema } from '../validators/staffSchema';
 
 /**
- * M6-T05 (F-1157, F-1159 to F-1162, F-1165): the team table. Staff are the people and companies of the tenant (the system
- * user and AI agents are not staff). Call inside the tenant context. The invite flow is in inviteService (M6-T06).
+ * M6-T05 (F-1157, F-1159 to F-1162, F-1165): the team table. One table for people, AI agents and companies (F-1157); the
+ * system user is not staff. An AI agent has no login and no invite, so it can be listed, deactivated, reactivated and deleted,
+ * but not edited or given a password. A deactivated or deleted agent's MCP keys stop working (the key check reads `isActive`;
+ * `evictKeys` drops the cached check at once). Call inside the tenant context. The invite flow is in inviteService (M6-T06).
  *
  * Status of a person:
  * - active: `isActive`.
@@ -28,7 +33,9 @@ export type { StaffStatus };
 export type StaffQuery = z.infer<typeof staffQuerySchema>;
 export type UpdateStaffInput = z.infer<typeof updateStaffSchema>;
 
-const STAFF_KINDS: Prisma.UserWhereInput = { kind: { in: ['person', 'company'] } };
+const STAFF_KINDS: Prisma.UserWhereInput = { kind: { in: ['person', 'company', 'ai_agent'] } };
+/** Who can take open orders: people and companies; an AI agent is not offered as a new owner of an order. */
+const WORKLOAD_KINDS: Prisma.UserWhereInput = { kind: { in: ['person', 'company'] } };
 
 /** Orders in these statuses are done; every other order is open work for its rep or partner. */
 const CLOSED_ORDER_STATUSES: OrderStatus[] = ['delivered', 'digital_delivered', 'cancelled', 'returned'];
@@ -63,18 +70,30 @@ export const payPolicyFor = (role: UserRole) => role === 'delivery_agent'
 export const feeNotEditable = () =>
   new AppError('A delivery partner has no per-order amount here. Their fee is set in the partner fee rule.', 400, 'FEE_NOT_EDITABLE');
 
-const feeRuleOf = (u: { id: number; role: UserRole }) =>
-  payPolicyFor(u.role).amountEditable ? null : { editable: false, url: `/api/delivery-partners/${u.id}/fee-rules` };
+/** The pay method is not one this role can have (today: per-order pay for a delivery partner). */
+export const payMethodNotAllowed = () =>
+  new AppError('A delivery partner is paid by the delivery fee rule or not at all. Per-order pay is for other roles.', 400, 'PAY_METHOD_NOT_ALLOWED');
 
-export const staffView = ({ roleAssignments, commissionAmount, preferences, ...u }: StaffRow) => ({
+/** The fee a partner keeps per delivered order today: a flat amount or a percent of the order total. Null: no rule in force. */
+export type DeliveredFee = { basis: FeeBasis; amount: string } | null;
+
+/** The extras of a row that need a query of their own. `listStaff` reads them once for the page. */
+interface StaffExtras { deliveredFee?: DeliveredFee; lastKeyUse?: Date | null }
+
+const feeRuleOf = (u: { id: number; role: UserRole }, deliveredFee: DeliveredFee) =>
+  payPolicyFor(u.role).amountEditable ? null : { editable: false, url: `/api/delivery-partners/${u.id}/fee-rules`, delivered: deliveredFee };
+
+export const staffView = ({ roleAssignments, commissionAmount, preferences, ...u }: StaffRow, extras: StaffExtras = {}) => ({
   ...u,
+  /** When the person was last active: the last sign-in, or for an AI agent the last use of its key. */
+  lastActiveAt: u.kind === 'ai_agent' ? extras.lastKeyUse ?? null : u.lastLogin,
   /** How the person is paid; null until one is set (an older user). */
   payMethod: ((preferences ?? {}) as { payMethod?: string }).payMethod ?? null,
   name: fullName(u),
   status: staffStatus(u),
   commissionAmount: commissionAmount?.toString() ?? null,
   positions: roleAssignments.map((a) => a.role),
-  feeRule: feeRuleOf(u),
+  feeRule: feeRuleOf(u, extras.deliveredFee ?? null),
 });
 
 export type StaffView = ReturnType<typeof staffView>;
@@ -105,6 +124,28 @@ async function transition(
  * GET /api/staff. The tab counts cover the role and search filters but not the status filter, so every tab shows its own
  * number. Without a status the list is everyone except the deleted.
  */
+/** The delivered-order fee rule in force today for each partner, in one read: partner id -> flat or percent amount. */
+async function deliveredFees(partnerIds: number[]): Promise<Map<number, NonNullable<DeliveredFee>>> {
+  const fees = new Map<number, NonNullable<DeliveredFee>>();
+  if (partnerIds.length === 0) return fees;
+  const rules = await prisma.feeRule.findMany({ where: { partnerUserId: { in: partnerIds }, outcome: 'delivered' } });
+  const day = storeToday(resolveTenantId());
+  for (const id of partnerIds) {
+    const rule = currentFeeRules(rules.filter((r) => r.partnerUserId === id), day).delivered;
+    if (rule) fees.set(id, { basis: rule.basis, amount: Money.toApi(rule.amount) });
+  }
+  return fees;
+}
+
+/** The last use of the keys of each AI agent, in one read. The un-extended client, so the tenant is named. */
+async function lastKeyUses(agentIds: number[]): Promise<Map<number, Date | null>> {
+  if (agentIds.length === 0) return new Map();
+  const used = await prismaBase.mcpApiKey.groupBy({
+    by: ['userId'], where: { tenantId: resolveTenantId(), userId: { in: agentIds } }, _max: { lastUsedAt: true },
+  });
+  return new Map(used.map((u) => [u.userId!, u._max.lastUsedAt]));
+}
+
 export async function listStaff(query: StaffQuery) {
   const role = query.role;
   const base: Prisma.UserWhereInput = {
@@ -127,7 +168,14 @@ export async function listStaff(query: StaffQuery) {
     ...(['active', 'invited', 'deactivated', 'deleted'] as const).map((s) => prisma.user.count({ where: { AND: [base, STATUS_WHERE[s]] } })),
     prisma.user.findMany({ where: { AND: [base, listWhere] }, select: staffSelect, orderBy: [{ firstName: 'asc' }, { id: 'asc' }] }),
   ] as const)) as [number, number, number, number, StaffRow[]];
-  return { counts: { active, invited, deactivated, deleted } satisfies Record<StaffStatus, number>, staff: rows.map(staffView) };
+  const [fees, keyUses] = await Promise.all([
+    deliveredFees(rows.filter((r) => !payPolicyFor(r.role).amountEditable).map((r) => r.id)),
+    lastKeyUses(rows.filter((r) => r.kind === 'ai_agent').map((r) => r.id)),
+  ]);
+  return {
+    counts: { active, invited, deactivated, deleted } satisfies Record<StaffStatus, number>,
+    staff: rows.map((r) => staffView(r, { deliveredFee: fees.get(r.id) ?? null, lastKeyUse: keyUses.get(r.id) ?? null })),
+  };
 }
 
 /**
@@ -137,9 +185,10 @@ export async function listStaff(query: StaffQuery) {
 export async function updateStaff(actor: Requester, id: number, input: UpdateStaffInput): Promise<StaffView> {
   const target = await findStaff(id);
   if (staffStatus(target) === 'deleted') throw new AppError('Restore this person before editing', 409, 'STAFF_DELETED');
+  if (target.kind === 'ai_agent') throw new AppError('An AI agent is managed through its key. You can deactivate or delete it here.', 400, 'AGENT_NOT_EDITABLE');
   const policy = payPolicyFor(input.role ?? target.role);
   if (!policy.amountEditable && input.commissionAmount !== undefined) throw feeNotEditable();
-  if (input.payMethod !== undefined && !(policy.methods as readonly string[]).includes(input.payMethod)) throw feeNotEditable();
+  if (input.payMethod !== undefined && !(policy.methods as readonly string[]).includes(input.payMethod)) throw payMethodNotAllowed();
   return staffView(await adminService.updateUser(actor, id, input, { select: staffSelect }) as StaffRow);
 }
 
@@ -149,19 +198,28 @@ export async function resetStaffPassword(actor: Requester, id: number, password:
   assertMayManage(actor, target, { self: 'Change your own password in your profile' });
   const status = staffStatus(target);
   if (target.kind === 'company') throw new AppError('A company has no login', 400, 'NO_LOGIN');
+  if (target.kind === 'ai_agent') throw new AppError('An AI agent has no password. It signs in with its key.', 400, 'NO_LOGIN');
   if (status === 'invited') throw new AppError('This person has not accepted the invite yet. They choose their own password.', 409, 'STAFF_INVITED');
   if (status === 'deleted') throw new AppError('Restore this person first', 409, 'STAFF_DELETED');
   await adminService.resetUserPassword(actor, id, password);
 }
 
-/** Active to deactivated. The person is signed out everywhere. */
+/** An agent that is off the team must not keep working: drop the cached key checks now, not within the minute the cache holds them. */
+async function evictAgentKeys(target: { id: number; kind: string }): Promise<void> {
+  if (target.kind !== 'ai_agent') return;
+  evictKeys(await prismaBase.mcpApiKey.findMany({ where: { tenantId: resolveTenantId(), userId: target.id, revokedAt: null }, select: { keyHash: true } }));
+}
+
+/** Active to deactivated. The person is signed out everywhere; an AI agent's keys stop working. */
 export const deactivateStaff = (actor: Requester, id: number) =>
-  transition(actor, id, 'You cannot deactivate yourself', (target, status) => {
+  transition(actor, id, 'You cannot deactivate yourself', async (target, status) => {
     if (status === 'invited') throw new AppError('This person has not accepted the invite yet. Delete the invite instead.', 409, 'STAFF_INVITED');
     if (status !== 'active') throw new AppError(`This person is already ${status}`, 409, 'NOT_ACTIVE');
     // invitedAt goes: an accepted invite must not read as "invited" once the person is inactive (the T03 status rule).
-    return adminService.writeWithOwnerGuard(target, 'deactivated', (tx) =>
+    const row = await adminService.writeWithOwnerGuard(target, 'deactivated', (tx) =>
       tx.user.update({ where: { id: target.id }, data: { isActive: false, invitedAt: null, inviteTokenHash: null, inviteExpiresAt: null }, select: staffSelect }), true);
+    await evictAgentKeys(target);
+    return row;
   });
 
 /** Deactivated or deleted back to active. A person deleted before they accepted an invite goes back to invited. */
@@ -176,11 +234,13 @@ export const reactivateStaff = (actor: Requester, id: number) =>
 
 /** Soft delete: the person leaves the table (Deleted tab), cannot sign in, and can be restored. History keeps their name. */
 export const deleteStaff = (actor: Requester, id: number) =>
-  transition(actor, id, 'You cannot delete yourself', (target, status) => {
+  transition(actor, id, 'You cannot delete yourself', async (target, status) => {
     if (status === 'deleted') throw new AppError('This person is already deleted', 409, 'ALREADY_DELETED');
     // The invite link dies with the delete.
-    return adminService.writeWithOwnerGuard(target, 'deleted', (tx) =>
+    const row = await adminService.writeWithOwnerGuard(target, 'deleted', (tx) =>
       tx.user.update({ where: { id: target.id }, data: { isActive: false, deletedAt: new Date(), inviteTokenHash: null, inviteExpiresAt: null }, select: staffSelect }), true);
+    await evictAgentKeys(target);
+    return row;
   });
 
 /**
@@ -225,7 +285,7 @@ export async function staffWorkload() {
   const open = { tenantId: resolveTenantId(), deletedAt: null, status: { notIn: CLOSED_ORDER_STATUSES } };
   const [people, asRep, asAgent] = await Promise.all([
     prisma.user.findMany({
-      where: { ...STAFF_KINDS, isActive: true },
+      where: { ...WORKLOAD_KINDS, isActive: true },
       select: { id: true, firstName: true, lastName: true, kind: true, role: true },
     }),
     prisma.order.groupBy({ by: ['customerRepId'], where: { ...open, customerRepId: { not: null } }, _count: { _all: true } }),

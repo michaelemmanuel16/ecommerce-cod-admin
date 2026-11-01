@@ -15,7 +15,7 @@ import { sendInviteEmail } from './emailService';
 import { smsService } from './smsService';
 import { whatsappService } from './whatsappService';
 import { assertMayTouchRole, findRole } from './roleService';
-import { StaffRow, feeNotEditable, findStaff, payPolicyFor, staffSelect, staffStatus, staffView } from './staffService';
+import { StaffRow, findStaff, payMethodNotAllowed, payPolicyFor, staffSelect, staffStatus, staffView } from './staffService';
 import { VEHICLE_TYPES, normalizeVehicleType } from './deliveryPartnerAdminService';
 import type { RequestMeta } from './sessionService';
 import type { InviteChannel, inviteStaffSchema } from '../validators/staffSchema';
@@ -102,7 +102,7 @@ export async function inviteStaff(actor: Requester, input: InviteStaffInput) {
 
   const policy = payPolicyFor(base);
   const payMethod = input.payMethod ?? policy.defaultMethod;
-  if (!(policy.methods as readonly string[]).includes(payMethod)) throw feeNotEditable();
+  if (!(policy.methods as readonly string[]).includes(payMethod)) throw payMethodNotAllowed();
   const vehicleType = input.vehicleType ? normalizeVehicleType(input.vehicleType) : undefined;
   if (input.vehicleType && !vehicleType) {
     throw new AppError(`Vehicle type must be one of: ${VEHICLE_TYPES.join(', ')}`, 400, 'INVALID_VEHICLE_TYPE');

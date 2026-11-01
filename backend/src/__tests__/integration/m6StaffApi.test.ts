@@ -14,6 +14,7 @@ import { generateAccessToken } from '../../utils/jwt';
 import { bearer, superAdminToken } from './helpers/superAdminToken';
 import { createTenant, createTwoTenants, deleteTenantRows, TwoTenants } from './helpers/twoTenants';
 import { ROLE_NAME_BY_USER_ROLE } from '../../config/defaultRoles';
+import { generateMcpKey, hashApiKey, validateKey } from '../../mcp/auth';
 
 jest.setTimeout(120_000);
 
@@ -77,25 +78,26 @@ describe('who may call', () => {
 });
 
 describe('GET /api/staff', () => {
-  it('counts the four tabs, filters by status, role and search, and hides other tenants, the system user and AI agents', async () => {
+  it('counts the four tabs, filters by status, role and search, and hides other tenants and the system user (AI agents are listed since T20)', async () => {
     const tag = uniq('lst');
     const rep = await mkPerson(`${tag}rep`, 'sales_rep');
     const invited = await mkPerson(`${tag}inv`, 'sales_rep', { isActive: false, invitedAt: new Date(), password: '!' });
     const off = await mkPerson(`${tag}off`, 'accountant', { isActive: false });
     const deleted = await mkPerson(`${tag}del`, 'sales_rep', { isActive: false, deletedAt: new Date() });
-    await mkPerson(`${tag}agent`, 'admin', { kind: 'ai_agent', password: '!' });
+    const agent = await mkPerson(`${tag}agent`, 'admin', { kind: 'ai_agent', password: '!' });
+    await mkPerson(`${tag}system`, 'admin', { kind: 'system', password: '!' });
     await mkPerson(`${tag}other`, 'sales_rep', {}, pair.b.id);
 
     const all = await api.get(ownerA, `/api/staff?q=${tag}`);
     expect(all.status).toBe(200);
-    expect(all.body.counts).toEqual({ active: 1, invited: 1, deactivated: 1, deleted: 1 });
+    expect(all.body.counts).toEqual({ active: 2, invited: 1, deactivated: 1, deleted: 1 }); // the agent counts as active
     // no status = everyone but the deleted
-    expect(all.body.staff.map((s: { id: number }) => s.id).sort()).toEqual([rep.id, invited.id, off.id].sort());
+    expect(all.body.staff.map((s: { id: number }) => s.id).sort()).toEqual([rep.id, agent.id, invited.id, off.id].sort());
     expect(all.body.staff.every((s: { status: string }) => s.status !== 'deleted')).toBe(true);
 
     const del = await api.get(ownerA, `/api/staff?q=${tag}&status=deleted`);
     expect(del.body.staff.map((s: { id: number }) => s.id)).toEqual([deleted.id]);
-    expect(del.body.counts.active).toBe(1); // the counts ignore the status filter
+    expect(del.body.counts.active).toBe(2); // the counts ignore the status filter
     expect((await api.get(ownerA, `/api/staff?q=${tag}&status=invited`)).body.staff.map((s: { id: number }) => s.id)).toEqual([invited.id]);
 
     const acc = await api.get(ownerA, `/api/staff?q=${tag}&role=accountant`);
@@ -149,8 +151,8 @@ describe('PUT /api/staff/:id', () => {
     expect(JSON.stringify(bad.body)).toContain('FEE_NOT_EDITABLE');
     const ok = await api.put(ownerA, `/api/staff/${partner.id}`, { phoneNumber: '0200000000' });
     expect(ok.status).toBe(200);
-    expect(ok.body.staff.feeRule).toEqual({ editable: false, url: `/api/delivery-partners/${partner.id}/fee-rules` });
-    expect((await rowOf(partner.name))[0].feeRule).toEqual({ editable: false, url: `/api/delivery-partners/${partner.id}/fee-rules` });
+    expect(ok.body.staff.feeRule).toEqual({ editable: false, url: `/api/delivery-partners/${partner.id}/fee-rules`, delivered: null });
+    expect((await rowOf(partner.name))[0].feeRule).toEqual({ editable: false, url: `/api/delivery-partners/${partner.id}/fee-rules`, delivered: null });
   });
 
   it('a UserRole change moves the position role too (T03 gap), and keeps a custom role', async () => {
@@ -350,11 +352,12 @@ describe('edit: city and how the person is paid (T20)', () => {
     expect((await api.put(ownerA, `/api/staff/${rep.id}`, { payMethod: 'barter' })).status).toBe(400);
   });
 
-  it('a delivery partner has no per-order pay: payMethod per_order is refused with FEE_NOT_EDITABLE', async () => {
+  it('a delivery partner has no per-order pay: payMethod per_order is refused with PAY_METHOD_NOT_ALLOWED', async () => {
     const partner = await mkPerson('dpay', 'delivery_agent');
     const res = await api.put(ownerA, `/api/staff/${partner.id}`, { payMethod: 'per_order' });
     expect(res.status).toBe(400);
-    expect(JSON.stringify(res.body)).toContain('FEE_NOT_EDITABLE');
+    expect(JSON.stringify(res.body)).toContain('PAY_METHOD_NOT_ALLOWED');
+    expect(JSON.stringify(res.body)).not.toContain('FEE_NOT_EDITABLE');
     expect((await api.put(ownerA, `/api/staff/${partner.id}`, { payMethod: 'fee_rule', location: 'Tema' })).status).toBe(200);
   });
 });
@@ -485,5 +488,99 @@ describe('GET /api/staff/workload', () => {
     const counts: number[] = res.body.workload.map((w: { openOrders: number }) => w.openOrders);
     expect(counts).toEqual([...counts].sort((a, b) => b - a)); // busiest first
     expect(res.body.workload.every((w: { id: number }) => w.id !== undefined)).toBe(true);
+  });
+});
+
+describe('AI agents and the partner fee in the team table (T20 review)', () => {
+  /** An AI agent user of tenant A with one MCP key; the raw key is returned so the key check can be run. */
+  async function mkAgent(label: string, tenantId = pair.a.id) {
+    const agent = await mkPerson(label, 'admin', { kind: 'ai_agent', password: '!', lastName: 'AI agent' }, tenantId);
+    const rawKey = generateMcpKey();
+    const role = await prismaBase.role.findFirstOrThrow({ where: { tenantId, name: 'Call rep' } });
+    await prismaBase.mcpApiKey.create({
+      data: { tenantId, keyHash: hashApiKey(rawKey), keyPrefix: rawKey.slice(0, 12), label, userId: agent.id, roleId: role.id },
+    });
+    return { agent, rawKey };
+  }
+
+  it('lists an agent with its kind and the last use of its key; another tenant never sees it', async () => {
+    const { agent, rawKey } = await mkAgent('agl');
+    const used = new Date('2026-10-30T10:00:00Z');
+    await prismaBase.mcpApiKey.updateMany({ where: { userId: agent.id }, data: { lastUsedAt: used } });
+    const row = (await rowOf(agent.name)).find((r) => r.id === agent.id) as Record<string, unknown>;
+    expect(row).toMatchObject({ kind: 'ai_agent', status: 'active', lastActiveAt: used.toISOString(), lastLogin: null });
+    expect(JSON.stringify(row)).not.toContain(rawKey);
+    expect((await api.get(ownerA, `/api/staff?status=active&q=${agent.name}`)).body.counts.active).toBe(1);
+    // tenant B sees neither the row nor the count
+    const ownerB = await superAdminToken(pair.b.id, pair.b.slug);
+    const b = await api.get(ownerB, `/api/staff?q=${agent.name}`);
+    expect(b.body.staff).toEqual([]);
+    expect(b.body.counts).toEqual({ active: 0, invited: 0, deactivated: 0, deleted: 0 });
+    expect((await api.put(ownerB, `/api/staff/${agent.id}`, { firstName: 'X' })).status).toBe(404);
+    expect((await api.post(ownerB, `/api/staff/${agent.id}/deactivate`)).status).toBe(404);
+    // a person's last active is the sign-in
+    const person = await mkPerson('agpl', 'sales_rep', { lastLogin: used });
+    expect(((await rowOf(person.name))[0] as Record<string, unknown>).lastActiveAt).toBe(used.toISOString());
+  });
+
+  it('an agent has no password, no edit and no invite; the system user is not reachable', async () => {
+    const { agent } = await mkAgent('agno');
+    const reset = await api.post(ownerA, `/api/staff/${agent.id}/reset-password`, { password: 'Newpass1234!' });
+    expect(reset.status).toBe(400);
+    expect(JSON.stringify(reset.body)).toContain('NO_LOGIN');
+    const edit = await api.put(ownerA, `/api/staff/${agent.id}`, { firstName: 'Renamed' });
+    expect(edit.status).toBe(400);
+    expect(JSON.stringify(edit.body)).toContain('AGENT_NOT_EDITABLE');
+    expect(JSON.stringify((await api.post(ownerA, `/api/staff/${agent.id}/resend-invite`, {})).body)).toContain('NOT_INVITED');
+    expect(JSON.stringify((await api.post(ownerA, `/api/staff/${agent.id}/revoke-invite`)).body)).toContain('NOT_INVITED');
+    expect((await prismaBase.user.findUniqueOrThrow({ where: { id: agent.id } })).firstName).toBe(agent.name);
+    const system = await mkPerson('agsys', 'admin', { kind: 'system', password: '!' });
+    expect((await api.post(ownerA, `/api/staff/${system.id}/deactivate`)).status).toBe(404);
+  });
+
+  it('deactivating or deleting an agent stops its key at once; reactivating brings it back; permanent delete works from the Deleted tab', async () => {
+    const { agent, rawKey } = await mkAgent('agoff');
+    expect((await validateKey(rawKey)).userId).toBe(agent.id);
+
+    const off = await api.post(ownerA, `/api/staff/${agent.id}/deactivate`);
+    expect(off.status).toBe(200);
+    expect(off.body.staff).toMatchObject({ kind: 'ai_agent', status: 'deactivated' });
+    await expect(validateKey(rawKey)).rejects.toThrow('deactivated'); // the cached check was dropped, no wait for the minute
+    expect((await api.get(ownerA, `/api/staff?status=deactivated&q=${agent.name}`)).body.staff.map((s: { id: number }) => s.id)).toEqual([agent.id]);
+
+    expect((await api.post(ownerA, `/api/staff/${agent.id}/reactivate`)).status).toBe(200);
+    expect((await validateKey(rawKey)).userId).toBe(agent.id);
+
+    expect((await api.del(ownerA, `/api/staff/${agent.id}`)).status).toBe(200);
+    await expect(validateKey(rawKey)).rejects.toThrow('deactivated');
+    expect((await rowOf(agent.name, 'deleted'))[0]).toMatchObject({ id: agent.id, status: 'deleted' });
+    expect((await api.del(ownerA, `/api/staff/${agent.id}/permanent`, { confirm: agent.email })).status).toBe(200);
+    expect(await prismaBase.user.count({ where: { id: agent.id } })).toBe(0);
+    await expect(validateKey(rawKey)).rejects.toThrow(); // whatever the key row became, the key does not work
+  });
+
+  it('an agent is not offered as the new owner of open orders (workload lists people and companies)', async () => {
+    const { agent } = await mkAgent('agwl');
+    expect((await api.get(ownerA, '/api/staff/workload')).body.workload.some((w: { id: number }) => w.id === agent.id)).toBe(false);
+  });
+
+  it('a delivery partner row carries the fee in force for delivered orders: flat, percent, the newest rule on or before today, none; one read for the page', async () => {
+    const partner = await mkPerson('feep', 'delivery_agent');
+    const percent = await mkPerson('feeq', 'delivery_agent');
+    const bare = await mkPerson('feer', 'delivery_agent');
+    const rule = (userId: number, outcome: string, basis: string, amount: number, validFrom: string) =>
+      prismaBase.feeRule.create({ data: { tenantId: pair.a.id, partnerUserId: userId, outcome: outcome as 'delivered', basis: basis as 'flat', amount, validFrom: new Date(validFrom) } });
+    await rule(partner.id, 'delivered', 'flat', 20, '2026-01-01');
+    await rule(partner.id, 'delivered', 'flat', 25, '2026-06-01');
+    await rule(partner.id, 'delivered', 'flat', 99, '2099-01-01'); // not in force yet
+    await rule(partner.id, 'failed', 'flat', 5, '2026-01-01'); // another outcome
+    await rule(percent.id, 'delivered', 'percent', 5, '2026-01-01');
+
+    const rows = (await api.get(ownerA, `/api/staff?q=feer`)).body.staff as Array<{ id: number; feeRule: { delivered: unknown } }>;
+    expect(rows.find((r) => r.id === bare.id)!.feeRule.delivered).toBeNull();
+    const all = (await api.get(ownerA, '/api/staff?role=delivery_agent')).body.staff as typeof rows;
+    expect(all.find((r) => r.id === partner.id)!.feeRule.delivered).toEqual({ basis: 'flat', amount: '25.00' });
+    expect(all.find((r) => r.id === percent.id)!.feeRule.delivered).toEqual({ basis: 'percent', amount: '5.00' });
+    expect(all.find((r) => r.id === bare.id)!.feeRule.delivered).toBeNull();
   });
 });

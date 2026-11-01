@@ -84,12 +84,34 @@ describe('Staff page: tabs, counts and the table', () => {
     expect(adwoa.getByText('GH₵8 per order confirmed by call and delivered + 10% upsell')).toBeInTheDocument();
     expect(adwoa.getByText('Active')).toBeInTheDocument();
     const kofi = within(rowOf('Kofi Appiah'));
-    expect(kofi.getByRole('link', { name: /Fee rule/ })).toHaveAttribute('href', '/deliveries?partner=12');
+    expect(kofi.getByRole('link', { name: 'Fee rule GH₵25 per delivered, kept from the cash they collect' })).toHaveAttribute('href', '/deliveries?partner=12');
     expect(within(rowOf('Confirm agent')).getByText('AI agent')).toBeInTheDocument();
     expect(within(rowOf('Confirm agent')).getByText('No payout')).toBeInTheDocument();
     expect(within(rowOf('Akua Serwaa')).getByText('Invited')).toBeInTheDocument();
     expect(within(rowOf('Akua Serwaa')).getByText('Invite sent 15 Oct')).toBeInTheDocument();
     expect(within(rowOf('Yaa Pokua')).getByText('Deactivated')).toBeInTheDocument();
+  });
+
+  it('a delivery partner pay text carries the fee amount: flat in the store currency, percent, or no rule set (still a link)', async () => {
+    const percent = { ...KOFI, id: 21, name: 'Percy Ofori', feeRule: { ...KOFI.feeRule!, delivered: { basis: 'percent' as const, amount: 5 } } };
+    const bare = { ...KOFI, id: 22, name: 'Bare Partner', feeRule: { ...KOFI.feeRule!, delivered: null } };
+    svc.list.mockResolvedValue({ ...STAFF, staff: [KOFI, percent, bare] });
+    renderPage();
+    await screen.findByText('Kofi Appiah');
+    expect(within(rowOf('Percy Ofori')).getByRole('link', { name: 'Fee rule 5% per delivered, kept from the cash they collect' })).toBeInTheDocument();
+    expect(within(rowOf('Bare Partner')).getByRole('link', { name: 'No fee rule set' })).toHaveAttribute('href', '/deliveries?partner=22');
+  });
+
+  it('an AI agent row: type AI agent, No payout, last active = last key use (a dash when the key was never used)', async () => {
+    const unused = { ...ROBO, id: 23, name: 'Idle agent', lastActiveAt: null };
+    svc.list.mockResolvedValue({ ...STAFF, staff: [ROBO, unused] });
+    renderPage();
+    await screen.findByText('Confirm agent');
+    const used = within(rowOf('Confirm agent'));
+    expect(used.getByText('AI agent')).toBeInTheDocument();
+    expect(used.getByText('No payout')).toBeInTheDocument();
+    expect(used.queryByText('—')).not.toBeInTheDocument();
+    expect(within(rowOf('Idle agent')).getByText('—')).toBeInTheDocument();
   });
 
   it('an empty tab shows an empty state; a failed list shows the retry block', async () => {
@@ -319,7 +341,7 @@ describe('Staff page: row actions and the one confirm dialog', () => {
     renderPage();
     await screen.findByText('Adwoa Darko');
     const names = async (n: string) => { const m = await menuOf(n); const out = within(m).getAllByRole('menuitem').map((i) => i.textContent); await userEvent.keyboard('{Escape}'); return out; };
-    expect(await names('Confirm agent')).toEqual(['Edit', 'Manage key', 'Deactivate', 'Delete']);
+    expect(await names('Confirm agent')).toEqual(['Manage key', 'Deactivate', 'Delete']); // no Edit, Reset password or payout
     expect(await names('Adwoa Darko')).toEqual(['Edit', 'Record payout', 'Reset password', 'Deactivate', 'Delete']);
     expect(await names('Yaa Pokua')).toEqual(['Edit', 'Reactivate', 'Delete']);
     await userEvent.click(within(await menuOf('Kofi Appiah')).getByRole('menuitem', { name: 'Record payout' }));

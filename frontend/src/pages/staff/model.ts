@@ -63,7 +63,11 @@ export const STATUS_TONE: Record<StaffStatus, TagTone> = { active: 'ok', invited
 /** The pay text of a row (F-1157). `company` is the Rewards settings rule: GH₵8 per delivered order and the upsell share. */
 export function payText(row: StaffRow, company: { baseCommission: number; upsellPercent: number } | null, currency: string): string {
   if (row.kind === 'ai_agent' || row.kind === 'company') return 'No payout';
-  if (row.feeRule) return 'Fee rule, kept from the cash they collect';
+  if (row.feeRule) {
+    const fee = row.feeRule.delivered;
+    if (!fee) return 'No fee rule set';
+    return `Fee rule ${fee.basis === 'percent' ? `${fee.amount}%` : formatCurrency(fee.amount, currency)} per delivered, kept from the cash they collect`;
+  }
   if (row.payMethod === 'per_order' || (row.payMethod === null && row.role === 'sales_rep')) {
     const own = row.commissionAmount ?? 0;
     const base = own > 0 ? own : company?.baseCommission ?? 0;
@@ -73,11 +77,11 @@ export function payText(row: StaffRow, company: { baseCommission: number; upsell
   return 'No pay through the app';
 }
 
-/** "12 min ago" style text for the last sign-in, "Never signed in" for a person who has not, "Invite sent 15 Oct" for an invited one. */
+/** "12 min ago" style text for the last sign-in (an AI agent: the last use of its key), "Never signed in" for a person who has not, "Invite sent 15 Oct" for an invited one. */
 export function lastActiveText(row: StaffRow, now: Date = new Date()): string {
   if (row.status === 'invited') return row.invitedAt ? `Invite sent ${new Date(row.invitedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : 'Invite pending';
-  if (!row.lastLogin) return row.kind === 'ai_agent' || row.kind === 'company' ? '—' : 'Never signed in';
-  const mins = Math.max(0, Math.round((now.getTime() - new Date(row.lastLogin).getTime()) / 60_000));
+  if (!row.lastActiveAt) return row.kind === 'ai_agent' || row.kind === 'company' ? '—' : 'Never signed in';
+  const mins = Math.max(0, Math.round((now.getTime() - new Date(row.lastActiveAt).getTime()) / 60_000));
   if (mins < 1) return 'Just now';
   if (mins < 60) return `${mins} min ago`;
   const hours = Math.round(mins / 60);

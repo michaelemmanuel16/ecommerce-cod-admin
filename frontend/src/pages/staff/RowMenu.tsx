@@ -21,7 +21,8 @@ export function actionsOf(row: StaffRow, can: RowMenuProps['can']): Array<{ acti
     if (can.erase) out.push({ action: 'erase', label: 'Delete for good', danger: true });
     return out;
   }
-  if (can.update) out.push({ action: 'edit', label: 'Edit' });
+  // An AI agent is managed through its key: no edit, no password, no invite, no payout (F-1157).
+  if (can.update && row.kind !== 'ai_agent') out.push({ action: 'edit', label: 'Edit' });
   if (can.update && row.status === 'invited') {
     out.push({ action: 'resend', label: 'Resend invite' }, { action: 'revoke', label: 'Revoke invite' });
   }

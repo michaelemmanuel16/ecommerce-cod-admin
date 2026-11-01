@@ -34,6 +34,7 @@ const CHANNELS = [{ id: 'email', label: 'Email' }, { id: 'sms', label: 'SMS' }, 
 function formOf(row: StaffRow, roles: StaffRole[], company: PersonModalProps['company']): PersonForm {
   const own = roles.find((r) => r.presetRole === row.role) ?? roles.find((r) => row.positions.some((p) => p.id === r.roleId));
   const base = company?.baseCommission ?? 0;
+  // "Use the company rule" is judged by the amount: a rep whose amount equals the company base follows the company rule (no schema flag).
   return {
     ...blankForm(),
     name: row.name, email: row.email, phone: row.phoneNumber ?? '', roleId: own ? String(own.roleId) : '',

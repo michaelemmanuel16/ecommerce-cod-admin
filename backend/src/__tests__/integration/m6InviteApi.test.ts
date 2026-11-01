@@ -2,7 +2,7 @@
  * M6-T06 (COD-56): the invite flow. Invite, accept with an own password, sign in, /me; expiry; one use; email taken; rank;
  * resend and revoke; the old create-with-password route; the link never stored.
  */
-import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from '@jest/globals';
 import '../mocks/logger.mock';
 import '../mocks/socketInstance.mock';
 import request from 'supertest';
@@ -20,6 +20,10 @@ jest.mock('../../services/emailService', () => ({
 }));
 import { sendInviteEmail } from '../../services/emailService';
 const sendInviteEmailMock = sendInviteEmail as jest.MockedFunction<typeof sendInviteEmail>;
+
+// The Resend SDK answers `{ data, error }` and does not throw; the test drives that answer.
+const mockResendSend = jest.fn();
+jest.mock('resend', () => ({ Resend: class { emails = { send: (...args: unknown[]) => mockResendSend(...args) }; } }));
 
 jest.setTimeout(120_000);
 
@@ -191,7 +195,9 @@ describe('who may invite what', () => {
     expect(ok.status).toBe(201);
     expect(await dbUser(ok.body.staff.id)).toMatchObject({ role: 'delivery_agent', vehicleType: 'Motorbike', vehicleId: 'GR-123-24', location: 'Tema', preferences: { payMethod: 'fee_rule' } });
     expect(ok.body.staff.feeRule.editable).toBe(false);
-    expect((await invite({ role: 'delivery_agent', payMethod: 'per_order', amount: 8 })).status).toBe(400);
+    const perOrder = await invite({ role: 'delivery_agent', payMethod: 'per_order', amount: 8 });
+    expect(perOrder.status).toBe(400);
+    expect(perOrder.body.code).toBe('PAY_METHOD_NOT_ALLOWED');
     expect((await invite({ role: 'delivery_agent', vehicleType: 'Rocket' })).status).toBe(400);
   });
 
@@ -200,6 +206,53 @@ describe('who may invite what', () => {
     expect((await api.post(ownerA, '/api/staff/invite', { name: 'No Role', email: mail('x') })).status).toBe(400);
     expect((await invite({ email: 'not-an-email' })).status).toBe(400);
     expect((await invite({ password: PASSWORD })).status).toBe(400); // a password is not part of an invite
+  });
+});
+
+describe('the email send layer (T20 review): "sent" only when the provider took the message', () => {
+  const real = jest.requireActual('../../services/emailService') as typeof import('../../services/emailService');
+  const saved = { resend: process.env.RESEND_API_KEY, sendgrid: process.env.SENDGRID_API_KEY };
+  const useRealEmail = () => sendInviteEmailMock.mockImplementationOnce(real.sendInviteEmail);
+  beforeEach(() => {
+    real.clearEmailConfigCache();
+    mockResendSend.mockReset();
+    delete process.env.SENDGRID_API_KEY;
+    delete process.env.RESEND_API_KEY;
+  });
+  afterAll(() => {
+    for (const [k, v] of [['RESEND_API_KEY', saved.resend], ['SENDGRID_API_KEY', saved.sendgrid]] as const) {
+      if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+    real.clearEmailConfigCache();
+  });
+
+  it('no email provider: not sent, and the link is in the answer to copy', async () => {
+    useRealEmail();
+    const res = await invite();
+    expect(res.status).toBe(201);
+    expect(res.body.delivery).toMatchObject({ channel: 'email', sent: false, reason: expect.stringContaining('not configured') });
+    expect(res.body.link).toContain('/accept-invite?token=');
+    expect(mockResendSend).not.toHaveBeenCalled();
+  });
+
+  it('a provider that refuses the message (Resend answers an error without throwing): not sent', async () => {
+    process.env.RESEND_API_KEY = 're_test_key';
+    mockResendSend.mockResolvedValue({ data: null, error: { name: 'validation_error', message: 'The example.com domain is not verified' } });
+    useRealEmail();
+    const res = await invite();
+    expect(res.body.delivery).toMatchObject({ channel: 'email', sent: false, reason: expect.stringContaining('not verified') });
+    expect(res.body.link).toContain('/accept-invite?token=');
+    // the invite is still valid
+    expect((await accept(tokenOf(res.body.link))).status).toBe(200);
+  });
+
+  it('a provider that takes the message: sent', async () => {
+    process.env.RESEND_API_KEY = 're_test_key';
+    mockResendSend.mockResolvedValue({ data: { id: 'email-1' }, error: null });
+    useRealEmail();
+    const res = await invite();
+    expect(res.body.delivery).toEqual({ channel: 'email', sent: true });
+    expect(mockResendSend).toHaveBeenCalledTimes(1);
   });
 });
 
