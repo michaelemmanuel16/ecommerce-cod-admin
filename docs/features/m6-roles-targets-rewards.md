@@ -248,10 +248,13 @@ A ranked board per period and the badges people earn at month close. Plan task: 
 - **Key files:** `services/leaderboardService.ts`, `services/leaderboardMath.ts`, `services/badgeService.ts`, `routes/leaderboardRoutes.ts`, `routes/badgeRoutes.ts`, `__tests__/integration/m6Leaderboard.test.ts`, `__tests__/unit/leaderboardMath.test.ts`.
 
 ### Verification
-T11_VERIFY_PLACEHOLDER
+- Post-merge run on c2e05be7 (log `/tmp/m6-postT11.log`): backend generate, `tsc`, lint and build OK. Unit 132 suites / 1761 tests pass, including `leaderboardMath.test.ts`.
+- Integration: `m6Leaderboard.test.ts` passes, with `m6RewardsApi`, `m6PeriodClose`, `m6Targets` and `m6TargetsTree`. One test failed in the same run: `m6Permissions` line 196, a 403 on `/api/roles/overview` right after an assign. That is the permission cache fault fixed in 777fa9ef (COD-56 entry below).
+- Test counts (`it(` blocks in the files): `m6Leaderboard.test.ts` 23, `leaderboardMath.test.ts` 17.
+- No screens changed, so no browser check.
 
 ### Open points
-- The leaderboard and badge screens are not built yet.
+- None for the API. The leaderboard page is built in M6-T16 and the dashboard widget in M6-T12 (entries below).
 
 ---
 
@@ -302,3 +305,264 @@ A smooth weighted round robin for order assignment whose position survives a res
 
 ### Open points
 - The workflow assign paths (`workflowQueue`, and `executeAssignUserAction` in `workflowService`) are not on the cursor yet. Planned in M9 F-511.
+
+---
+
+## COD-56 — Permission cache fixes and PERMISSION_DEBUG
+**Date:** 2026-11-01 | **Type:** fix | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-56-permission-cache`, merge 777fa9ef, HEAD^2 0ea30508) | **Commits:** 5bbea42e, 0ea30508
+
+### Summary
+Two faults in the permission cache, and a debug switch for the next 403 that cannot be explained. Plan task: none (found in the M6-T11 post-merge run).
+
+### Changes
+- **A failed read is an error (5bbea42e):** `loadMatrix` used to swallow a database error and answer with the default grids. `getTenantMatrix` then cached them for 60 s. Now it throws, the failed promise is not cached, and the middleware answers 500 (a deny, not a permission answer).
+- **A stale read never fills the cache (5bbea42e):** every `clearPermissionsCache` bumps an epoch. A read that started before the clear stores nothing.
+- **One clear for one entry (0ea30508):** a failed matrix read clears only its own cache entry.
+- **`PERMISSION_DEBUG` (0ea30508):** when set, a 403 logs the grid that was used. It is off by default.
+- **Key files:** `services/permissionService.ts`, `middleware/auth.ts`, `__tests__/unit/permissionServiceFailClosed.test.ts`, `__tests__/unit/financialService.test.ts` (one line).
+- No screens, no migration.
+
+### Verification
+- `permissionServiceFailClosed.test.ts` has 4 tests. Unit 1665 / 1665 pass on the debug branch before the merge (progress log).
+- The clean run on cfd22024 shows no 403 of this kind in unit tests.
+
+### Open points
+- The cache faults are not proven to be the cause of the intermittent 403 seen in full multi-suite runs. It did not reproduce in about 20 runs. `PERMISSION_DEBUG` is there for the next one.
+
+---
+
+## COD-58 — Dashboard Top this month (M6-T12)
+**Date:** 2026-11-01 | **Type:** feat | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-58-t12-top-month`, merge fc8f0c93, HEAD^2 fd205246) | **Commits:** fd205246
+
+### Summary
+The dashboard block "Top this month" now reads targets. It shows the top 3 by percent of own role target. Plan task: M6-T12.
+
+### Changes
+- **New block `topThisMonth`:** the dashboard response carries `{ month, people }` for the month that holds the as-of date. `people` is empty when nobody has a target. The block is isolated, so a failure there does not break the rest of the dashboard.
+- **One ranking:** `leaderboardService.topThisMonth` does the ranking. The widget and the Leaderboard share it, so they agree.
+- **Widget (`blocks/TopThisMonth.tsx`):** shows the top 3, or fewer. Its button opens the Leaderboard.
+- **Nav:** the Leaderboard item points to `/leaderboard`.
+- **Key files:** `services/dashboardService.ts`, `services/leaderboardService.ts`, `pages/dashboard/blocks/TopThisMonth.tsx`, `__tests__/integration/dashboardTopThisMonth.test.ts`, `__tests__/pages/Dashboard.test.tsx`.
+- No migration.
+
+### Verification
+- `dashboardTopThisMonth.test.ts` has 6 tests; `Dashboard.test.tsx` has 22. The integration file passes in the post-merge run after T24 (progress log).
+- `CommandPalette.test.tsx` and the `ownerDashboard.json` fixture were updated for the new block.
+
+### Open points
+- The quest that decides an "on target day" (14 of 17) is still open for this task (plan: "The New orders quest").
+
+---
+
+## COD-59 — Leaderboard page (M6-T16)
+**Date:** 2026-11-01 | **Type:** feat | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-59-t16-leaderboard`, merge 41e15818, HEAD^2 cb33992d) | **Commits:** cb33992d
+
+### Summary
+The Leaderboard page with call rep and delivery tabs, a period select, reward progress cards and badges. Plan task: M6-T16.
+
+### Changes
+- **Page (`pages/Leaderboard.tsx`, route `/leaderboard`):** `Podium`, `RankingTable`, `RewardsCard`, `BadgesCard`, `model.ts`, `services/leaderboard.service.ts`, `styles/leaderboard.css`.
+- **Tabs:** Call reps and Delivery.
+- **Period select:** Today, This week, this month, this year and the three months before. The API ranks; the page only shows rank, percent, tier and distance.
+- **Unranked rows:** show the reason from the API (for example "No target") in place of a rank.
+- **Progress cards:** show the distance to the next cash tier. Above 120% the card reads "Top tier reached". No 80% tier on screen.
+- No migration, no backend change.
+
+### Verification
+- `Leaderboard.test.tsx` has 18 tests (fixture `fixtures/leaderboard.ts`).
+- The clean run on cfd22024 had frontend vitest 1510 / 1510 pass.
+
+### Open points
+- The upsell tab is added in M7 (plan).
+- The real-backend browser check is pending at the milestone QA (M6-T27).
+
+---
+
+## COD-59 — North Star wizard and Settings tab (M6-T17)
+**Date:** 2026-11-01 | **Type:** feat | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-59-t17-north-star-wizard`, merge b0dd1a51, HEAD^2 d27db711) | **Commits:** bd9858f5, bafa0ee6 (merge of the M6 branch), c1bad90c, d27db711
+
+### Summary
+The six-step North Star setup wizard, and a Settings tab "North Star and targets". Plan task: M6-T17.
+
+### Changes
+- **Wizard (`pages/northStar/*`):** `StepNorthStar`, `StepDrivers`, `NorthStarFields`, `useNorthStarDraft`, `model.ts`. It runs inside Onboarding. It saves the tree, the driver targets and the planned AOV through the target routes.
+- **Settings tab (`settings/NorthStarTab.tsx`):** inputs, the calculators, and one link to Rewards. No reward tiers on this tab (S1).
+- **Re-run (c1bad90c):** a re-run keeps the wizard done and keeps the first completion date. The menu item does not come back. A warning says past months do not change.
+- **Quarter tile (d27db711):** shows each month when a kept past month differs from the others.
+- **Backend:** `onboardingService` stores the completion; `targetSchema` takes the new fields.
+- **Key files:** `pages/northStar/*`, `pages/settings/NorthStarTab.tsx`, `pages/Onboarding.tsx`, `services/targets.service.ts`, `__tests__/pages/NorthStarWizard.test.tsx`.
+- No migration.
+
+### Verification
+- `NorthStarWizard.test.tsx` has 20 tests; `Onboarding.test.tsx` has 9; `Targets.test.tsx` and `Settings.test.tsx` were updated.
+- The clean run on cfd22024 had frontend vitest 1510 / 1510 pass (T17 was merged before it).
+
+### Open points
+- The merge had conflicts in `frontend/src/main.tsx`. They were resolved by hand; both routes are present.
+- The wizard walk on a fresh tenant (723, 1,721, 56) is part of the browser check M6-T27 and is pending.
+
+---
+
+## COD-60 — Staff team table, invite and edit (M6-T20)
+**Date:** 2026-11-01 | **Type:** feat | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-60-t20-team-table`, merge c5b02c51, HEAD^2 23e16c9f) | **Commits:** c7f26a39, 23e16c9f
+
+### Summary
+The Staff page team table with tabs, search, invite and edit windows, and row actions. Plan task: M6-T20.
+
+### Changes
+- **Page (`pages/Staff.tsx`, route `/staff`):** `TeamTable`, `RowMenu`, `PersonModal`, `InviteLinkDialog`, `DeactivateDialog`, `ResetPasswordModal`, `PermanentDeleteModal`, `staff/model.ts`, `services/staff.service.ts`, `styles/staff.css`.
+- **Counts:** tab counts come from the API.
+- **Row actions:** one confirm pattern. Delete confirms use one dialog with a count.
+- **Review fixes (23e16c9f):** AI agents show in the team list (F-1157). The partner fee amount shows in the Pay text. A refused Resend no longer reads as sent. A new `PAY_METHOD_NOT_ALLOWED` error code. Even field gap in the person modal.
+- **Backend:** `staffService`, `inviteService`, `emailService` and `staffSchema` changed for the above.
+- **Accept-invite page:** small change to `AcceptInvite.tsx`.
+- No migration.
+
+### Verification
+- `Staff.test.tsx` has 29 tests; `AcceptInvite.test.tsx` was updated.
+- Staff tests 49 / 49 after the T19 merge (progress log).
+
+### Open points
+- The merge had conflicts in `navModel.ts` and `main.tsx`. They were resolved by hand.
+- The invite "sent" state with no email provider is covered by the Resend fix. A real send was not tested here.
+
+---
+
+## COD-59 — Fixture tests (M6-T23)
+**Date:** 2026-11-01 | **Type:** test | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-59-t23-fixtures`, merge cfd22024, HEAD^2 77bc8068) | **Commits:** 77bc8068
+
+### Summary
+Fixture tests that pin the M6 numbers. Plan task: M6-T23.
+
+### Changes
+- **New shared helper:** `integration/helpers/leaderboardWorld.ts`. The world that was inside `m6Leaderboard.test.ts` moved here so two files use it.
+- **New test `m6FixtureT23.test.ts`:** fixture numbers for targets, calculators, attainment, month close and the leaderboard. The contract: the dashboard "Top this month" and the Leaderboard agree.
+- **Changed:** `m6Leaderboard.test.ts` (now uses the helper) and `m6PeriodClose.test.ts` (4 lines).
+- Tests only. No product code.
+
+### Verification
+- `m6FixtureT23.test.ts` has 4 tests.
+- The clean run on cfd22024: backend `tsc` and lint OK, unit 1665 / 1665; frontend 1510 / 1510 and build OK. Five integration files failed in that run for reasons outside T23: `exportApi` and `publicFormCache` pass alone (database drop); `reportsTwoTenant` and `toolOutputs` seeded with `now()` and read October, so they broke on 1 November; `twoTenantsHelper` missed the Owner holder. These three were fixed in the T24 step 0 commit.
+
+### Open points
+- None.
+
+---
+
+## COD-60 — Role cards, role detail, assign menu (M6-T19)
+**Date:** 2026-11-01 | **Type:** feat | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-60-t19-role-cards`, merge ac3779bc, HEAD^2 828edffe) | **Commits:** 828edffe
+
+### Summary
+The roles part of the Staff page: role cards, role detail, the assign menu and a new role window. Plan task: M6-T19.
+
+### Changes
+- **Role cards (`staff/RoleCards.tsx`, `roleModel.ts`):** each card shows holders with type tags, the target, progress, and "n of 16 tools".
+- **Role detail (`staff/RoleDetail.tsx`):** holders and history. Removed holders show in history only.
+- **Assign menu (`staff/AssignBox.tsx`):** three choices: invite a person, add an AI agent, add a company.
+- **New role (`staff/NewRoleModal.tsx`).**
+- **Service:** `services/roles.service.ts` calls the M6-T03 role API.
+- No backend change, no migration.
+
+### Verification
+- `StaffRoles.test.tsx` has 21 tests (`StaffRoles.test.tsx` is the new file in this merge; `Staff.test.tsx` was adjusted).
+- Staff tests 49 / 49 after the merge (progress log); tsc 0, lint clean.
+
+### Open points
+- PRD F-1151 gaps (reward rule block, view links, percent-target progress) were carried to T21.
+
+---
+
+## COD-59 — Settings Rewards tab (M6-T18)
+**Date:** 2026-11-01 | **Type:** feat | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-59-t18-rewards-tab`, merge a2e44830, HEAD^2 53ad1082) | **Commits:** ac5e7aec, 4fb5e6eb (merge of the M6 branch), 53ad1082
+
+### Summary
+The Settings Rewards tab. It is the only place where tiers are edited. Plan task: M6-T18.
+
+### Changes
+- **Tab (`settings/RewardsTab.tsx`):** cash tiers by role, rep pay and the badges display. Save rejects a 120% amount below the 100% amount (the API rule of T09).
+- **Fix round (53ad1082):** the 3PL "Contract review" flag, the "What reps can offer" tags (taken from the checkout forms), and the notice that a change applies from the next close.
+- **Service:** `targets.service.ts` has the reward settings calls.
+- Permission stays `settings:view`; the API enforces the write rule.
+- No backend change, no migration.
+
+### Verification
+- `SettingsRewards.test.tsx` has 9 tests; `Settings.test.tsx` was adjusted.
+- Screenshots of the fix round were checked (progress log).
+
+### Open points
+- None.
+
+---
+
+## COD-61 — Security sweep, E2E, date-proof tests (M6-T24)
+**Date:** 2026-11-01 | **Type:** test | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-61-t24-security`, merge 073c200d, HEAD^2 bfbc1ab0) | **Commits:** 79cd36b6 (step 0), 2251ada6, bfbc1ab0
+
+### Summary
+Security tests across tenants, permissions and invites, two browser flows, and two frontend fixes the browser flows found. Plan task: M6-T24 (also COD-56 for step 0).
+
+### Changes
+- **Step 0 (79cd36b6, COD-56):** tests no longer depend on today's date (`numbersFixture`, `reportsTwoTenant`, `toolOutputs` seed). The `twoTenantsHelper` test counts the Owner holder.
+- **Security sweep (2251ada6, `m6SecurityT24.test.ts`):** a list of tenant A never shows a row of tenant B. A tenant B id in a tenant A request is 404 and changes nothing. A role without the cell is 403 on every route of the M6 groups. Base roles are 403 on the management routes. An invite token is one use, expires, and belongs to its tenant. It also adds the dashboard half of the "Top this month" contract.
+- **E2E (bfbc1ab0):** `e2e/m6-t24-invite-target.spec.ts` with `scripts/e2e-m6-t24.sh` and `m6T24Seed.ts`. Flow 1: the Owner invites, the person accepts and signs in, the Owner sees them Active. Flow 2: the Owner sets a target and the Targets row shows it.
+- **Frontend fix 1:** Targets reads (`/api/targets/tree`, `/daily` and attainment) skip the 5 s request cache, so the page sees the row it just saved.
+- **Frontend fix 2:** the UI wrote the metric `delivered_orders`, but the backend measures `confirmed_delivered`. The UI now uses `confirmed_delivered` (`targets/model.ts`, `StepDrivers.tsx`).
+- No product backend change. No migration.
+
+### Verification
+- `m6SecurityT24.test.ts` has 12 `it(` blocks (the progress log counts 24 security tests across the files of this ticket). The E2E spec has 2 flows.
+- Post-merge run (9 files): 7 pass, including the 3 step 0 files, T24, T23, `dashboardTopThisMonth` and `kpiRoutes`. `ordersListApi` and `m5FinanceOverview` failed only on setup timeouts under load. `m5FinanceOverview` then passed alone; `ordersListApi` passed alone at 93 / 93 with the nav and permission files after T21.
+- E2E was not run in CI. It was run by the builder on a local seed.
+
+### Open points
+- No backend hole found by the sweep.
+
+---
+
+## COD-60 — Staff pay card (M6-T22)
+**Date:** 2026-11-01 | **Type:** feat | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-60-t22-pay-card`, merge c494cd52, HEAD^2 5df2096b) | **Commits:** 5df2096b, follow-up 63996e36 (on the T21 branch, in HEAD)
+
+### Summary
+A Pay card on the Staff page for reps and delivery partners. It opens the same payout form as Finance. Plan task: M6-T22.
+
+### Changes
+- **Card (`staff/PayCard.tsx`):** tabs for reps, agents and history. It mounts `PayoutForm` with the person id.
+- **One history list:** `PayoutHistoryList` and `useRepPayoutHistory` are shared with Finance Rep commissions, so both places show the same rows.
+- **Backend:** `deliveryPartnerService` returns `feesKept` per partner when the role may see money. It counts the fees stamped at delivered, failed or returned for orders placed in the period.
+- **Follow-up (63996e36):** the role cards test stubs the Pay card, because T19 and T22 ran in parallel.
+- No migration.
+
+### Verification
+- `PayCard.test.tsx` has 5 tests; `deliveryPartnersFixtureApi.test.ts` has a new case for `feesKept`.
+- After 63996e36, `StaffRoles.test.tsx` passed 60 / 60 twice (progress log).
+
+### Open points
+- Cash held comes from the agent aging report.
+- History lists rep payouts only.
+- The row-menu "Record payout" still navigates to Finance.
+
+---
+
+## COD-60 — Tool switches, advanced permissions, menu per role (M6-T21)
+**Date:** 2026-11-01 | **Type:** feat | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-60-t21-tools-matrix`, merge 9f38f90d, HEAD^2 f6873e1b) | **Commits:** 0db915f0, ac676972 (merge of the M6 branch), f6873e1b
+
+### Summary
+Allowed tools switches and an Advanced permissions grid in role detail, and a menu that follows each role. Plan task: M6-T21.
+
+### Changes
+- **Tool switches (`staff/ToolSwitches.tsx`):** 16 switches (7 read, 9 write). Saved by `PUT /api/roles/:id/tools`. The API owns the read-before-write rule.
+- **Advanced permissions (`staff/AdvancedPermissions.tsx`):** the permission grid for a role, with full access and read-only presets.
+- **Reward rule block (`staff/RewardRule.tsx`)** and percent progress for rate targets.
+- **Menu per role (`navService.ts`):** custom roles use the F-1163 permission table. Seeded roles keep the F-102 menu.
+- **Fix (f6873e1b):** typed the grid comparison and stubbed the Pay card in the tools test.
+- No migration.
+
+### Verification
+- `StaffRoleTools.test.tsx` 18 tests, `navMenuPerRole.test.ts` 10, `m6MenuPerRole.test.ts` 5, `menuPerRole.test.ts` 3.
+- Post-merge: nav, permission and `ordersListApi` files 93 / 93 pass (progress log).
+- Full suite at 9f38f90d: backend `tsc`, lint OK; unit 134 suites / 1775 tests pass. The integration part was still running when this entry was written.
+
+### Open points
+- No call-rep view link: the `/rep` route is M7. The delivery agent phone view link is built.
+- "Reset to preset" restores the last saved grid, not the preset.
+- A rate role target uses the unweighted average of the holders' rates.
+- The "Customer reps" menu item still depends on the base role.
