@@ -205,9 +205,9 @@ describe('wizard steps 4 to 6 and resume', () => {
     await userEvent.type(screen.getByLabelText('Nana Kyei'), '50');
     expect(screen.getByText('Total 723 of 723.')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Save driver targets and continue' }));
-    await waitFor(() => expect(targets.save).toHaveBeenCalledWith({ scope: 'role', metric: 'delivered_orders', unit: 'count', value: 723, period: '2026-10', roleId: 7 }));
+    await waitFor(() => expect(targets.save).toHaveBeenCalledWith({ scope: 'role', metric: 'confirmed_delivered', unit: 'count', value: 723, period: '2026-10', roleId: 7 }));
     expect(targets.save).toHaveBeenCalledWith({ scope: 'role', metric: 'delivery_success_rate', unit: 'percent', value: 60, period: '2026-10', roleId: 8 });
-    expect(targets.save).toHaveBeenCalledWith({ scope: 'person', metric: 'delivered_orders', unit: 'count', value: 423, period: '2026-10', roleId: 7, userId: 101 });
+    expect(targets.save).toHaveBeenCalledWith({ scope: 'person', metric: 'confirmed_delivered', unit: 'count', value: 423, period: '2026-10', roleId: 7, userId: 101 });
     await waitFor(() => expect(onboarding.saveNorthStarProgress).toHaveBeenCalledWith(5));
   });
 
