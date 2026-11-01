@@ -133,6 +133,50 @@ The service behind the target tree: North Star (year), quarter, month, role, per
 
 ---
 
+## COD-57 — North Star service, calculators and target routes (M6-T08)
+**Date:** 2026-11-01 | **Type:** feat | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-57-t08-northstar`, merge 7d14f767) | **Commits:** 4ceea128 (last-Owner race fix), fa00acd6, 846ceab7, bdc571cc
+
+### Summary
+The North Star plan and the `/api/targets` routes. Plan task: M6-T08. With T07 this completes COD-57.
+
+### Changes
+- **Year tree (`northStarService.saveNorthStar`, `POST /api/targets/north-star`):** builds the North Star, 4 quarters and 12 months in one transaction (`targetService.replanYear`). Modes: even, grow (one thirtieth of the annual figure per step: 360/420/480/540k on 1,800,000) and custom (quarters must add up, else 400 `TARGET_SUM_MISMATCH` with the difference). Past and closed months keep their value on a re-plan; "past" uses the store date.
+- **Driver targets (`PUT /api/targets/drivers`):** `planned_aov`, `confirmation_rate` (default 70), `delivery_success_rate` (default 60), `net_margin` (default 35), saved all or none. Planned AOV defaults to the last 30 days of delivered orders; an owner edit is stored as `manual` and kept. No delivered orders and no edit: 400 `AOV_REQUIRED`.
+- **Calculators (`GET /api/targets/calculators`, `northStarMath.ts`):** orders delivered (round up), orders to take in (nearest), orders a day (round up), max cost per order. Fixture: 723, 1,721, 56. A rate of 0, below 0 or above 100% is 400 `RATE_INVALID`.
+- **Routes (`targetRoutes.ts`):** read = manager level + `analytics:view`; North Star, its children and drivers = `settings:update` (Owner); one role, person or daily target = `users:update`. The generic routes refuse North Star rows (403 `USE_NORTH_STAR`). Role and user ids are checked against the tenant (404).
+- **Last-Owner race (4ceea128):** `unassign` locks the role's active assignments (`FOR UPDATE`) and counts Owners inside the transaction.
+
+### Verification
+- Merged branch: typecheck, lint, build clean. Unit 128 suites / 1723 tests; integration 20 suites / 290 tests (with T09).
+- `m6NorthStar` (19), `m6OwnerRace`, `m6Targets`, `m6RolesApi`, `dashboardOwner`, `kpiLeadership`, `m5FinanceOverview` pass.
+- API only; the screens are T15 (Targets page) and T17 (wizard).
+
+### Open points
+- The growth mode is not stored; the screen sends it on every re-plan.
+
+---
+
+## COD-58 — Rewards settings and attainment (M6-T09)
+**Date:** 2026-11-01 | **Type:** feat | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-58-t09-rewards`, merge 675730ba) | **Commits:** 17623730, 0ce836fa
+
+### Summary
+The one place reward tiers and rep pay live, and each person's progress toward their target. Plan task: M6-T09. COD-58 is still In Progress (T10, T11 left).
+
+### Changes
+- **Settings (`GET/PUT /api/rewards/settings`):** cash tiers by role at 100% and 120% in `RewardTier` (with day-off note); rep pay (GH₵8 base, 10% upsell) and the badges switch in `SystemConfig.features.rewards` through `tenantFeatures`. A 120% amount below the 100% amount is 400 `TIER_ORDER`. GET = `settings:view`, PUT = `settings:update`.
+- **One read of rep pay (`rewardService.getRepPay`):** GL posting still reads `User.commissionAmount` until T10/M7 switches to it.
+- **Attainment (`GET /api/rewards/attainment?period&userId&roleId`):** per person and role: target, actual, percent, tier, reward, distance to the next tier (F-1108). Call reps count confirmed orders that got delivered, by delivery date (P7). Delivery partners use the delivery success rate (`outcomesByPartner`, one batch, same filters as `rates()`). Above 120%: "Top tier reached". No target: no reward and "Set a target". AI agents and companies: "No payout". An open month reads "On track to earn ... at month close"; a closed month "Earned". Managers and above see everyone; others see their own rows.
+- **Shared code:** `config/targetMetrics.ts` (metric names and basis), `kpi/rates.deliveredByRep`, `utils/money` `CURRENCY_SIGN` / `formatWithSign` (NGN shows ₦), targetService read helpers `monthPersonTargets`, `monthRoleTargets`, `isMonthClosed`.
+- **Wording guard:** no 80% tier and no "airtime" in reward code or messages (unit test).
+
+### Verification
+- Merged branch: same full run as T08 above. `m6RewardsApi` (16), `rewardMath`, `rewardWording`, `wordingGuard`, M5 commission and payout suites, `kpiRates`, `repRates` pass.
+
+### Open points
+- A person who left a role mid-month is skipped by the live-target rule; T10 judges them on their own target at month close (F-1110).
+
+---
+
 ## COD-58 — Persistent assignment cursor
 **Date:** 2026-10-31 | **Type:** feat | **Branch:** feature/m6-roles-targets-rewards (lane `m6/cod-58-t13-cursor`, merge 3fa283e7) | **Commits:** 68577a8c, 5840ce98
 
