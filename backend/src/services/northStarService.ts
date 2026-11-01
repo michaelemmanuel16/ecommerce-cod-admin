@@ -133,6 +133,28 @@ export interface NorthStarInput {
 }
 
 /**
+ * The plan of a year from what is saved: months that are past (before this store month) or closed, and exist, keep their value; a
+ * quarter whose three months are all kept keeps its value; the rest of the annual figure follows the mode. `extra` is how many months
+ * were kept. Saving and the preview both use this, so what the preview shows is what a save writes.
+ */
+function planYear(existing: Target[], input: Pick<NorthStarInput, 'year' | 'annual' | 'mode' | 'customQuarters'>) {
+  const today = parseYmd(todayYmd());
+  const firstOpenMonth = utcDate(today.year, today.month);
+  const monthAt = (i: number) => existing.find((r) => r.scope === 'month' && r.periodStart.getTime() === utcDate(input.year, i).getTime());
+  const fixedMonths = [0, 1, 2, 3].map((q) => [1, 2, 3].map((i) => {
+    const r = monthAt(q * 3 + i);
+    return r && (r.closedAt !== null || r.periodStart < firstOpenMonth) ? r.value : null;
+  }));
+  const fixedQuarters = fixedMonths.map((ms) => (ms.every((v) => v !== null) ? Money.sum(ms as Money.Money[]) : null));
+  const quarters = planQuarters(input.annual, input.mode, input.customQuarters, fixedQuarters);
+  return {
+    annual: Money.parse(input.annual),
+    quarters: quarters.map((value, q) => ({ value, months: monthSplit(value, fixedMonths[q]) })),
+    extra: fixedMonths.flat().filter((v) => v !== null).length,
+  };
+}
+
+/**
  * Create or re-plan the year's tree. Months that are past (before this store month) or closed, and exist, keep their value; a
  * quarter whose three months are all kept keeps its value; the rest of the annual figure is spread over the other quarters in
  * the chosen mode, and the months of a quarter share what is left of it evenly. Blocked, with nothing saved, when custom quarters
@@ -149,22 +171,8 @@ export async function saveNorthStar(input: NorthStarInput) {
     assertAov(input.plannedAov);
   }
 
-  const today = parseYmd(todayYmd());
-  const firstOpenMonth = utcDate(today.year, today.month);
-  const result = await replanYear(REVENUE_METRIC, 'money', input.year, (existing) => {
-    const monthAt = (i: number) => existing.find((r) => r.scope === 'month' && r.periodStart.getTime() === utcDate(input.year, i).getTime());
-    const fixedMonths = [0, 1, 2, 3].map((q) => [1, 2, 3].map((i) => {
-      const r = monthAt(q * 3 + i);
-      return r && (r.closedAt !== null || r.periodStart < firstOpenMonth) ? r.value : null;
-    }));
-    const fixedQuarters = fixedMonths.map((ms) => (ms.every((v) => v !== null) ? Money.sum(ms as Money.Money[]) : null));
-    const quarters = planQuarters(input.annual, input.mode, input.customQuarters, fixedQuarters);
-    return {
-      annual: Money.parse(input.annual),
-      quarters: quarters.map((value, q) => ({ value, months: monthSplit(value, fixedMonths[q]) })),
-      extra: fixedMonths.flat().filter((v) => v !== null).length,
-    };
-  }, input.plannedAov === undefined ? [] : [aovInput(input.plannedAov, input.year)]);
+  const result = await replanYear(REVENUE_METRIC, 'money', input.year, (existing) => planYear(existing, input),
+    input.plannedAov === undefined ? [] : [aovInput(input.plannedAov, input.year)]);
   return {
     year: input.year, metric: REVENUE_METRIC, northStar: view(result.northStar), quarters: result.quarters.map(view), months: result.months.map(view),
     pastMonthsKept: result.extra,
@@ -172,7 +180,7 @@ export async function saveNorthStar(input: NorthStarInput) {
 }
 
 const view = (t: Target) => ({
-  id: t.id, scope: t.scope, metric: t.metric, unit: t.unit, value: Money.toApi(t.value), periodStart: ymdOfUtc(t.periodStart), periodEnd: ymdOfUtc(t.periodEnd),
+  id: t.id, updatedAt: t.updatedAt.toISOString(), scope: t.scope, metric: t.metric, unit: t.unit, value: Money.toApi(t.value), periodStart: ymdOfUtc(t.periodStart), periodEnd: ymdOfUtc(t.periodEnd),
   parentId: t.parentId, closed: t.closedAt !== null,
 });
 
@@ -286,4 +294,19 @@ export async function calculators(input: CalculatorInput) {
 async function profitPerOrder(tenantId: string): Promise<string | null> {
   const { from, to } = plannedAovBounds(tenantId, todayYmd());
   return (await topProductByDelivered(from, to))?.profitPerOrder ?? null;
+}
+
+const money = (v: Money.MoneyInput) => Money.toApi(v);
+
+/**
+ * The split a save would write, for the wizard and the Settings tab before anything is saved (F-1111, F-1112): four quarters and the
+ * three months of each, with the months of this year that are past or closed kept as they are. Custom quarters that do not add up are
+ * refused with the difference. Nothing is saved. `kept` is how many months stay as they are.
+ */
+export async function previewNorthStar(input: Pick<NorthStarInput, 'year' | 'annual' | 'mode' | 'customQuarters'>) {
+  const existing = await prisma.target.findMany({
+    where: { metric: REVENUE_METRIC, roleId: null, userId: null, scope: { in: ['quarter', 'month'] }, periodStart: { gte: utcDate(input.year, 1), lte: utcDate(input.year, 12, 31) } },
+  });
+  const plan = planYear(existing, input);
+  return { quarters: plan.quarters.map((q) => money(q.value)), months: plan.quarters.map((q) => q.months.map(money)), kept: plan.extra };
 }

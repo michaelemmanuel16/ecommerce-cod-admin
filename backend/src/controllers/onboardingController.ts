@@ -2,7 +2,7 @@ import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../types';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
-import { addPartner, getStatus, saveStore, setOwnerPrefs } from '../services/onboardingService';
+import { addPartner, getStatus, saveNorthStarProgress, saveStore, setOwnerPrefs } from '../services/onboardingService';
 
 /** The tenant of the signed-in user; the JWT can be stale, so fall back to the user row. */
 async function tenantOf(req: AuthRequest): Promise<string> {
@@ -44,6 +44,15 @@ export const getOnboardingStatus = async (req: AuthRequest, res: Response, next:
   try {
     const tenantId = await tenantOf(req);
     res.json(await getStatus(tenantId, req.user!.id));
+  } catch (error) {
+    next(error);
+  }
+};
+
+/** POST /api/onboarding/north-star: `step` (3 to 6) the Owner is on, and `done` once step 6 is finished. */
+export const saveNorthStarStep = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    res.json(await saveNorthStarProgress(req.user!.id, { step: Number(req.body.step), done: req.body.done === true }));
   } catch (error) {
     next(error);
   }

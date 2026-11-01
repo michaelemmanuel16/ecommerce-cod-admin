@@ -89,7 +89,7 @@ export const NAV_GROUPS: NavGroup[] = [
       // Webhooks page: replaced by Connections (M9). Guard in App.tsx: owner and admin.
       { key: 'webhooks', label: 'Webhooks', icon: Webhook, to: '/webhooks', oldPageFor: (r) => r === 'super_admin' || r === 'admin' },
       { key: 'settings', label: 'Settings', icon: Settings, to: '/settings' },
-      { key: 'setupNorthStar', label: 'Set up North Star', icon: Flag, to: null },
+      { key: 'setupNorthStar', label: 'Set up North Star', icon: Flag, to: '/onboarding' }, // the wizard resumes at its saved step; the menu drops it when step 6 is done
     ],
   },
 ];

@@ -40,6 +40,14 @@ export const northStarSchema = z.object({
   plannedAov: num.optional(),
 }).strict();
 
+/** GET /api/targets/north-star/preview: customQuarters is a comma list ("100000,200000,500000,1000000"). */
+export const previewQuerySchema = z.object({
+  year,
+  annual: num.positive(),
+  mode: z.enum(['even', 'grow', 'custom']),
+  customQuarters: z.string().regex(/^\d+(\.\d+)?(,\d+(\.\d+)?){3}$/, 'Four numbers separated by commas').transform((v) => v.split(',').map(Number)).optional(),
+}).strict();
+
 export const driversSchema = z.object({
   year,
   plannedAov: num.nullable().optional(),

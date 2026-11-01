@@ -102,6 +102,8 @@ export async function getStatus(tenantId: string, userId: number) {
     onboardingCompleted: prefs.onboardingCompleted ?? false,
     country: tenant?.region ?? null,
     currency: tenant?.currency ?? null,
+    /** The North Star wizard (steps 3 to 6): the step the Owner reached, and whether step 6 was finished (F-1111). */
+    northStar: { step: Math.min(Math.max(Number(prefs.northStarStep) || 3, 3), 6), done: prefs.northStarDone === true },
     steps: [
       { step: 1, key: 'store', done: !!tenant?.region && !!config?.businessName },
       { step: 2, key: 'partner', done: partners > 0, skipped: prefs.onboardingPartnerSkipped === true },
@@ -116,4 +118,18 @@ export async function setOwnerPrefs(userId: number, patch: Record<string, unknow
     where: { id: userId },
     data: { preferences: { ...((row?.preferences as Record<string, unknown> | null) ?? {}), ...patch } },
   });
+}
+
+/**
+ * Progress of the North Star wizard (steps 3 to 6), kept in the Owner's preferences (F-1111). Reaching step 3 also closes the
+ * store setup (steps 1 and 2), so the app stops sending the Owner back to the wizard; `done` is step 6 finished.
+ */
+export async function saveNorthStarProgress(userId: number, input: { step: number; done?: boolean }) {
+  if (!Number.isInteger(input.step) || input.step < 3 || input.step > 6) throw new AppError('Step must be 3 to 6', 400);
+  const done = input.done === true;
+  await setOwnerPrefs(userId, {
+    northStarStep: input.step, northStarDone: done,
+    onboardingCompleted: true, onboardingCompletedAt: new Date().toISOString(),
+  });
+  return { step: input.step, done };
 }

@@ -1,17 +1,21 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Check, Zap } from 'lucide-react';
 import { z } from 'zod';
 import { billingService, Subscription } from '../services/billing.service';
 import { adminService } from '../services/admin.service';
 import { onboardingService, OnboardingStatus } from '../services/onboarding.service';
 import { useAuthStore } from '../stores/authStore';
-import { Button, Input, Select, Tag } from '../components/ui-v2';
+import { Button, Input, Select } from '../components/ui-v2';
 import { getSupportedCountries, getCurrencyForCountry, getCurrencySymbol } from '../utils/countries';
+import { StepNorthStar } from './northStar/StepNorthStar';
+import { StepDrivers } from './northStar/StepDrivers';
+import { startStep } from './northStar/model';
+import { todayYmd } from '../utils/format';
 
 const COUNTRIES = getSupportedCountries();
 
-// The six steps of the mockup rail. Steps 3 to 6 belong to the North Star setup (M6) and stay disabled until then.
+// The six steps of the mockup rail. Steps 3 to 6 are the North Star setup (M6-T17); their progress is kept in the Owner's preferences.
 const RAIL = [
   { n: 1, label: 'Your store' },
   { n: 2, label: 'Connect your 3PL' },
@@ -21,7 +25,7 @@ const RAIL = [
   { n: 6, label: 'Rewards' },
 ];
 
-type View = 1 | 2 | 'done';
+type View = 1 | 2 | 3 | 4 | 5 | 6 | 'done';
 
 const storeSchema = z.object({
   businessName: z.string().trim().min(1, 'Enter your business name'),
@@ -37,18 +41,21 @@ const partnerSchema = z.object({
 const errorText = (error: unknown, fallback: string) =>
   (error as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback;
 
-/** First view to show: the first step that is not done, so a closed wizard resumes where it stopped. */
-function startView(status: OnboardingStatus): View {
-  const store = status.steps.find((s) => s.step === 1);
-  const partner = status.steps.find((s) => s.step === 2);
-  if (!store?.done) return 1;
-  if (!partner?.done && !partner?.skipped) return 2;
-  return 'done';
+/** First view to show: the step in the address (Edit North Star opens step 3), else the first step not done, so a closed wizard resumes where it stopped. */
+function startView(status: OnboardingStatus, asked: number | null): View {
+  const store = status.steps.find((x) => x.step === 1);
+  const partner = status.steps.find((x) => x.step === 2);
+  const partnerHandled = !!partner?.done || !!partner?.skipped;
+  const step = startStep({ asked, store: !!store?.done, partner: partnerHandled, saved: status.northStar.step });
+  if (status.northStar.done && asked === null && step >= 3) return 'done';
+  return step as View;
 }
 
 export const Onboarding: React.FC = () => {
   const navigate = useNavigate();
-  const { user, updatePreferences } = useAuthStore();
+  const [params] = useSearchParams();
+  const { user, patchUser, refreshPermissions } = useAuthStore();
+  const year = Number(todayYmd().slice(0, 4));
   const [view, setView] = useState<View | null>(null);
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -79,7 +86,8 @@ export const Onboarding: React.FC = () => {
         businessAddress: config?.businessAddress ?? '',
         taxId: config?.taxId ?? '',
       });
-      setView(startView(s));
+      const asked = Number(params.get('step'));
+      setView(startView(s, Number.isInteger(asked) && asked > 0 ? asked : null));
     })().catch(() => {
       if (!alive) return;
       setError('Could not load your setup. Refresh the page to try again.');
@@ -87,13 +95,11 @@ export const Onboarding: React.FC = () => {
     return () => { alive = false; };
   }, []);
 
-  // The wizard is complete once step 2 is added or skipped. Saving the flag here lets the app stop sending the owner back.
+  // On the final view, load the plan so a pending PAID tier can be activated with a Pay button.
   useEffect(() => {
     if (view !== 'done') return;
-    updatePreferences({ onboardingCompleted: true }).catch(() => undefined);
-    // On the final view, load the plan so a pending PAID tier can be activated with a Pay button.
     billingService.getSubscription().then(setSubscription).catch(() => setSubscription(null));
-  }, [view, updatePreferences]);
+  }, [view]);
 
   const stepDone = (n: number) => status?.steps.find((s) => s.step === n)?.done ?? false;
   const partnerHandled = stepDone(2) || !!status?.steps.find((s) => s.step === 2)?.skipped;
@@ -106,6 +112,34 @@ export const Onboarding: React.FC = () => {
     setError('');
     setErrors({});
     setView(next);
+  };
+
+  /** Move to a North Star step (3 to 6) and keep it: leaving and coming back resumes here. Reaching step 3 also closes the store setup. */
+  const moveTo = async (n: 3 | 4 | 5 | 6) => {
+    try {
+      await onboardingService.saveNorthStarProgress(n);
+      setStatus((s) => s && { ...s, northStar: { step: n, done: false } });
+      if (user && !user.preferences?.onboardingCompleted) patchUser({ preferences: { ...user.preferences, onboardingCompleted: true } });
+    } catch (err) {
+      setError(errorText(err, 'Could not save your progress. Try again.'));
+      return;
+    }
+    goto(n);
+  };
+
+  const finish = async () => {
+    setBusy(true);
+    try {
+      await onboardingService.saveNorthStarProgress(6, true);
+      setStatus((s) => s && { ...s, northStar: { step: 6, done: true } });
+      if (user) patchUser({ preferences: { ...user.preferences, onboardingCompleted: true, northStarDone: true } });
+      refreshPermissions().catch(() => undefined); // the menu drops "Set up North Star"
+      goto('done');
+    } catch (err) {
+      setError(errorText(err, 'Could not finish the setup. Try again.'));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const saveStore = async (e: React.FormEvent) => {
@@ -130,7 +164,7 @@ export const Onboarding: React.FC = () => {
         taxId: store.taxId.trim() || undefined,
       });
       markDone(1, { done: true });
-      goto(partnerHandled ? 'done' : 2);
+      if (partnerHandled) await moveTo(3); else goto(2);
     } catch (err) {
       setError(errorText(err, 'Could not save your store. Try again.'));
     } finally {
@@ -157,7 +191,7 @@ export const Onboarding: React.FC = () => {
         phone: partner.phone.trim() || undefined,
       });
       markDone(2, { done: true });
-      goto('done');
+      await moveTo(3);
     } catch (err) {
       setError(errorText(err, 'Could not add the partner. Try again.'));
     } finally {
@@ -171,7 +205,7 @@ export const Onboarding: React.FC = () => {
     try {
       await onboardingService.skipPartner();
       markDone(2, { skipped: true });
-      goto('done');
+      await moveTo(3);
     } catch (err) {
       setError(errorText(err, 'Could not skip this step. Try again.'));
     } finally {
@@ -215,13 +249,15 @@ export const Onboarding: React.FC = () => {
     return (
       <div className="wdone">
         <h2>You're all set</h2>
-        <p>Your store is ready. The North Star steps (goal, driver targets, team and rewards) open soon.</p>
+        <p>Your store and your North Star are set. Quarters, months and driver targets are on the Targets page.</p>
         <Button variant="primary" onClick={() => navigate('/')}>Go to Dashboard</Button>
       </div>
     );
   };
 
-  const stepNumber = view === 1 ? 1 : view === 2 ? 2 : 7;
+  const stepNumber = view === 'done' ? 7 : view;
+  const savedStep = status?.northStar.step ?? 3;
+  const northStarOpen = stepDone(1) && partnerHandled;
 
   return (
     <div className="v2 onbpage">
@@ -231,24 +267,16 @@ export const Onboarding: React.FC = () => {
             <div className="brand"><div className="logo"><Zap aria-hidden="true" /></div><b>Set up</b></div>
             <p className="hi">Welcome, {user?.firstName}</p>
             {RAIL.map((s) => {
-              const done = s.n === 1 ? stepDone(1) : s.n === 2 ? partnerHandled : false;
+              const done = s.n === 1 ? stepDone(1) : s.n === 2 ? partnerHandled : s.n === 6 ? !!status?.northStar.done : northStarOpen && s.n < savedStep;
               const mark = done ? <Check aria-hidden="true" /> : s.n;
-              if (s.n > 2) {
-                // North Star setup: stays disabled until M6.
-                return (
-                  <span key={s.n} className="step off" aria-disabled="true" title="Opens with the North Star setup">
-                    <span className="n">{s.n}</span>{s.label}<Tag className="soon">Soon</Tag>
-                  </span>
-                );
-              }
               return (
                 <button
                   key={s.n}
                   type="button"
                   className={`step${done ? ' done' : ''}${stepNumber === s.n ? ' on' : ''}`}
                   aria-current={stepNumber === s.n ? 'step' : undefined}
-                  disabled={view === null || (s.n === 2 && !stepDone(1))}
-                  onClick={() => goto(s.n as View)}
+                  disabled={view === null || (s.n === 2 && !stepDone(1)) || (s.n > 2 && !northStarOpen)}
+                  onClick={() => (s.n > 2 ? moveTo(s.n as 3 | 4 | 5 | 6) : goto(s.n as View))}
                 >
                   <span className="n">{mark}</span>{s.label}
                 </button>
@@ -371,7 +399,7 @@ export const Onboarding: React.FC = () => {
                   <Button onClick={() => goto(1)}>Back</Button>
                   <div className="right">
                     {stepDone(2) ? (
-                      <Button variant="primary" onClick={() => goto('done')}>Continue</Button>
+                      <Button variant="primary" onClick={() => moveTo(3)}>Continue</Button>
                     ) : (
                       <>
                         <Button disabled={busy} onClick={skipPartner}>Skip for now</Button>
@@ -381,6 +409,35 @@ export const Onboarding: React.FC = () => {
                   </div>
                 </div>
               </form>
+            )}
+
+            {view === 3 && <StepNorthStar year={year} onBack={() => goto(2)} onSaved={() => moveTo(4)} />}
+            {view === 4 && <StepDrivers year={year} month={todayYmd().slice(0, 7)} currency={currency || 'GHS'} onBack={() => goto(3)} onNext={() => moveTo(5)} />}
+
+            {view === 5 && (
+              <div className="nsstack">
+                <h2>Invite your team</h2>
+                <p>Invite the people who will work orders. They get a link to set their own password. You can skip this and invite later in Staff &amp; roles.</p>
+                <div>
+                  <Button variant="primary" onClick={async () => { await onboardingService.saveNorthStarProgress(5).catch(() => undefined); navigate('/staff?invite=1'); }}>Invite people in Staff &amp; roles</Button>
+                </div>
+                <div className="wfoot">
+                  <Button onClick={() => goto(4)}>Back</Button>
+                  <Button variant="primary" onClick={() => moveTo(6)}>Next</Button>
+                </div>
+              </div>
+            )}
+
+            {view === 6 && (
+              <div className="nsstack">
+                <h2>Rewards</h2>
+                <p>Rewards are set in one place: Settings, Rewards. Nothing is copied into this wizard.</p>
+                <div className="nsrewards"><Link className="btn pri" to="/settings?tab=rewards">Open Rewards in Settings</Link></div>
+                <div className="wfoot">
+                  <Button onClick={() => goto(5)}>Back</Button>
+                  <Button variant="primary" disabled={busy} onClick={finish}>{busy ? 'Saving...' : 'Finish setup'}</Button>
+                </div>
+              </div>
             )}
 
             {view === 'done' && doneBody()}

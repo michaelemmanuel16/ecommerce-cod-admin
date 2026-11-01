@@ -1,0 +1,38 @@
+/* North Star wizard step and Settings tab (M6-T17, F-1111 to F-1113). Mockups: index.html#onboard step 3, settings.html North Star.
+   Tokens only; scoped under .v2. */
+.v2 .nsf{display:flex;flex-direction:column;gap:18px;max-width:760px;margin-top:8px}
+.v2 .nsmoney{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;padding:0 12px;background:var(--card)}
+.v2 .nsmoney span{color:var(--ink-3);font-weight:600}
+.v2 .nsf .fl .nsmoney input:not([type=checkbox]):not([type=file]){flex:1;min-width:0;border:0;border-radius:0;box-shadow:none;background:transparent;padding:9px 0;font:600 15px "Plus Jakarta Sans",system-ui,sans-serif;color:var(--ink);outline:none}
+.v2 .nsmoney:focus-within{border-color:var(--pine)}
+.v2 .nslabel{display:block;font-weight:600;font-size:13px;margin-bottom:6px}
+.v2 .nsf .seg{display:inline-flex;gap:4px;padding:4px;border:1px solid var(--line);border-radius:12px;background:var(--hover);flex-wrap:wrap}
+.v2 .nsf .seg button{padding:7px 12px;border-radius:9px;font-weight:600;font-size:13px;color:var(--ink-2)}
+.v2 .nsf .seg button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+.v2 .nssplit{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.v2 .nsq{border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.v2 .nsq h4{font-size:13px;color:var(--ink-3)}
+.v2 .nsq b{font-size:20px}
+.v2 .nsq input{width:100%;min-width:0;border:1px solid var(--line);border-radius:8px;padding:6px 8px;font:700 16px "Plus Jakarta Sans",system-ui,sans-serif;background:var(--card);color:var(--ink)}
+.v2 .nsq small{color:var(--ink-3);font-size:12.5px;min-height:1em}
+.v2 .nsgap{color:var(--coral);font-weight:600;font-size:13px}
+.v2 .nsnote{display:flex;gap:8px;padding:10px 12px;border-radius:12px;background:var(--gold-soft);color:var(--ink);font-size:13px}
+.v2 .nsdrivers{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.v2 .nstiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.v2 .nstiles .drv{border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:4px}
+.v2 .nstiles .drv small{color:var(--ink-3);font-size:12.5px}
+.v2 .nstiles .drv b{font-size:26px}
+.v2 .nsmath{color:var(--ink-3);font-size:12.5px}
+.v2 .nstep4 table{width:100%;border-collapse:collapse}
+.v2 .nstep4 th{text-align:left;font-size:12.5px;font-weight:600;color:var(--ink-3);padding:10px 12px;border-bottom:1px solid var(--line)}
+.v2 .nstep4 td{padding:12px;border-bottom:1px solid var(--line);vertical-align:top}
+.v2 .nstep4 .nssum{color:var(--ink-3);font-size:13px;margin-top:10px}
+.v2 .nstep4 .nssum.bad{color:var(--coral);font-weight:600}
+.v2 .nsstack{display:flex;flex-direction:column;gap:18px;max-width:760px}
+.v2 .nsrewards{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.v2 .nsconfirm{display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:12px;background:var(--gold-soft);font-size:13px}
+.v2 .nsconfirm ul{margin:0;padding-left:18px}
+@media (max-width:760px){
+  .v2 .nssplit{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .v2 .nsdrivers,.v2 .nstiles{grid-template-columns:minmax(0,1fr)}
+}

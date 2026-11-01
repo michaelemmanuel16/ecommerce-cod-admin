@@ -75,11 +75,15 @@ async function roleList(userId: number, role: UserRole): Promise<Array<{ id: num
 class NavService {
   /** Everything /api/auth/me adds for the shell. */
   async getShell(userId: number, role: UserRole) {
-    const [permissions, roles] = await Promise.all([getUserPermissions({ id: userId, role }), roleList(userId, role)]);
+    const [permissions, roles, owner] = await Promise.all([
+      getUserPermissions({ id: userId, role }), roleList(userId, role), prisma.user.findUnique({ where: { id: userId }, select: { preferences: true } }),
+    ]);
+    // "Set up North Star" stays in the menu until the Owner finishes step 6 of the wizard (F-1111)
+    const northStarDone = (owner?.preferences as { northStarDone?: boolean } | null)?.northStarDone === true;
     return {
       permissions,
       homeRoute: homeRouteFor(role),
-      menu: menuKeys(role, permissions),
+      menu: menuKeys(role, permissions).filter((key) => !(northStarDone && key === 'setupNorthStar')),
       roles,
     };
   }

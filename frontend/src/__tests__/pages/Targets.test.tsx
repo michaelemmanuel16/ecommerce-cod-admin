@@ -15,7 +15,8 @@ const svc = vi.hoisted(() => ({
 vi.mock('../../services/targets.service', async (orig) => ({ ...(await orig<typeof import('../../services/targets.service')>()), targetsService: svc }));
 
 let canEdit = true;
-vi.mock('../../hooks/usePermissions', () => ({ usePermissions: () => ({ can: () => canEdit, user: { role: 'admin' } }) }));
+let isSuperAdmin = false;
+vi.mock('../../hooks/usePermissions', () => ({ usePermissions: () => ({ can: () => canEdit, isSuperAdmin, user: { role: 'admin' } }) }));
 
 const navigated = vi.fn();
 vi.mock('react-router-dom', async (orig) => ({ ...(await orig<typeof import('react-router-dom')>()), useNavigate: () => navigated }));
@@ -27,6 +28,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date('2026-10-17T12:00:00'));
   clearBlockCache();
   canEdit = true;
+  isSuperAdmin = false;
   Object.values(svc).forEach((f) => f.mockReset());
   svc.tree.mockResolvedValue(TREE);
   svc.attainment.mockResolvedValue(ATTAINMENT);
@@ -192,6 +194,21 @@ describe('Targets page: targets by role', () => {
     const text = document.body.textContent ?? '';
     expect(text).not.toMatch(/80\s?%/);
     expect(text).not.toMatch(/airtime/i);
+  });
+});
+
+describe('Targets page: Edit North Star', () => {
+  it('the Owner has Edit North Star and it opens the wizard at step 3; others do not see it', async () => {
+    isSuperAdmin = true;
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: /Edit North Star/ }));
+    expect(navigated).toHaveBeenCalledWith('/onboarding?step=3');
+  });
+
+  it('is not shown to an admin', async () => {
+    renderPage();
+    await screen.findByText('October targets by role');
+    expect(screen.queryByRole('button', { name: /Edit North Star/ })).not.toBeInTheDocument();
   });
 });
 
