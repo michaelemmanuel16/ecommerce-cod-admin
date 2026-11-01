@@ -134,14 +134,17 @@ export function buildGroups(roles: RoleRow[], attainment: Attainment | null, set
           ...rewardLine(role, holder, row, settings, currency), targetId: mine?.id ?? null,
         };
       });
-      const counted = lines.filter((l) => l.row?.target && l.row.unit !== 'percent' && l.row.actual !== null);
+      // A rate target (delivery success) is met by the holders' rates, so the role's rate is their average; a count or money target adds up
+      const rate = role.target?.unit === 'percent';
+      const counted = lines.filter((l) => l.row?.target && (l.row.unit === 'percent') === rate && l.row.actual !== null);
       const roleTarget = role.target?.value ?? null;
-      const done = counted.reduce((n, l) => n + (l.row?.actual ?? 0), 0);
+      const total = counted.reduce((n, l) => n + (l.row?.actual ?? 0), 0);
+      const done = rate && counted.length > 0 ? Math.round(total / counted.length) : total;
       const percent = roleTarget ? Math.round((done / roleTarget) * 100) : 0;
       return {
         role, holderCount: plural(role.holders.length, 'holder'), vacant: role.holders.length === 0,
         roleTargetText: role.target ? `Role target: ${targetWords(role.target, currency)}` : `${SET_A_TARGET} for this role`,
-        bar: roleTarget && counted.length > 0 ? { percent, text: `${done} of ${roleTarget} · ${percent}% of role target` } : null, lines,
+        bar: roleTarget && counted.length > 0 ? { percent, text: `${done}${rate ? '%' : ''} of ${roleTarget}${rate ? '%' : ''} · ${percent}% of role target` } : null, lines,
       };
     });
 }

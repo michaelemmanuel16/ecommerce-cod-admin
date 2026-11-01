@@ -20,7 +20,7 @@ vi.mock('../../services/staff.service', async (orig) => {
 const rolesSvc = vi.hoisted(() => ({ overview: vi.fn(), assignments: vi.fn() }));
 vi.mock('../../services/roles.service', async (orig) => ({ ...(await orig<typeof import('../../services/roles.service')>()), rolesService: rolesSvc }));
 // The role cards read this month's targets for progress; these tests are about the table
-vi.mock('../../services/targets.service', () => ({ targetsService: { tree: () => Promise.resolve(null), attainment: () => Promise.resolve(null) } }));
+vi.mock('../../services/targets.service', () => ({ targetsService: { tree: () => Promise.resolve(null), attainment: () => Promise.resolve(null), rewardSettings: () => Promise.resolve(null) } }));
 // The Pay card has its own tests (PayCard.test.tsx); here it only has to be mounted
 vi.mock('../../pages/staff/PayCard', () => ({ PayCard: () => <section aria-label="Pay card stub" /> }));
 const reassign = vi.hoisted(() => vi.fn());
