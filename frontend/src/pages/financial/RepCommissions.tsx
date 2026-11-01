@@ -3,7 +3,9 @@ import { BadgeCheck, BadgePercent, CheckCircle2, Gift } from 'lucide-react';
 import { Button, Card, EmptyState, Skeleton, Tag, Tile } from '../../components/ui-v2';
 import { GuardedButtonV2 } from '../../components/financial/GuardedButtonV2';
 import { PayoutForm } from '../../components/payouts/PayoutForm';
-import { payoutsService, type PayoutRow, type RepOwedRow } from '../../services/payouts.service';
+import { PayoutHistoryList } from '../../components/payouts/PayoutHistoryList';
+import { useRepPayoutHistory } from '../../components/payouts/useRepPayoutHistory';
+import { payoutsService, type RepOwedRow } from '../../services/payouts.service';
 import { useBlock } from './profit/useBlock';
 import { formatCurrency, formatDate } from '../../utils/format';
 import { toCents } from '../../utils/money';
@@ -13,7 +15,6 @@ import { monthName } from '../dashboard/format';
 import { toneOf } from './collections/model';
 import { repTiles } from './repModel';
 
-const HISTORY_ROWS = 10;
 const repName = (r: { firstName: string; lastName: string }): string => `${r.firstName} ${r.lastName}`;
 
 /**
@@ -24,7 +25,7 @@ const repName = (r: { firstName: string; lastName: string }): string => `${r.fir
  */
 export function RepCommissions() {
   const owed = useBlock('reps:owed', () => payoutsService.repsOwed());
-  const history = useBlock('reps:payouts', () => payoutsService.recentRepPayouts(HISTORY_ROWS));
+  const history = useRepPayoutHistory();
   const [paying, setPaying] = useState<RepOwedRow | null>(null);
   const data = owed.data;
 
@@ -95,37 +96,10 @@ export function RepCommissions() {
       </Card>
 
       <Card title="Payout history" aside="Commissions and rewards paid" className="comwrap">
-        <PayoutHistory rows={history.data} failed={history.status === 'failed'} onRetry={history.retry} />
+        <PayoutHistoryList rows={history.data} failed={history.status === 'failed'} onRetry={history.retry} />
       </Card>
 
       {paying && <PayoutForm personId={paying.id} personName={repName(paying)} onClose={() => setPaying(null)} onRecorded={reload} />}
-    </div>
-  );
-}
-
-function PayoutHistory({ rows, failed, onRetry }: { rows: PayoutRow[] | undefined; failed: boolean; onRetry: () => void }) {
-  if (!rows) {
-    return failed
-      ? <EmptyState title="The payout history could not load." action={<Button onClick={onRetry}>Try again</Button>} />
-      : <ListSkeleton label="Loading payout history" rows={2} height={36} />;
-  }
-  if (rows.length === 0) return <EmptyState title="No payout yet" text="A payout you record shows here." />;
-  return (
-    <div className="tablewrap">
-      <table className="dt" aria-label="Payout history">
-        <thead><tr><th>Date</th><th>Rep</th><th>Method</th><th>Reference</th><th className="r">Amount</th></tr></thead>
-        <tbody>
-          {rows.map((p) => (
-            <tr key={p.id}>
-              <td>{formatDate(p.payoutDate, 'd MMM')}</td>
-              <td><b>{repName(p.payee)}</b></td>
-              <td>{p.method}</td>
-              <td>{p.reference ?? p.notes ?? '—'}</td>
-              <td className="r num">{formatCurrency(p.amount)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   );
 }
