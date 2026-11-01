@@ -28,11 +28,10 @@ export const periodCloseQueue = process.env.NODE_ENV === 'test'
     });
 
 // Month close (M6-T10, F-916): the month that ended, once per tenant, as that tenant's system user
-const processPeriodClose = async () => {
+periodCloseQueue.process('close-month', async () => {
     logger.info('Processing month close...');
     await runPeriodCloseJob();
-};
-periodCloseQueue.process('close-month', processPeriodClose);
+});
 
 export const setupPeriodCloseCron = async () => {
     if (process.env.NODE_ENV === 'test') return;

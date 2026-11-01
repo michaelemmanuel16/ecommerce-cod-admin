@@ -14,7 +14,8 @@ import { bearer, superAdminToken } from './helpers/superAdminToken';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
 import * as ratesModule from '../../services/kpi/rates';
 import * as targets from '../../services/targetService';
-import { runPeriodClose } from '../../services/periodCloseService';
+import * as commissionService from '../../services/commissionService';
+import { runPeriodClose, runPeriodCloseJob } from '../../services/periodCloseService';
 import { getSystemUserId } from '../../services/systemUserService';
 
 jest.setTimeout(180_000);
@@ -35,6 +36,8 @@ const api = {
 };
 const SEP = { start: new Date('2026-09-01'), end: new Date('2026-09-30') };
 const AUG = { start: new Date('2026-08-01'), end: new Date('2026-08-31') };
+const MAY = { start: new Date('2026-05-01'), end: new Date('2026-05-31') };
+const JUN = { start: new Date('2026-06-01'), end: new Date('2026-06-30') };
 
 async function mkUser(label: string, role: 'sales_rep' | 'delivery_agent', extra: Record<string, unknown> = {}) {
   const name = `${label}${SUFFIX}x${seq++}`;
@@ -227,6 +230,7 @@ describe('preview and run (September)', () => {
 
 describe('a failed read stops the close', () => {
   it('writes nothing, opens a Finding naming the month and the error; a later run (as the system user) works', async () => {
+    await monthTarget(AUG);
     await personTarget(r1.id, callRepRole.id, AUG, 5);
     await delivered(r1.id, 6, '2026-08-12T10:00:00Z');
     const before = await counts();
@@ -257,6 +261,56 @@ describe('a failed read stops the close', () => {
   });
 });
 
+describe('two runs at once', () => {
+  it('one creates the entries, the other returns alreadyClosed: one entry and one journal entry each', async () => {
+    await monthTarget(MAY);
+    await personTarget(r1.id, callRepRole.id, MAY, 5);
+    await delivered(r1.id, 6, '2026-05-12T10:00:00Z');
+    const [a, b] = await Promise.all([api.post(ownerA, '/api/period-close/2026-05'), api.post(ownerA, '/api/period-close/2026-05')]);
+    expect([a.status, b.status]).toEqual([200, 200]);
+    expect([a.body.alreadyClosed, b.body.alreadyClosed].sort()).toEqual([false, true]);
+    expect(a.body.entries).toEqual(b.body.entries);
+    const entries = await prismaBase.commissionEntry.findMany({ where: { tenantId: pair.a.id, kind: 'reward', period: '2026-05' } });
+    expect(entries).toHaveLength(1);
+    expect(await prismaBase.journalEntry.count({ where: { tenantId: pair.a.id, sourceType: 'commission_accrual', sourceId: entries[0].id } })).toBe(1);
+  });
+});
+
+describe('a month with no month target', () => {
+  it('a hand run is 409 NOTHING_TO_CLOSE with no audit row; the job skips quietly with no Finding', async () => {
+    const audits = () => prismaBase.auditLog.count({ where: { tenantId: pair.a.id, action: 'period_close' } });
+    const before = await audits();
+    const res = await api.post(ownerA, '/api/period-close/2026-07');
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('NOTHING_TO_CLOSE');
+    expect(res.body.message ?? res.body.error).toContain('2026-07');
+    expect(await audits()).toBe(before);
+    // The job for the month before 1 August skips tenants with no target for it, and does not fail.
+    await expect(runPeriodCloseJob(new Date('2026-08-01T03:00:00Z'))).resolves.toBeUndefined();
+    expect(await prismaBase.finding.count({ where: { tenantId: pair.a.id, subjectType: 'period_close', subjectId: '2026-07' } })).toBe(0);
+  });
+});
+
+describe('a ledger failure inside the run', () => {
+  it('opens the Finding and writes nothing (the transaction rolls back); the next run works', async () => {
+    await monthTarget(JUN);
+    await personTarget(r1.id, callRepRole.id, JUN, 5);
+    await delivered(r1.id, 5, '2026-06-12T10:00:00Z');
+    const before = await counts();
+    const spy = jest.spyOn(commissionService, 'postEntry').mockRejectedValueOnce(new Error('ledger down'));
+    try {
+      const res = await api.post(ownerA, '/api/period-close/2026-06');
+      expect(res.status).toBe(500);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await counts()).toEqual(before);
+    const finding = await prismaBase.finding.findFirstOrThrow({ where: { tenantId: pair.a.id, subjectType: 'period_close', subjectId: '2026-06' } });
+    expect(finding.note).toContain('ledger down');
+    expect((await api.post(ownerA, '/api/period-close/2026-06')).body).toMatchObject({ created: 1, alreadyClosed: false });
+  });
+});
+
 describe('tenant isolation', () => {
   it('tenant B previews and closes September with none of A: no entries, nothing of A is read or locked', async () => {
     const aBefore = await counts();
@@ -264,8 +318,8 @@ describe('tenant isolation', () => {
     expect(preview.status).toBe(200);
     expect(preview.body.entries).toEqual([]);
     const run = await api.post(ownerB, '/api/period-close/2026-09');
-    expect(run.status).toBe(200);
-    expect(run.body).toMatchObject({ created: 0, entries: [], total: '0.00' });
+    expect(run.status).toBe(409); // B has no September target
+    expect(run.body.code).toBe('NOTHING_TO_CLOSE');
     expect(await counts()).toEqual(aBefore);
     expect(await prismaBase.commissionEntry.count({ where: { tenantId: pair.b.id, kind: 'reward' } })).toBe(0);
   });

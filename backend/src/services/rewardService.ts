@@ -7,7 +7,7 @@ import { getCurrency } from '../utils/currency';
 import { fullName } from '../utils/nameUtils';
 import * as Money from '../utils/money';
 import { deliveredByRep, outcomesByPartner } from './kpi/rates';
-import { getStoreTimeZone, monthRange, ymdOfUtc, MONTH_RE, localDate } from './kpi/dates';
+import { currentMonth, getStoreTimeZone, monthRange, ymdOfUtc, MONTH_RE } from './kpi/dates';
 import { METRIC_BASIS, type MeasureBasis } from '../config/targetMetrics';
 import { NO_DATA_FOR_METRIC, SET_A_TARGET, isMonthClosed, monthPersonTargets, monthRoleTargets, periodBounds } from './targetService';
 import { clearTenantFeaturesCache, getRewardFeatures, mergeFeatureKey, type RewardFeatures } from './tenantFeatures';
@@ -125,7 +125,6 @@ export async function saveRewardSettings(input: RewardSettingsInput) {
 type TierRow = { amount: Prisma.Decimal; dayOff: boolean; payout: boolean };
 type Tiers = Partial<Record<Tier, TierRow>>;
 
-const currentMonth = () => localDate(new Date(), getStoreTimeZone()).slice(0, 7);
 const key = (userId: number, roleId: number) => `${userId}:${roleId}`;
 
 /**
@@ -133,9 +132,9 @@ const key = (userId: number, roleId: number) => `${userId}:${roleId}`;
  * measured (a call rep or delivery role, a role with a target metric, or a role with a target this month). A holder of the
  * Owner or Finance role is not in the list and gets no "Set a target" warning. The filters go into the queries.
  */
-async function peopleOfMonth(period: string, userId?: number, roleId?: number, includeReleased = false) {
+async function peopleOfMonth(period: string, userId?: number, roleId?: number) {
   const [targets, holders, roles, roleTargets] = await Promise.all([
-    monthPersonTargets(period, { userId, roleId, includeReleased }),
+    monthPersonTargets(period, { userId, roleId }),
     prisma.roleAssignment.findMany({
       where: { toDate: null, ...(userId !== undefined && { holderId: userId }), ...(roleId !== undefined && { roleId }) },
       select: { holderId: true, roleId: true },
@@ -224,7 +223,7 @@ export async function attainment(actor: Requester, query: { period?: string; use
 
 /**
  * The attainment of a month for everyone judged in it (no visibility rule: the caller applies it). A past month judges every
- * person target that covered part of the month, for the person who held it (F-1110); the current month reads the live ones.
+ * person target that covered part of the month, for the person who held it (F-1110, `monthPersonTargets`); the current month reads the live ones.
  * The month close uses this same function, so a preview and a run cannot differ.
  */
 export async function computeAttainment(period: string, filter: { userId?: number; roleId?: number } = {}) {
@@ -232,11 +231,10 @@ export async function computeAttainment(period: string, filter: { userId?: numbe
   const match = MONTH_RE.exec(period);
   if (!match) throw new AppError('Period must be a month like 2026-10', 400, 'INVALID_PERIOD');
   const { userId } = filter;
-  const includeReleased = period < currentMonth();
 
   const bounds = periodBounds('month', period);
   const { from, to } = monthRange(Number(match[1]), Number(match[2]), getStoreTimeZone(tenantId));
-  const [{ picked, targetOf }, closed, currency] = await Promise.all([peopleOfMonth(period, userId, filter.roleId, includeReleased), isMonthClosed(period), getCurrency()]);
+  const [{ picked, targetOf }, closed, currency] = await Promise.all([peopleOfMonth(period, userId, filter.roleId), isMonthClosed(period), getCurrency()]);
   const userIds = [...new Set(picked.map((p) => p.userId))];
   const roleIds = [...new Set(picked.map((p) => p.roleId))];
 
