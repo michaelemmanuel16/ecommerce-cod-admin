@@ -154,11 +154,11 @@ const findSlots = (tx: Db, tenantId: string, slot: Pick<Row, 'scope' | 'metric' 
 
 // ---- The one write path ---------------------------------------------------------------------------------------------
 
-/** The parent of a role or person target: the named one, else the one that covers the period with the same metric. Locked. */
 /** The revenue month is the spine of every role target (M6-T15): a role target of orders or a rate sits under it. A person sits under the role target of the same metric. */
 const SPINE_METRIC = 'revenue';
 const SPINE_METRIC_OF = (row: Pick<Row, 'scope' | 'metric'>): string => (row.scope === 'role' ? SPINE_METRIC : row.metric);
 
+/** The parent of a role or person target: the named one, else the one that covers the period on the spine metric. Locked. */
 async function lockParent(tx: Db, tenantId: string, row: Row): Promise<Target | null> {
   const need = PARENT[row.scope];
   if (!need) return null;

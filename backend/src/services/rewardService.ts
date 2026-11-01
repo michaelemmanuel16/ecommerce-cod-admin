@@ -7,7 +7,7 @@ import { getCurrency } from '../utils/currency';
 import { fullName } from '../utils/nameUtils';
 import * as Money from '../utils/money';
 import { deliveredByRep, outcomesByPartner } from './kpi/rates';
-import { currentMonth, getStoreTimeZone, monthRange, ymdOfUtc, MONTH_RE } from './kpi/dates';
+import { currentMonth, getStoreTimeZone, localDate, monthRange, ymdOfUtc, MONTH_RE } from './kpi/dates';
 import { METRIC_BASIS, type MeasureBasis } from '../config/targetMetrics';
 import { monthStatus } from './targetActuals';
 import { NO_DATA_FOR_METRIC, SET_A_TARGET, isMonthClosed, monthPersonTargets, monthRoleTargets, periodBounds } from './targetService';
