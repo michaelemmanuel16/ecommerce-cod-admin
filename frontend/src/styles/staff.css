@@ -117,3 +117,15 @@
 .v2 .done-note svg{width:15px;height:15px;flex:none}
 @media (max-width:1100px){.v2 .staff-roles .mdl{grid-template-columns:1fr}}
 @media (max-width:760px){.v2 .staff-roles .roles{grid-template-columns:1fr}}
+
+/* Pay card (M6-T22, F-1164): the call reps, delivery agents and payout history under the team table. */
+.v2 .staff #paycard .tabs{margin:8px 20px 0}
+.v2 .paytbl td:first-child,.v2 .paytbl th:first-child{padding-left:20px}
+.v2 .paytbl td:last-child,.v2 .paytbl th:last-child{padding-right:20px}
+.v2 .paytbl .who{min-width:180px}
+.v2 .paytbl .who small{display:block;color:var(--ink-3);font-size:12px}
+.v2 .paytbl tr.off{opacity:.7}
+.v2 .paytbl .sub2{display:block;color:var(--ink-3);font-size:12px}
+.v2 .pnote{display:flex;gap:8px;margin:16px 20px 20px;padding:10px 12px;border-radius:12px;background:var(--hover);color:var(--ink-2);font-size:12.5px}
+.v2 .pnote svg{flex:none;width:15px;height:15px;margin-top:2px}
+.v2 .staff #paycard [role=tabpanel]>.tablewrap{margin-top:8px}

@@ -21,6 +21,8 @@ const rolesSvc = vi.hoisted(() => ({ overview: vi.fn(), assignments: vi.fn() }))
 vi.mock('../../services/roles.service', async (orig) => ({ ...(await orig<typeof import('../../services/roles.service')>()), rolesService: rolesSvc }));
 // The role cards read this month's targets for progress; these tests are about the table
 vi.mock('../../services/targets.service', () => ({ targetsService: { tree: () => Promise.resolve(null), attainment: () => Promise.resolve(null) } }));
+// The Pay card has its own tests (PayCard.test.tsx); here it only has to be mounted
+vi.mock('../../pages/staff/PayCard', () => ({ PayCard: () => <section aria-label="Pay card stub" /> }));
 const reassign = vi.hoisted(() => vi.fn());
 vi.mock('../../pages/staff/reassign', () => ({ reassignOpenOrders: reassign }));
 
@@ -56,6 +58,11 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('Staff page: tabs, counts and the table', () => {
+  it('mounts the Pay card under the team table', async () => {
+    renderPage();
+    expect(await screen.findByRole('region', { name: 'Pay card stub' })).toBeInTheDocument();
+  });
+
   it('reads the tab counts and the header text from the API (no typed numbers)', async () => {
     renderPage();
     expect(await screen.findByText('3 on the team · 1 invited · 1 deactivated')).toBeInTheDocument();

@@ -70,6 +70,8 @@ export interface PartnerRow {
   daysToPay: number | null;
   /** The partner's fee rule, read from FeeRule (amounts per outcome). Left out for a role that may not see money. */
   feeRule?: FeeRuleView | null;
+  /** The delivery fees stamped on the partner's orders in the period (it keeps them from the cash it collects). Left out for a role that may not see money. */
+  feesKept?: string;
   /** M5 (F-704). */
   cashHeld: null;
   oldestUnpaidDays: null;
@@ -114,7 +116,7 @@ export async function listPartners(
   const successRate = (counts: { delivered: number; failed: number; returned: number }) =>
     closedOutcomeResult('Delivery success rate', 'partner.deliverySuccess.cohort.v1', 'cohort', counts, meta);
 
-  const [rated, users, outGroups, feeRules] = await Promise.all([
+  const [rated, users, outGroups, feeRules, feeGroups] = await Promise.all([
     partnerRates(tenantId, from, to),
     runInTenant(tenantId, () => withSoftDeleted(() => prisma.user.findMany({
       where: { role: 'delivery_agent', kind: { in: ['person', 'company'] } },
@@ -130,10 +132,17 @@ export async function listPartners(
       _count: { _all: true },
     })),
     opts.showMoney ? runInTenant(tenantId, () => prisma.feeRule.findMany()) : Promise.resolve([]),
+    // Same cohort as partnerRates (orders placed in the range, not digital): the fees the partner keeps from its cash
+    opts.showMoney ? runInTenant(tenantId, () => prisma.order.groupBy({
+      by: ['deliveryAgentId'],
+      where: { deletedAt: null, status: { notIn: DIGITAL }, deliveryAgentId: { not: null }, deliveryFee: { not: null }, createdAt: { gte: from, lt: to } },
+      _sum: { deliveryFee: true },
+    })) : Promise.resolve([]),
   ]);
 
   const ratedBy = new Map(rated.map((r) => [r.partnerId, r]));
   const outBy = new Map(outGroups.map((g) => [g.deliveryAgentId as number, g._count._all]));
+  const feesBy = new Map(feeGroups.map((g) => [g.deliveryAgentId as number, g._sum.deliveryFee]));
   const rulesBy = new Map<number, typeof feeRules>();
   for (const rule of feeRules) {
     const rows = rulesBy.get(rule.partnerUserId);
@@ -169,6 +178,7 @@ export async function listPartners(
       dataSource: profile?.dataSource ?? defaultDataSource(u.kind),
       daysToPay: profile?.daysToPay ?? null,
       ...(opts.showMoney ? { feeRule: rulesBy.has(u.id) ? feeRuleView(rulesBy.get(u.id)!, tenantId) : null } : {}),
+      ...(opts.showMoney ? { feesKept: Money.toApi(Money.orZero(feesBy.get(u.id))) } : {}),
       cashHeld: null,
       oldestUnpaidDays: null,
     });

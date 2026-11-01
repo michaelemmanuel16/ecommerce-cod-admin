@@ -14,6 +14,7 @@ import { useBlock } from './financial/profit/useBlock';
 import { DeactivateDialog } from './staff/DeactivateDialog';
 import { InviteLinkDialog } from './staff/InviteLinkDialog';
 import { PermanentDeleteModal } from './staff/PermanentDeleteModal';
+import { PayCard } from './staff/PayCard';
 import { PersonModal } from './staff/PersonModal';
 import { ResetPasswordModal } from './staff/ResetPasswordModal';
 import { RoleCards } from './staff/RoleCards';
@@ -197,6 +198,8 @@ export function Staff() {
           <TeamTable rows={rows} company={company} currency={currency} can={allowed} onAction={onAction} />
         )}
       </Card>
+
+      {can('payouts', 'view') && <PayCard company={company} />}
 
       {view.invite && (
         <PersonModal
