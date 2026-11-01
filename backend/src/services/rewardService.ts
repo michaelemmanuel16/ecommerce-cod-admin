@@ -7,7 +7,7 @@ import { getCurrency } from '../utils/currency';
 import { fullName } from '../utils/nameUtils';
 import * as Money from '../utils/money';
 import { deliveredByRep, outcomesByPartner } from './kpi/rates';
-import { getStoreTimeZone, monthRange, ymdOfUtc, MONTH_RE, localDate } from './kpi/dates';
+import { currentMonth, getStoreTimeZone, monthRange, ymdOfUtc, MONTH_RE } from './kpi/dates';
 import { METRIC_BASIS, type MeasureBasis } from '../config/targetMetrics';
 import { NO_DATA_FOR_METRIC, SET_A_TARGET, isMonthClosed, monthPersonTargets, monthRoleTargets, periodBounds } from './targetService';
 import { clearTenantFeaturesCache, getRewardFeatures, mergeFeatureKey, type RewardFeatures } from './tenantFeatures';
@@ -125,7 +125,6 @@ export async function saveRewardSettings(input: RewardSettingsInput) {
 type TierRow = { amount: Prisma.Decimal; dayOff: boolean; payout: boolean };
 type Tiers = Partial<Record<Tier, TierRow>>;
 
-const currentMonth = () => localDate(new Date(), getStoreTimeZone()).slice(0, 7);
 const key = (userId: number, roleId: number) => `${userId}:${roleId}`;
 
 /**
@@ -217,17 +216,25 @@ export function distanceTo(basis: MeasureBasis, tier: Tier | null, m: Measure, t
  * see everyone and may filter; anyone else sees their own rows only.
  */
 export async function attainment(actor: Requester, query: { period?: string; userId?: number; roleId?: number }) {
-  const tenantId = resolveTenantId();
-  const period = query.period ?? currentMonth();
-  const match = MONTH_RE.exec(period);
-  if (!match) throw new AppError('Period must be a month like 2026-10', 400, 'INVALID_PERIOD');
   const seeAll = isManagerUp(actor);
   if (!seeAll && query.userId !== undefined && query.userId !== actor.id) throw new AppError('You can only see your own attainment', 403);
-  const userId = seeAll ? query.userId : actor.id;
+  return computeAttainment(query.period ?? currentMonth(), { userId: seeAll ? query.userId : actor.id, roleId: query.roleId });
+}
+
+/**
+ * The attainment of a month for everyone judged in it (no visibility rule: the caller applies it). A past month judges every
+ * person target that covered part of the month, for the person who held it (F-1110, `monthPersonTargets`); the current month reads the live ones.
+ * The month close uses this same function, so a preview and a run cannot differ.
+ */
+export async function computeAttainment(period: string, filter: { userId?: number; roleId?: number } = {}) {
+  const tenantId = resolveTenantId();
+  const match = MONTH_RE.exec(period);
+  if (!match) throw new AppError('Period must be a month like 2026-10', 400, 'INVALID_PERIOD');
+  const { userId } = filter;
 
   const bounds = periodBounds('month', period);
   const { from, to } = monthRange(Number(match[1]), Number(match[2]), getStoreTimeZone(tenantId));
-  const [{ picked, targetOf }, closed, currency] = await Promise.all([peopleOfMonth(period, userId, query.roleId), isMonthClosed(period), getCurrency()]);
+  const [{ picked, targetOf }, closed, currency] = await Promise.all([peopleOfMonth(period, userId, filter.roleId), isMonthClosed(period), getCurrency()]);
   const userIds = [...new Set(picked.map((p) => p.userId))];
   const roleIds = [...new Set(picked.map((p) => p.roleId))];
 
