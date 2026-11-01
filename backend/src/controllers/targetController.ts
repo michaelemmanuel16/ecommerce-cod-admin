@@ -4,7 +4,7 @@ import * as targetService from '../services/targetService';
 import * as northStar from '../services/northStarService';
 import { handler, idParam, parse } from './helpers';
 import {
-  calculatorsQuerySchema, childrenSchema, dailyQuerySchema, driversQuerySchema, driversSchema, northStarSchema, poolQuerySchema,
+  calculatorsQuerySchema, childrenSchema, previewQuerySchema, dailyQuerySchema, driversQuerySchema, driversSchema, northStarSchema, poolQuerySchema,
   saveTargetSchema, treeQuerySchema, updateTargetSchema,
 } from '../validators/targetSchema';
 
@@ -88,4 +88,10 @@ export const saveDrivers = handler(async (req, res) => {
 /** GET /api/targets/calculators?month&aov&confirmationRate&deliverySuccessRate&revenueTarget&profitPerOrder: a preview, nothing is saved. */
 export const calculators = handler(async (req, res) => {
   res.json(await northStar.calculators(parse(calculatorsQuerySchema, req.query, 'query')));
+});
+
+/** GET /api/targets/north-star/preview?annual&mode&customQuarters: the quarters and months of a split, nothing is saved. */
+export const preview = handler(async (req, res) => {
+  const q = parse(previewQuerySchema, req.query, 'query');
+  res.json(await northStar.previewNorthStar(q));
 });

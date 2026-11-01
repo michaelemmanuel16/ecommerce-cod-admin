@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus } from 'lucide-react';
+import { Pencil, Plus } from 'lucide-react';
 import { Button, ConfirmDialog, Skeleton, useToast } from '../components/ui-v2';
 import { usePermissions } from '../hooks/usePermissions';
 import { useV2Page } from '../components/shell/useV2Page';
@@ -23,14 +23,14 @@ interface Pending { id: number; title: string; text: string; /** What to ask aga
 /**
  * The Targets page (M6-T15, F-1100 to F-1103), built from docs/mockups/v2/index.html#targets: the North Star with its quarters and
  * months, then the targets by role of the chosen month (this month at first; a month cell of the tree changes it). Each block asks on its
- * own, so a failing reward read never blanks the tree. "Edit North Star" is not here: the setup wizard that owns it is M6-T17.
+ * own, so a failing reward read never blanks the tree. "Edit North Star" (Owner) opens the setup wizard at step 3.
  */
 export function Targets() {
   useV2Page();
   const say = useToast();
   const navigate = useNavigate();
   const setDateRange = useFinancialStore((s) => s.setDateRange);
-  const { can } = usePermissions();
+  const { can, isSuperAdmin } = usePermissions();
   const canEdit = can('users', 'update');
   const today = todayYmd();
   const currentMonth = today.slice(0, 7);
@@ -119,9 +119,10 @@ export function Targets() {
           <h1>Targets</h1>
           <p>The North Star splits into quarters and months, with revenue and margin at each level.</p>
         </div>
-        {canEdit && (
+        {(canEdit || isSuperAdmin) && (
           <div className="tg-head-actions">
-            <Button variant="primary" onClick={() => setDialog({ initial: blank(), editing: false })}><Plus />Add target</Button>
+            {isSuperAdmin && <Button onClick={() => navigate('/onboarding?step=3')}><Pencil />Edit North Star</Button>}
+            {canEdit && <Button variant="primary" onClick={() => setDialog({ initial: blank(), editing: false })}><Plus />Add target</Button>}
           </div>
         )}
       </div>

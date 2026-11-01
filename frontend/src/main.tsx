@@ -15,6 +15,7 @@ import './styles/financeOverview.css';
 import './styles/inventory.css';
 import './styles/targets.css';
 import './styles/leaderboard.css';
+import './styles/northStar.css';
 import './styles/products.css';
 import './styles/onboarding.css';
 import './styles/reports.css';

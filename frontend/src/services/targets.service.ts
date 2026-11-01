@@ -23,6 +23,8 @@ export interface Actuals {
 
 export interface TreeNode {
   id: number;
+  /** ISO instant of the last change: "Set on <date>" on the North Star. */
+  updatedAt: string;
   scope: 'north_star' | 'quarter' | 'month' | 'role' | 'person' | 'daily';
   metric: string;
   unit: string;
@@ -95,8 +97,42 @@ export interface RewardSettings {
   tiers: Array<{ roleId: number; roleName: string; tier100: { amount: number; dayOff: boolean; payout: boolean } | null; tier120: { amount: number; dayOff: boolean; payout: boolean } | null }>;
 }
 
+export type GrowthMode = 'even' | 'grow' | 'custom';
+
+/** GET /api/targets/drivers: the planned AOV in use (manual edit or the last 30 days), the two rates, the margin target. */
+export interface Drivers {
+  year: number;
+  plannedAov: { value: number | null; source: 'auto' | 'manual'; last30Days: number | null; deliveredOrders: number; required: boolean };
+  confirmationRate: { value: number; source: 'target' | 'default' };
+  deliverySuccessRate: { value: number; source: 'target' | 'default' };
+  netMargin: { value: number; source: 'target' | 'default' };
+}
+
+export interface DriverInput {
+  /** A number is an owner edit (manual); null puts it back to the last 30 days. */
+  plannedAov?: number | null;
+  confirmationRate?: number;
+  deliverySuccessRate?: number;
+  netMargin?: number;
+}
+
+export interface NorthStarInput { year: number; annual: number; mode: GrowthMode; customQuarters?: number[]; plannedAov?: number }
+
+/** GET /api/targets/north-star/preview: what a save would write: four quarters and the three months of each, money strings. */
+export interface SplitPreview { quarters: string[]; months: string[][]; /** Months of the year that stay as they are (past or closed). */ kept: number }
+
+export interface CalculatorParams {
+  month?: string;
+  aov?: number;
+  confirmationRate?: number;
+  deliverySuccessRate?: number;
+  revenueTarget?: number;
+  profitPerOrder?: number;
+}
+
 export interface Calculators {
   month: string;
+  daysInMonth: number;
   revenueTarget: number;
   plannedAov: number;
   confirmationRate: number;
@@ -105,6 +141,7 @@ export interface Calculators {
   ordersToTakeIn: number;
   ordersPerDay: number;
   maxCostPerOrder: number | null;
+  profitPerOrder?: number | null;
 }
 
 export interface DailyProgress {
@@ -132,8 +169,21 @@ export const targetsService = {
   async tree(year: number, month?: string): Promise<Tree> {
     return (await apiClient.get('/api/targets/tree', { params: { year, month }, quiet: true })).data;
   },
-  async calculators(month: string): Promise<Calculators> {
-    return (await apiClient.get('/api/targets/calculators', { params: { month }, quiet: true })).data;
+  async calculators(params: CalculatorParams | string): Promise<Calculators> {
+    return (await apiClient.get('/api/targets/calculators', { params: typeof params === 'string' ? { month: params } : params, quiet: true })).data;
+  },
+  async drivers(year: number): Promise<Drivers> {
+    return (await apiClient.get('/api/targets/drivers', { params: { year }, quiet: true, skipCache: true })).data;
+  },
+  async saveDrivers(year: number, input: DriverInput): Promise<Drivers> {
+    return (await apiClient.put('/api/targets/drivers', { year, ...input }, { quiet: true })).data;
+  },
+  async preview(year: number, annual: number, mode: GrowthMode, customQuarters?: number[]): Promise<SplitPreview> {
+    const params = { year, annual, mode, ...(customQuarters && { customQuarters: customQuarters.join(',') }) };
+    return (await apiClient.get('/api/targets/north-star/preview', { params, quiet: true })).data;
+  },
+  async saveNorthStar(input: NorthStarInput): Promise<void> {
+    await apiClient.post('/api/targets/north-star', input, { quiet: true });
   },
   async daily(metric: string, date: string): Promise<DailyProgress> {
     return (await apiClient.get('/api/targets/daily', { params: { metric, date }, quiet: true })).data;

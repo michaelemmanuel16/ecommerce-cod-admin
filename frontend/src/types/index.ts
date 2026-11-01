@@ -1,6 +1,9 @@
 export interface UserPreferences {
   onboardingCompleted?: boolean;
   onboardingCompletedAt?: string;
+  /** The North Star wizard step the Owner reached (3 to 6), and whether step 6 was finished (M6-T17). */
+  northStarStep?: number;
+  northStarDone?: boolean;
 }
 
 export type Resource = 'users' | 'orders' | 'customers' | 'products' | 'financial' | 'payouts' | 'analytics' | 'workflows' | 'settings' | 'gl' | 'journal' | 'expenses';

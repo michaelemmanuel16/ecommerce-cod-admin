@@ -21,6 +21,7 @@ router.get('/tree', ...canRead, targetController.tree);
 router.get('/roles/:roleId/pool', ...canRead, targetController.pool);
 router.get('/daily', ...canRead, targetController.daily);
 router.get('/drivers', ...canRead, targetController.drivers);
+router.get('/north-star/preview', ...canRead, targetController.preview);
 router.get('/calculators', ...canRead, targetController.calculators);
 
 router.post('/north-star', ownerSets, targetController.saveNorthStar);

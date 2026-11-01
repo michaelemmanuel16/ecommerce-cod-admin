@@ -4,7 +4,7 @@ import type { Actuals, Attainment, Calculators, RewardSettings, Tree, TreeNode }
 
 const FUTURE: Actuals = { state: 'future', actual: null, percent: null, marginPct: null, status: null, pace: null, paceBasis: null, chip: null };
 const node = (id: number, scope: TreeNode['scope'], start: string, end: string, value: number, actuals?: Actuals): TreeNode => ({
-  id, scope, metric: 'revenue', unit: 'money', value, periodStart: start, periodEnd: end, parentId: null, closed: false, actuals,
+  id, updatedAt: '2026-01-02T08:00:00.000Z', scope, metric: 'revenue', unit: 'money', value, periodStart: start, periodEnd: end, parentId: null, closed: false, actuals,
 });
 const past = (actual: number, percent: number, marginPct: number | null, key: 'revenue_hit' | 'hit_margin_missed' | 'behind', label: string): Actuals =>
   ({ state: 'past', actual, percent, marginPct, status: { key, label }, pace: null, paceBasis: null, chip: null });
@@ -65,6 +65,6 @@ export const SETTINGS: RewardSettings = {
 };
 
 export const CALCULATORS: Calculators = {
-  month: '2026-10', revenueTarget: 180_000, plannedAov: 249, confirmationRate: 70, deliverySuccessRate: 60,
+  month: '2026-10', daysInMonth: 31, revenueTarget: 180_000, plannedAov: 249, confirmationRate: 70, deliverySuccessRate: 60,
   ordersDelivered: 723, ordersToTakeIn: 1721, ordersPerDay: 56, maxCostPerOrder: null,
 };

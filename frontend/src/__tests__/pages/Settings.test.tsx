@@ -91,7 +91,7 @@ describe('Settings shell: tabs by permission (F-1220)', () => {
     signIn('super_admin');
     renderAt();
     expect(tabNames()).toEqual([
-      'Profile', 'Security', 'Business details', 'Currencies & FX', 'Order statuses', 'Notifications', 'Billing & plans',
+      'Profile', 'Security', 'Business details', 'Currencies & FX', 'Order statuses', 'Notifications', 'North Star & targets', 'Billing & plans',
       'User management', 'Role permissions', 'Integrations', 'Checkout forms',
     ]);
     expect(screen.getByText('Moving soon')).toBeInTheDocument();
