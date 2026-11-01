@@ -72,6 +72,8 @@ export interface PartnerRow {
   dataSource: PartnerDataSource;
   daysToPay: number | null;
   feeRule?: FeeRule | null;
+  /** The delivery fees stamped on the partner's orders in the range (money string). Left out for a role without financial:view. */
+  feesKept?: string;
   /** M5 (F-704): always null until then. */
   cashHeld: string | null;
   oldestUnpaidDays: number | null;

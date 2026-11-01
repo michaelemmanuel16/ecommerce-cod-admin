@@ -31,7 +31,8 @@ const json = async (token: string, path: string, query?: string) => JSON.parse((
 
 /** Delivered orders of `amount` each and one failed order, in the tenant's own state, plus a verified deposit and an approved collection. */
 async function seed(t: TestTenant, delivered: number, amount: number, deposit: number) {
-  const own = await prismaBase.order.findUniqueOrThrow({ where: { id: t.ids.order } });
+  // The order every test tenant starts with is made "now"; pin it into October so the October range holds it on any date.
+  const own = await prismaBase.order.update({ where: { id: t.ids.order }, data: { createdAt: at } });
   const base = {
     customerId: own.customerId, createdAt: at, shippingCost: 0, deliveryAddress: 'x', deliveryState: `State-${t.marker}`,
     deliveryArea: `City-${t.marker}`, tenantId: t.id, deliveryAgentId: t.users.deliveryAgent.id, customerRepId: t.users.salesRep.id,

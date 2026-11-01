@@ -178,9 +178,10 @@ export interface SaveTargetInput {
   userId?: number;
 }
 
+// tree, daily and attainment skip the 5 second request cache: the page asks again right after a save and must see the new row
 export const targetsService = {
   async tree(year: number, month?: string): Promise<Tree> {
-    return (await apiClient.get('/api/targets/tree', { params: { year, month }, quiet: true })).data;
+    return (await apiClient.get('/api/targets/tree', { params: { year, month }, quiet: true, skipCache: true })).data;
   },
   async calculators(params: CalculatorParams | string): Promise<Calculators> {
     return (await apiClient.get('/api/targets/calculators', { params: typeof params === 'string' ? { month: params } : params, quiet: true })).data;
@@ -199,10 +200,10 @@ export const targetsService = {
     await apiClient.post('/api/targets/north-star', input, { quiet: true });
   },
   async daily(metric: string, date: string): Promise<DailyProgress> {
-    return (await apiClient.get('/api/targets/daily', { params: { metric, date }, quiet: true })).data;
+    return (await apiClient.get('/api/targets/daily', { params: { metric, date }, quiet: true, skipCache: true })).data;
   },
   async attainment(period: string): Promise<Attainment> {
-    return (await apiClient.get('/api/rewards/attainment', { params: { period }, quiet: true })).data;
+    return (await apiClient.get('/api/rewards/attainment', { params: { period }, quiet: true, skipCache: true })).data;
   },
   async rewardSettings(): Promise<RewardSettings> {
     return (await apiClient.get('/api/rewards/settings', { quiet: true })).data;

@@ -35,11 +35,11 @@ export const TREE: Tree = {
   ],
   roles: [
     {
-      roleId: 7, roleName: 'Call rep', target: { id: 31, scope: 'role', metric: 'delivered_orders', unit: 'count', value: 723, periodStart: '2026-10-01', periodEnd: '2026-10-31', parentId: null, closed: false },
-      pool: { metric: 'delivered_orders', unit: 'count', total: 723, allocated: '673.00', pool: '50.00' },
+      roleId: 7, roleName: 'Call rep', target: { id: 31, scope: 'role', metric: 'confirmed_delivered', unit: 'count', value: 723, periodStart: '2026-10-01', periodEnd: '2026-10-31', parentId: null, closed: false },
+      pool: { metric: 'confirmed_delivered', unit: 'count', total: 723, allocated: '673.00', pool: '50.00' },
       holders: [
-        { userId: 101, name: 'Adwoa Darko', kind: 'person', typeLabel: 'Person', target: { id: 41, metric: 'delivered_orders', unit: 'count', value: 423 }, label: null },
-        { userId: 102, name: 'Confirm agent', kind: 'ai_agent', typeLabel: 'AI agent', target: { id: 42, metric: 'delivered_orders', unit: 'count', value: 250 }, label: null },
+        { userId: 101, name: 'Adwoa Darko', kind: 'person', typeLabel: 'Person', target: { id: 41, metric: 'confirmed_delivered', unit: 'count', value: 423 }, label: null },
+        { userId: 102, name: 'Confirm agent', kind: 'ai_agent', typeLabel: 'AI agent', target: { id: 42, metric: 'confirmed_delivered', unit: 'count', value: 250 }, label: null },
         { userId: 103, name: 'Nana Kyei', kind: 'person', typeLabel: 'Person', target: null, label: 'Set a target' },
       ],
     },
@@ -54,8 +54,8 @@ export const TREE: Tree = {
 export const ATTAINMENT: Attainment = {
   period: '2026-10', closed: false, currency: 'GHS',
   results: [
-    { userId: 101, name: 'Adwoa Darko', kind: 'person', roleId: 7, roleName: 'Call rep', payout: true, metric: 'delivered_orders', unit: 'count', target: 423, actual: 253, percent: 60, tier: 'none', reward: null, earned: false, status: { key: 'ahead', label: 'Ahead' }, distance: null, warning: null, message: '' },
-    { userId: 102, name: 'Confirm agent', kind: 'ai_agent', roleId: 7, roleName: 'Call rep', payout: false, metric: 'delivered_orders', unit: 'count', target: 250, actual: 110, percent: 44, tier: 'none', reward: null, earned: false, status: { key: 'behind', label: 'Behind' }, distance: null, warning: null, message: 'No payout' },
+    { userId: 101, name: 'Adwoa Darko', kind: 'person', roleId: 7, roleName: 'Call rep', payout: true, metric: 'confirmed_delivered', unit: 'count', target: 423, actual: 253, percent: 60, tier: 'none', reward: null, earned: false, status: { key: 'ahead', label: 'Ahead' }, distance: null, warning: null, message: '' },
+    { userId: 102, name: 'Confirm agent', kind: 'ai_agent', roleId: 7, roleName: 'Call rep', payout: false, metric: 'confirmed_delivered', unit: 'count', target: 250, actual: 110, percent: 44, tier: 'none', reward: null, earned: false, status: { key: 'behind', label: 'Behind' }, distance: null, warning: null, message: 'No payout' },
   ],
 };
 

@@ -165,7 +165,7 @@ export interface TargetForm {
 
 const ROLE_METRICS = [
   { key: 'revenue', label: 'Delivered revenue', unit: 'money' },
-  { key: 'delivered_orders', label: 'Confirmed orders that get delivered', unit: 'count' },
+  { key: 'confirmed_delivered', label: 'Confirmed orders that get delivered', unit: 'count' },
   { key: 'delivery_success_rate', label: 'Delivery success rate', unit: 'percent' },
 ];
 

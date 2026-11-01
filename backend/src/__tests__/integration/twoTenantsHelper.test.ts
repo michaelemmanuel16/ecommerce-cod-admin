@@ -30,7 +30,12 @@ describe('createTwoTenants', () => {
       expect(t.users.deliveryAgent.role).toBe('delivery_agent');
       const rows = await prismaBase.user.findMany({ where: { tenantId: t.id } });
       const people = rows.filter((u) => u.kind === 'person');
-      expect(people.map((u) => u.role).sort()).toEqual(['admin', 'delivery_agent', 'sales_rep']);
+      // seedTenant (M6-T04) adds one Owner holder: a super_admin user who holds the Owner role
+      expect(people.map((u) => u.role).sort()).toEqual(['admin', 'delivery_agent', 'sales_rep', 'super_admin']);
+      const ownerHolder = await prismaBase.roleAssignment.findFirst({
+        where: { tenantId: t.id, holderId: t.ids.ownerUser, role: { name: 'Owner' } },
+      });
+      expect(ownerHolder).not.toBeNull();
       expect(rows.filter((u) => u.kind === 'system')).toHaveLength(1); // M2-T03: one system user per tenant
     }
   });

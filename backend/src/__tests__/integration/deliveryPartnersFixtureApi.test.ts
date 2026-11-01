@@ -124,6 +124,17 @@ describe('GET /api/delivery-partners (F-700, F-702)', () => {
     expect((await request(app).get(`/api/delivery-partners?${RANGE}&type=bad`).set(bearer(token.admin))).status).toBe(400);
   });
 
+  it('feesKept sums the delivery fees stamped on the partner\'s orders in the range, for a role with financial:view only (M6-T22)', async () => {
+    const ids = (await prismaBase.order.findMany({ where: { tenantId, deliveryAgentId: idOf.Kofi, status: 'delivered' }, select: { id: true }, orderBy: { id: 'asc' }, take: 2 })).map((o) => o.id);
+    await prismaBase.order.updateMany({ where: { id: ids[0] }, data: { deliveryFee: '25.00' } });
+    await prismaBase.order.updateMany({ where: { id: ids[1] }, data: { deliveryFee: '30.50' } });
+    const admin = await request(app).get(`/api/delivery-partners?${RANGE}`).set(bearer(token.admin));
+    expect(rowOf(admin.body, 'Kofi').feesKept).toBe('55.50');
+    expect(rowOf(admin.body, 'Esi').feesKept).toBe('0.00');
+    const stock = await request(app).get(`/api/delivery-partners?${RANGE}`).set(bearer(token.inventory_manager));
+    expect(JSON.stringify(stock.body)).not.toContain('feesKept');
+  });
+
   it('fee rule is read from FeeRule and shown to a role with financial:view only', async () => {
     const admin = await request(app).get(`/api/delivery-partners?${RANGE}`).set(bearer(token.admin));
     expect(rowOf(admin.body, 'Kofi').feeRule).toEqual({ delivered: '25.00', failed: '5.00', returned: '0.00' });

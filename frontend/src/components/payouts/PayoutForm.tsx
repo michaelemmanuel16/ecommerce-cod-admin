@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Button, Input, Modal, Select } from '../ui-v2';
 import { GuardedButtonV2 } from '../financial/GuardedButtonV2';
 import { payoutsService, type CommissionKind, type OwedPreview, type PayoutRow } from '../../services/payouts.service';
@@ -48,6 +49,8 @@ export const PayoutForm: React.FC<PayoutFormProps> = ({ personId, personName, on
   const [notes, setNotes] = useState('');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // The "pick delivered orders to pay" list (F-913): open to start with, the person can fold it away
+  const [picking, setPicking] = useState(true);
 
   const load = useCallback(async () => {
     try {
@@ -153,8 +156,13 @@ export const PayoutForm: React.FC<PayoutFormProps> = ({ personId, personName, on
             {saveError && <p role="alert" className="err">{saveError}</p>}
 
             <section aria-label="Owed entries" className="payentries">
-              <h4>Owed entries</h4>
-              {preview.entries.length === 0 ? (
+              <h4>
+                <button type="button" className="pickbtn" aria-expanded={picking} onClick={() => setPicking((v) => !v)}>
+                  {picking ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}Pick delivered orders to pay
+                </button>
+                <span className="pickcount">{ticked.size} of {preview.entries.length} ticked</span>
+              </h4>
+              {!picking ? null : preview.entries.length === 0 ? (
                 <p className="hint">Nothing is owed to {name}.</p>
               ) : (
                 <div className="tablewrap">

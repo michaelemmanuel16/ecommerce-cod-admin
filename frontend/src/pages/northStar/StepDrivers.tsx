@@ -28,7 +28,7 @@ interface Driver {
 }
 
 const driversOf = (c: Calculators, currency: string): Driver[] => [
-  { key: 'call', label: 'Call reps', match: /call/i, metric: 'delivered_orders', unit: 'count', value: c.ordersDelivered, source: 'Delivered orders needed: the month target ÷ the planned average order',
+  { key: 'call', label: 'Call reps', match: /call/i, metric: 'confirmed_delivered', unit: 'count', value: c.ordersDelivered, source: 'Delivered orders needed: the month target ÷ the planned average order',
     words: `${formatCount(c.ordersDelivered)} confirmed orders that get delivered, counted at month close` },
   { key: 'delivery', label: 'Delivery', match: /deliver/i, metric: 'delivery_success_rate', unit: 'percent', value: c.deliverySuccessRate, source: 'Your delivery success driver',
     words: `${c.deliverySuccessRate}% delivery success` },
@@ -84,7 +84,7 @@ export function StepDrivers({ year, month, currency, onBack, onNext }: Props) {
       }
       for (const h of holders) {
         const value = parseNumber(split[h.userId] ?? '');
-        if (value && value > 0) await targetsService.save({ scope: 'person', metric: 'delivered_orders', unit: 'count', value, period: month, roleId: callRole!.roleId, userId: h.userId });
+        if (value && value > 0) await targetsService.save({ scope: 'person', metric: 'confirmed_delivered', unit: 'count', value, period: month, roleId: callRole!.roleId, userId: h.userId });
       }
       onNext();
     } catch (err) {

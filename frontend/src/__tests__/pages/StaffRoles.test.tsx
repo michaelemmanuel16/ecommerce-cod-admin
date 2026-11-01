@@ -19,6 +19,8 @@ const rolesSvc = vi.hoisted(() => ({ overview: vi.fn(), assignments: vi.fn(), cr
 vi.mock('../../services/roles.service', async (orig) => ({ ...(await orig<typeof import('../../services/roles.service')>()), rolesService: rolesSvc }));
 const targetsSvc = vi.hoisted(() => ({ tree: vi.fn(), attainment: vi.fn(), rewardSettings: vi.fn() }));
 vi.mock('../../services/targets.service', () => ({ targetsService: targetsSvc }));
+// The Pay card has its own tests (PayCard.test.tsx); these tests are about the role cards
+vi.mock('../../pages/staff/PayCard', () => ({ PayCard: () => null }));
 
 let permitted = true;
 vi.mock('../../hooks/usePermissions', () => ({ usePermissions: () => ({ can: () => permitted }) }));

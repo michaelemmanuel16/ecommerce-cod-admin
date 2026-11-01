@@ -757,6 +757,7 @@ export async function seedFixture(prisma: PrismaClient, opts: SeedFixtureOptions
       address: `${(i % 90) + 1} ${o.area} Road`,
       state: o.state,
       area: o.area,
+      createdAt: new Date(FIXTURE_NOW), // fixture time, not the day it is seeded: the October counts hold on any date
       tenantId,
     })),
   });
@@ -842,7 +843,7 @@ export async function seedFixture(prisma: PrismaClient, opts: SeedFixtureOptions
       firstName: FIRST_NAMES[i % FIRST_NAMES.length],
       lastName: LAST_NAMES[Math.floor(i / FIRST_NAMES.length) % LAST_NAMES.length],
       phoneNumber: `+23325${String(1_000_000 + i).padStart(7, '0')}`,
-      address: `${(i % 90) + 1} Old Road`, state: 'Greater Accra', area: 'Accra', tenantId,
+      address: `${(i % 90) + 1} Old Road`, state: 'Greater Accra', area: 'Accra', createdAt: new Date(FIXTURE_NOW), tenantId,
     })),
   });
   const historyCustomerIds = (await prisma.customer.findMany({ where: { tenantId, phoneNumber: { startsWith: '+23325' } }, select: { id: true, phoneNumber: true }, orderBy: { phoneNumber: 'asc' } })).map((c) => c.id);

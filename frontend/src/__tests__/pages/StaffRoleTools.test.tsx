@@ -20,6 +20,7 @@ const rolesSvc = vi.hoisted(() => ({ overview: vi.fn(), assignments: vi.fn(), se
 vi.mock('../../services/roles.service', async (orig) => ({ ...(await orig<typeof import('../../services/roles.service')>()), rolesService: rolesSvc }));
 const targetsSvc = vi.hoisted(() => ({ tree: vi.fn(), attainment: vi.fn(), rewardSettings: vi.fn() }));
 vi.mock('../../services/targets.service', () => ({ targetsService: targetsSvc }));
+vi.mock('../../pages/staff/PayCard', () => ({ PayCard: () => null }));
 vi.mock('../../hooks/usePermissions', () => ({ usePermissions: () => ({ can: () => true }) }));
 
 const renderPage = () => render(<MemoryRouter initialEntries={['/staff']}><ToastProvider><Staff /></ToastProvider></MemoryRouter>);
