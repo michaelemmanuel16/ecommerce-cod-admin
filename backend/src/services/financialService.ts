@@ -625,9 +625,11 @@ export class FinancialService {
 
       if (depositAmount.gt(0)) {
         const userId = requester?.id ?? await getSystemUserId();
-        // Use the minimum transaction ID as a stable idempotency key for the batch.
-        // transactions[0].id is order-dependent; Math.min is consistent across re-calls.
-        const sourceId = Math.min(...transactions.map(t => t.id));
+        // The minimum transaction ID, negated, is the stable idempotency key for the batch (transactions[0].id is
+        // order-dependent; Math.min is consistent across re-calls). Negated, because a verified deposit posts its entry
+        // under the same source type with its own deposit id: the two id lists overlap, and an equal number made the
+        // idempotency guard skip a posting (or a reject void the wrong entry).
+        const sourceId = -Math.min(...transactions.map(t => t.id));
         await GLAutomationService.createDepositGLEntry(tx as any, depositAmount, sourceId, userId);
       }
 
