@@ -259,3 +259,16 @@ Source: /cso static audit of the M6 diff, run 1793593022052-c0164947a66d94af, 20
 
 Found in: M6 (COD-56..62) Phase 7 /cso, 2026-11-02
 Touches production deploy: yes (only via normal release). Touches production DB: no.
+
+### 17. M6 /qa deferred issues and a launch step
+Source: /qa and T27 browser walk on the local app, report `.gstack/qa-reports/run-20261102T042435Z/`, 2026-11-02. ISSUE-001 and ISSUE-002 are fixed on the M6 branch.
+
+- [ ] **Launch step (T41): run `backend/scripts/migrate-users-to-roles.ts` on staging and production.** The leaderboard and Targets read role assignments. Without the script, they show 0 people. It ran on the local dev DB only.
+- [ ] **ISSUE-003 (low, M6):** Staff role cards show deactivated people with no "Deactivated" tag and count them as holders. Fix: tag them and leave them out of the count, as the Targets page now does.
+- [ ] **ISSUE-004 (low, M6):** Dashboard "Top this month" gives a person at 0% the green tag. The ranking follows PRD F-208; only the tag colour is wrong. Fix: no green tag below a set percent.
+- [ ] **ISSUE-005 (low, older):** Settings tab bar at about 780 px: an icon touches the label before it.
+- [ ] **ISSUE-006 (low, older):** Top search box text wraps onto 3 lines at about 780 px.
+- [ ] **ISSUE-007 (low, older, data):** "Logiswift Delivery" and "VDL Fulfilment" show the "Human" tag. They are companies. Fix the data or the kind rule.
+
+Found in: M6 (COD-56..62) Phase 7 /qa, 2026-11-02
+Touches production deploy: yes (only via normal release). Touches production DB: yes for the launch step (data script); no for the rest.
