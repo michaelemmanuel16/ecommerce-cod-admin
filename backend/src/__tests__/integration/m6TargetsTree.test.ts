@@ -183,7 +183,7 @@ describe('POST /api/targets/batch', () => {
       expect(await prismaBase.target.count({ where: { tenantId: A(), metric: 'confirmed_delivered' } })).toBe(0);
 
       const ok = await post(ownerA, [role, person]);
-      expect(ok.status).toBe(201);
+      expect({ s: ok.status, b: ok.body }).toMatchObject({ s: 201 });
       expect(ok.body.targets.map((t: any) => [t.scope, t.value])).toEqual([['role', '100.00'], ['person', '60.00']]);
       const rows = await prismaBase.target.findMany({ where: { tenantId: A(), metric: 'confirmed_delivered' }, orderBy: { id: 'asc' } });
       expect(rows.map((r) => [r.scope, Number(r.value), r.roleId, r.userId])).toEqual([['role', 100, callRep.id, null], ['person', 60, callRep.id, rep]]);
