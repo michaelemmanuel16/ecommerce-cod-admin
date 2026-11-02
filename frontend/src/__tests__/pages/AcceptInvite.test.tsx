@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { AxiosError, type AxiosResponse } from 'axios';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -10,7 +11,7 @@ vi.mock('../../config/features', () => ({ features: { saasSignup: false }, roleA
 vi.mock('../../services/socket', () => ({ connectSocket: vi.fn(), disconnectSocket: vi.fn(), getSocket: vi.fn() }));
 vi.mock('../../services/auth.service', () => ({ authService: { acceptInvite: vi.fn(), checkInvite: vi.fn() } }));
 
-const refusal = (status: number, message = 'x') => Object.assign(new Error(message), { response: { status, data: { message } } });
+const refusal = (status: number, message = 'x') => new AxiosError(message, undefined, undefined, undefined, { status, data: { message } } as AxiosResponse);
 const SIGNED_IN = {
   user: { id: 5, firstName: 'Ama', lastName: 'Mensah', email: 'ama@x.test', role: 'sales_rep' },
   tokens: { accessToken: 'a', refreshToken: 'r' },
@@ -84,7 +85,7 @@ describe('AcceptInvite (M6-T06)', () => {
   });
 
   it('a 400 with no text falls back to the not-valid text', async () => {
-    vi.mocked(authService.acceptInvite).mockRejectedValue(Object.assign(new Error('x'), { response: { status: 400, data: {} } }));
+    vi.mocked(authService.acceptInvite).mockRejectedValue(refusal(400, ''));
     renderAt('/accept-invite?token=abc');
     await fill('Abcdef1!', 'Abcdef1!');
     expect(await screen.findByText('This invite link is not valid. Ask for a new invite.')).toBeInTheDocument();

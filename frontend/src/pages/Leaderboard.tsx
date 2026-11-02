@@ -42,8 +42,9 @@ export function Leaderboard() {
   const callReps = useBlock(`lb|call_rep|${period}`, () => leaderboardService.board('call_rep', period));
   const delivery = useBlock(`lb|delivery|${period}`, () => leaderboardService.board('delivery', period));
   const board = role === 'call_rep' ? callReps : delivery;
-  const withRewards = period === 'month' || period === 'year' || /^\d{4}-\d{2}$/.test(period);
-  const badgePeriod = /^\d{4}-\d{2}$/.test(period) ? period : period === 'month' ? today.slice(0, 7) : undefined;
+  const isMonth = /^\d{4}-\d{2}$/.test(period);
+  const withRewards = period === 'month' || period === 'year' || isMonth;
+  const badgePeriod = isMonth ? period : period === 'month' ? today.slice(0, 7) : undefined;
   const badges = useBlock(`lb|badges|${period}`, () => leaderboardService.badges(badgePeriod).catch(() => null), withRewards);
 
   const data = board.data;
