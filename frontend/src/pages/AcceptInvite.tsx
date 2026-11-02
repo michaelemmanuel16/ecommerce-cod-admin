@@ -5,6 +5,7 @@ import { useAuthStore } from '../stores/authStore';
 import { Button } from '../components/ui-v2';
 import { AuthLayout } from '../components/auth/AuthLayout';
 import { NewPasswordFields } from '../components/auth/NewPasswordFields';
+import { apiErrorMessage } from '../utils/apiError';
 import { validateNewPassword, type NewPasswordErrors } from '../lib/passwordRules';
 
 // M6-T06 (F-1158): the public page behind an invite link. Set a password, then straight into the app.
@@ -13,8 +14,7 @@ import { validateNewPassword, type NewPasswordErrors } from '../lib/passwordRule
 const LINK_NOT_VALID = 'This invite link is not valid. Ask for a new invite.';
 
 /** The API's own sentence for a dead link, else the plain one. */
-const refusalText = (error: unknown): string =>
-  (error as { response?: { data?: { message?: string } } })?.response?.data?.message ?? LINK_NOT_VALID;
+const refusalText = (error: unknown): string => apiErrorMessage(error, LINK_NOT_VALID);
 
 export const AcceptInvite: React.FC = () => {
   const navigate = useNavigate();

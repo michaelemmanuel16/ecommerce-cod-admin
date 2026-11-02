@@ -1,6 +1,7 @@
 import clsx from 'clsx';
 import { Skeleton, Tag } from '../../../components/ui-v2';
 import { initials } from '../format';
+import { kindTag } from '../../leaderboard/model';
 import { PageLink } from '../links';
 import { PATHS } from '../paths';
 import { BlockFrame } from './Frame';
@@ -11,7 +12,6 @@ function mainNumber(p: TopPerson): string {
   return p.main.unit === 'delivery_success' ? `${p.main.value}% delivery success` : `${p.main.value} confirmed and delivered`;
 }
 
-const KIND_TAG: Record<string, string> = { ai_agent: 'AI agent', company: 'Company' };
 const AVATAR: Record<string, string> = { ai_agent: 'violet', company: 'gold' };
 // People take the mockup's avatar colours in turn.
 const PEOPLE_AVATARS = ['mint', 'gold', 'pine'] as const;
@@ -43,7 +43,7 @@ export function TopThisMonthCard({ top, loading, failed, onRetry }: Props) {
                   <div className={clsx('a', AVATAR[p.kind] ?? PEOPLE_AVATARS[i % PEOPLE_AVATARS.length])}>{initials(p.name)}</div>
                   <div>
                     {p.name}
-                    {KIND_TAG[p.kind] && <Tag tone={p.kind === 'ai_agent' ? 'v' : 'n'}>{KIND_TAG[p.kind]}</Tag>}
+                    {kindTag(p.kind) && <Tag tone={p.kind === 'ai_agent' ? 'v' : 'n'}>{kindTag(p.kind)}</Tag>}
                     <small>{p.roleName} · {mainNumber(p)}</small>
                   </div>
                   <Tag tone="ok" className="pctag">{p.percent}% of target</Tag>
