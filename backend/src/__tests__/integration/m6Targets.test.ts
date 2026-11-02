@@ -170,6 +170,20 @@ describe('role pool, person targets and "Set a target"', () => {
     await prismaBase.roleAssignment.deleteMany({ where: { holderId: extra.id } });
     await prismaBase.user.delete({ where: { id: extra.id } });
   });
+
+  // Regression: ISSUE-001 — a deactivated holder showed on the Targets page and in the wizard split
+  // Found by /qa on 2026-11-02
+  // Report: .gstack/qa-reports/run-20261102T042435Z/qa-report-localhost-2026-11-02.md
+  it('a deactivated holder is not listed; an invited one is', async () => {
+    const make = (email: string, invitedAt: Date | null) => prismaBase.user.create({ data: { email, password: 'x', firstName: 'Off', lastName: 'T', role: 'sales_rep', tenantId: A(), isActive: false, invitedAt } });
+    const [off, invited] = await Promise.all([make('off-m6targets@codadmin.test', null), make('inv-m6targets@codadmin.test', new Date())]);
+    for (const holderId of [off.id, invited.id]) await prismaBase.roleAssignment.create({ data: { tenantId: A(), roleId, holderId, fromDate: new Date('2026-01-01') } });
+    const ids = (await viewOf(roleId, '2026-10')).holders.map((h) => h.userId);
+    expect(ids).not.toContain(off.id);
+    expect(ids).toContain(invited.id);
+    await prismaBase.roleAssignment.deleteMany({ where: { holderId: { in: [off.id, invited.id] } } });
+    await prismaBase.user.deleteMany({ where: { id: { in: [off.id, invited.id] } } });
+  });
 });
 
 describe('concurrent writes', () => {

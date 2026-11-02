@@ -8,7 +8,7 @@ import { AppError } from '../middleware/errorHandler';
 import * as Money from '../utils/money';
 import { auditService } from './auditService';
 import { createNotification, findTenantAdmins } from './notificationService';
-import { holderSelect, holderView } from './roleService';
+import { holderSelect, holderStatus, holderView } from './roleService';
 import { failedDeliveryCalls, FAILED_CALLS_METRIC } from './kpi/daily';
 import { DAY_MS, currentMonth, endOfDay, getStoreTimeZone, parseMonth, parseYmd, startOfDay, utcDate, utcDateOfYmd, ymdOfUtc } from './kpi/dates';
 
@@ -472,7 +472,8 @@ export async function roleViews(roleIds: number[], month: string, given: Map<num
     const mine = persons.filter((t) => t.roleId === roleId && (!target || t.metric === target.metric));
     const allocated = Money.sum(mine.map((t) => t.value));
     const byUser = new Map(mine.map((t) => [t.userId, t]));
-    const holders = assignments.filter((a) => a.roleId === roleId).map(({ holder }) => {
+    // A deactivated person keeps the assignment (reactivate restores it) but is not on the team: no row, no target to set.
+    const holders = assignments.filter((a) => a.roleId === roleId && holderStatus(a.holder) !== 'deactivated').map(({ holder }) => {
       const own = byUser.get(holder.id);
       const view = holderView(holder);
       return {
