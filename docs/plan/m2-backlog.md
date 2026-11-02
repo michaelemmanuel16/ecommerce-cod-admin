@@ -222,3 +222,23 @@ Touches production deploy: yes (only via normal release). Touches production DB:
 
 Found in: M6 (COD-56) CI fix review, 2026-11-01
 Touches production deploy: no. Touches production DB: yes (one-time data script, owner runs it at the v2 launch with T41).
+
+### 15. M6 skipped clean-ups from the whole-M6 /simplify (grouped checklist, owner decides)
+
+Found in the T25 whole-M6 review and skipped because each one changes who can do what, changes the API, or touches the money path. Details and file:line in `docs/plan/M6-T25-simplify-fixes.md` (Skipped). Split a line into its own ticket when someone picks it up.
+
+- [ ] Targets routes gate on the `targets:view` / `targets:update` cells only, not role names plus `analytics:view` / `settings:update`. Changes access: a custom role with `targets:view` gains it; a manager without it loses it.
+- [ ] One menu rule table for all roles (today: F-102 name table for seeded roles, cell table for custom roles). Diff the two first.
+- [ ] One `assertMayGrant(actor, role, holder?)` policy instead of four rank/grid checks (`assertOutranks`, `assertGridWithin`, `assertMayTouchRole`, `assertMayManage`).
+- [ ] Owner rule in the service only, not also `requireSuperAdmin` in routes (MCP and queue call the services).
+- [ ] Role identity by a `positionOf` column (or unique preset flag), not by display name (rename or a custom "Admin" role changes which grid wins). Needs a migration.
+- [ ] One permission store: `Role.permissions` only; retire `SystemConfig.rolePermissions` and the fallback. Large.
+- [ ] "Measured" roles from `Role.targetMetric` only; drop the `sales_rep` / `delivery_agent` preset branches in rewards and leaderboard.
+- [ ] `setupNorthStar` menu item on a cell, not `role === 'super_admin'`; drop frontend `oldPageFor` role lists.
+- [ ] Remove the legacy per-UserRole matrix endpoint; Settings calls `PUT /roles/:id/permissions`.
+- [ ] Account-active check in `sessionService`, not in the generic auth middleware.
+- [ ] Access cache invalidation inside one Role/RoleAssignment write path, so no caller can forget it.
+- [ ] Leaderboard `daysToPayOf` as one SQL `AVG ... GROUP BY` instead of loading every order (year view).
+
+Found in: M6 (COD-56..61) T25 /simplify, 2026-11-02
+Touches production deploy: yes (only via normal release). Touches production DB: yes for the `positionOf` column and the permission-store move (migrations or data script); no for the rest.
