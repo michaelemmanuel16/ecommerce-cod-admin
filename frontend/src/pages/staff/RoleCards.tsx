@@ -13,7 +13,7 @@ import { NewRoleModal } from './NewRoleModal';
 import { RoleDetail, type AssignChoice } from './RoleDetail';
 import { TYPE_LABEL, TYPE_TONE } from './model';
 import { avatarClass, initials } from '../../utils/people';
-import { roleProgress, targetOf, type RoleProgress } from './roleModel';
+import { HOLDERS_SHOWN, roleProgress, targetOf, type RoleProgress } from './roleModel';
 
 interface RoleCardsProps {
   /** The role overview (users:view); undefined while it loads. */
@@ -42,6 +42,9 @@ function RoleCardView({ role, currency, month, progress, selected, onSelect }: {
   const Icon = iconOf(role);
   const vacant = role.holders.length === 0;
   const target = targetOf(role, currency);
+  const [all, setAll] = useState(false);
+  const more = role.holders.length > HOLDERS_SHOWN;
+  const shown = all ? role.holders : role.holders.slice(0, HOLDERS_SHOWN);
   return (
     <div
       className={`card rolecard${selected ? ' on' : ''}`} role="button" tabIndex={0} aria-pressed={selected} aria-label={`${role.name} role`}
@@ -56,13 +59,21 @@ function RoleCardView({ role, currency, month, progress, selected, onSelect }: {
         <div className="vacant"><UserX aria-hidden="true" /><span>Nobody holds this role.</span></div>
       ) : (
         <div className="holders">
-          {role.holders.map((h) => (
+          {/* Opened, the list keeps about ten rows and scrolls */}
+          <div className="holders-list" style={all ? { maxHeight: HOLDERS_SHOWN * 36, overflowY: 'auto' } : undefined}>
+          {shown.map((h) => (
             <div className="who" key={h.assignmentId}>
               <div className={avatarClass(h.kind, h.id)} aria-hidden="true">{initials(h.name)}</div>
               <span className="nm">{h.name}</span>
               <Tag tone={TYPE_TONE[h.kind]}>{TYPE_LABEL[h.kind]}</Tag>
             </div>
           ))}
+          </div>
+          {more && (
+            <Button size="mini" onClick={(e) => { e.stopPropagation(); setAll(!all); }}>
+              {all ? 'Show fewer' : `Show all ${role.holders.length}`}
+            </Button>
+          )}
         </div>
       )}
       <div className="rc-tgt">

@@ -1,9 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { Bot, Building2, CalendarCheck, Crown, PhoneCall, TrendingUp, Truck, type LucideIcon } from 'lucide-react';
 import { Button, Card, useToast } from '../../components/ui-v2';
 import { targetsService, type RewardSettings } from '../../services/targets.service';
 import { checkoutFormsService } from '../../services/checkout-forms.service';
-import { currencySymbol, formatCurrency } from '../../utils/format';
+import { currencySymbol } from '../../utils/format';
 import { apiMessage } from '../orders/importText';
 
 type Tone = 'mint' | 'gold' | 'pine' | 'plain' | 'coral';
@@ -27,8 +28,8 @@ const BADGES: Array<{ icon: LucideIcon; tone: Tone; title: string; text: string 
   { icon: TrendingUp, tone: 'mint', title: 'Beat target by 20%', text: '120% or more in a month' },
 ];
 
-/** One read-only tag under "What reps can offer": a package (`n`) or an upsell (`v`), as priced on the store's checkout forms. */
-interface OfferTag { key: string; label: string; kind: 'n' | 'v' }
+/** What "What reps can offer" counts: the packages and upsells of the active checkout forms, each once. */
+interface OfferCount { packages: number; upsells: number }
 
 interface RoleDraft { roleId: number; name: string; c100: string; c120: string; dayOff100: boolean; dayOff120: boolean }
 interface Draft { roles: RoleDraft[]; commission: string; upsell: string; badges: boolean }
@@ -70,29 +71,24 @@ export function RewardsTab({ editable }: { editable: boolean }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  // null while loading, [] when the store has no checkout form (or it could not be read)
-  const [offers, setOffers] = useState<OfferTag[] | null>(null);
+  // null while loading; zero packages and upsells when the store has no checkout form (or it could not be read)
+  const [offers, setOffers] = useState<OfferCount | null>(null);
 
   useEffect(() => {
     let live = true;
     checkoutFormsService.getCheckoutForms({ isActive: true })
       .then((forms) => {
-        const tags = new Map<string, OfferTag>();
+        const packages = new Set<string>();
+        const upsells = new Set<string>();
         for (const f of forms) {
-          const cur = f.currency || undefined;
-          for (const p of f.packages ?? []) {
-            const key = `n:${p.name}:${p.price}`;
-            if (!tags.has(key)) tags.set(key, { key, kind: 'n', label: `${p.name} ${formatCurrency(Number(p.price), cur)}` });
-          }
+          for (const p of f.packages ?? []) packages.add(`${p.name}:${p.price}`);
           for (const u of f.upsells ?? []) {
-            if (u.isActive === false) continue;
-            const key = `v:${u.name}:${u.price}`;
-            if (!tags.has(key)) tags.set(key, { key, kind: 'v', label: `${u.name} ${formatCurrency(Number(u.price), cur)}` });
+            if (u.isActive !== false) upsells.add(`${u.name}:${u.price}`);
           }
         }
-        if (live) setOffers([...tags.values()]);
+        if (live) setOffers({ packages: packages.size, upsells: upsells.size });
       })
-      .catch(() => { if (live) setOffers([]); });
+      .catch(() => { if (live) setOffers({ packages: 0, upsells: 0 }); });
     return () => { live = false; };
   }, []);
 
@@ -207,12 +203,19 @@ export function RewardsTab({ editable }: { editable: boolean }) {
 
       <div className="sub" style={{ paddingTop: 18 }}>
         What reps can offer
-        <small>Read from the checkout form. Extra value is what the rep adds beyond one set.</small>
+        <small>Read from the checkout forms. Edit them on the Checkout forms page.</small>
       </div>
-      <div style={{ padding: '10px 20px 0', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+      <div style={{ padding: '10px 20px 0' }}>
         {offers === null && <p className="setnote">Loading the offers...</p>}
-        {offers?.length === 0 && <p className="setnote">No checkout form yet. Add one to see what reps can offer.</p>}
-        {offers?.map((o) => <span key={o.key} className={`tag ${o.kind}`}>{o.label}</span>)}
+        {offers && offers.packages + offers.upsells === 0 && (
+          <p className="setnote">No checkout form yet. Add one to see what reps can offer. <Link to="/checkout-forms" style={{ color: 'var(--pine)', fontWeight: 600 }}>View checkout forms</Link></p>
+        )}
+        {offers && offers.packages + offers.upsells > 0 && (
+          <p className="setnote">
+            {offers.packages + offers.upsells} offers on your checkout forms ({offers.packages} packages, {offers.upsells} upsells). The upsell reward pays on what a rep adds beyond one set.{' '}
+            <Link to="/checkout-forms" style={{ color: 'var(--pine)', fontWeight: 600 }}>View checkout forms</Link>
+          </p>
+        )}
       </div>
 
       <div className="sub" style={{ paddingTop: 18 }}>Result badges<small>Earned only by hitting or beating a target.</small></div>

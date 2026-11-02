@@ -70,6 +70,28 @@ beforeEach(() => {
 });
 
 describe('Staff page: role cards', () => {
+  const many = (n: number) => Array.from({ length: n }, (_, i) => holder({ id: 100 + i, name: `Rep ${i + 1}` }));
+
+  it('caps the holders at 10 with "Show all n", opens them all, and closes again', async () => {
+    rolesSvc.overview.mockResolvedValue([roleCard(CALL, { holders: many(19), holderCount: 19 })]);
+    renderPage();
+    const call = within(await screen.findByRole('button', { name: 'Call rep role' }));
+    expect(call.getByText('19 holders')).toBeInTheDocument();
+    expect(call.getAllByText(/^Rep \d+$/)).toHaveLength(10);
+    await userEvent.click(call.getByRole('button', { name: 'Show all 19' }));
+    expect(call.getAllByText(/^Rep \d+$/)).toHaveLength(19);
+    await userEvent.click(call.getByRole('button', { name: 'Show fewer' }));
+    expect(call.getAllByText(/^Rep \d+$/)).toHaveLength(10);
+  });
+
+  it('shows no button when a role has 10 holders or fewer', async () => {
+    rolesSvc.overview.mockResolvedValue([roleCard(CALL, { holders: many(5), holderCount: 5 })]);
+    renderPage();
+    const call = within(await screen.findByRole('button', { name: 'Call rep role' }));
+    expect(call.getAllByText(/^Rep \d+$/)).toHaveLength(5);
+    expect(call.queryByRole('button', { name: /Show/ })).not.toBeInTheDocument();
+  });
+
   it('shows a card per role with holders, type tags, the target and "n of 16 tools allowed"', async () => {
     renderPage();
     const call = within(await screen.findByRole('button', { name: 'Call rep role' }));

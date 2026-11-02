@@ -63,6 +63,8 @@
 .v2 .rc-ic{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;background:var(--pine-soft);color:var(--pine);flex:none}
 .v2 .rc-ic svg{width:18px;height:18px}
 .v2 .holders{display:flex;flex-direction:column;gap:8px}
+.v2 .holders-list{display:flex;flex-direction:column;gap:8px}
+.v2 .holders .mini{align-self:flex-start}
 .v2 .holders .who{gap:9px}
 .v2 .holders .who .a,.v2 .hlist .who .a{width:28px;height:28px;font-size:11px;flex:none;border-radius:50%;display:grid;place-items:center;font-weight:700}
 .v2 .holders .who .nm,.v2 .hlist .who .nm{min-width:0;font-weight:500;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

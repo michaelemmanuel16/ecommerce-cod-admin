@@ -5,6 +5,9 @@ import { STATUS_TONE, barClass, progressText, targetWords } from '../targets/mod
 
 /** Display rules of the role cards (M6-T19, F-1151). Nothing here calculates a KPI: progress is the API's `roleAttainment` of the targets tree. */
 
+/** A role card lists this many holders; more are behind "Show all". */
+export const HOLDERS_SHOWN = 10;
+
 /** What a card shows for the target: the role's target in words, or null when none is set for the month. */
 export const targetOf = (card: RoleCard, currency: string): string | null => (card.target ? targetWords(card.target, currency) : null);
 

@@ -144,18 +144,18 @@ describe('Settings, Rewards tab (M6-T18, F-1231)', () => {
     expect((document.body.textContent ?? '').match(/80\s?%/g)).toHaveLength(1);
   });
 
-  it('lists what reps can offer from the checkout forms, once each, in the store currency', async () => {
+  it('counts what reps can offer from the checkout forms, once each, and links to them', async () => {
     renderAt();
-    expect(await screen.findByText('Pair GH₵410')).toHaveClass('tag', 'n');
-    expect(screen.getAllByText('Single GH₵205')).toHaveLength(1);
-    expect(screen.getByText('Gift box GH₵35')).toHaveClass('tag', 'v');
-    expect(screen.queryByText(/Hidden/)).not.toBeInTheDocument();
+    expect(await screen.findByText(/3 offers on your checkout forms \(2 packages, 1 upsells\)\. The upsell reward pays on what a rep adds beyond one set\./)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'View checkout forms' })).toHaveAttribute('href', '/checkout-forms');
+    expect(screen.queryByText('Pair GH₵410')).not.toBeInTheDocument();
   });
 
   it('shows an empty state when the store has no checkout form', async () => {
     vi.mocked(checkoutFormsService.getCheckoutForms).mockResolvedValue([]);
     renderAt();
     expect(await screen.findByText(/No checkout form yet/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'View checkout forms' })).toHaveAttribute('href', '/checkout-forms');
   });
 
   it('tells the owner when a save takes effect', async () => {
