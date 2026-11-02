@@ -146,7 +146,7 @@ describe('Settings, Rewards tab (M6-T18, F-1231)', () => {
 
   it('counts what reps can offer from the checkout forms, once each, and links to them', async () => {
     renderAt();
-    expect(await screen.findByText(/3 offers on your checkout forms \(2 packages, 1 upsells\)\. The upsell reward pays on what a rep adds beyond one set\./)).toBeInTheDocument();
+    expect(await screen.findByText(/3 offers on your checkout forms \(2 packages, 1 upsell\)\. The upsell reward pays on what a rep adds beyond one set\./)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'View checkout forms' })).toHaveAttribute('href', '/checkout-forms');
     expect(screen.queryByText('Pair GH₵410')).not.toBeInTheDocument();
   });

@@ -34,6 +34,8 @@ interface OfferCount { packages: number; upsells: number }
 interface RoleDraft { roleId: number; name: string; c100: string; c120: string; dayOff100: boolean; dayOff120: boolean }
 interface Draft { roles: RoleDraft[]; commission: string; upsell: string; badges: boolean }
 
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
 const text = (n: number | string | null | undefined) => (n === null || n === undefined ? '' : String(n));
 
 const toDraft = (s: RewardSettings): Draft => ({
@@ -212,7 +214,7 @@ export function RewardsTab({ editable }: { editable: boolean }) {
         )}
         {offers && offers.packages + offers.upsells > 0 && (
           <p className="setnote">
-            {offers.packages + offers.upsells} offers on your checkout forms ({offers.packages} packages, {offers.upsells} upsells). The upsell reward pays on what a rep adds beyond one set.{' '}
+            {plural(offers.packages + offers.upsells, 'offer')} on your checkout forms ({plural(offers.packages, 'package')}, {plural(offers.upsells, 'upsell')}). The upsell reward pays on what a rep adds beyond one set.{' '}
             <Link to="/checkout-forms" style={{ color: 'var(--pine)', fontWeight: 600 }}>View checkout forms</Link>
           </p>
         )}
