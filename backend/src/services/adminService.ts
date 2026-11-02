@@ -24,7 +24,7 @@ import { assertNotLastOwner, assignPositionRole, positionRoleId } from './system
 import { eraseUser } from './staffService';
 import { updateUserSchema } from '../validators/staffSchema';
 import { formatIssues } from '../tools/shared';
-import { saveMatrix } from './rolePermissionService';
+import { saveMatrix, assertGridWithin } from './rolePermissionService';
 import { invalidateAccess, invalidateUserAccess } from './accessService';
 import { getTenantMatrix } from './permissionService';
 import { ROLE_NAME_BY_USER_ROLE } from '../config/defaultRoles';
@@ -506,6 +506,12 @@ export const adminService = {
     const invite = data.access === 'invite' ? newInviteToken() : undefined;
     // The user and the role they hold are one write (F-1155). A tenant with no roles yet gets the user and no assignment.
     const roleId = data.roleId ?? await positionRoleId(db, data.role);
+    // A person below the Owner may not hand out a role whose grid is wider than their own (the base-role rank above is not enough).
+    if (roleId !== null) {
+      const role = await db.role.findFirst({ where: { id: roleId }, select: { permissions: true, presetRole: true } });
+      if (!role) throw new AppError('Role not found', 404);
+      await assertGridWithin(requester, role, undefined);
+    }
 
     let user;
     try {
@@ -606,6 +612,11 @@ export const adminService = {
     }
 
     const roleChanged = input.role !== undefined && input.role !== targetUser.role;
+    // The new position role must sit within the requester's own grid (the rank check above only compares base roles).
+    if (roleChanged) {
+      const role = await prisma.role.findFirst({ where: { name: ROLE_NAME_BY_USER_ROLE[input.role!] }, select: { permissions: true, presetRole: true } });
+      if (role) await assertGridWithin(requester, role, userId);
+    }
     const deactivating = input.isActive === false;
     const [firstName, ...rest] = name?.split(' ') ?? [];
     const updateData: Prisma.UserUncheckedUpdateInput = {

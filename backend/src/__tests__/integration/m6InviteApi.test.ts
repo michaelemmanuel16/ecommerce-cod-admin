@@ -187,6 +187,32 @@ describe('who may invite what', () => {
     expect((await invite({}, admin)).status).toBe(201);
   });
 
+  it('COD-62: an admin cannot invite or promote into a role whose grid is wider than their own; the Owner can', async () => {
+    const admin = pair.a.users.admin.token;
+    const wide = await prismaBase.role.create({ data: { tenantId: pair.a.id, name: `Wide${SUFFIX}`, isSystem: false, permissions: { settings: ['update'] } } });
+    const narrow = await prismaBase.role.create({ data: { tenantId: pair.a.id, name: `Narrow${SUFFIX}`, isSystem: false, permissions: { orders: ['view'] } } });
+
+    const email = mail('wide');
+    const refused = await invite({ email, role: undefined, roleId: wide.id }, admin);
+    expect(refused.status).toBe(403);
+    expect(refused.body.code ?? refused.body.error?.code).toBe('GRID_ABOVE_ACTOR');
+    expect(await prismaBase.user.count({ where: { email } })).toBe(0);
+
+    expect((await invite({ role: undefined, roleId: narrow.id }, admin)).status).toBe(201);
+    expect((await invite({ role: undefined, roleId: wide.id }, ownerA)).status).toBe(201);
+
+    // A role change by PUT: the accountant default grid has cells the admin lacks.
+    const person = await invite({ role: 'sales_rep' }, admin);
+    expect(person.status).toBe(201);
+    const id = person.body.staff.id;
+    const promote = await request(app).put(`/api/staff/${id}`).set(bearer(admin)).send({ role: 'accountant' });
+    expect(promote.status).toBe(403);
+    expect(promote.body.code ?? promote.body.error?.code).toBe('GRID_ABOVE_ACTOR');
+    expect((await dbUser(id)).role).toBe('sales_rep');
+    const byOwner = await request(app).put(`/api/staff/${id}`).set(bearer(ownerA)).send({ role: 'accountant' });
+    expect(byOwner.status).toBe(200);
+  });
+
   it('role id of another tenant is 404; a delivery partner gets vehicle, city and the fee rule, not an amount', async () => {
     const foreign = await prismaBase.role.findFirstOrThrow({ where: { tenantId: pair.b.id } });
     expect((await invite({ role: undefined, roleId: foreign.id })).status).toBe(404);
