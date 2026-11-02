@@ -17,13 +17,14 @@ jest.mock('../../utils/prisma', () => ({
 
 import prisma from '../../utils/prisma';
 import { runInTenant } from '../../utils/tenantContext';
-import { clearPermissionsCache, getUserPermissions } from '../../services/permissionService';
+import { clearPermissionsCache, forgetUser, getUserPermissions, isUserActive } from '../../services/permissionService';
 import { requireResourcePermission } from '../../middleware/auth';
 
 const db = prisma as unknown as {
   systemConfig: { findFirst: jest.Mock<(...a: unknown[]) => Promise<unknown>> };
   role: { findMany: jest.Mock<(...a: unknown[]) => Promise<unknown>> };
   roleAssignment: { findMany: jest.Mock<(...a: unknown[]) => Promise<unknown>> };
+  user: { findFirst: jest.Mock<(...a: unknown[]) => Promise<unknown>> };
 };
 
 const TENANT = 'tenant-cod56';
@@ -74,5 +75,41 @@ describe('a read that started before an invalidation', () => {
 
     db.roleAssignment.findMany.mockResolvedValue(held({ orders: ['view'], users: ['view'] }));
     expect(await asUser(() => getUserPermissions(manager))).toEqual({ orders: ['view'], users: ['view'] });
+  });
+});
+
+describe('the active-user check (authenticate)', () => {
+  const activeRow = { roleAssignments: held({ orders: ['view'] }) };
+
+  it('reads once, then answers from the cache; forgetUser makes the next call read again and refuse', async () => {
+    db.user.findFirst.mockResolvedValueOnce(activeRow);
+    expect(await asUser(() => isUserActive(TENANT, 7))).toBe(true);
+    expect(await asUser(() => isUserActive(TENANT, 7))).toBe(true);
+    expect(db.user.findFirst).toHaveBeenCalledTimes(1);
+    forgetUser(7, TENANT);
+    db.user.findFirst.mockResolvedValueOnce(null);
+    expect(await asUser(() => isUserActive(TENANT, 7))).toBe(false);
+    expect(db.user.findFirst).toHaveBeenCalledTimes(2);
+  });
+
+  it('an inactive user is not cached: every call reads', async () => {
+    db.user.findFirst.mockResolvedValue(null);
+    expect(await asUser(() => isUserActive(TENANT, 8))).toBe(false);
+    expect(await asUser(() => isUserActive(TENANT, 8))).toBe(false);
+    expect(db.user.findFirst).toHaveBeenCalledTimes(2);
+  });
+
+  it('a grid read for a user does not make them count as active', async () => {
+    db.roleAssignment.findMany.mockResolvedValue(held({ orders: ['view'] }));
+    await asUser(() => getUserPermissions({ id: 9, role: 'manager' }));
+    db.user.findFirst.mockResolvedValueOnce(null);
+    expect(await asUser(() => isUserActive(TENANT, 9))).toBe(false);
+  });
+
+  it('concurrent misses share one read', async () => {
+    db.user.findFirst.mockResolvedValue(activeRow);
+    const [a, b] = await asUser(() => Promise.all([isUserActive(TENANT, 10), isUserActive(TENANT, 10)]));
+    expect([a, b]).toEqual([true, true]);
+    expect(db.user.findFirst).toHaveBeenCalledTimes(1);
   });
 });

@@ -13,6 +13,7 @@ import { holderStatus } from './roleService';
 import { currentFeeRules, storeToday } from './feeRuleService';
 import { evictKeys } from './mcpKeyService';
 import { assertNotLastOwner } from './systemRoleService';
+import { invalidateUserAccess } from './accessService';
 import { PAY_METHODS } from '../validators/staffSchema';
 import type { StaffStatus, staffQuerySchema, updateStaffSchema } from '../validators/staffSchema';
 
@@ -264,6 +265,7 @@ export async function eraseUser(target: { id: number; role: UserRole }): Promise
       await tx.notification.deleteMany({ where: { tenantId, userId: id } });
       await tx.user.deleteMany({ where: { tenantId, id } });
     });
+    invalidateUserAccess(id);
   } catch (error) {
     if (isForeignKeyViolation(error)) {
       throw new AppError('This person has payouts or ledger records and cannot be erased. They stay in the Deleted tab.', 409, 'HAS_RECORDS');
