@@ -385,6 +385,13 @@ describe('overview (F-1151)', () => {
     const owner = cards.find((c) => c.id === pair.a.ids.role);
     expect(owner.holderCount).toBe(1);
     expect(owner.toolCount).toBe(ROLE_TOOL_TOTAL);
+    // The tool list and the pay rule come from the API, so the screens carry no copy of them
+    expect(card.toolCatalog).toHaveLength(ROLE_TOOL_TOTAL);
+    expect(card.toolCatalog[0]).toEqual({ key: 'view_orders', label: 'View orders', kind: 'read' });
+    expect(card.toolCatalog.filter((t: any) => t.kind === 'read')).toHaveLength(7);
+    expect(card.payPolicy).toEqual({ methods: ['per_order', 'fee_rule', 'none'], defaultMethod: 'none', amountEditable: true });
+    const delivery = cards.find((c) => c.presetRole === 'delivery_agent');
+    expect(delivery.payPolicy).toEqual({ methods: ['fee_rule', 'none'], defaultMethod: 'fee_rule', amountEditable: false });
   });
 
   it('never shows tenant B holders to tenant A, and the reverse', async () => {

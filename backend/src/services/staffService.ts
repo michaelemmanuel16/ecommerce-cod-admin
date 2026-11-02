@@ -14,7 +14,7 @@ import { currentFeeRules, storeToday } from './feeRuleService';
 import { evictKeys } from './mcpKeyService';
 import { assertNotLastOwner } from './systemRoleService';
 import { invalidateUserAccess } from './accessService';
-import { PAY_METHODS } from '../validators/staffSchema';
+import { payPolicyFor } from '../config/payPolicy';
 import type { StaffStatus, staffQuerySchema, updateStaffSchema } from '../validators/staffSchema';
 
 /**
@@ -60,13 +60,7 @@ const STATUS_WHERE: Record<StaffStatus, Prisma.UserWhereInput> = {
   deleted: { isActive: false, deletedAt: { not: null } },
 };
 
-/**
- * How a role of person can be paid (F-1158, F-1161). A delivery partner's fee is a fee rule (M5), not a field of the person,
- * so there is no amount to set. One rule for the invite, the staff edit and the fee-rule link.
- */
-export const payPolicyFor = (role: UserRole) => role === 'delivery_agent'
-  ? { methods: ['fee_rule', 'none'] as const, defaultMethod: 'fee_rule' as const, amountEditable: false }
-  : { methods: PAY_METHODS, defaultMethod: 'none' as const, amountEditable: true };
+export { payPolicyFor };
 
 const feeNotEditable = () =>
   new AppError('A delivery partner has no per-order amount here. Their fee is set in the partner fee rule.', 400, 'FEE_NOT_EDITABLE');

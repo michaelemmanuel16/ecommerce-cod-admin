@@ -11,7 +11,11 @@ const day = z.string().regex(YMD, 'Use YYYY-MM-DD').refine((d) => { try { parseY
 const metric = z.string().trim().min(1).max(60);
 const unit = z.string().trim().min(1).max(20);
 
-export const treeQuerySchema = z.object({ year, month: month.optional(), metric: metric.optional() }).strict();
+/** `actuals=false` leaves the delivered-revenue figures out of the tree (they cost a read of the orders). Default: with them. */
+export const treeQuerySchema = z.object({
+  year, month: month.optional(), metric: metric.optional(), actuals: z.enum(['true', 'false']).optional().transform((v) => v !== 'false'),
+}).strict();
+
 export const poolQuerySchema = z.object({ month }).strict();
 export const dailyQuerySchema = z.object({ metric, date: day, userId: z.coerce.number().int().positive().optional() }).strict();
 
@@ -25,6 +29,9 @@ export const saveTargetSchema = z.object({
   roleId: z.number().int().positive().optional(),
   userId: z.number().int().positive().optional(),
 }).strict();
+
+/** POST /api/targets/batch: several role, person or daily targets in one transaction. */
+export const saveTargetsSchema = z.object({ targets: z.array(saveTargetSchema).min(1).max(50) }).strict();
 
 export const updateTargetSchema = z.object({ value: num.min(0), unit: unit.optional() }).strict();
 

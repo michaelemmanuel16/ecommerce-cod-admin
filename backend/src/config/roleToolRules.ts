@@ -35,6 +35,9 @@ export const ROLE_TOOLS: readonly RoleTool[] = [
 
 export const ROLE_TOOL_TOTAL = ROLE_TOOLS.length;
 
+/** What a screen needs to draw the switches: key, label and kind, in table order. The cells and `requires` stay on the server. */
+export const ROLE_TOOL_CATALOG: ReadonlyArray<Pick<RoleTool, 'key' | 'label' | 'kind'>> = ROLE_TOOLS.map(({ key, label, kind }) => ({ key, label, kind }));
+
 const BY_KEY = new Map(ROLE_TOOLS.map((t) => [t.key, t]));
 export const isRoleTool = (key: string): boolean => BY_KEY.has(key);
 
