@@ -21,7 +21,7 @@ const GLOBAL = '__global__';
 /** The matrix per tenant. The promise is cached, so concurrent requests of a tenant share one read. */
 const matrixCache = new Map<string, { promise: Promise<Matrix>; timestamp: number }>();
 /** The union of each user's held role grids per tenant; `null` = the user holds no role that gives a grid. */
-const heldCache = new Map<string, Map<number, { grid: PermissionGrid | null; active: boolean; timestamp: number }>>();
+const heldCache = new Map<string, Map<number, { grid: PermissionGrid | null; timestamp: number }>>();
 /** Reads in flight per (epoch, tenant, user, kind): concurrent misses share one read, as `matrixCache` does for the matrix. */
 const inflight = new Map<string, Promise<unknown>>();
 /**
@@ -85,7 +85,7 @@ const freshHeld = (tenantId: string, userId: number) => {
   return entry && Date.now() - entry.timestamp < CACHE_TTL ? entry : undefined;
 };
 
-export const heldAssignmentSelect = { role: { select: { permissions: true, presetRole: true } } } as const;
+const heldAssignmentSelect = { role: { select: { permissions: true, presetRole: true } } } as const;
 type HeldAssignment = { role: { permissions: unknown; presetRole: UserRole | null } };
 
 /** The union of the grids of the held roles, by the one rule (gridOfRole); null when none gives a grid (the Legacy role gives none). */
@@ -94,10 +94,9 @@ function unionOf(assignments: HeldAssignment[], matrix: Matrix): PermissionGrid 
   return grids.length ? unionPermissions(grids) : null;
 }
 
-/** `active` is true only when the read proved the user active (`isUserActive`); `heldGrid` does not check it. */
-const cacheHeld = (tenantId: string, userId: number, grid: PermissionGrid | null, active: boolean, startedIn: number) => {
+const cacheHeld = (tenantId: string, userId: number, grid: PermissionGrid | null, startedIn: number) => {
   if (startedIn !== epoch) return; // the cache was cleared while this read ran: its data may be old
-  setBounded(heldOf(tenantId), userId, { grid, active, timestamp: Date.now() }, MAX_USERS_PER_TENANT);
+  setBounded(heldOf(tenantId), userId, { grid, timestamp: Date.now() }, MAX_USERS_PER_TENANT);
 };
 
 /** One read per key at a time. The epoch is in the key, so a read that started before a clear is never shared with a later caller. */
@@ -112,20 +111,23 @@ function once<T>(kind: string, tenantId: string, userId: number, read: () => Pro
 
 /**
  * `authenticate`: is the user still active (not deactivated, not soft-deleted)? The default user filter hides an inactive row, so
- * no row means no. A fresh entry that proved the user active (same minute as the grids) answers without a read; on a miss the
- * same read brings the held roles, which fill the cache the checks use next. Only an active user is cached, and whatever
- * deactivates, deletes or erases a user calls `forgetUser`, so the next request is refused at once. Call inside the tenant context.
+ * no row means no. The answer is never cached (another process cannot see this process's cache clear, so a cached "active" would
+ * outlive a deactivation there): every call reads. With a fresh held-grid entry the read is a bare id check; on a miss the same
+ * read brings the held roles, which fill the grid cache the checks use next. Concurrent calls for one user share the read while it
+ * runs. Call inside the tenant context.
  */
 export async function isUserActive(tenantId: string, userId: number): Promise<boolean> {
-  if (freshHeld(tenantId, userId)?.active) return true;
   return once('active', tenantId, userId, async () => {
+    if (freshHeld(tenantId, userId)) {
+      return (await prisma.user.findFirst({ where: { id: userId, isActive: true }, select: { id: true } })) !== null;
+    }
     const startedIn = epoch;
     const [user, matrix] = await Promise.all([
       prisma.user.findFirst({ where: { id: userId, isActive: true }, select: { roleAssignments: { where: { toDate: null }, select: heldAssignmentSelect } } }),
       getTenantMatrix(tenantId),
     ]);
     if (!user) return false;
-    cacheHeld(tenantId, userId, unionOf(user.roleAssignments, matrix), true, startedIn);
+    cacheHeld(tenantId, userId, unionOf(user.roleAssignments, matrix), startedIn);
     return true;
   });
 }
@@ -140,7 +142,7 @@ async function heldGrid(tenantId: string, userId: number): Promise<PermissionGri
       getTenantMatrix(tenantId),
     ]);
     const grid = unionOf(assignments, matrix);
-    cacheHeld(tenantId, userId, grid, false, startedIn);
+    cacheHeld(tenantId, userId, grid, startedIn);
     return grid;
   });
 }
@@ -165,12 +167,14 @@ export async function hasPermission(user: { id?: number; role: UserRole | string
 }
 
 /**
- * Drop one user's cached entry (the user was deactivated, deleted or erased), in the current tenant. The epoch moves too, so a
- * read that is already running does not store an "active" answer after this.
+ * Drop one user's cached grids (the user was deactivated, deleted or erased), in the current tenant; with no tenant, from every
+ * tenant. The epoch moves too, so a read that is already running stores nothing after this. This process only: the active check
+ * itself is never cached, so it does not depend on this.
  */
 export function forgetUser(userId: number, tenantId: string | null | undefined = getTenantId()): void {
   epoch++;
-  if (tenantId) heldCache.get(tenantId)?.delete(userId);
+  if (tenantId) { heldCache.get(tenantId)?.delete(userId); return; }
+  for (const users of heldCache.values()) users.delete(userId);
 }
 
 /**

@@ -26,7 +26,7 @@ async function holderBaseRoles(roleId: number): Promise<UserRole[]> {
   return [...new Set(rows.map((r) => r.holder.role))];
 }
 
-/** A person was deactivated, deleted or erased: their cached "active" answer goes, so their next request is refused. Call inside the tenant context. */
+/** A person was deactivated, deleted or erased: their cached grids go in this process (the active check itself is read on every request). Call inside the tenant context. */
 export function invalidateUserAccess(userId: number): void {
   forgetUser(userId);
 }
