@@ -54,7 +54,7 @@ export const sessionService = {
           return { accessToken, refreshToken };
         }
         // A user without a tenant cannot own a session row: old single-token flow
-        const tokenClaims = { id: user.id, email: user.email, role: user.role, tenantId: null };
+        const tokenClaims = claims(user);
         const accessToken = generateAccessToken(tokenClaims);
         const refreshToken = generateRefreshToken(tokenClaims);
         await prisma.user.update({ where: { id: user.id }, data: { refreshToken, lastLogin: new Date() } });

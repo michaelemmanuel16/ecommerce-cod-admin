@@ -11,7 +11,7 @@ import { cashTiers } from './roleModel';
  * not read Settings sees the block without the figures. "Edit rule" opens the Rewards tab.
  */
 export function RewardRule({ role }: { role: RoleCard }) {
-  const settings = useBlock('staff|rewards', () => targetsService.rewardSettings().catch(() => null));
+  const settings = useBlock('rewards/settings', () => targetsService.rewardSettings().catch(() => null));
   const tiers = settings.data ? cashTiers(settings.data.tiers.find((t) => t.roleId === role.id)) : [];
   return (
     <div className="dsec">

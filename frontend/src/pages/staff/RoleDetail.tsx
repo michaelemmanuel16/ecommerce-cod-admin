@@ -5,7 +5,7 @@ import { Button, Card, Skeleton, Tag } from '../../components/ui-v2';
 import type { RoleAssignment, RoleCard, RoleHolder } from '../../services/roles.service';
 import { canOpenPath } from '../../components/shell/navModel';
 import { useAuthStore } from '../../stores/authStore';
-import { initials } from '../../utils/people';
+import { avatarClass, initials } from '../../utils/people';
 import { formatDate } from '../../utils/format';
 import { FloatingMenu } from '../orders/FloatingMenu';
 import { AssignBox, type AssignKind } from './AssignBox';
@@ -13,7 +13,7 @@ import { STATUS_LABEL, STATUS_TONE, TYPE_LABEL, TYPE_TONE } from './model';
 import { AdvancedPermissions } from './AdvancedPermissions';
 import { RewardRule } from './RewardRule';
 import { ToolSwitches } from './ToolSwitches';
-import { avatarClass, targetOf, type RoleProgress } from './roleModel';
+import { targetOf, type RoleProgress } from './roleModel';
 
 export type AssignChoice = 'person' | AssignKind;
 

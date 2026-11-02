@@ -38,12 +38,12 @@ export function Targets() {
   const year = Number(month.slice(0, 4));
   const started = month <= currentMonth;
 
-  const tree = useBlock(`targets|tree|${month}`, () => targetsService.tree(year, month));
+  const tree = useBlock(`targets/tree|${month}`, () => targetsService.tree(year, month));
   // These are extras: when one fails the table still shows, with "—" where it would have written the figure
-  const attainment = useBlock(`targets|attainment|${month}`, () => targetsService.attainment(month).catch(() => null), started);
-  const settings = useBlock('targets|rewards', () => targetsService.rewardSettings().catch(() => null));
-  const calculators = useBlock(`targets|calculators|${month}`, () => targetsService.calculators(month).catch(() => null));
-  const daily = useBlock(`targets|daily|${today}`, () =>
+  const attainment = useBlock(`rewards/attainment|${month}`, () => targetsService.attainment(month).catch(() => null), started);
+  const settings = useBlock('rewards/settings', () => targetsService.rewardSettings().catch(() => null));
+  const calculators = useBlock(`targets/calculators|${month}`, () => targetsService.calculators(month).catch(() => null));
+  const daily = useBlock(`targets/daily|${today}`, () =>
     Promise.all(DAILY_METRICS.map((m) => targetsService.daily(m.key, today).catch((): DailyProgress | null => null))));
 
   const [dialog, setDialog] = useState<{ initial: TargetForm; editing: boolean } | null>(null);

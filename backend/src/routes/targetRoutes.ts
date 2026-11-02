@@ -28,6 +28,7 @@ router.post('/north-star', ownerSets, targetController.saveNorthStar);
 router.put('/drivers', ownerSets, targetController.saveDrivers);
 router.put('/:id/children', ownerSets, targetController.children);
 router.post('/', adminSets, targetController.save);
+router.post('/batch', adminSets, targetController.saveBatch);
 router.put('/:id', adminSets, targetController.update);
 router.delete('/:id', adminSets, targetController.remove);
 

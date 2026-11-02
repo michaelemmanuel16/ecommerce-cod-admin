@@ -44,7 +44,7 @@ export interface BoardRow {
   message?: string;
 }
 
-export interface TierView { amount: number | string; dayOff: boolean; payout: boolean }
+interface TierView { amount: number | string; dayOff: boolean; payout: boolean }
 export interface Board {
   role: BoardRole;
   period: { key: string; kind: 'today' | 'week' | 'month' | 'year'; label: string; from: string; to: string; closed: boolean };

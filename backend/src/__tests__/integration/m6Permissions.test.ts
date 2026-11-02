@@ -470,8 +470,25 @@ describe('a role change through the user edit takes effect at once', () => {
 });
 
 describe('authenticate refuses a user who is no longer active', () => {
-  it('a valid token gets 401 at once after the user is deactivated or soft-deleted; reactivating restores it', async () => {
+  // The active check reads the user on every request (never cached), so a deactivation is seen at once, in any process.
+  it('a valid token gets 401 on the next request after deactivate or delete (grids cached); reactivating restores it', async () => {
     const person = await mkUser(pair.a.id, 'goes-away', 'admin');
+    for (const [how, leave] of [['deactivate', () => api.post(ownerA, `/api/staff/${person.id}/deactivate`)], ['delete', () => api.del(ownerA, `/api/staff/${person.id}`)]] as const) {
+      expect((await api.get(person.token, '/api/auth/me')).status).toBe(200);
+      expect((await api.get(person.token, '/api/auth/me')).status).toBe(200); // cache hit
+      expect((await leave()).status).toBe(200);
+      const res = await api.get(person.token, '/api/auth/me');
+      expect({ how, status: res.status, code: res.body.code }).toEqual({ how, status: 401, code: 'ACCOUNT_INACTIVE' });
+      expect((await api.post(ownerA, `/api/staff/${person.id}/reactivate`)).status).toBe(200);
+      expect((await api.get(person.token, '/api/auth/me')).status).toBe(200);
+    }
+    // the admin edit route deactivates too
+    expect((await api.put(ownerA, `/api/admin/users/${person.id}`, { isActive: false })).status).toBe(200);
+    expect((await api.get(person.token, '/api/auth/me')).status).toBe(401);
+  });
+
+  it('a change made straight in the database shows on the next request', async () => {
+    const person = await mkUser(pair.a.id, 'goes-away-db', 'admin');
     expect((await api.get(person.token, '/api/auth/me')).status).toBe(200);
     await prismaBase.user.update({ where: { id: person.id }, data: { isActive: false } });
     const res = await api.get(person.token, '/api/auth/me');

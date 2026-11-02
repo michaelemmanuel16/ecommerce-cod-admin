@@ -9,14 +9,14 @@ import * as Money from '../utils/money';
 import { deliveredByRep, outcomesByPartner } from './kpi/rates';
 import { repRates } from './kpi/reps';
 import {
-  MONTH_RE, endOfDay, getStoreTimeZone, localDate, monthRange, shiftYmd, startOfDay, utcDateOfYmd, weekRange,
+  daysInMonth, endOfDay, getStoreTimeZone, localDate, monthRange, parseMonth, shiftYmd, startOfDay, utcDateOfYmd, weekRange,
 } from './kpi/dates';
 import { NO_DATA_FOR_METRIC, SET_A_TARGET, isMonthClosed, monthPersonTargets } from './targetService';
 import { basisOf, distanceTo, measure, type Measure } from './rewardService';
 import { getRewardFeatures } from './tenantFeatures';
 import { NO_PAYOUT, displayPercent, nextTier, rewardMessage, tierReached, type Tier } from './rewardMath';
 import {
-  TOO_EARLY, averageDaysToPay, contractReviewFlag, daysByMonth, periodNote, rankByPercent, windowTarget,
+  TOO_EARLY, averageDaysToPay, contractReviewFlag, daysByMonth, pairKey, periodNote, rankByPercent, windowTarget,
 } from './leaderboardMath';
 import type { MeasureBasis } from '../config/targetMetrics';
 
@@ -37,8 +37,8 @@ import type { MeasureBasis } from '../config/targetMetrics';
 export type Family = 'call_rep' | 'delivery';
 const PRESET: Record<Family, UserRole> = { call_rep: 'sales_rep', delivery: 'delivery_agent' };
 
-export type PeriodKind = 'today' | 'week' | 'month' | 'year';
-export interface PeriodSpec { key: string; kind: PeriodKind; label: string; first: string; last: string; from: Date; to: Date; month: string | null }
+type PeriodKind = 'today' | 'week' | 'month' | 'year';
+interface PeriodSpec { key: string; kind: PeriodKind; label: string; first: string; last: string; from: Date; to: Date; month: string | null }
 
 const monthName = (year: number, month: number, withYear: boolean) =>
   new Date(Date.UTC(year, month - 1, 1)).toLocaleString('en-GB', { month: 'long', ...(withYear && { year: 'numeric' }), timeZone: 'UTC' });
@@ -52,7 +52,7 @@ export function resolvePeriod(input: string, zone: string, now: Date = new Date(
     const key = `${y}-${String(m).padStart(2, '0')}`;
     return {
       key, kind: 'month', label: monthName(y, m, withYear), month: key, from, to,
-      first: `${key}-01`, last: shiftYmd(`${y}-${String(m).padStart(2, '0')}-01`, new Date(Date.UTC(y, m, 0)).getUTCDate() - 1),
+      first: `${key}-01`, last: shiftYmd(`${y}-${String(m).padStart(2, '0')}-01`, daysInMonth(y, m) - 1),
     };
   };
   if (input === 'today') return { key: 'today', kind: 'today', label: 'Today', first: today, last: today, from: startOfDay(today, zone), to: endOfDay(today, zone), month: null };
@@ -64,13 +64,12 @@ export function resolvePeriod(input: string, zone: string, now: Date = new Date(
   if (input === 'year') {
     return { key: 'year', kind: 'year', label: String(year), first: `${year}-01-01`, last: `${year}-12-31`, from: monthRange(year, 1, zone).from, to: monthRange(year, 12, zone).to, month: null };
   }
-  const m = MONTH_RE.exec(input);
-  if (!m) throw new AppError('Period must be today, week, month, year or a month like 2026-10', 400, 'INVALID_PERIOD');
-  return monthSpec(Number(m[1]), Number(m[2]), true);
+  const parsed = parseMonth(input);
+  if (!parsed) throw new AppError('Period must be today, week, month, year or a month like 2026-10', 400, 'INVALID_PERIOD');
+  return monthSpec(parsed.year, parsed.month, true);
 }
 
 interface Pair { userId: number; roleId: number }
-const pairKey = (p: Pair) => `${p.userId}:${p.roleId}`;
 
 /** One row before ranking and the extras: everything the number side gives. */
 interface Base {
@@ -137,14 +136,14 @@ export async function boardBase(family: Family, spec: PeriodSpec): Promise<Base[
     for (const t of rows) {
       if (!roleIds.includes(t.roleId!)) continue;
       const pair = { userId: t.userId!, roleId: t.roleId! };
-      pairs.set(pairKey(pair), pair);
-      const cur = targets.get(pairKey(pair)) ?? { metric: t.metric, byMonth: new Map<string, Money.Money>() };
+      pairs.set(pairKey(pair.userId, pair.roleId), pair);
+      const cur = targets.get(pairKey(pair.userId, pair.roleId)) ?? { metric: t.metric, byMonth: new Map<string, Money.Money>() };
       cur.metric = t.metric;
       cur.byMonth.set(month, Money.parse(t.value));
-      targets.set(pairKey(pair), cur);
+      targets.set(pairKey(pair.userId, pair.roleId), cur);
     }
   }
-  for (const h of holders) pairs.set(pairKey({ userId: h.holderId, roleId: h.roleId }), { userId: h.holderId, roleId: h.roleId });
+  for (const h of holders) pairs.set(pairKey(h.holderId, h.roleId), { userId: h.holderId, roleId: h.roleId });
   const list = [...pairs.values()];
   if (!list.length) return [];
 
@@ -161,7 +160,7 @@ export async function boardBase(family: Family, spec: PeriodSpec): Promise<Base[
   for (const pair of list) {
     const user = userById.get(pair.userId);
     if (!user) continue; // deactivated or deleted: not on the board
-    const t = targets.get(pairKey(pair)) ?? null;
+    const t = targets.get(pairKey(pair.userId, pair.roleId)) ?? null;
     const basis: MeasureBasis | null = t ? basisOf(t.metric, preset) : (family === 'call_rep' ? 'count' : 'rate');
     const target = t && basis ? windowTarget(basis, t.byMonth, days) : null;
     const base: Base = {
@@ -198,7 +197,7 @@ export async function boardBase(family: Family, spec: PeriodSpec): Promise<Base[
 
 /** The ranks of a family's rows: by percent of own target as the screen shows it (one decimal). */
 export function rankRows(rows: ReadonlyArray<{ userId: number; roleId: number; percent: Money.Money | null }>): Map<string, number | null> {
-  return rankByPercent(rows.map((r) => ({ id: `${r.userId}:${r.roleId}`, percent: r.percent === null ? null : displayPercent(r.percent) })));
+  return rankByPercent(rows.map((r) => ({ id: pairKey(r.userId, r.roleId), percent: r.percent === null ? null : displayPercent(r.percent) })));
 }
 
 type TierRow = { amount: Money.Money; dayOff: boolean; payout: boolean };
@@ -231,10 +230,13 @@ export async function leaderboard(actor: Requester, query: { role: Family; perio
     : [[], [], false];
   const tiersOf = new Map<number, Partial<Record<Tier, TierRow>>>();
   for (const t of tierRows) tiersOf.set(t.roleId, { ...tiersOf.get(t.roleId), [t.threshold as Tier]: { amount: Money.parse(t.amount), dayOff: t.dayOff, payout: t.payout } });
-  const money = (v: Money.MoneyInput) => Money.formatWithSign(v, currency);
+
+  // Badges per person once, not a scan of every award per row
+  const badgesOf = new Map<number, Array<{ key: string; period: string }>>();
+  for (const x of badgeRows) badgesOf.set(x.userId, [...(badgesOf.get(x.userId) ?? []), { key: x.key, period: x.period }]);
 
   const rows = base.map((b) => {
-    const rank = ranks.get(`${b.userId}:${b.roleId}`) ?? null;
+    const rank = ranks.get(pairKey(b.userId, b.roleId)) ?? null;
     const percent = b.percent === null ? null : displayPercent(b.percent);
     const human = b.kind === 'person';
     const row: Record<string, unknown> = {
@@ -255,7 +257,7 @@ export async function leaderboard(actor: Requester, query: { role: Family; perio
     const shown = { tier: tier === null ? 'none' : String(tier) };
     const flag = contractReviewFlag(b.kind, percent);
     const flagFields = flag && !b.tooEarly ? { flag, flagText: 'Contract review' } : { flag: null };
-    const badges = badgeRows.filter((x) => x.userId === b.userId).map((x) => ({ key: x.key, period: x.period }));
+    const badges = badgesOf.get(b.userId) ?? [];
     if (!human || b.percent === null || !b.m || !b.basis) {
       return {
         ...row, ...shown, ...flagFields, badges, reward: null, earned: false, distance: null,
@@ -264,12 +266,12 @@ export async function leaderboard(actor: Requester, query: { role: Family; perio
     }
     const next = nextTier(tier);
     const nextRow = next === null ? undefined : tiers[next];
-    const distance = distanceTo(b.basis, tier, b.m, b.target!, nextRow ? money(nextRow.amount) : null);
+    const distance = distanceTo(b.basis, tier, b.m, b.target!, nextRow ? Money.formatWithSign(nextRow.amount, currency) : null);
     const paid = tier === null ? undefined : tiers[tier];
     const reward = paid && paid.payout ? { amount: Money.toApi(paid.amount), dayOff: paid.dayOff } : null;
     return {
       ...row, ...shown, ...flagFields, badges, reward, distance, earned: closed && reward !== null,
-      message: rewardMessage({ tier, reward: reward && { ...reward, amount: money(reward.amount) }, distance: distance?.message ?? null, closed, human, percent }),
+      message: rewardMessage({ tier, reward: reward && { ...reward, amount: Money.formatWithSign(reward.amount, currency) }, distance: distance?.message ?? null, closed, human, percent }),
     };
   });
 

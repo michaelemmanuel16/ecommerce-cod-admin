@@ -1,5 +1,5 @@
-import type { RoleCard, RoleHolder } from '../../services/roles.service';
-import type { StaffList, StaffRole, StaffRow } from '../../services/staff.service';
+import type { RoleCard, RoleHolder, RoleTool } from '../../services/roles.service';
+import type { PayPolicy, StaffList, StaffRole, StaffRow } from '../../services/staff.service';
 
 const person = (over: Partial<StaffRow> & Pick<StaffRow, 'id' | 'name'>): StaffRow => ({
   firstName: over.name.split(' ')[0], lastName: over.name.split(' ')[1] ?? '', email: `${over.name.toLowerCase().replace(' ', '.')}@example.com`,
@@ -22,17 +22,31 @@ export const STAFF: StaffList = {
   staff: [ADWOA, KOFI, ROBO, AKUA, YAA],
 };
 
+/** What the API sends in `payPolicy` (backend payPolicyFor). */
+export const PAYS: PayPolicy = { methods: ['per_order', 'fee_rule', 'none'], defaultMethod: 'none', amountEditable: true };
+export const FEE_PAYS: PayPolicy = { methods: ['fee_rule', 'none'], defaultMethod: 'fee_rule', amountEditable: false };
+
 export const ROLES: StaffRole[] = [
-  { roleId: 1, name: 'Call rep', presetRole: 'sales_rep' },
-  { roleId: 2, name: 'Delivery', presetRole: 'delivery_agent' },
-  { roleId: 3, name: 'Finance clerk', presetRole: 'accountant' },
+  { roleId: 1, name: 'Call rep', presetRole: 'sales_rep', payPolicy: PAYS },
+  { roleId: 2, name: 'Delivery', presetRole: 'delivery_agent', payPolicy: FEE_PAYS },
+  { roleId: 3, name: 'Finance clerk', presetRole: 'accountant', payPolicy: PAYS },
 ];
+
+/** The 16 switches of GET /api/roles/overview (backend ROLE_TOOL_CATALOG), 7 read and 9 write. */
+export const TOOL_CATALOG: RoleTool[] = [
+  ['view_orders', 'View orders', 'read'], ['view_customers', 'View customers', 'read'], ['view_stock', 'View stock', 'read'],
+  ['view_payouts', 'View payouts', 'read'], ['view_reports', 'View reports', 'read'], ['view_targets', 'View targets', 'read'],
+  ['export_data', 'Export data', 'read'], ['update_order_status', 'Update order status', 'write'], ['assign_orders', 'Assign orders', 'write'],
+  ['call_customers', 'Call customers', 'write'], ['message_customers', 'Message customers', 'write'], ['edit_products', 'Edit products', 'write'],
+  ['adjust_stock', 'Adjust stock', 'write'], ['record_payout', 'Record payout', 'write'], ['edit_targets', 'Edit targets', 'write'],
+  ['manage_team', 'Manage team', 'write'],
+].map(([key, label, kind]) => ({ key, label, kind }) as RoleTool);
 export const COMPANY = { currency: 'GHS', baseCommission: 8, upsellPercent: 10 };
 
 /** A role card of GET /api/roles/overview, for a role of ROLES. */
 export const roleCard = (role: StaffRole, over: Partial<RoleCard> = {}): RoleCard => ({
   id: role.roleId, name: role.name, area: null, contract: null, presetRole: role.presetRole, isSystem: false,
-  tools: ['view_orders', 'view_customers'], toolCount: 2, toolTotal: 16, holderCount: 0, custom: false, holders: [], target: null, ...over,
+  tools: ['view_orders', 'view_customers'], toolCatalog: TOOL_CATALOG, payPolicy: role.payPolicy, toolCount: 2, toolTotal: 16, holderCount: 0, custom: false, holders: [], target: null, ...over,
 });
 
 export const holder = (over: Partial<RoleHolder> & Pick<RoleHolder, 'id' | 'name'>): RoleHolder => ({

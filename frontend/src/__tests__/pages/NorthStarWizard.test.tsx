@@ -13,7 +13,7 @@ import { CALC, DRIVERS, EMPTY, PREVIEWS, SAVED } from '../fixtures/northStar';
 import { TREE } from '../fixtures/targetsTree';
 
 const onboarding = vi.hoisted(() => ({ getStatus: vi.fn(), saveStore: vi.fn(), addPartner: vi.fn(), skipPartner: vi.fn(), saveNorthStarProgress: vi.fn() }));
-const targets = vi.hoisted(() => ({ drivers: vi.fn(), tree: vi.fn(), preview: vi.fn(), calculators: vi.fn(), saveNorthStar: vi.fn(), saveDrivers: vi.fn(), save: vi.fn() }));
+const targets = vi.hoisted(() => ({ drivers: vi.fn(), tree: vi.fn(), preview: vi.fn(), calculators: vi.fn(), saveNorthStar: vi.fn(), saveDrivers: vi.fn(), saveBatch: vi.fn() }));
 vi.mock('../../services/onboarding.service', () => ({ onboardingService: onboarding }));
 vi.mock('../../services/targets.service', async (orig) => ({ ...(await orig<typeof import('../../services/targets.service')>()), targetsService: targets }));
 vi.mock('../../services/admin.service', () => ({ adminService: { getSystemConfig: vi.fn().mockResolvedValue({}) } }));
@@ -52,7 +52,7 @@ beforeEach(() => {
   targets.calculators.mockResolvedValue(CALC);
   targets.saveNorthStar.mockResolvedValue(undefined);
   targets.saveDrivers.mockResolvedValue(DRIVERS);
-  targets.save.mockResolvedValue(undefined);
+  targets.saveBatch.mockResolvedValue(undefined);
   refreshPermissions.mockReset().mockResolvedValue(undefined);
   patchUser.mockReset();
   useConfigStore.setState({ currency: 'GHS', loaded: true });
@@ -205,9 +205,14 @@ describe('wizard steps 4 to 6 and resume', () => {
     await userEvent.type(screen.getByLabelText('Nana Kyei'), '50');
     expect(screen.getByText('Total 723 of 723.')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Save driver targets and continue' }));
-    await waitFor(() => expect(targets.save).toHaveBeenCalledWith({ scope: 'role', metric: 'confirmed_delivered', unit: 'count', value: 723, period: '2026-10', roleId: 7 }));
-    expect(targets.save).toHaveBeenCalledWith({ scope: 'role', metric: 'delivery_success_rate', unit: 'percent', value: 60, period: '2026-10', roleId: 8 });
-    expect(targets.save).toHaveBeenCalledWith({ scope: 'person', metric: 'confirmed_delivered', unit: 'count', value: 423, period: '2026-10', roleId: 7, userId: 101 });
+    // one call with every target, the role targets first
+    await waitFor(() => expect(targets.saveBatch).toHaveBeenCalledTimes(1));
+    const saved = targets.saveBatch.mock.calls[0][0];
+    expect(saved.slice(0, 2)).toEqual([
+      { scope: 'role', metric: 'confirmed_delivered', unit: 'count', value: 723, period: '2026-10', roleId: 7 },
+      { scope: 'role', metric: 'delivery_success_rate', unit: 'percent', value: 60, period: '2026-10', roleId: 8 },
+    ]);
+    expect(saved).toContainEqual({ scope: 'person', metric: 'confirmed_delivered', unit: 'count', value: 423, period: '2026-10', roleId: 7, userId: 101 });
     await waitFor(() => expect(onboarding.saveNorthStarProgress).toHaveBeenCalledWith(5));
   });
 

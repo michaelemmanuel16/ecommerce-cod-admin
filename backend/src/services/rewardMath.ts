@@ -9,7 +9,7 @@ import * as Money from '../utils/money';
 export type Tier = 100 | 120;
 export const TIERS: readonly Tier[] = [100, 120];
 
-export const TOP_TIER = 'Top tier reached';
+const TOP_TIER = 'Top tier reached';
 export const NO_PAYOUT = 'No payout';
 
 /** Percent of target, exact. Null when there is no positive target. */
@@ -56,7 +56,7 @@ export function rateDistance(delivered: number, closed: number, targetPct: Money
   return Math.max(1, x.ceil().toNumber());
 }
 
-export interface RewardMessageInput {
+interface RewardMessageInput {
   tier: Tier | null;
   /** The reward text parts the tier pays, already in the store currency ("GH₵500"); null when this tier pays nothing. */
   reward: { amount: string; dayOff: boolean } | null;

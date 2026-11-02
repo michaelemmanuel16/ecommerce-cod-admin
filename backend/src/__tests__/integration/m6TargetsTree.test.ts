@@ -135,6 +135,69 @@ describe('GET /api/targets/tree?month: role rows', () => {
   });
 });
 
+describe('GET /api/targets/tree: light form and role attainment', () => {
+  it('actuals=false leaves the actuals out of the nodes and still lists the roles', async () => {
+    const res = await get(ownerA, '/api/targets/tree?year=2026&month=2026-10&actuals=false');
+    expect(res.status).toBe(200);
+    expect(res.body.months.length).toBeGreaterThan(0);
+    expect(res.body.months.every((m: any) => m.actuals === undefined)).toBe(true);
+    expect(res.body.northStar.actuals).toBeUndefined();
+    expect(res.body.roles.length).toBeGreaterThan(0);
+    expect((await get(ownerA, '/api/targets/tree?year=2026&actuals=maybe')).status).toBe(400);
+  });
+
+  it('roleAttainment: null with no role target, the sum of the holders against the role target, null for a month not started', async () => {
+    const callRep = await prismaBase.role.findFirstOrThrow({ where: { tenantId: A(), name: 'Call rep' } });
+    const rep = pair.a.users.salesRep.id;
+    const assignment = await prismaBase.roleAssignment.create({ data: { tenantId: A(), roleId: callRep.id, holderId: rep, fromDate: new Date('2026-01-01') } });
+    try {
+      let call = (await get(ownerA, '/api/targets/tree?year=2026&month=2026-10')).body.roles.find((r: any) => r.roleId === callRep.id);
+      expect(call.roleAttainment).toBeNull();
+      const save = (body: object) => request(app).post('/api/targets').set(bearer(ownerA)).send(body);
+      expect((await save({ scope: 'role', metric: 'confirmed_delivered', unit: 'count', value: 100, period: '2026-10', roleId: callRep.id })).status).toBe(201);
+      expect((await save({ scope: 'person', metric: 'confirmed_delivered', unit: 'count', value: 60, period: '2026-10', roleId: callRep.id, userId: rep })).status).toBe(201);
+      call = (await get(ownerA, '/api/targets/tree?year=2026&month=2026-10')).body.roles.find((r: any) => r.roleId === callRep.id);
+      expect(call.roleAttainment).toMatchObject({ target: 100, rate: false });
+      expect(call.roleAttainment.percent).toBe(Math.round((call.roleAttainment.done / 100) * 100));
+      const nov = (await get(ownerA, '/api/targets/tree?year=2026&month=2026-11')).body.roles.find((r: any) => r.roleId === callRep.id);
+      expect(nov.roleAttainment).toBeNull();
+    } finally {
+      await prismaBase.target.deleteMany({ where: { tenantId: A(), metric: 'confirmed_delivered' } });
+      await prismaBase.roleAssignment.delete({ where: { id: assignment.id } });
+    }
+  });
+});
+
+describe('POST /api/targets/batch', () => {
+  it('saves the rows N single saves would, in one transaction: a bad member saves nothing; north_star is refused; a rep is refused', async () => {
+    const callRep = await prismaBase.role.findFirstOrThrow({ where: { tenantId: A(), name: 'Call rep' } });
+    const rep = pair.a.users.salesRep.id;
+    const assignment = await prismaBase.roleAssignment.create({ data: { tenantId: A(), roleId: callRep.id, holderId: rep, fromDate: new Date('2026-01-01') } });
+    const post = (token: string, targets: object[]) => request(app).post('/api/targets/batch').set(bearer(token)).send({ targets });
+    const role = { scope: 'role', metric: 'confirmed_delivered', unit: 'count', value: 100, period: '2026-10', roleId: callRep.id };
+    const person = { scope: 'person', metric: 'confirmed_delivered', unit: 'count', value: 60, period: '2026-10', roleId: callRep.id, userId: rep };
+    try {
+      // role 100, person 60 over a role that is 100: fine. A person of 150 is over the role: the whole batch fails and the role row is not kept.
+      const bad = await post(ownerA, [role, { ...person, value: 150 }]);
+      expect(bad.status).toBe(400);
+      expect(await prismaBase.target.count({ where: { tenantId: A(), metric: 'confirmed_delivered' } })).toBe(0);
+
+      const ok = await post(ownerA, [role, person]);
+      expect({ s: ok.status, b: ok.body }).toMatchObject({ s: 201 });
+      expect(ok.body.targets.map((t: any) => [t.scope, t.value])).toEqual([['role', '100.00'], ['person', '60.00']]);
+      const rows = await prismaBase.target.findMany({ where: { tenantId: A(), metric: 'confirmed_delivered' }, orderBy: { id: 'asc' } });
+      expect(rows.map((r) => [r.scope, Number(r.value), r.roleId, r.userId])).toEqual([['role', 100, callRep.id, null], ['person', 60, callRep.id, rep]]);
+      expect(rows[1].parentId).toBe(rows[0].id);
+
+      expect((await post(ownerA, [{ scope: 'north_star', metric: 'revenue', unit: 'money', value: 1, period: '2026' }])).status).toBe(403);
+      expect((await post(pair.a.users.salesRep.token, [role])).status).toBe(403);
+    } finally {
+      await prismaBase.target.deleteMany({ where: { tenantId: A(), metric: 'confirmed_delivered' } });
+      await prismaBase.roleAssignment.delete({ where: { id: assignment.id } });
+    }
+  });
+});
+
 describe('isolation and permission', () => {
   it('tenant B sees none of tenant A: no North Star, no actuals, no role rows of A', async () => {
     const res = await get(ownerB, '/api/targets/tree?year=2026&month=2026-10');

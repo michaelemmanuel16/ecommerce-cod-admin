@@ -27,7 +27,7 @@ import type { z } from 'zod';
  * the message log never sees it. A password is never part of an invite.
  */
 
-export type InviteStaffInput = z.infer<typeof inviteStaffSchema>;
+type InviteStaffInput = z.infer<typeof inviteStaffSchema>;
 
 /** The amount per confirmed and delivered order when none is given (F-1158). */
 const DEFAULT_PER_ORDER_AMOUNT = 8;
@@ -37,7 +37,7 @@ const EXPIRED_INVITE = 'This invite link has expired. Ask for a new invite.';
 const REDACTED = '[invite link]';
 const CHANNEL_LABEL: Record<InviteChannel, string> = { email: 'Email', sms: 'SMS', whatsapp: 'WhatsApp' };
 
-export interface InviteDelivery {
+interface InviteDelivery {
   channel: InviteChannel;
   sent: boolean;
   /** Why it was not sent (provider not set up, or the provider refused). The owner copies the link instead. */

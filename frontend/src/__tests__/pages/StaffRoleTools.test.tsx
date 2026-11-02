@@ -235,25 +235,20 @@ describe('Role detail: reward rule and phone view', () => {
   });
 });
 
-describe('Role progress for a rate target', () => {
-  const tree = (holders: Array<{ userId: number }>) => ({
-    year: 2026, metric: 'revenue', currency: 'GHS', marginTarget: 35, northStar: null, quarters: [], months: [],
-    roles: [{
-      roleId: 2, roleName: 'Delivery', pool: null,
-      target: { id: 1, updatedAt: '', scope: 'role', metric: 'delivery_success_rate', unit: 'percent', value: 80, periodStart: '2026-11-01', periodEnd: '2026-11-30', parentId: null, closed: false },
-      holders: holders.map((h) => ({ userId: h.userId, name: `P${h.userId}`, kind: 'person', typeLabel: 'Human', target: { id: 2, metric: 'delivery_success_rate', unit: 'percent', value: 80 }, label: null })),
-    }],
-  }) as unknown as Tree;
-  const row = (userId: number, actual: number) => ({
-    userId, name: `P${userId}`, kind: 'person', roleId: 2, roleName: 'Delivery', payout: true, metric: 'delivery_success_rate', unit: 'percent', target: 80, actual, percent: Math.round((actual / 80) * 100),
-    tier: 'none', reward: null, earned: false, status: { key: 'behind', label: 'Behind' }, distance: null, warning: null, message: '',
-  });
+describe('Role progress (the API works the numbers out; the model words them)', () => {
+  const tree = (roleAttainment: unknown) => ({ roles: [{ roleId: 2, roleName: 'Delivery', roleAttainment }] }) as unknown as Tree;
 
-  it('is the average rate of the holders against the target', () => {
-    const att = { period: '2026-11', closed: false, currency: 'GHS', results: [row(1, 40), row(2, 56)] } as never;
-    const p = roleProgress(tree([{ userId: 1 }, { userId: 2 }]), att, 'GHS').get(2)!;
+  it('words a rate target: the average rate against the target, the bar capped at 100, the status tag from the key', () => {
+    const p = roleProgress(tree({ done: 48, target: 80, percent: 60, rate: true, status: { key: 'behind', label: 'Behind' } })).get(2)!;
     expect(p.text).toBe('48% of 80% · 60% of role target');
     expect(p.percent).toBe(60);
-    expect(p.status?.label).toBe('Behind');
+    expect(p.tone).toBe('gold');
+    expect(p.status).toEqual({ label: 'Behind', tone: 'warn' });
+    expect(roleProgress(tree({ done: 130, target: 100, percent: 130, rate: false, status: null })).get(2)).toMatchObject({ percent: 100, text: '130 of 100 · 130% of role target', status: null });
+  });
+
+  it('a role with no attainment, or no tree, has no progress', () => {
+    expect(roleProgress(tree(null)).size).toBe(0);
+    expect(roleProgress(null).size).toBe(0);
   });
 });

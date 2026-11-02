@@ -36,7 +36,7 @@ export interface TreeNode {
   actuals?: Actuals;
 }
 
-export type HolderKind = 'person' | 'ai_agent' | 'company' | 'system';
+type HolderKind = 'person' | 'ai_agent' | 'company' | 'system';
 
 export interface Holder {
   userId: number;
@@ -48,10 +48,25 @@ export interface Holder {
   label: string | null;
 }
 
+/** How far a role is toward its month target, worked out by the API (backend roleAttainment.ts); null when there is nothing to show. */
+export interface RoleAttainment {
+  /** The holders' actuals added up, or their average for a rate. */
+  done: number;
+  target: number;
+  /** Whole percent, not capped. */
+  percent: number;
+  /** The role target is a rate: `done` and `target` are percents. */
+  rate: boolean;
+  /** The worst word among the holders ("behind" wins). */
+  status: { key: StatusKey; label: string } | null;
+}
+
 export interface RoleRow {
   roleId: number;
   roleName: string;
   target: TreeNode | null;
+  /** Null for a month that has not started, a role with no target, or a role with no measured holder. */
+  roleAttainment: RoleAttainment | null;
   pool: { metric: string; unit: string; total: number; allocated: string; pool: string } | null;
   holders: Holder[];
 }
@@ -134,7 +149,7 @@ export interface NorthStarInput { year: number; annual: number; mode: GrowthMode
 /** GET /api/targets/north-star/preview: what a save would write: four quarters and the three months of each, money strings. */
 export interface SplitPreview { quarters: string[]; months: string[][]; /** Months of the year that stay as they are (past or closed). */ kept: number }
 
-export interface CalculatorParams {
+interface CalculatorParams {
   month?: string;
   aov?: number;
   confirmationRate?: number;
@@ -180,8 +195,10 @@ export interface SaveTargetInput {
 
 // tree, daily and attainment skip the 5 second request cache: the page asks again right after a save and must see the new row
 export const targetsService = {
-  async tree(year: number, month?: string): Promise<Tree> {
-    return (await apiClient.get('/api/targets/tree', { params: { year, month }, quiet: true, skipCache: true })).data;
+  /** `actuals: false` is the light form: the roles and their progress, without the delivered revenue of every period. */
+  async tree(year: number, month?: string, options: { actuals?: boolean } = {}): Promise<Tree> {
+    const params = { year, month, ...(options.actuals === false && { actuals: 'false' }) };
+    return (await apiClient.get('/api/targets/tree', { params, quiet: true, skipCache: true })).data;
   },
   async calculators(params: CalculatorParams | string): Promise<Calculators> {
     return (await apiClient.get('/api/targets/calculators', { params: typeof params === 'string' ? { month: params } : params, quiet: true })).data;
@@ -213,6 +230,10 @@ export const targetsService = {
   },
   async save(input: SaveTargetInput): Promise<void> {
     await apiClient.post('/api/targets', input, { quiet: true });
+  },
+  /** Several saves in one call and one transaction: all are saved or none. */
+  async saveBatch(targets: SaveTargetInput[]): Promise<void> {
+    await apiClient.post('/api/targets/batch', { targets }, { quiet: true });
   },
   async update(id: number, value: number): Promise<void> {
     await apiClient.put(`/api/targets/${id}`, { value }, { quiet: true });

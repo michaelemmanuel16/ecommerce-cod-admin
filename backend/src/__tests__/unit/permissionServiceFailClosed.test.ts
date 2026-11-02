@@ -17,13 +17,14 @@ jest.mock('../../utils/prisma', () => ({
 
 import prisma from '../../utils/prisma';
 import { runInTenant } from '../../utils/tenantContext';
-import { clearPermissionsCache, getUserPermissions } from '../../services/permissionService';
+import { clearPermissionsCache, forgetUser, getUserPermissions, isUserActive } from '../../services/permissionService';
 import { requireResourcePermission } from '../../middleware/auth';
 
 const db = prisma as unknown as {
   systemConfig: { findFirst: jest.Mock<(...a: unknown[]) => Promise<unknown>> };
   role: { findMany: jest.Mock<(...a: unknown[]) => Promise<unknown>> };
   roleAssignment: { findMany: jest.Mock<(...a: unknown[]) => Promise<unknown>> };
+  user: { findFirst: jest.Mock<(...a: unknown[]) => Promise<unknown>> };
 };
 
 const TENANT = 'tenant-cod56';
@@ -74,5 +75,41 @@ describe('a read that started before an invalidation', () => {
 
     db.roleAssignment.findMany.mockResolvedValue(held({ orders: ['view'], users: ['view'] }));
     expect(await asUser(() => getUserPermissions(manager))).toEqual({ orders: ['view'], users: ['view'] });
+  });
+});
+
+describe('the active-user check (authenticate)', () => {
+  const activeRow = { roleAssignments: held({ orders: ['view'] }) };
+
+  it('is never cached: every call reads, and a user deactivated after a warm cache is refused', async () => {
+    db.user.findFirst.mockResolvedValueOnce(activeRow);
+    expect(await asUser(() => isUserActive(TENANT, 7))).toBe(true);
+    db.user.findFirst.mockResolvedValueOnce({ id: 7 });
+    expect(await asUser(() => isUserActive(TENANT, 7))).toBe(true);
+    expect(db.user.findFirst).toHaveBeenCalledTimes(2);
+    db.user.findFirst.mockResolvedValueOnce(null); // deactivated; this process was never told
+    expect(await asUser(() => isUserActive(TENANT, 7))).toBe(false);
+  });
+
+  it('the read fills the grid cache: the grid check after it reads no assignments', async () => {
+    db.user.findFirst.mockResolvedValueOnce(activeRow);
+    await asUser(() => isUserActive(TENANT, 11));
+    expect(await asUser(() => getUserPermissions({ id: 11, role: 'manager' }))).toEqual({ orders: ['view'] });
+    expect(db.roleAssignment.findMany).not.toHaveBeenCalled();
+  });
+
+  it('forgetUser drops the grids of the user; without a tenant it drops them from every tenant', async () => {
+    db.roleAssignment.findMany.mockResolvedValue(held({ orders: ['view'] }));
+    await asUser(() => getUserPermissions({ id: 12, role: 'manager' }));
+    forgetUser(12);
+    await asUser(() => getUserPermissions({ id: 12, role: 'manager' }));
+    expect(db.roleAssignment.findMany).toHaveBeenCalledTimes(2);
+  });
+
+  it('concurrent calls share one read while it runs', async () => {
+    db.user.findFirst.mockResolvedValue(activeRow);
+    const [a, b] = await asUser(() => Promise.all([isUserActive(TENANT, 10), isUserActive(TENANT, 10)]));
+    expect([a, b]).toEqual([true, true]);
+    expect(db.user.findFirst).toHaveBeenCalledTimes(1);
   });
 });

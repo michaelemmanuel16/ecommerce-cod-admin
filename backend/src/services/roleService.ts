@@ -9,8 +9,9 @@ import { resolveTenantId } from '../utils/tenantContext';
 import { invalidateAccess } from './accessService';
 import { startOfUtcDay } from '../utils/startOfUtcDay';
 import { AppError } from '../middleware/errorHandler';
-import { ROLE_TOOL_TOTAL, gridOfRole, sameGrid, gridFromSwitches, switchesOn } from '../config/roleToolRules';
+import { ROLE_TOOL_CATALOG, ROLE_TOOL_TOTAL, gridOfRole, sameGrid, gridFromSwitches, switchesOn } from '../config/roleToolRules';
 import { defaultRolePermissions } from '../config/defaultRolePermissions';
+import { payPolicyFor } from '../config/payPolicy';
 import { DEFAULT_ROLES, isOwnerRole, isPositionRole, roleToolList } from '../config/defaultRoles';
 import type { CreateRoleInput, UpdateRoleInput } from '../validators/roleSchema';
 
@@ -23,7 +24,7 @@ export const assertMayTouchRole = (actor: Requester, role: { presetRole: UserRol
 
 const TYPE_LABEL: Record<UserKind, string> = { person: 'Human', ai_agent: 'AI agent', company: 'Company', system: 'System' };
 
-export type HolderStatus = 'active' | 'invited' | 'deactivated';
+type HolderStatus = 'active' | 'invited' | 'deactivated';
 
 /** An inactive user with an invite date has not accepted yet (T06 sets the user active); any other inactive user is deactivated. */
 export function holderStatus(u: { isActive: boolean; invitedAt: Date | null }): HolderStatus {
@@ -83,7 +84,9 @@ export const roleView = ({ tools, permissions, ...role }: RoleRow, holderCount: 
   const grid = gridOfRole({ permissions, presetRole: role.presetRole }, matrix);
   const list = role.isSystem ? roleToolList(tools) : switchesOn(grid);
   return {
-    ...role, ...(withTools && { tools: list }), toolCount: list.length, toolTotal: ROLE_TOOL_TOTAL, holderCount,
+    ...role, ...(withTools && { tools: list, toolCatalog: ROLE_TOOL_CATALOG }), toolCount: list.length, toolTotal: ROLE_TOOL_TOTAL, holderCount,
+    // How a person in this role can be paid (a custom role pays like the base role the invite falls back to, a manager)
+    payPolicy: payPolicyFor(role.presetRole ?? 'manager'),
     custom: !role.isSystem && isCustomGrid(role, grid),
   };
 };

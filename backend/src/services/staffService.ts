@@ -13,7 +13,8 @@ import { holderStatus } from './roleService';
 import { currentFeeRules, storeToday } from './feeRuleService';
 import { evictKeys } from './mcpKeyService';
 import { assertNotLastOwner } from './systemRoleService';
-import { PAY_METHODS } from '../validators/staffSchema';
+import { invalidateUserAccess } from './accessService';
+import { payPolicyFor } from '../config/payPolicy';
 import type { StaffStatus, staffQuerySchema, updateStaffSchema } from '../validators/staffSchema';
 
 /**
@@ -31,7 +32,7 @@ import type { StaffStatus, staffQuerySchema, updateStaffSchema } from '../valida
 
 export type { StaffStatus };
 export type StaffQuery = z.infer<typeof staffQuerySchema>;
-export type UpdateStaffInput = z.infer<typeof updateStaffSchema>;
+type UpdateStaffInput = z.infer<typeof updateStaffSchema>;
 
 const STAFF_KINDS: Prisma.UserWhereInput = { kind: { in: ['person', 'company', 'ai_agent'] } };
 /** Who can take open orders: people and companies; an AI agent is not offered as a new owner of an order. */
@@ -59,15 +60,9 @@ const STATUS_WHERE: Record<StaffStatus, Prisma.UserWhereInput> = {
   deleted: { isActive: false, deletedAt: { not: null } },
 };
 
-/**
- * How a role of person can be paid (F-1158, F-1161). A delivery partner's fee is a fee rule (M5), not a field of the person,
- * so there is no amount to set. One rule for the invite, the staff edit and the fee-rule link.
- */
-export const payPolicyFor = (role: UserRole) => role === 'delivery_agent'
-  ? { methods: ['fee_rule', 'none'] as const, defaultMethod: 'fee_rule' as const, amountEditable: false }
-  : { methods: PAY_METHODS, defaultMethod: 'none' as const, amountEditable: true };
+export { payPolicyFor };
 
-export const feeNotEditable = () =>
+const feeNotEditable = () =>
   new AppError('A delivery partner has no per-order amount here. Their fee is set in the partner fee rule.', 400, 'FEE_NOT_EDITABLE');
 
 /** The pay method is not one this role can have (today: per-order pay for a delivery partner). */
@@ -75,7 +70,7 @@ export const payMethodNotAllowed = () =>
   new AppError('A delivery partner is paid by the delivery fee rule or not at all. Per-order pay is for other roles.', 400, 'PAY_METHOD_NOT_ALLOWED');
 
 /** The fee a partner keeps per delivered order today: a flat amount or a percent of the order total. Null: no rule in force. */
-export type DeliveredFee = { basis: FeeBasis; amount: string } | null;
+type DeliveredFee = { basis: FeeBasis; amount: string } | null;
 
 /** The extras of a row that need a query of their own. `listStaff` reads them once for the page. */
 interface StaffExtras { deliveredFee?: DeliveredFee; lastKeyUse?: Date | null }
@@ -264,6 +259,7 @@ export async function eraseUser(target: { id: number; role: UserRole }): Promise
       await tx.notification.deleteMany({ where: { tenantId, userId: id } });
       await tx.user.deleteMany({ where: { tenantId, id } });
     });
+    invalidateUserAccess(id);
   } catch (error) {
     if (isForeignKeyViolation(error)) {
       throw new AppError('This person has payouts or ledger records and cannot be erased. They stay in the Deleted tab.', 409, 'HAS_RECORDS');

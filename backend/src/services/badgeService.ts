@@ -5,9 +5,9 @@ import { fullName } from '../utils/nameUtils';
 import agingService from './agingService';
 import { getRewardFeatures } from './tenantFeatures';
 import { boardBase, rankRows, resolvePeriod, type Family } from './leaderboardService';
-import { getStoreTimeZone, MONTH_RE } from './kpi/dates';
+import { getStoreTimeZone, MONTH_RE, shiftMonth } from './kpi/dates';
 import {
-  BADGES, LOCKED_BADGE, UNPAID_DAYS, beatTargetBy20, hitTargetStreak, topOfMonth, type BadgeKey, type MonthResult,
+  BADGES, LOCKED_BADGE, UNPAID_DAYS, pairKey, beatTargetBy20, hitTargetStreak, topOfMonth, type BadgeKey, type MonthResult,
 } from './leaderboardMath';
 import type * as Money from '../utils/money';
 
@@ -21,53 +21,57 @@ import type * as Money from '../utils/money';
 
 const FAMILIES: Family[] = ['call_rep', 'delivery'];
 
-/** The month before `period` ('2026-01' -> '2025-12'), `back` months back. */
-const monthBefore = (period: string, back: number): string => {
-  const d = new Date(Date.UTC(Number(period.slice(0, 4)), Number(period.slice(5, 7)) - 1 - back, 1));
-  return d.toISOString().slice(0, 7);
-};
-
 type Db = Pick<TransactionClient, 'badgeAward'>;
 
-/**
- * Give the badges a month earned: Top of month (rank 1 per role family, every tied first place), Hit target 3 months running,
- * Beat target by 20 percent, and, for delivery, Zero unpaid over 8 days. Safe to run twice: the unique key (tenant, user, key,
- * period) and `skipDuplicates` mean a badge is never awarded twice for one period. `db` is the client of the caller (the close
- * transaction): the numbers are read outside it, and the awards are counted and written through it, so the count sees the rows
- * of its own transaction. Returns how many awards were new.
- */
-export async function awardMonthBadges(period: string, db: Db = prisma): Promise<{ awarded: number; byKey: Partial<Record<BadgeKey, number>> }> {
-  if (!MONTH_RE.test(period)) throw new RangeError(`Period must be a month like 2026-10, got ${period}`);
-  const tenantId = resolveTenantId();
-  const zone = getStoreTimeZone(tenantId);
-  const wanted: Array<{ userId: number; key: BadgeKey }> = [];
+export type WantedBadge = { userId: number; key: BadgeKey };
 
-  for (const family of FAMILIES) {
-    const rows = await boardBase(family, resolvePeriod(period, zone));
-    if (!rows.length) continue;
-    const ranks = rankRows(rows);
-    const results: MonthResult[] = rows.map((r) => ({ userId: r.userId, rank: ranks.get(`${r.userId}:${r.roleId}`) ?? null, percent: r.percent }));
-    for (const userId of topOfMonth(results)) wanted.push({ userId, key: 'top_of_month' });
-    for (const r of rows) if (beatTargetBy20(r.percent)) wanted.push({ userId: r.userId, key: 'beat_target_20' });
+/** The badges of one role family for a month: its board, and the two months before it for the streak. Reads only. */
+async function wantedOfFamily(family: Family, period: string, zone: string): Promise<WantedBadge[]> {
+  const wanted: WantedBadge[] = [];
+  const rows = await boardBase(family, resolvePeriod(period, zone));
+  if (!rows.length) return wanted;
+  const ranks = rankRows(rows);
+  const results: MonthResult[] = rows.map((r) => ({ userId: r.userId, rank: ranks.get(pairKey(r.userId, r.roleId)) ?? null, percent: r.percent }));
+  for (const userId of topOfMonth(results)) wanted.push({ userId, key: 'top_of_month' });
+  for (const r of rows) if (beatTargetBy20(r.percent)) wanted.push({ userId: r.userId, key: 'beat_target_20' });
 
-    // Three months running: this month and the two before it, each read the same way.
-    if (rows.some((r) => r.percent !== null && r.percent.gte(100))) {
-      const earlier = await Promise.all([2, 1].map((back) => boardBase(family, resolvePeriod(monthBefore(period, back), zone))));
-      for (const r of rows) {
-        const previous = earlier.map((month) => month.find((x) => x.userId === r.userId && x.roleId === r.roleId)?.percent ?? null) as Array<Money.Money | null>;
-        if (hitTargetStreak(r.percent, previous)) wanted.push({ userId: r.userId, key: 'hit_target_3_months' });
-      }
-    }
-
-    if (family === 'delivery') {
-      const delivering = rows.filter((r) => r.closed > 0);
-      const late = new Set((await agingService.getUnpaidOrdersOf(delivering.map((r) => r.userId))).filter((o) => o.ageDays > UNPAID_DAYS).map((o) => o.agentId));
-      for (const r of delivering) if (!late.has(r.userId)) wanted.push({ userId: r.userId, key: 'zero_unpaid_8_days' });
+  // Three months running: this month and the two before it, each read the same way.
+  if (rows.some((r) => r.percent !== null && r.percent.gte(100))) {
+    const earlier = await Promise.all([2, 1].map((back) => boardBase(family, resolvePeriod(shiftMonth(period, -back), zone))));
+    for (const r of rows) {
+      const previous = earlier.map((month) => month.find((x) => x.userId === r.userId && x.roleId === r.roleId)?.percent ?? null) as Array<Money.Money | null>;
+      if (hitTargetStreak(r.percent, previous)) wanted.push({ userId: r.userId, key: 'hit_target_3_months' });
     }
   }
 
-  const unique = [...new Map(wanted.map((w) => [`${w.userId}:${w.key}`, w])).values()];
+  if (family === 'delivery') {
+    const delivering = rows.filter((r) => r.closed > 0);
+    const late = new Set((await agingService.getUnpaidOrdersOf(delivering.map((r) => r.userId))).filter((o) => o.ageDays > UNPAID_DAYS).map((o) => o.agentId));
+    for (const r of delivering) if (!late.has(r.userId)) wanted.push({ userId: r.userId, key: 'zero_unpaid_8_days' });
+  }
+  return wanted;
+}
+
+/**
+ * The badges a month earned: Top of month (rank 1 per role family, every tied first place), Hit target 3 months running,
+ * Beat target by 20 percent, and, for delivery, Zero unpaid over 8 days. Reads only, so the month close computes it before its
+ * transaction opens. Call inside the tenant context.
+ */
+export async function wantedBadges(period: string): Promise<WantedBadge[]> {
+  if (!MONTH_RE.test(period)) throw new RangeError(`Period must be a month like 2026-10, got ${period}`);
+  const zone = getStoreTimeZone(resolveTenantId());
+  const perFamily = await Promise.all(FAMILIES.map((family) => wantedOfFamily(family, period, zone)));
+  return [...new Map(perFamily.flat().map((w) => [`${w.userId}:${w.key}`, w])).values()];
+}
+
+/**
+ * Write the wanted badges. Safe to run twice: the unique key (tenant, user, key, period) and `skipDuplicates` mean a badge is
+ * never awarded twice for one period. `db` is the client of the caller (the close transaction), so the count sees the rows of
+ * its own transaction. Returns how many awards were new.
+ */
+export async function saveBadges(period: string, unique: WantedBadge[], db: Db = prisma): Promise<{ awarded: number; byKey: Partial<Record<BadgeKey, number>> }> {
   if (!unique.length) return { awarded: 0, byKey: {} };
+  const tenantId = resolveTenantId();
   // createMany does not say which rows were new, so count them from the table around the insert.
   const before = await db.badgeAward.count({ where: { period } });
   await db.badgeAward.createMany({ data: unique.map((w) => ({ tenantId, userId: w.userId, key: w.key, period })), skipDuplicates: true });
@@ -75,6 +79,11 @@ export async function awardMonthBadges(period: string, db: Db = prisma): Promise
   const byKey: Partial<Record<BadgeKey, number>> = {};
   for (const w of unique) byKey[w.key] = (byKey[w.key] ?? 0) + 1;
   return { awarded: after - before, byKey };
+}
+
+/** Give the badges a month earned: `wantedBadges` then `saveBadges`. */
+export async function awardMonthBadges(period: string, db: Db = prisma): Promise<{ awarded: number; byKey: Partial<Record<BadgeKey, number>> }> {
+  return saveBadges(period, await wantedBadges(period), db);
 }
 
 /**

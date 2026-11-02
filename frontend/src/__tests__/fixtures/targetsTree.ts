@@ -37,6 +37,7 @@ export const TREE: Tree = {
     {
       roleId: 7, roleName: 'Call rep', target: { id: 31, scope: 'role', metric: 'confirmed_delivered', unit: 'count', value: 723, periodStart: '2026-10-01', periodEnd: '2026-10-31', parentId: null, closed: false },
       pool: { metric: 'confirmed_delivered', unit: 'count', total: 723, allocated: '673.00', pool: '50.00' },
+      roleAttainment: { done: 363, target: 723, percent: 50, rate: false, status: { key: 'behind', label: 'Behind' } },
       holders: [
         { userId: 101, name: 'Adwoa Darko', kind: 'person', typeLabel: 'Person', target: { id: 41, metric: 'confirmed_delivered', unit: 'count', value: 423 }, label: null },
         { userId: 102, name: 'Confirm agent', kind: 'ai_agent', typeLabel: 'AI agent', target: { id: 42, metric: 'confirmed_delivered', unit: 'count', value: 250 }, label: null },
@@ -45,9 +46,9 @@ export const TREE: Tree = {
     },
     {
       roleId: 8, roleName: 'Delivery', target: { id: 32, scope: 'role', metric: 'delivery_success_rate', unit: 'percent', value: 60, periodStart: '2026-10-01', periodEnd: '2026-10-31', parentId: null, closed: false },
-      pool: null, holders: [],
+      pool: null, holders: [], roleAttainment: null,
     },
-    { roleId: 9, roleName: 'Stock keeper', target: null, pool: null, holders: [] },
+    { roleId: 9, roleName: 'Stock keeper', target: null, pool: null, holders: [], roleAttainment: null },
   ],
 };
 

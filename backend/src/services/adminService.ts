@@ -25,7 +25,7 @@ import { eraseUser } from './staffService';
 import { updateUserSchema } from '../validators/staffSchema';
 import { formatIssues } from '../tools/shared';
 import { saveMatrix } from './rolePermissionService';
-import { invalidateAccess } from './accessService';
+import { invalidateAccess, invalidateUserAccess } from './accessService';
 import { getTenantMatrix } from './permissionService';
 import { ROLE_NAME_BY_USER_ROLE } from '../config/defaultRoles';
 import { assignmentSelect } from './roleService';
@@ -555,7 +555,10 @@ export const adminService = {
       if (verb) await assertNotLastOwner(tx, target, verb);
       return write(tx);
     });
-    if (endSessions) await sessionService.revokeAll(target.id);
+    if (endSessions) {
+      invalidateUserAccess(target.id);
+      await sessionService.revokeAll(target.id);
+    }
     return result;
   },
 

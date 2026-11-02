@@ -318,7 +318,7 @@ Two faults in the permission cache, and a debug switch for the next 403 that can
 - **A failed read is an error (5bbea42e):** `loadMatrix` used to swallow a database error and answer with the default grids. `getTenantMatrix` then cached them for 60 s. Now it throws, the failed promise is not cached, and the middleware answers 500 (a deny, not a permission answer).
 - **A stale read never fills the cache (5bbea42e):** every `clearPermissionsCache` bumps an epoch. A read that started before the clear stores nothing.
 - **One clear for one entry (0ea30508):** a failed matrix read clears only its own cache entry.
-- **`PERMISSION_DEBUG` (0ea30508):** when set, a 403 logs the grid that was used. It is off by default.
+- **`PERMISSION_DEBUG` (0ea30508):** when set, a 403 logged the grid that was used. Removed in COD-62 (M6-T25); the flag no longer does anything.
 - **Key files:** `services/permissionService.ts`, `middleware/auth.ts`, `__tests__/unit/permissionServiceFailClosed.test.ts`, `__tests__/unit/financialService.test.ts` (one line).
 - No screens, no migration.
 

@@ -10,7 +10,7 @@ import { auditService } from './auditService';
 import { createNotification, findTenantAdmins } from './notificationService';
 import { holderSelect, holderView } from './roleService';
 import { failedDeliveryCalls, FAILED_CALLS_METRIC } from './kpi/daily';
-import { DAY_MS, currentMonth, endOfDay, getStoreTimeZone, MONTH_RE, parseYmd, startOfDay, utcDate, utcDateOfYmd, ymdOfUtc } from './kpi/dates';
+import { DAY_MS, currentMonth, endOfDay, getStoreTimeZone, parseMonth, parseYmd, startOfDay, utcDate, utcDateOfYmd, ymdOfUtc } from './kpi/dates';
 
 /**
  * M6-T07 (F-1100, F-1103): the target tree on the one `Target` table.
@@ -59,13 +59,13 @@ export interface TargetInput {
   source?: 'auto' | 'manual';
 }
 
-export interface ChildInput { period: string; value: Money.MoneyInput }
+interface ChildInput { period: string; value: Money.MoneyInput }
 
 type Db = Prisma.TransactionClient;
 interface Row { scope: TargetScope; metric: string; unit: string; value: Money.Money; start: Date; end: Date; parentId?: number; roleId?: number; userId?: number; source?: string }
 
 /** The whole tree of a year, 4 quarters of 3 months. `build` gets the existing quarter and month rows (read under lock) and returns the plan. */
-export interface YearPlanResult<E = undefined> { annual: Money.Money; quarters: Array<{ value: Money.Money; months: Money.Money[] }>; extra?: E }
+interface YearPlanResult<E = undefined> { annual: Money.Money; quarters: Array<{ value: Money.Money; months: Money.Money[] }>; extra?: E }
 type WriteOp =
   /** `alongside` rows are saved first in the same transaction (the planned AOV that goes with a tree). */
   | { kind: 'plan'; metric: string; unit: string; year: number; build: (existing: Target[]) => YearPlanResult<unknown>; alongside: Row[] }
@@ -75,7 +75,6 @@ type WriteOp =
   | { kind: 'delete'; id: number }
   | { kind: 'release'; roleId: number; userId: number; today: Date };
 
-const money = (v: Money.MoneyInput) => Money.toApi(v);
 const bad = (period: string | undefined, scope: TargetScope) => new AppError(`Invalid period "${period}" for a ${scope} target`, 400, 'INVALID_PERIOD');
 
 /** [start, end] of a period string for `scope`. */
@@ -95,9 +94,9 @@ export function periodBounds(scope: TargetScope, period?: string): { start: Date
     const first = (Number(m[2]) - 1) * 3 + 1;
     return { start: utcDate(Number(m[1]), first), end: utcDate(Number(m[1]), first + 3, 0) };
   }
-  const m = MONTH_RE.exec(period ?? '');
-  if (!m) throw bad(period, scope);
-  return { start: utcDate(Number(m[1]), Number(m[2])), end: utcDate(Number(m[1]), Number(m[2]) + 1, 0) };
+  const parsed = parseMonth(period ?? '');
+  if (!parsed) throw bad(period, scope);
+  return { start: utcDate(parsed.year, parsed.month), end: utcDate(parsed.year, parsed.month + 1, 0) };
 }
 
 // ---- Checks ---------------------------------------------------------------------------------------------------------
@@ -108,8 +107,8 @@ export function assertSum(parentScope: TargetScope, sum: Money.Money, value: Mon
   if (exact ? sum.eq(value) : sum.lte(value)) return;
   const diff = Money.sub(sum, value);
   throw new AppError(
-    `The ${name} add up to ${money(sum)} but the ${parentScope.replace('_', ' ')} is ${money(value)} `
-    + `(${diff.gt(0) ? 'over' : 'short'} by ${money(diff.abs())}). Difference: ${money(diff.abs())}`,
+    `The ${name} add up to ${Money.toApi(sum)} but the ${parentScope.replace('_', ' ')} is ${Money.toApi(value)} `
+    + `(${diff.gt(0) ? 'over' : 'short'} by ${Money.toApi(diff.abs())}). Difference: ${Money.toApi(diff.abs())}`,
     400, 'TARGET_SUM_MISMATCH',
   );
 }
@@ -478,13 +477,13 @@ export async function roleViews(roleIds: number[], month: string, given: Map<num
       const view = holderView(holder);
       return {
         userId: holder.id, name: view.name, kind: holder.kind, typeLabel: view.typeLabel,
-        target: own ? { id: own.id, metric: own.metric, unit: own.unit, value: money(own.value) } : null,
+        target: own ? { id: own.id, metric: own.metric, unit: own.unit, value: Money.toApi(own.value) } : null,
         label: own ? null : SET_A_TARGET,
       };
     });
     return {
       roleId, month, target, holders,
-      pool: target && { metric: target.metric, unit: target.unit, total: money(target.value), allocated: money(allocated), pool: money(Money.sub(target.value, allocated)) },
+      pool: target && { metric: target.metric, unit: target.unit, total: Money.toApi(target.value), allocated: Money.toApi(allocated), pool: Money.toApi(Money.sub(target.value, allocated)) },
     };
   });
 }
@@ -495,18 +494,7 @@ export async function roleView(roleId: number, month: string) {
   return rest;
 }
 
-/** The role's target for a month, what its persons hold, and what is left (the pool). Null when the role has no target. */
-export async function rolePool(roleId: number, month: string) {
-  const [view] = await roleViews([roleId], month);
-  return view.pool && { target: view.target!, ...view.pool };
-}
-
-/** Each current holder of a role with their target for the month. */
-export async function roleHolderTargets(roleId: number, month: string) {
-  return (await roleViews([roleId], month))[0].holders;
-}
-
-export interface ReleasedTargets {
+interface ReleasedTargets {
   notice: string;
   returned: Array<{ metric: string; unit: string; value: string; month: string; kept: boolean }>;
   roleId: number;
@@ -524,7 +512,7 @@ export async function releasePersonTargets(
   if (released.length === 0) return null;
   const person = fullName(await tx.user.findFirst({ where: { id: p.userId, tenantId: p.tenantId }, select: { firstName: true, lastName: true } })) || 'A person';
   const returned = released.map((t) => ({
-    metric: t.metric, unit: t.unit, value: money(t.value), month: ymdOfUtc(t.periodStart).slice(0, 7), kept: t.periodStart < startOfUtcDay(),
+    metric: t.metric, unit: t.unit, value: Money.toApi(t.value), month: ymdOfUtc(t.periodStart).slice(0, 7), kept: t.periodStart < startOfUtcDay(),
   }));
   const parts = returned.map((r) => `${r.value} ${r.unit} for ${r.month}`).join(', ');
   return { notice: `${person} left ${p.roleName}. Their target of ${parts} went back to the ${p.roleName} pool.`, returned, roleId: p.roleId, userId: p.userId };
@@ -583,7 +571,7 @@ export function monthPersonTargets(period: string, filter: { userId?: number; ro
   });
 }
 
-/** The role targets of a month (the `rolePool` rule: scope role, period start on the month). */
+/** The role targets of a month (the `roleViews` rule: scope role, period start on the month). */
 export function monthRoleTargets(period: string) {
   return prisma.target.findMany({ where: { scope: 'role', periodStart: periodBounds('role', period).start, roleId: { not: null } }, orderBy: { id: 'asc' } });
 }

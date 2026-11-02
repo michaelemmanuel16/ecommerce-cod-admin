@@ -1,5 +1,5 @@
 import apiClient from './api';
-import type { StaffKind, StaffRole } from './staff.service';
+import { quiet, type PayPolicy, type StaffKind, type StaffRole } from './staff.service';
 
 /**
  * The role cards API (M6-T19, F-1151, F-1152, F-1156), from the roles routes of M6-T03: the overview, the holders of a role with
@@ -19,6 +19,8 @@ export interface RoleHolder {
   status: 'active' | 'invited' | 'deactivated';
 }
 
+export interface RoleTool { key: string; label: string; kind: 'read' | 'write' }
+
 /** A role card: the role with its holders now, the tools that are on, and this month's target if one is set. */
 export interface RoleCard {
   id: number;
@@ -29,6 +31,9 @@ export interface RoleCard {
   isSystem: boolean;
   /** Keys of the switches that are on ("view_orders"). */
   tools: string[];
+  /** The switches that exist, in table order: the API owns the list. */
+  toolCatalog: RoleTool[];
+  payPolicy: PayPolicy;
   toolCount: number;
   toolTotal: number;
   holderCount: number;
@@ -49,7 +54,7 @@ export interface RoleAssignment {
   typeLabel: string;
 }
 
-export type AssignBody =
+type AssignBody =
   | { type: 'ai_agent'; name: string }
   | { type: 'company'; name: string };
 
@@ -59,7 +64,7 @@ export interface AssignResult {
   apiKey?: { key: string; keyPrefix: string; label: string; toolCount: number };
 }
 
-export interface NewRole {
+interface NewRole {
   name: string;
   purpose?: string;
   copyToolsFromRoleId?: number;
@@ -75,8 +80,6 @@ export interface RolePermissions {
   custom: boolean;
   saved: boolean;
 }
-
-const quiet = { quiet: true } as const;
 
 export const rolesService = {
   async overview(): Promise<RoleCard[]> {
@@ -111,4 +114,4 @@ export const rolesService = {
 };
 
 /** The role select of the invite and edit modals reads the same cards. */
-export const toStaffRoles = (cards: RoleCard[]): StaffRole[] => cards.map((r) => ({ roleId: r.id, name: r.name, presetRole: r.presetRole }));
+export const toStaffRoles = (cards: RoleCard[]): StaffRole[] => cards.map((r) => ({ roleId: r.id, name: r.name, presetRole: r.presetRole, payPolicy: r.payPolicy }));

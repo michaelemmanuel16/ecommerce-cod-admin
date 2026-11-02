@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Table, Tag, type Column } from '../../components/ui-v2';
-import { AVATAR_TONES, initials } from '../../utils/people';
+import { avatarClass, initials } from '../../utils/people';
 import type { StaffRow } from '../../services/staff.service';
 import { RowMenu, type RowAction } from './RowMenu';
 import { contactOf, lastActiveText, payText, STATUS_LABEL, STATUS_TONE, TYPE_LABEL, TYPE_TONE } from './model';
@@ -20,7 +20,7 @@ export function TeamTable({ rows, company, currency, can, onAction }: TeamTableP
       key: 'name', header: 'Name',
       render: (p) => (
         <div className="who">
-          <div className={`a ${AVATAR_TONES[p.id % AVATAR_TONES.length]}${p.kind === 'company' ? ' co' : ''}`} aria-hidden="true">{initials(p.name)}</div>
+          <div className={avatarClass(p.kind === 'company' ? 'company' : 'person', p.id)} aria-hidden="true">{initials(p.name)}</div>
           <div>
             <b>{p.name}</b>
             <small>{contactOf(p)}</small>

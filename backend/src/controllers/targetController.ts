@@ -5,7 +5,7 @@ import * as northStar from '../services/northStarService';
 import { handler, idParam, parse } from './helpers';
 import {
   calculatorsQuerySchema, childrenSchema, previewQuerySchema, dailyQuerySchema, driversQuerySchema, driversSchema, northStarSchema, poolQuerySchema,
-  saveTargetSchema, treeQuerySchema, updateTargetSchema,
+  saveTargetSchema, saveTargetsSchema, treeQuerySchema, updateTargetSchema,
 } from '../validators/targetSchema';
 
 /** M6-T08: the target API. Routes -> this file -> targetService / northStarService. */
@@ -13,10 +13,10 @@ import {
 const audit = (req: AuthRequest, action: string, resourceId: string, metadata: Record<string, unknown> = {}) =>
   auditService.recordFromRequest(req, { action, resource: 'target', resourceId, metadata });
 
-/** GET /api/targets/tree?year&month&metric */
+/** GET /api/targets/tree?year&month&metric&actuals */
 export const tree = handler(async (req, res) => {
   const q = parse(treeQuerySchema, req.query, 'query');
-  res.json(await northStar.getTree(q.year, q.month, q.metric));
+  res.json(await northStar.getTree(q.year, q.month, q.metric, q.actuals));
 });
 
 /** GET /api/targets/roles/:roleId/pool?month: the role target, what persons hold, the pool, each holder (or "Set a target"). */
@@ -37,6 +37,15 @@ export const save = handler(async (req, res) => {
   const target = await targetService.saveTarget(input);
   await audit(req, 'target_save', String(target.id), { scope: target.scope, metric: target.metric, value: target.value.toString() });
   res.status(201).json({ target });
+});
+
+/** POST /api/targets/batch: the same saves as POST /api/targets, all in one transaction (all happen or none). */
+export const saveBatch = handler(async (req, res) => {
+  const { targets: inputs } = parse(saveTargetsSchema, req.body);
+  if (inputs.some((i) => i.scope === 'north_star')) throw northStar.NORTH_STAR_ONLY();
+  const targets = await targetService.saveTargets(inputs);
+  for (const target of targets) await audit(req, 'target_save', String(target.id), { scope: target.scope, metric: target.metric, value: target.value.toString() });
+  res.status(201).json({ targets });
 });
 
 /** PUT /api/targets/:id: change the value of a saved target. */

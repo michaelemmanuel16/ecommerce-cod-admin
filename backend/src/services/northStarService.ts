@@ -3,9 +3,12 @@ import prisma from '../utils/prisma';
 import { resolveTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
 import * as Money from '../utils/money';
-import { daysInMonth, getStoreTimeZone, localDate, MONTH_RE, parseYmd, utcDate, ymdOfUtc } from './kpi/dates';
+import { currentMonth, daysInMonth, getStoreTimeZone, localDate, parseMonth, parseYmd, utcDate, ymdOfUtc } from './kpi/dates';
 import { isOwnerRole } from '../config/defaultRoles';
 import { actualsOf } from './targetActuals';
+import { computeAttainment } from './rewardService';
+import { roleAttainmentOf, type AttainmentLine } from './roleAttainment';
+import logger from '../utils/logger';
 import { autoPlannedAov, plannedAovBounds, plannedAovWindow } from './kpi/leadership';
 import { topProductByDelivered } from './finance/profitService';
 import { deleteTarget, replanYear, roleViews, saveTarget, saveTargets, type TargetInput } from './targetService';
@@ -24,17 +27,17 @@ import { GrowthMode, assertRate, maxCostPerOrder, monthSplit, ordersDelivered, o
  *   net_margin             percent  (35)   default 35 when not set
  */
 
-export const REVENUE_METRIC = 'revenue';
-export const DRIVER_METRICS = { plannedAov: 'planned_aov', confirmationRate: 'confirmation_rate', deliverySuccessRate: 'delivery_success_rate', netMargin: 'net_margin' } as const;
-export const DEFAULT_CONFIRMATION = 70;
-export const DEFAULT_DELIVERY_SUCCESS = 60;
-export const DEFAULT_NET_MARGIN = 35;
+const REVENUE_METRIC = 'revenue';
+const DRIVER_METRICS = { plannedAov: 'planned_aov', confirmationRate: 'confirmation_rate', deliverySuccessRate: 'delivery_success_rate', netMargin: 'net_margin' } as const;
+const DEFAULT_CONFIRMATION = 70;
+const DEFAULT_DELIVERY_SUCCESS = 60;
+const DEFAULT_NET_MARGIN = 35;
 
 /** [year, month] of a 'YYYY-MM' string, or 400. */
 const monthParts = (month: string): [number, number] => {
-  const m = MONTH_RE.exec(month);
-  if (!m) throw new AppError(`Invalid month "${month}"`, 400, 'INVALID_PERIOD');
-  return [Number(m[1]), Number(m[2])];
+  const parsed = parseMonth(month);
+  if (!parsed) throw new AppError(`Invalid month "${month}"`, 400, 'INVALID_PERIOD');
+  return [parsed.year, parsed.month];
 };
 
 const todayYmd = () => localDate(new Date(), getStoreTimeZone(resolveTenantId()));
@@ -186,10 +189,12 @@ const view = (t: Target) => ({
 
 /**
  * The year's tree (North Star, quarters, months). For the revenue tree each node also carries `actuals`: delivered revenue, margin and
- * status for a past or current period, nothing for a future one (F-1101). With `month` ('YYYY-MM'): every role (not the Owner) with
- * its target for that month, pool and holders; a role with no holder reads as vacant on the page.
+ * status for a past or current period, nothing for a future one (F-1101); `withActuals` false leaves them out (the role cards do not
+ * need them). With `month` ('YYYY-MM'): every role (not the Owner) with its target for that month, pool and holders; a role with no
+ * holder reads as vacant on the page. Each such role also carries `roleAttainment` (done, target, percent, status) once the month
+ * has started, or null (see roleAttainment.ts).
  */
-export async function getTree(year: number, month?: string, metric = REVENUE_METRIC) {
+export async function getTree(year: number, month?: string, metric = REVENUE_METRIC, withActuals = true) {
   const monthStart = month === undefined ? null : monthParts(month);
   if (monthStart && monthStart[0] !== year) throw new AppError(`Invalid month "${month}" for ${year}`, 400, 'INVALID_PERIOD');
   const [rows, marginTarget, roles] = await Promise.all([
@@ -200,17 +205,27 @@ export async function getTree(year: number, month?: string, metric = REVENUE_MET
     rateOf(DRIVER_METRICS.netMargin, year, DEFAULT_NET_MARGIN).then((r) => r.value),
     monthStart ? prisma.role.findMany({ select: { id: true, name: true, presetRole: true }, orderBy: { name: 'asc' } }) : [],
   ]);
-  const [measured, views] = await Promise.all([
-    metric === REVENUE_METRIC ? actualsOf(rows, year, marginTarget) : null,
+  const [measured, views, attainment] = await Promise.all([
+    metric === REVENUE_METRIC && withActuals ? actualsOf(rows, year, marginTarget) : null,
     month !== undefined ? roleViews(roles.filter((r) => !isOwnerRole(r)).map((r) => r.id), month) : [],
+    month !== undefined && month <= currentMonth(new Date(), getStoreTimeZone(resolveTenantId()))
+      ? computeAttainment(month).catch((error) => { logger.warn('Role attainment could not be read', { month, error }); return null; })
+      : null,
   ]);
+  const lineOf = new Map<number, Map<number, AttainmentLine>>();
+  for (const r of attainment?.results ?? []) {
+    lineOf.set(r.roleId, (lineOf.get(r.roleId) ?? new Map()).set(r.userId, r));
+  }
   const node = (t: Target) => ({ ...view(t), ...(measured && { actuals: measured.actuals.get(t.id) }) });
   const of = (scope: string) => rows.filter((r) => r.scope === scope).map(node);
   const names = new Map(roles.map((r) => [r.id, r.name]));
   return {
     year, metric, currency: measured?.currency ?? null, marginTarget, northStar: of('north_star')[0] ?? null, quarters: of('quarter'), months: of('month'),
     roles: month === undefined ? undefined : views.map(({ target, ...rest }) => ({
-      ...rest, roleName: names.get(rest.roleId) ?? null, target: target ? view(target) : null
+      ...rest, roleName: names.get(rest.roleId) ?? null, target: target ? view(target) : null,
+      roleAttainment: attainment && roleAttainmentOf(
+        target && { unit: target.unit, value: Number(Money.toApi(target.value)) }, rest.holders.map((h) => h.userId), lineOf.get(rest.roleId) ?? new Map(),
+      ),
     })),
   };
 }
@@ -240,7 +255,7 @@ export async function removeTarget(id: number) {
 
 // ---- Calculators ----------------------------------------------------------------------------------------------------
 
-export interface CalculatorInput {
+interface CalculatorInput {
   /** 'YYYY-MM'; default the current month. */
   month?: string;
   aov?: number;
@@ -296,8 +311,6 @@ async function profitPerOrder(tenantId: string): Promise<string | null> {
   return (await topProductByDelivered(from, to))?.profitPerOrder ?? null;
 }
 
-const money = (v: Money.MoneyInput) => Money.toApi(v);
-
 /**
  * The split a save would write, for the wizard and the Settings tab before anything is saved (F-1111, F-1112): four quarters and the
  * three months of each, with the months of this year that are past or closed kept as they are. Custom quarters that do not add up are
@@ -308,5 +321,5 @@ export async function previewNorthStar(input: Pick<NorthStarInput, 'year' | 'ann
     where: { metric: REVENUE_METRIC, roleId: null, userId: null, scope: { in: ['quarter', 'month'] }, periodStart: { gte: utcDate(input.year, 1), lte: utcDate(input.year, 12, 31) } },
   });
   const plan = planYear(existing, input);
-  return { quarters: plan.quarters.map((q) => money(q.value)), months: plan.quarters.map((q) => q.months.map(money)), kept: plan.extra };
+  return { quarters: plan.quarters.map((q) => Money.toApi(q.value)), months: plan.quarters.map((q) => q.months.map((v) => Money.toApi(v))), kept: plan.extra };
 }

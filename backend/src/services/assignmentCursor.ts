@@ -14,7 +14,7 @@ import { resolveTenantId } from '../utils/tenantContext';
  * affect a pick.
  */
 
-export interface CursorCandidate {
+interface CursorCandidate {
   id: number;
   /** Positive integer share. */
   weight: number;
@@ -55,10 +55,16 @@ export async function pickWithCursor(scope: string, role: UserRole, rotation: Cu
   const tenantId = resolveTenantId();
   const where = { tenantId_scope_role: { tenantId, scope, role } };
   return prisma.$transaction(async (tx) => {
-    await tx.assignmentCursor.upsert({ where, create: { tenantId, scope, role }, update: {} });
-    const [row] = await tx.$queryRaw<{ position: number; state: CursorState | null }[]>`
+    type Locked = { position: number; state: CursorState | null };
+    const lock = () => tx.$queryRaw<Locked[]>`
       SELECT position, state FROM assignment_cursors
       WHERE tenant_id = ${tenantId} AND scope = ${scope} AND role = ${role}::"UserRole" FOR UPDATE`;
+    // The row exists after the first pick, so the usual pick is one read. The first pick creates it (upsert: two first picks cannot both insert), then locks it.
+    let [row] = await lock();
+    if (!row) {
+      await tx.assignmentCursor.upsert({ where, create: { tenantId, scope, role }, update: {} });
+      [row] = await lock();
+    }
     const sig = signature(rotation);
     const kept = row.state?.sig === sig ? row.state : null;
     if (row.state && !kept) logger.info('Assignment cursor reset: the candidate list changed', { tenantId, scope, role });

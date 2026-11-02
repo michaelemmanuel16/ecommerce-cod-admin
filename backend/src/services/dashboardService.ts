@@ -327,7 +327,15 @@ async function driversBlock(c: Context) {
 /** Top this month (F-208): the top 3 by percent of own role target for the month that holds asOf. The ranking is the leaderboard's. */
 async function topThisMonthBlock(c: Context) {
   const month = c.asOfDate.slice(0, 7);
-  return { month, people: await runInTenant(c.tenantId, () => topThisMonth(month)) };
+  // The top 3 does not depend on the range, so every range of the month shares one read (same TTL and clears as the dashboard cache).
+  const key = `${c.tenantId}|${month}`;
+  const hit = topCache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return { month, people: await hit.people };
+  const people = runInTenant(c.tenantId, () => topThisMonth(month));
+  const entry = { at: Date.now(), people };
+  topCache.set(key, entry);
+  people.catch(() => { if (topCache.get(key) === entry) topCache.delete(key); }); // a failed read is not kept
+  return { month, people: await people };
 }
 
 async function recentOrdersBlock(c: Context) {
@@ -404,14 +412,17 @@ async function build(tenantId: string, range: DashboardRange, asOfDate: string):
 }
 
 const cache = new Map<string, { at: number; body: OwnerDashboard }>();
+/** The top 3 of a month per tenant (`tenant|month`); the promise is kept so concurrent ranges share one read. */
+const topCache = new Map<string, { at: number; people: ReturnType<typeof topThisMonth> }>();
 /** Raised by every clear, so a build that started before an order event does not cache its stale body. */
 let generation = 0;
 
 /** Drop a tenant's cached dashboards (all tenants without an argument). */
 export function clearDashboardCache(tenantId?: string): void {
   generation += 1;
-  if (!tenantId) { cache.clear(); return; }
+  if (!tenantId) { cache.clear(); topCache.clear(); return; }
   for (const key of cache.keys()) if (key.startsWith(`${tenantId}|`)) cache.delete(key);
+  for (const key of topCache.keys()) if (key.startsWith(`${tenantId}|`)) topCache.delete(key);
 }
 
 let listening = false;

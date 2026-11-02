@@ -137,7 +137,7 @@ export function format(a: MoneyInput, currency: string, opts: { symbol?: string;
 }
 
 /** The sign shown for a store currency in text ("GH₵2,034"); a currency not listed shows its code. */
-export const CURRENCY_SIGN: Readonly<Record<string, string>> = { GHS: 'GH₵', NGN: '₦' };
+const CURRENCY_SIGN: Readonly<Record<string, string>> = { GHS: 'GH₵', NGN: '₦' };
 
 /** `format` with the currency sign and a whole amount without decimals: "GH₵2,034", "GH₵8.50". */
 export const formatWithSign = (a: MoneyInput, currency: string): string =>

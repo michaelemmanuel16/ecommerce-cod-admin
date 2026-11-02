@@ -4,7 +4,7 @@ import { Button, Input, Modal, Select, useToast } from '../../components/ui-v2';
 import { staffService, type InviteResult, type PayMethod, type StaffRole, type StaffRow } from '../../services/staff.service';
 import { formatCurrency } from '../../utils/format';
 import { apiMessage } from '../orders/importText';
-import { blankForm, isDeliveryRole, payChoices, validatePerson, VEHICLES, type PersonForm } from './model';
+import { blankForm, payChoices, validatePerson, VEHICLES, type PersonForm } from './model';
 
 interface PersonModalProps {
   /** The person being edited; none means an invite. */
@@ -65,10 +65,10 @@ export function PersonModal({ row, roles, roleId, company, currency, onClose, on
   // The frame where the roles arrive, before the effect above runs, must not show the first option of the list (Owner)
   const roleValue = form.roleId || (!row && roles.length > 0 ? String(firstChoice(roles).roleId) : '');
   const role = roles.find((r) => String(r.roleId) === roleValue);
-  const delivery = isDeliveryRole(role?.presetRole);
+  const delivery = role !== undefined && !role.payPolicy.amountEditable; // paid by its fee rule: a delivery partner
   const errors = useMemo(() => validatePerson(form, { invite: !editing, delivery }), [form, editing, delivery]);
   const set = (patch: Partial<PersonForm>) => setForm((f) => ({ ...f, ...patch }));
-  const choices = payChoices(delivery);
+  const choices = payChoices(role?.payPolicy);
   const payMethod: PayMethod = choices.includes(form.payMethod) ? form.payMethod : choices[0];
   // An edit picks the rule with the buttons; an invite uses the company rule while the amount is empty
   const useCompany = payMethod === 'per_order' && (editing ? !form.custom : form.amount.trim() === '');

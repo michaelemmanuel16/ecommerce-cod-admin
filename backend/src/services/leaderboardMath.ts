@@ -1,6 +1,5 @@
 import * as Money from '../utils/money';
 import { daysInMonth } from './kpi/dates';
-import { displayPercent } from './rewardMath';
 import { DAY_MS } from './kpi/dates';
 
 /**
@@ -8,19 +7,19 @@ import { DAY_MS } from './kpi/dates';
  */
 
 /** Below this percent of its target a delivery company shows the contract review flag (F-1105). A flag, not a tier. */
-export const CONTRACT_REVIEW_BELOW = 80;
-export const CONTRACT_REVIEW = 'contract_review';
+const CONTRACT_REVIEW_BELOW = 80;
+const CONTRACT_REVIEW = 'contract_review';
 export const TOO_EARLY = 'Too early';
 /** A day or a week with fewer order events than this carries a note that the numbers are early (F-1107). */
-export const NEAR_EMPTY_BELOW = 5;
-export const NEAR_EMPTY_NOTE = 'Early in this period: only a few orders so far, so the ranking can change a lot.';
-export const NO_ACTIVITY_NOTE = 'No orders in this period yet.';
+const NEAR_EMPTY_BELOW = 5;
+const NEAR_EMPTY_NOTE = 'Early in this period: only a few orders so far, so the ranking can change a lot.';
+const NO_ACTIVITY_NOTE = 'No orders in this period yet.';
 
 /** Days an unpaid delivered order may wait before it spoils the "Zero unpaid over 8 days" badge. */
 export const UNPAID_DAYS = 8;
 
-/** Percent of target of a row, one decimal cut down: what the screen shows, and what ties are judged on. */
-export const rankPercent = (percent: Money.Money | null): number | null => (percent === null ? null : displayPercent(percent));
+/** The key of one person in one role (a Map or Set key). */
+export const pairKey = (userId: number, roleId: number | null): string => `${userId}:${roleId}`;
 
 /**
  * Competition ranks by percent of the person's own target, highest first: a tie shares a rank and the next rank skips

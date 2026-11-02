@@ -2,7 +2,7 @@ import { UserRole } from '@prisma/client';
 import prisma from '../utils/prisma';
 import { getTenantId } from '../utils/tenantContext';
 import { clearAuthCache } from '../mcp/auth';
-import { clearPermissionsCache } from './permissionService';
+import { clearPermissionsCache, forgetUser } from './permissionService';
 
 /**
  * M6-T04: the one place that says "access changed". Drops the cached permissions and the cached MCP keys of the current tenant
@@ -24,4 +24,9 @@ export async function invalidateAccess(roleId?: number): Promise<void> {
 async function holderBaseRoles(roleId: number): Promise<UserRole[]> {
   const rows = await prisma.roleAssignment.findMany({ where: { roleId, toDate: null }, select: { holder: { select: { role: true } } } });
   return [...new Set(rows.map((r) => r.holder.role))];
+}
+
+/** A person was deactivated, deleted or erased: their cached grids go in this process (the active check itself is read on every request). Call inside the tenant context. */
+export function invalidateUserAccess(userId: number): void {
+  forgetUser(userId);
 }

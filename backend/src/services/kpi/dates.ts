@@ -114,6 +114,18 @@ export function daysInMonth(year: number, month: number): number {
 /** A month as YYYY-MM (month 01-12). */
 export const MONTH_RE = /^(\d{4})-(0[1-9]|1[0-2])$/;
 
+/** The year and month of a 'YYYY-MM' string, or null when it is not one. */
+export function parseMonth(value: string): { year: number; month: number } | null {
+  const m = MONTH_RE.exec(value);
+  return m ? { year: Number(m[1]), month: Number(m[2]) } : null;
+}
+
+/** 'YYYY-MM' moved by `delta` months (negative = earlier): shiftMonth('2026-01', -1) is '2025-12'. */
+export function shiftMonth(value: string, delta: number): string {
+  const { year, month } = parseMonth(value) ?? parseYmd(`${value}-01`);
+  return new Date(Date.UTC(year, month - 1 + delta, 1)).toISOString().slice(0, 7);
+}
+
 /** [from, to) of a local calendar month (month 1-12). */
 export function monthRange(year: number, month: number, zone: string) {
   return { from: localMidnight(year, month, 1, zone), to: localMidnight(year, month + 1, 1, zone) };

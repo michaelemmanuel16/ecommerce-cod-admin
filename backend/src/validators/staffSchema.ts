@@ -5,7 +5,7 @@ import { UserRole } from '@prisma/client';
 
 const text = (max: number) => z.string().trim().max(max);
 
-export const STAFF_STATUSES = ['active', 'invited', 'deactivated', 'deleted'] as const;
+const STAFF_STATUSES = ['active', 'invited', 'deactivated', 'deleted'] as const;
 export type StaffStatus = (typeof STAFF_STATUSES)[number];
 
 const userRole = z.nativeEnum(UserRole);
@@ -54,8 +54,6 @@ export const updateUserSchema = z.object({
   commissionAmount: z.coerce.number().min(0).max(1_000_000),
 }).partial();
 
-export type UpdateUserInput = z.infer<typeof updateUserSchema>;
-
 export const resetPasswordSchema = z.object({
   password: z.string().min(8, 'Password must be at least 8 characters').max(128),
 }).strict();
@@ -63,7 +61,7 @@ export const resetPasswordSchema = z.object({
 /** Permanent delete: the person's email, typed. Compared in the service (case-insensitive). */
 export const permanentDeleteSchema = z.object({ confirm: z.string().trim().min(1, "Type the person's email to confirm") }).strict();
 
-export const INVITE_CHANNELS = ['email', 'whatsapp', 'sms'] as const;
+const INVITE_CHANNELS = ['email', 'whatsapp', 'sms'] as const;
 export type InviteChannel = (typeof INVITE_CHANNELS)[number];
 
 /** POST /api/staff/invite. Give `roleId` (a role of the tenant) or `role` (a UserRole: its position role). */

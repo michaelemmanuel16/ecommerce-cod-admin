@@ -22,6 +22,8 @@ const GLOBAL = '__global__';
 const matrixCache = new Map<string, { promise: Promise<Matrix>; timestamp: number }>();
 /** The union of each user's held role grids per tenant; `null` = the user holds no role that gives a grid. */
 const heldCache = new Map<string, Map<number, { grid: PermissionGrid | null; timestamp: number }>>();
+/** Reads in flight per (epoch, tenant, user, kind): concurrent misses share one read, as `matrixCache` does for the matrix. */
+const inflight = new Map<string, Promise<unknown>>();
 /**
  * Bumped by every `clearPermissionsCache`. A read that started before a clear may finish after it; it carries the epoch it
  * started in and stores nothing if the epoch moved, so old data never lands in the cache after an invalidation.
@@ -39,12 +41,14 @@ async function loadMatrix(tenantId: string | null): Promise<Matrix> {
   // narrowed would get its old cells back, a role they widened would be refused with a 403). The caller answers 500, the failed
   // promise is not cached (getTenantMatrix), and the next request reads again.
   // The tenant's own row only (SystemConfig.tenantId is unique). No tenant reads the tenantId-null row.
-  const config = await prisma.systemConfig.findFirst({ where: { tenantId } });
+  const [config, mapped] = await Promise.all([
+    prisma.systemConfig.findFirst({ where: { tenantId } }),
+    // The grid of the position role mapped from a UserRole is the one store; the saved matrix and the defaults only fill a role
+    // that has no grid yet. So a user with no role of their own (an AI agent, the system user) follows the same grid as the people with one.
+    tenantId ? prisma.role.findMany({ where: { presetRole: { not: null } }, select: { name: true, presetRole: true, permissions: true } }) : [],
+  ]);
   const matrix: Matrix = config?.rolePermissions ? mergeRolePermissions(config.rolePermissions) : defaultRolePermissions();
-  // The grid of the position role mapped from a UserRole is the one store; the saved matrix and the defaults only fill a role
-  // that has no grid yet. So a user with no role of their own (an AI agent, the system user) follows the same grid as the people with one.
   if (tenantId) {
-    const mapped = await prisma.role.findMany({ where: { presetRole: { not: null } }, select: { name: true, presetRole: true, permissions: true } });
     for (const r of mapped) {
       if (r.presetRole && isPositionRole(r) && hasOwnGrid(r)) matrix[r.presetRole] = r.permissions as PermissionGrid;
     }
@@ -81,7 +85,7 @@ const freshHeld = (tenantId: string, userId: number) => {
   return entry && Date.now() - entry.timestamp < CACHE_TTL ? entry : undefined;
 };
 
-export const heldAssignmentSelect = { role: { select: { permissions: true, presetRole: true } } } as const;
+const heldAssignmentSelect = { role: { select: { permissions: true, presetRole: true } } } as const;
 type HeldAssignment = { role: { permissions: unknown; presetRole: UserRole | null } };
 
 /** The union of the grids of the held roles, by the one rule (gridOfRole); null when none gives a grid (the Legacy role gives none). */
@@ -95,36 +99,52 @@ const cacheHeld = (tenantId: string, userId: number, grid: PermissionGrid | null
   setBounded(heldOf(tenantId), userId, { grid, timestamp: Date.now() }, MAX_USERS_PER_TENANT);
 };
 
+/** One read per key at a time. The epoch is in the key, so a read that started before a clear is never shared with a later caller. */
+function once<T>(kind: string, tenantId: string, userId: number, read: () => Promise<T>): Promise<T> {
+  const key = `${epoch}|${kind}|${tenantId}|${userId}`;
+  const running = inflight.get(key) as Promise<T> | undefined;
+  if (running) return running;
+  const promise = read().finally(() => inflight.delete(key));
+  inflight.set(key, promise);
+  return promise;
+}
+
 /**
  * `authenticate`: is the user still active (not deactivated, not soft-deleted)? The default user filter hides an inactive row, so
- * no row means no. With a fresh held-grid entry that is the only read; on a miss the same read brings the held roles, which fill
- * the cache the checks use next. Call inside the tenant context.
+ * no row means no. The answer is never cached (another process cannot see this process's cache clear, so a cached "active" would
+ * outlive a deactivation there): every call reads. With a fresh held-grid entry the read is a bare id check; on a miss the same
+ * read brings the held roles, which fill the grid cache the checks use next. Concurrent calls for one user share the read while it
+ * runs. Call inside the tenant context.
  */
 export async function isUserActive(tenantId: string, userId: number): Promise<boolean> {
-  if (freshHeld(tenantId, userId)) {
-    return (await prisma.user.findFirst({ where: { id: userId, isActive: true }, select: { id: true } })) !== null;
-  }
-  const startedIn = epoch;
-  const [user, matrix] = await Promise.all([
-    prisma.user.findFirst({ where: { id: userId, isActive: true }, select: { roleAssignments: { where: { toDate: null }, select: heldAssignmentSelect } } }),
-    getTenantMatrix(tenantId),
-  ]);
-  if (!user) return false;
-  cacheHeld(tenantId, userId, unionOf(user.roleAssignments, matrix), startedIn);
-  return true;
+  return once('active', tenantId, userId, async () => {
+    if (freshHeld(tenantId, userId)) {
+      return (await prisma.user.findFirst({ where: { id: userId, isActive: true }, select: { id: true } })) !== null;
+    }
+    const startedIn = epoch;
+    const [user, matrix] = await Promise.all([
+      prisma.user.findFirst({ where: { id: userId, isActive: true }, select: { roleAssignments: { where: { toDate: null }, select: heldAssignmentSelect } } }),
+      getTenantMatrix(tenantId),
+    ]);
+    if (!user) return false;
+    cacheHeld(tenantId, userId, unionOf(user.roleAssignments, matrix), startedIn);
+    return true;
+  });
 }
 
 async function heldGrid(tenantId: string, userId: number): Promise<PermissionGrid | null> {
   const cached = freshHeld(tenantId, userId);
   if (cached) return cached.grid;
-  const startedIn = epoch;
-  const [assignments, matrix] = await Promise.all([
-    prisma.roleAssignment.findMany({ where: { holderId: userId, toDate: null }, select: heldAssignmentSelect }),
-    getTenantMatrix(tenantId),
-  ]);
-  const grid = unionOf(assignments, matrix);
-  cacheHeld(tenantId, userId, grid, startedIn);
-  return grid;
+  return once('grid', tenantId, userId, async () => {
+    const startedIn = epoch;
+    const [assignments, matrix] = await Promise.all([
+      prisma.roleAssignment.findMany({ where: { holderId: userId, toDate: null }, select: heldAssignmentSelect }),
+      getTenantMatrix(tenantId),
+    ]);
+    const grid = unionOf(assignments, matrix);
+    cacheHeld(tenantId, userId, grid, startedIn);
+    return grid;
+  });
 }
 
 /**
@@ -144,6 +164,17 @@ export async function getUserPermissions(user: { id?: number; role: UserRole | s
 export async function hasPermission(user: { id?: number; role: UserRole | string }, resource: string, action: string): Promise<boolean> {
   if (user.role === 'super_admin') return true;
   return grants(await getUserPermissions(user), resource, action);
+}
+
+/**
+ * Drop one user's cached grids (the user was deactivated, deleted or erased), in the current tenant; with no tenant, from every
+ * tenant. The epoch moves too, so a read that is already running stores nothing after this. This process only: the active check
+ * itself is never cached, so it does not depend on this.
+ */
+export function forgetUser(userId: number, tenantId: string | null | undefined = getTenantId()): void {
+  epoch++;
+  if (tenantId) { heldCache.get(tenantId)?.delete(userId); return; }
+  for (const users of heldCache.values()) users.delete(userId);
 }
 
 /**
