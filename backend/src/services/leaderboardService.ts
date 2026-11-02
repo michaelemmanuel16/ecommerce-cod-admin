@@ -37,8 +37,8 @@ import type { MeasureBasis } from '../config/targetMetrics';
 export type Family = 'call_rep' | 'delivery';
 const PRESET: Record<Family, UserRole> = { call_rep: 'sales_rep', delivery: 'delivery_agent' };
 
-export type PeriodKind = 'today' | 'week' | 'month' | 'year';
-export interface PeriodSpec { key: string; kind: PeriodKind; label: string; first: string; last: string; from: Date; to: Date; month: string | null }
+type PeriodKind = 'today' | 'week' | 'month' | 'year';
+interface PeriodSpec { key: string; kind: PeriodKind; label: string; first: string; last: string; from: Date; to: Date; month: string | null }
 
 const monthName = (year: number, month: number, withYear: boolean) =>
   new Date(Date.UTC(year, month - 1, 1)).toLocaleString('en-GB', { month: 'long', ...(withYear && { year: 'numeric' }), timeZone: 'UTC' });

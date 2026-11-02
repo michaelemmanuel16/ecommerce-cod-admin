@@ -32,8 +32,8 @@ import type { RewardSettingsInput } from '../validators/rewardSchema';
  * "On track to earn ..." and a closed month "Earned ...". AI agents and companies show attainment and get no payout.
  */
 
-export const REP_PAY_DEFAULTS = { baseCommission: '8.00', upsellPercent: '10.00' } as const;
-export const SETTINGS_NOTICE = 'Saved. Tier changes apply from the next month close. Commission and upsell changes apply to orders delivered after the save.';
+const REP_PAY_DEFAULTS = { baseCommission: '8.00', upsellPercent: '10.00' } as const;
+const SETTINGS_NOTICE = 'Saved. Tier changes apply from the next month close. Commission and upsell changes apply to orders delivered after the save.';
 
 /**
  * The rep pay of a stored settings object, with the defaults for what is not set: per delivered order the rep confirmed by call,

@@ -24,11 +24,11 @@ import { GrowthMode, assertRate, maxCostPerOrder, monthSplit, ordersDelivered, o
  *   net_margin             percent  (35)   default 35 when not set
  */
 
-export const REVENUE_METRIC = 'revenue';
-export const DRIVER_METRICS = { plannedAov: 'planned_aov', confirmationRate: 'confirmation_rate', deliverySuccessRate: 'delivery_success_rate', netMargin: 'net_margin' } as const;
-export const DEFAULT_CONFIRMATION = 70;
-export const DEFAULT_DELIVERY_SUCCESS = 60;
-export const DEFAULT_NET_MARGIN = 35;
+const REVENUE_METRIC = 'revenue';
+const DRIVER_METRICS = { plannedAov: 'planned_aov', confirmationRate: 'confirmation_rate', deliverySuccessRate: 'delivery_success_rate', netMargin: 'net_margin' } as const;
+const DEFAULT_CONFIRMATION = 70;
+const DEFAULT_DELIVERY_SUCCESS = 60;
+const DEFAULT_NET_MARGIN = 35;
 
 /** [year, month] of a 'YYYY-MM' string, or 400. */
 const monthParts = (month: string): [number, number] => {
@@ -240,7 +240,7 @@ export async function removeTarget(id: number) {
 
 // ---- Calculators ----------------------------------------------------------------------------------------------------
 
-export interface CalculatorInput {
+interface CalculatorInput {
   /** 'YYYY-MM'; default the current month. */
   month?: string;
   aov?: number;

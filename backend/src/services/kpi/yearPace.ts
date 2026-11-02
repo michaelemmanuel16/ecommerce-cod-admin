@@ -9,7 +9,7 @@
  */
 import * as Money from '../../utils/money';
 
-export interface YearPaceInput {
+interface YearPaceInput {
   /** The four quarter targets, Q1 first (money). */
   quarterTargets: Money.MoneyInput[];
   /** 0 to 3: the quarter that holds the day. */
@@ -21,7 +21,7 @@ export interface YearPaceInput {
   annualTarget: Money.MoneyInput;
 }
 
-export interface YearPace {
+interface YearPace {
   /** Expected year to date, money to 2 places. */
   expected: string;
   /** Expected / annual, percent to 1 decimal. Null when the annual target is 0. */

@@ -32,7 +32,7 @@ import type { StaffStatus, staffQuerySchema, updateStaffSchema } from '../valida
 
 export type { StaffStatus };
 export type StaffQuery = z.infer<typeof staffQuerySchema>;
-export type UpdateStaffInput = z.infer<typeof updateStaffSchema>;
+type UpdateStaffInput = z.infer<typeof updateStaffSchema>;
 
 const STAFF_KINDS: Prisma.UserWhereInput = { kind: { in: ['person', 'company', 'ai_agent'] } };
 /** Who can take open orders: people and companies; an AI agent is not offered as a new owner of an order. */
@@ -68,7 +68,7 @@ export const payPolicyFor = (role: UserRole) => role === 'delivery_agent'
   ? { methods: ['fee_rule', 'none'] as const, defaultMethod: 'fee_rule' as const, amountEditable: false }
   : { methods: PAY_METHODS, defaultMethod: 'none' as const, amountEditable: true };
 
-export const feeNotEditable = () =>
+const feeNotEditable = () =>
   new AppError('A delivery partner has no per-order amount here. Their fee is set in the partner fee rule.', 400, 'FEE_NOT_EDITABLE');
 
 /** The pay method is not one this role can have (today: per-order pay for a delivery partner). */
@@ -76,7 +76,7 @@ export const payMethodNotAllowed = () =>
   new AppError('A delivery partner is paid by the delivery fee rule or not at all. Per-order pay is for other roles.', 400, 'PAY_METHOD_NOT_ALLOWED');
 
 /** The fee a partner keeps per delivered order today: a flat amount or a percent of the order total. Null: no rule in force. */
-export type DeliveredFee = { basis: FeeBasis; amount: string } | null;
+type DeliveredFee = { basis: FeeBasis; amount: string } | null;
 
 /** The extras of a row that need a query of their own. `listStaff` reads them once for the page. */
 interface StaffExtras { deliveredFee?: DeliveredFee; lastKeyUse?: Date | null }

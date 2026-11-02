@@ -25,7 +25,7 @@ export const STATUS_LABEL: Record<TargetStatus, string> = {
   behind: 'Behind',
 };
 
-export interface StatusInput {
+interface StatusInput {
   /** Revenue (or progress) / target, percent. Null when there is no target (or it is 0). */
   percent: number | null;
   /** Percent of the period gone (see above). Ignored for a period that is over. */

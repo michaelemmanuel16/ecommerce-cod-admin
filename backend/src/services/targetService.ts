@@ -59,13 +59,13 @@ export interface TargetInput {
   source?: 'auto' | 'manual';
 }
 
-export interface ChildInput { period: string; value: Money.MoneyInput }
+interface ChildInput { period: string; value: Money.MoneyInput }
 
 type Db = Prisma.TransactionClient;
 interface Row { scope: TargetScope; metric: string; unit: string; value: Money.Money; start: Date; end: Date; parentId?: number; roleId?: number; userId?: number; source?: string }
 
 /** The whole tree of a year, 4 quarters of 3 months. `build` gets the existing quarter and month rows (read under lock) and returns the plan. */
-export interface YearPlanResult<E = undefined> { annual: Money.Money; quarters: Array<{ value: Money.Money; months: Money.Money[] }>; extra?: E }
+interface YearPlanResult<E = undefined> { annual: Money.Money; quarters: Array<{ value: Money.Money; months: Money.Money[] }>; extra?: E }
 type WriteOp =
   /** `alongside` rows are saved first in the same transaction (the planned AOV that goes with a tree). */
   | { kind: 'plan'; metric: string; unit: string; year: number; build: (existing: Target[]) => YearPlanResult<unknown>; alongside: Row[] }
@@ -494,7 +494,7 @@ export async function roleView(roleId: number, month: string) {
   return rest;
 }
 
-export interface ReleasedTargets {
+interface ReleasedTargets {
   notice: string;
   returned: Array<{ metric: string; unit: string; value: string; month: string; kept: boolean }>;
   roleId: number;

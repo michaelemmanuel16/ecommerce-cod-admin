@@ -31,7 +31,7 @@ import { pairKey } from './leaderboardMath';
  * Call inside the tenant context.
  */
 
-export interface PlannedReward {
+interface PlannedReward {
   userId: number;
   name: string;
   roleId: number;
@@ -43,7 +43,7 @@ export interface PlannedReward {
   note: string | null;
 }
 
-export const DAY_OFF_NOTE = 'Paid day off';
+const DAY_OFF_NOTE = 'Paid day off';
 
 /** The month must have ended in the store time zone. */
 function assertPastMonth(period: string, tenantId: string): void {

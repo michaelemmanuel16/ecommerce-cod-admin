@@ -7,13 +7,13 @@ import { DAY_MS } from './kpi/dates';
  */
 
 /** Below this percent of its target a delivery company shows the contract review flag (F-1105). A flag, not a tier. */
-export const CONTRACT_REVIEW_BELOW = 80;
-export const CONTRACT_REVIEW = 'contract_review';
+const CONTRACT_REVIEW_BELOW = 80;
+const CONTRACT_REVIEW = 'contract_review';
 export const TOO_EARLY = 'Too early';
 /** A day or a week with fewer order events than this carries a note that the numbers are early (F-1107). */
-export const NEAR_EMPTY_BELOW = 5;
-export const NEAR_EMPTY_NOTE = 'Early in this period: only a few orders so far, so the ranking can change a lot.';
-export const NO_ACTIVITY_NOTE = 'No orders in this period yet.';
+const NEAR_EMPTY_BELOW = 5;
+const NEAR_EMPTY_NOTE = 'Early in this period: only a few orders so far, so the ranking can change a lot.';
+const NO_ACTIVITY_NOTE = 'No orders in this period yet.';
 
 /** Days an unpaid delivered order may wait before it spoils the "Zero unpaid over 8 days" badge. */
 export const UNPAID_DAYS = 8;

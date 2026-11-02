@@ -111,12 +111,12 @@ function periodSpan(day: Ymd, period: Period): { startMonth: number; months: num
 export type PaceBasis = 'quarter_plan' | 'days';
 
 /** What a year needs to follow its quarter plan: the four quarter targets (null = not set) and the annual target. */
-export interface YearPlan {
+interface YearPlan {
   quarterTargets: Array<Money.MoneyInput | null>;
   annualTarget: Money.MoneyInput | null;
 }
 
-export interface PaceMarker {
+interface PaceMarker {
   percent: number;
   /** Straight-day facts of the period. For `quarter_plan` the percent is NOT daysGone / daysInPeriod: see `plan`. */
   daysGone: number;
@@ -150,7 +150,7 @@ export function paceMarker(day: Ymd, period: Period, plan?: YearPlan): PaceMarke
 }
 
 /** The tenant-wide revenue quarter targets of a year (one read; a newer row replaces an older one for the same quarter). */
-export const yearQuarterRows = (tenantId: string, year: number) =>
+const yearQuarterRows = (tenantId: string, year: number) =>
   prisma.target.findMany({
     where: { tenantId, roleId: null, userId: null, scope: 'quarter', metric: 'revenue', periodStart: { gte: utcDate(year, 1), lte: utcDate(year, 10) } },
     select: { periodStart: true, value: true },
@@ -158,7 +158,7 @@ export const yearQuarterRows = (tenantId: string, year: number) =>
   });
 
 /** The four quarter targets of `year` from `yearQuarterRows`, Q1 first; null for a quarter with no target. */
-export function quarterTargetsOf(rows: Array<{ periodStart: Date; value: Prisma.Decimal }>, year: number): Array<Prisma.Decimal | null> {
+function quarterTargetsOf(rows: Array<{ periodStart: Date; value: Prisma.Decimal }>, year: number): Array<Prisma.Decimal | null> {
   const byStart = new Map(rows.map((r) => [r.periodStart.getTime(), r.value]));
   return [1, 4, 7, 10].map((m) => byStart.get(utcDate(year, m).getTime()) ?? null)
 }

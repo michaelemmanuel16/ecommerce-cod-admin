@@ -14,7 +14,7 @@ import { resolveTenantId } from '../utils/tenantContext';
  * affect a pick.
  */
 
-export interface CursorCandidate {
+interface CursorCandidate {
   id: number;
   /** Positive integer share. */
   weight: number;

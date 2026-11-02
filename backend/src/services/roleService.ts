@@ -23,7 +23,7 @@ export const assertMayTouchRole = (actor: Requester, role: { presetRole: UserRol
 
 const TYPE_LABEL: Record<UserKind, string> = { person: 'Human', ai_agent: 'AI agent', company: 'Company', system: 'System' };
 
-export type HolderStatus = 'active' | 'invited' | 'deactivated';
+type HolderStatus = 'active' | 'invited' | 'deactivated';
 
 /** An inactive user with an invite date has not accepted yet (T06 sets the user active); any other inactive user is deactivated. */
 export function holderStatus(u: { isActive: boolean; invitedAt: Date | null }): HolderStatus {
