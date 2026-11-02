@@ -2277,6 +2277,7 @@ model CommissionEntry {
   @@index([roleId])
   @@index([tenantId])
   @@index([tenantId, userId, status, earnedAt])
+  @@index([tenantId, kind, period])
   @@index([orderId])
   @@index([payoutId])
   @@map("commission_entries")
