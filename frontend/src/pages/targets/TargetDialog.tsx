@@ -5,7 +5,7 @@ import { todayYmd } from '../../utils/format';
 import { targetsService, type RoleRow } from '../../services/targets.service';
 import { METRICS, type TargetForm, type TargetScopeChoice, unitOf, validateTarget } from './model';
 
-export interface TargetDialogProps {
+interface TargetDialogProps {
   open: boolean;
   onClose: () => void;
   /** Called after a save, so the page can ask again and say it saved. */

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Eye, Pencil } from 'lucide-react';
-import { rolesService, type RoleCard } from '../../services/roles.service';
+import { rolesService, type RoleCard, type RoleTool } from '../../services/roles.service';
 import { apiMessage } from '../orders/importText';
-import { TOOLS, flipTool, type ToolDef } from './roleModel';
+import { flipTool } from './roleModel';
 
 interface ToolSwitchesProps {
   role: RoleCard;
@@ -12,7 +12,7 @@ interface ToolSwitchesProps {
   onChanged: () => void;
 }
 
-function Group({ label, icon: Icon, tools, on, locked, onFlip }: { label: string; icon: typeof Eye; tools: readonly ToolDef[]; on: ReadonlySet<string>; locked: boolean; onFlip: (key: string) => void }) {
+function Group({ label, icon: Icon, tools, on, locked, onFlip }: { label: string; icon: typeof Eye; tools: readonly RoleTool[]; on: ReadonlySet<string>; locked: boolean; onFlip: (key: string) => void }) {
   return (
     <div className="tgroup">
       <p><Icon aria-hidden="true" />{label}</p>
@@ -48,7 +48,7 @@ export function ToolSwitches({ role, editable, onChanged }: ToolSwitchesProps) {
     setBusy(true);
     setError(null);
     try {
-      const next = await rolesService.setTools(role.id, flipTool(on, key));
+      const next = await rolesService.setTools(role.id, flipTool(on, key, role.toolCatalog));
       setOn(next.tools);
       onChanged();
     } catch (err) {
@@ -63,8 +63,8 @@ export function ToolSwitches({ role, editable, onChanged }: ToolSwitchesProps) {
   return (
     <>
       <h4><span>Allowed tools</span><span>{on.length} of {role.toolTotal} on</span></h4>
-      <Group label="Read" icon={Eye} tools={TOOLS.filter((t) => t.kind === 'read')} on={set} locked={locked} onFlip={(k) => void flip(k)} />
-      <Group label="Write" icon={Pencil} tools={TOOLS.filter((t) => t.kind === 'write')} on={set} locked={locked} onFlip={(k) => void flip(k)} />
+      <Group label="Read" icon={Eye} tools={role.toolCatalog.filter((t) => t.kind === 'read')} on={set} locked={locked} onFlip={(k) => void flip(k)} />
+      <Group label="Write" icon={Pencil} tools={role.toolCatalog.filter((t) => t.kind === 'write')} on={set} locked={locked} onFlip={(k) => void flip(k)} />
       {error && <p className="err" role="alert">{error}</p>}
     </>
   );

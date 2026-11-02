@@ -1,7 +1,7 @@
 import type { TagTone } from '../../components/ui-v2';
 import { positive } from '../../utils/urlState';
 import { formatCurrency } from '../../utils/format';
-import type { PayMethod, StaffKind, StaffRow, StaffStatus } from '../../services/staff.service';
+import type { PayMethod, PayPolicy, StaffKind, StaffRow, StaffStatus } from '../../services/staff.service';
 
 /** The team table of the Staff page (M6-T20, F-1157 to F-1161): its view state, its texts and its form rules. Pure, so the tests need no screen. */
 
@@ -95,9 +95,6 @@ export const contactOf = (row: StaffRow): string => (row.email.endsWith('.codadm
 
 export const VEHICLES = ['Motorbike', 'Car', 'Tricycle', 'Bicycle', 'On foot'] as const;
 
-/** A role is the delivery role when its base role says so. */
-export const isDeliveryRole = (presetRole: string | null | undefined): boolean => presetRole === 'delivery_agent';
-
 export interface PersonForm {
   name: string;
   email: string;
@@ -118,10 +115,14 @@ export const blankForm = (): PersonForm => ({
   name: '', email: '', phone: '', roleId: '', payMethod: 'per_order', amount: '', custom: false, vehicleType: VEHICLES[0], vehicleId: '', city: '', channel: 'email',
 });
 
-/** The pay choices of a role: a delivery role is paid by its fee rule (no amount here); anyone else by amount per order or not at all. */
-export const payChoices = (delivery: boolean): PayMethod[] => (delivery ? ['fee_rule', 'none'] : ['per_order', 'none']);
+/**
+ * The pay choices of a role, from the API's pay policy. A role paid by its fee rule offers its methods; any other role offers an
+ * amount per order or no pay (the fee rule is not offered to it). Roles still loading offer the second.
+ */
+export const payChoices = (policy: PayPolicy | undefined): PayMethod[] =>
+  !policy ? ['per_order', 'none'] : policy.amountEditable ? policy.methods.filter((m) => m !== 'fee_rule') : policy.methods;
 
-export type FormErrors = Partial<Record<keyof PersonForm, string>>;
+type FormErrors = Partial<Record<keyof PersonForm, string>>;
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

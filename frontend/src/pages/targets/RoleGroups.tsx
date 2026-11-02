@@ -3,6 +3,7 @@ import { ChevronDown, PhoneCall, TrendingUp } from 'lucide-react';
 import { Button, Card, EmptyState, Tag } from '../../components/ui-v2';
 import type { Calculators, DailyProgress } from '../../services/targets.service';
 import { compactMoney } from '../dashboard/format';
+import { avatarClass } from '../../utils/people';
 import { NO_PAYOUT, SET_A_TARGET, VACANT, barClass, formatCount, monthName, type HolderLine, type RoleGroup } from './model';
 
 export interface RowAction {
@@ -29,7 +30,8 @@ interface Props {
   onOpenFinance: () => void;
 }
 
-const avatarClass = (kind: string) => (kind === 'ai_agent' ? 'a ai' : kind === 'company' ? 'a co' : 'a');
+/** This table does not tint its avatars: only the AI agent and the company are marked. */
+const NO_TINT = [''];
 
 /** A progress bar (role="progressbar"): the tone is the status key's, never worked out from the number here. */
 function Bar({ percent, tone, label }: { percent: number; tone?: string; label: string }) {
@@ -95,7 +97,7 @@ export function RoleGroups({ month, groups, currency, feeds, daily, canEdit, act
                       <tr key={l.holder.userId} className="tg-row">
                         <td data-label="Who">
                           <div className="tg-who">
-                            <div className={avatarClass(l.holder.kind)}>{l.initials}</div>
+                            <div className={avatarClass(l.holder.kind, l.holder.userId, NO_TINT)}>{l.initials}</div>
                             <div>
                               {l.holder.name} {l.holder.kind === 'ai_agent' && <Tag tone="v">AI agent</Tag>}
                               <small>{g.role.roleName}</small>

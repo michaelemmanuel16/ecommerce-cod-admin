@@ -7,7 +7,7 @@ import { Staff } from '../../pages/Staff';
 import { clearBlockCache } from '../../pages/financial/profit/useBlock';
 import { useAuthStore } from '../../stores/authStore';
 import type { RoleAssignment } from '../../services/roles.service';
-import type { Attainment, Tree } from '../../services/targets.service';
+import type { Tree } from '../../services/targets.service';
 import { COMPANY, ROLES, STAFF, holder, roleCard } from '../fixtures/staff';
 
 const svc = vi.hoisted(() => ({ list: vi.fn(), workload: vi.fn(), invite: vi.fn(), companyRepPay: vi.fn() }));
@@ -17,7 +17,7 @@ vi.mock('../../services/staff.service', async (orig) => {
 });
 const rolesSvc = vi.hoisted(() => ({ overview: vi.fn(), assignments: vi.fn(), create: vi.fn(), remove: vi.fn(), assign: vi.fn(), unassign: vi.fn() }));
 vi.mock('../../services/roles.service', async (orig) => ({ ...(await orig<typeof import('../../services/roles.service')>()), rolesService: rolesSvc }));
-const targetsSvc = vi.hoisted(() => ({ tree: vi.fn(), attainment: vi.fn(), rewardSettings: vi.fn() }));
+const targetsSvc = vi.hoisted(() => ({ tree: vi.fn(), rewardSettings: vi.fn() }));
 vi.mock('../../services/targets.service', () => ({ targetsService: targetsSvc }));
 // The Pay card has its own tests (PayCard.test.tsx); these tests are about the role cards
 vi.mock('../../pages/staff/PayCard', () => ({ PayCard: () => null }));
@@ -50,12 +50,9 @@ const TREE = {
     roleId: CALL.roleId, roleName: CALL.name, pool: null,
     target: { id: 1, updatedAt: '', scope: 'role', metric: 'confirmed_delivered', unit: 'count', value: 723, periodStart: '2026-11-01', periodEnd: '2026-11-30', parentId: null, closed: false },
     holders: [{ userId: 11, name: 'Adwoa Darko', kind: 'person', typeLabel: 'Human', target: { id: 2, metric: 'confirmed_delivered', unit: 'count', value: 723 }, label: null }],
+    roleAttainment: { done: 376, target: 723, percent: 52, rate: false, status: { key: 'behind', label: 'Behind' } },
   }],
 } as unknown as Tree;
-const ATTAINMENT = {
-  period: '2026-11', closed: false, currency: 'GHS',
-  results: [{ userId: 11, name: 'Adwoa Darko', kind: 'person', roleId: CALL.roleId, roleName: CALL.name, payout: true, metric: 'confirmed_delivered', unit: 'count', target: 723, actual: 376, percent: 52, tier: 'none', reward: null, earned: false, status: { key: 'behind', label: 'Behind' }, distance: null, warning: null, message: '' }],
-} as unknown as Attainment;
 
 beforeEach(() => {
   clearBlockCache();
@@ -69,7 +66,6 @@ beforeEach(() => {
   rolesSvc.overview.mockResolvedValue(CARDS());
   rolesSvc.assignments.mockResolvedValue([]);
   targetsSvc.tree.mockResolvedValue(null);
-  targetsSvc.attainment.mockResolvedValue(null);
   targetsSvc.rewardSettings.mockResolvedValue(null);
 });
 
@@ -98,19 +94,18 @@ describe('Staff page: role cards', () => {
     expect(finance.getByText('No holder')).toBeInTheDocument();
   });
 
-  it('progress and status come from this month\'s targets and attainment', async () => {
+  it('progress and status come from the role attainment of this month\'s light tree', async () => {
     targetsSvc.tree.mockResolvedValue(TREE);
-    targetsSvc.attainment.mockResolvedValue(ATTAINMENT);
     renderPage();
     const call = within(await screen.findByRole('button', { name: 'Call rep role' }));
     expect(await call.findByRole('progressbar', { name: 'Call rep progress' })).toHaveAttribute('aria-valuenow', '52');
     expect(call.getByText('376 of 723 · 52% of role target')).toBeInTheDocument();
     expect(call.getByText('Behind')).toBeInTheDocument();
+    expect(targetsSvc.tree).toHaveBeenCalledWith(expect.any(Number), expect.stringMatching(/^\d{4}-\d{2}$/), { actuals: false });
   });
 
   it('the cards show without progress when targets cannot be read', async () => {
     targetsSvc.tree.mockRejectedValue(new Error('403'));
-    targetsSvc.attainment.mockRejectedValue(new Error('403'));
     renderPage();
     expect(await screen.findByRole('button', { name: 'Call rep role' })).toBeInTheDocument();
     expect(screen.queryByRole('progressbar')).toBeNull();

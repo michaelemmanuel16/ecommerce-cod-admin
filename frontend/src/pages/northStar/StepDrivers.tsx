@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Select, Tag } from '../../components/ui-v2';
-import { targetsService, type Calculators, type Tree } from '../../services/targets.service';
+import { targetsService, type Calculators, type SaveTargetInput, type Tree } from '../../services/targets.service';
 import { apiMessage } from '../orders/importText';
 import { compactMoney, monthName } from '../dashboard/format';
 import { NO_DATA, formatCount } from '../targets/model';
@@ -77,15 +77,18 @@ export function StepDrivers({ year, month, currency, onBack, onNext }: Props) {
     setSaving(true);
     setError(null);
     try {
+      // One call, one transaction: the role targets first, then the people's shares of the call rep target
+      const saves: SaveTargetInput[] = [];
       for (const d of drivers) {
         const roleId = Number(roleOf[d.key]);
         if (!roleId || d.value === null) continue;
-        await targetsService.save({ scope: 'role', metric: d.metric, unit: d.unit, value: d.value, period: month, roleId });
+        saves.push({ scope: 'role', metric: d.metric, unit: d.unit, value: d.value, period: month, roleId });
       }
       for (const h of holders) {
         const value = parseNumber(split[h.userId] ?? '');
-        if (value && value > 0) await targetsService.save({ scope: 'person', metric: 'confirmed_delivered', unit: 'count', value, period: month, roleId: callRole!.roleId, userId: h.userId });
+        if (value && value > 0) saves.push({ scope: 'person', metric: 'confirmed_delivered', unit: 'count', value, period: month, roleId: callRole!.roleId, userId: h.userId });
       }
+      if (saves.length > 0) await targetsService.saveBatch(saves);
       onNext();
     } catch (err) {
       setError(await apiMessage(err, 'The targets could not be saved. Try again.'));

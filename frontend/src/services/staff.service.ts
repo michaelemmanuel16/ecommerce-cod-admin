@@ -44,9 +44,12 @@ export interface StaffList {
 
 export interface StaffQuery { status?: StaffStatus; role?: string; q?: string }
 
-export interface StaffRole { roleId: number; name: string; presetRole: string | null }
+/** How a role of person can be paid, from the API (backend `payPolicyFor`): the methods, the default, and whether an amount per order is typed. */
+export interface PayPolicy { methods: PayMethod[]; defaultMethod: PayMethod; amountEditable: boolean }
 
-export interface InviteBody {
+export interface StaffRole { roleId: number; name: string; presetRole: string | null; payPolicy: PayPolicy }
+
+interface InviteBody {
   name: string;
   email: string;
   phoneNumber?: string;
@@ -67,7 +70,7 @@ export interface InviteResult {
   delivery: { channel: InviteChannel; sent: boolean; reason?: string };
 }
 
-export interface StaffPatch {
+interface StaffPatch {
   firstName?: string;
   lastName?: string;
   email?: string;
@@ -80,9 +83,10 @@ export interface StaffPatch {
   location?: string;
 }
 
-export interface WorkloadRow { id: number; openOrders: number; asRep: number; asAgent: number }
+interface WorkloadRow { id: number; openOrders: number; asRep: number; asAgent: number }
 
-const quiet = { quiet: true } as const;
+/** The option of every call a page answers in its own words (a refusal is said once, by the page). */
+export const quiet = { quiet: true } as const;
 
 export const staffService = {
   async list(query: StaffQuery): Promise<StaffList> {

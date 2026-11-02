@@ -74,6 +74,8 @@ describe('Targets page: the tree', () => {
     const oct = await screen.findByRole('button', { name: 'October GH₵92k delivered, show its targets' });
     expect(oct).toHaveAttribute('aria-pressed', 'true');
     expect(oct).toHaveClass('sel');
+    // the API gives no role attainment for a month that has not started
+    svc.tree.mockImplementation(async (_year: number, m: string) => (m === '2026-11' ? { ...TREE, roles: TREE.roles!.map((r) => ({ ...r, roleAttainment: null })) } : TREE));
     await userEvent.click(screen.getByRole('button', { name: 'November target GH₵180k, show its targets' }));
     expect(await screen.findByText('November targets by role')).toBeInTheDocument();
     expect(svc.tree).toHaveBeenLastCalledWith(2026, '2026-11');

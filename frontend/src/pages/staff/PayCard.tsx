@@ -12,7 +12,7 @@ import { payoutsService, type RepOwedRow } from '../../services/payouts.service'
 import { staffService, type StaffRow } from '../../services/staff.service';
 import { formatCurrency } from '../../utils/format';
 import { toCents } from '../../utils/money';
-import { AVATAR_TONES, initials, personName } from '../../utils/people';
+import { avatarClass, initials, personName } from '../../utils/people';
 import { monthName } from '../dashboard/format';
 import { DEFAULT_VIEW, rangeOf } from '../deliveries/urlState';
 import { ListSkeleton } from '../deliveries/ListSkeleton';
@@ -97,7 +97,7 @@ export function PayCard({ company }: PayCardProps) {
                 <tbody>
                   {reps.map((r) => (
                     <tr key={r.id}>
-                      <td><div className="who"><div className={`a ${AVATAR_TONES[r.id % AVATAR_TONES.length]}`} aria-hidden="true">{initials(personName(r))}</div><div><b>{personName(r)}</b><small>Call rep</small></div></div></td>
+                      <td><div className="who"><div className={avatarClass('person', r.id)} aria-hidden="true">{initials(personName(r))}</div><div><b>{personName(r)}</b><small>Call rep</small></div></div></td>
                       <td className="r num">{r.delivered.toLocaleString('en-GB')}</td>
                       <td className="r num">{formatCurrency(r.commission)}</td>
                       <td className="r num">{formatCurrency(r.upsellReward)}</td>
@@ -183,7 +183,7 @@ function AgentRow({ partner, person, cash }: { partner: PartnerRow; person: Staf
   const money = (v: string | number | null | undefined) => (v === undefined || v === null ? '—' : formatCurrency(v));
   return (
     <tr>
-      <td><div className="who"><div className={`a ${AVATAR_TONES[partner.partnerId % AVATAR_TONES.length]}`} aria-hidden="true">{initials(partner.name)}</div><div><b>{partner.name}</b><small>Delivery</small></div></div></td>
+      <td><div className="who"><div className={avatarClass('person', partner.partnerId)} aria-hidden="true">{initials(partner.name)}</div><div><b>{partner.name}</b><small>Delivery</small></div></div></td>
       <td>{person?.vehicleType ?? '—'}{person?.vehicleId && <span className="sub2">{person.vehicleId}</span>}</td>
       <td>{partner.baseTown ?? person?.location ?? '—'}</td>
       <td>{feeRuleLine(partner.feeRule)}</td>

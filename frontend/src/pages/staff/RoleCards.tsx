@@ -4,7 +4,6 @@ import { Button, ConfirmDialog, Tag, useToast } from '../../components/ui-v2';
 import { rolesService, type RoleCard, type RoleHolder } from '../../services/roles.service';
 import { targetsService } from '../../services/targets.service';
 import { todayYmd } from '../../utils/format';
-import { initials } from '../../utils/people';
 import { apiMessage } from '../orders/importText';
 import { BlockError } from '../dashboard/blocks/Frame';
 import { useBlock } from '../financial/profit/useBlock';
@@ -13,7 +12,8 @@ import type { AssignKind } from './AssignBox';
 import { NewRoleModal } from './NewRoleModal';
 import { RoleDetail, type AssignChoice } from './RoleDetail';
 import { TYPE_LABEL, TYPE_TONE } from './model';
-import { avatarClass, roleProgress, targetOf, type RoleProgress } from './roleModel';
+import { avatarClass, initials } from '../../utils/people';
+import { roleProgress, targetOf, type RoleProgress } from './roleModel';
 
 interface RoleCardsProps {
   /** The role overview (users:view); undefined while it loads. */
@@ -84,9 +84,9 @@ function RoleCardView({ role, currency, month, progress, selected, onSelect }: {
 export function RoleCards({ roles, failed, currency, can, onInvite, onChanged, onRetry }: RoleCardsProps) {
   const say = useToast();
   const month = todayYmd().slice(0, 7);
-  const tree = useBlock(`staff|tree|${month}`, () => targetsService.tree(Number(month.slice(0, 4)), month).catch(() => null));
-  const attainment = useBlock(`staff|attainment|${month}`, () => targetsService.attainment(month).catch(() => null));
-  const progress = useMemo(() => roleProgress(tree.data ?? null, attainment.data ?? null, currency), [tree.data, attainment.data, currency]);
+  // The light tree (no delivered revenue per period): the roles with their progress, worked out by the API
+  const tree = useBlock(`targets/tree|${month}|light`, () => targetsService.tree(Number(month.slice(0, 4)), month, { actuals: false }).catch(() => null));
+  const progress = useMemo(() => roleProgress(tree.data ?? null), [tree.data]);
 
   const [chosen, setChosen] = useState<number | null>(null);
   const [assigning, setAssigning] = useState<AssignKind | null>(null);

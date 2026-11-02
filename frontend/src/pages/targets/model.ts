@@ -9,7 +9,7 @@ export const NO_PAYOUT = 'No payout';
 export const VACANT = 'Vacant';
 export const NO_DATA = 'No data for this metric';
 export const SET_A_TARGET = 'Set a target';
-export const NEEDS_SETTINGS = 'Needs Settings access';
+const NEEDS_SETTINGS = 'Needs Settings access';
 
 const NUMBER = new Intl.NumberFormat('en-GB');
 export const formatCount = (n: number): string => NUMBER.format(n);
@@ -103,6 +103,10 @@ export function targetWords(t: { metric: string; unit: string; value: number }, 
   return `${formatCount(t.value)}${unitWords(t.metric, t.unit)}`;
 }
 
+/** "376 of 723 · 52% of role target"; for a rate target "48% of 80% · 60% of role target". */
+export const progressText = (done: number, target: number, percent: number, rate: boolean): string =>
+  `${done}${rate ? '%' : ''} of ${target}${rate ? '%' : ''} · ${percent}% of role target`;
+
 const rewardLine = (role: RoleRow, holder: Holder, row: AttainmentRow | null, settings: RewardSettings | null, currency: string): Pick<HolderLine, 'reward' | 'rewardTitle'> => {
   if (holder.kind !== 'person' || (row && !row.payout)) return { reward: NO_PAYOUT };
   if (!settings) return { reward: '—', rewardTitle: NEEDS_SETTINGS };
@@ -134,17 +138,12 @@ export function buildGroups(roles: RoleRow[], attainment: Attainment | null, set
           ...rewardLine(role, holder, row, settings, currency), targetId: mine?.id ?? null,
         };
       });
-      // A rate target (delivery success) is met by the holders' rates, so the role's rate is their average; a count or money target adds up
-      const rate = role.target?.unit === 'percent';
-      const counted = lines.filter((l) => l.row?.target && (l.row.unit === 'percent') === rate && l.row.actual !== null);
-      const roleTarget = role.target?.value ?? null;
-      const total = counted.reduce((n, l) => n + (l.row?.actual ?? 0), 0);
-      const done = rate && counted.length > 0 ? Math.round(total / counted.length) : total;
-      const percent = roleTarget ? Math.round((done / roleTarget) * 100) : 0;
+      // The group bar is the API's: it adds up the holders (an average for a rate target) against the role target
+      const ra = role.roleAttainment;
       return {
         role, holderCount: plural(role.holders.length, 'holder'), vacant: role.holders.length === 0,
         roleTargetText: role.target ? `Role target: ${targetWords(role.target, currency)}` : `${SET_A_TARGET} for this role`,
-        bar: roleTarget && counted.length > 0 ? { percent, text: `${done}${rate ? '%' : ''} of ${roleTarget}${rate ? '%' : ''} · ${percent}% of role target` } : null, lines,
+        bar: ra && { percent: ra.percent, text: progressText(ra.done, ra.target, ra.percent, ra.rate) }, lines,
       };
     });
 }
