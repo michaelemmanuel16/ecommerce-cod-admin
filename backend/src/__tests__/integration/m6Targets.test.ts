@@ -19,6 +19,9 @@ jest.setTimeout(90_000);
 let pair: TwoTenants;
 const A = () => pair.a.id;
 const inA = <T>(fn: () => Promise<T>) => runInTenant(A(), fn);
+const viewOf = (id: number, month: string) => inA(async () => (await targets.roleViews([id], month))[0]);
+const poolOf = async (id: number, month: string) => (await viewOf(id, month)).pool;
+const holdersOf = async (id: number, month: string) => (await viewOf(id, month)).holders;
 const rejects = async (p: Promise<unknown>, status: number, text: RegExp) => {
   await expect(p).rejects.toMatchObject({ statusCode: status, message: expect.stringMatching(text) });
 };
@@ -116,10 +119,10 @@ describe('hierarchy and sum checks', () => {
 describe('role pool, person targets and "Set a target"', () => {
   it('a holder with no target shows "Set a target"; no automatic proration', async () => {
     await inA(() => targets.saveTarget({ scope: 'role', ...orders({ value: 723, period: '2026-11', roleId }) }));
-    const rows = await inA(() => targets.roleHolderTargets(roleId, '2026-10'));
+    const rows = await holdersOf(roleId, '2026-10');
     expect(rows).toHaveLength(2);
     expect(rows.every((r) => r.target === null && r.label === 'Set a target')).toBe(true);
-    expect((await inA(() => targets.rolePool(roleId, '2026-10')))!.pool).toBe('723.00');
+    expect((await poolOf(roleId, '2026-10'))!.pool).toBe('723.00');
   });
 
   it('a role target over its month is rejected with the difference', async () => {
@@ -133,8 +136,8 @@ describe('role pool, person targets and "Set a target"', () => {
     await inA(() => targets.saveTarget({ scope: 'person', ...orders({ value: 200, period: '2026-10', roleId, userId: ben }) }));
     await inA(() => targets.saveTarget({ scope: 'person', ...orders({ value: 200, period: '2026-11', roleId, userId: ben }) }));
     await rejects(inA(() => targets.saveTarget({ scope: 'person', ...orders({ value: 400, period: '2026-10', roleId, userId: ben }) })), 400, /over by 77\.00/);
-    expect(await inA(() => targets.rolePool(roleId, '2026-10'))).toMatchObject({ allocated: '600.00', pool: '123.00' });
-    const rows = await inA(() => targets.roleHolderTargets(roleId, '2026-10'));
+    expect(await poolOf(roleId, '2026-10')).toMatchObject({ allocated: '600.00', pool: '123.00' });
+    const rows = await holdersOf(roleId, '2026-10');
     expect(rows.find((r) => r.userId === anna)!.target!.value).toBe('400.00');
   });
 
@@ -154,7 +157,7 @@ describe('role pool, person targets and "Set a target"', () => {
     expect(mine).toHaveLength(1);
     expect(mine[0].periodStart.toISOString().slice(0, 10)).toBe('2026-10-01');
     expect(mine[0].periodEnd.toISOString().slice(0, 10)).toBe('2026-10-16');
-    expect(await inA(() => targets.rolePool(roleId, '2026-10'))).toMatchObject({ allocated: '400.00', pool: '323.00' });
+    expect(await poolOf(roleId, '2026-10')).toMatchObject({ allocated: '400.00', pool: '323.00' });
     expect(await prismaBase.auditLog.count({ where: { tenantId: A(), action: 'target_release', resourceId: String(roleId) } })).toBe(1);
     expect(await prismaBase.notification.count({ where: { tenantId: A(), userId: actor, type: 'target_returned' } })).toBe(1);
   });
@@ -231,7 +234,7 @@ describe('closed month', () => {
 
 describe('two tenants', () => {
   it('tenant B cannot see or touch tenant A targets', async () => {
-    expect(await runInTenant(pair.b.id, () => targets.rolePool(roleId, '2026-10'))).toBeNull();
+    expect(await runInTenant(pair.b.id, async () => (await targets.roleViews([roleId], '2026-10'))[0].pool)).toBeNull();
     await rejects(runInTenant(pair.b.id, () => targets.deleteTarget(northStar.id)), 404, /not found/);
     await rejects(runInTenant(pair.b.id, () => targets.setChildren(northStar.id, [])), 404, /not found/);
   });

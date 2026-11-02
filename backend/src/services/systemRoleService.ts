@@ -6,6 +6,7 @@ import logger from '../utils/logger';
 import { invalidateAccess } from './accessService';
 import { resolveTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
+import { pairKey } from './leaderboardMath';
 import { ROLE_NAME_BY_USER_ROLE, defaultRoleRows } from '../config/defaultRoles';
 
 type Db = Pick<TransactionClient, 'role' | 'roleAssignment' | 'systemConfig' | 'user'>;
@@ -66,13 +67,13 @@ export async function assignUsersToPositionRoles(tenantId: string, db: Db = pris
       db.roleAssignment.findMany({ select: { holderId: true, roleId: true } }),
     ]);
     const roleId = new Map(roles.map((r) => [r.name, r.id]));
-    const heldKeys = new Set(held.map((h) => `${h.holderId}:${h.roleId}`));
+    const heldKeys = new Set(held.map((h) => pairKey(h.holderId, h.roleId)));
     const result: UserMigrationResult = { assigned: {}, alreadyHeld: 0 };
     const rows: Prisma.RoleAssignmentCreateManyInput[] = [];
     for (const u of users) {
       const name = ROLE_NAME_BY_USER_ROLE[u.role];
       const id = roleId.get(name);
-      if (id != null && heldKeys.has(`${u.id}:${id}`)) { result.alreadyHeld++; continue; }
+      if (id != null && heldKeys.has(pairKey(u.id, id))) { result.alreadyHeld++; continue; }
       // A dry run may come before the roles exist; those users still count as not yet holding their role.
       if (id == null && !dryRun) throw new Error(`Role "${name}" is missing; seed the system roles first`);
       result.assigned[u.role] = (result.assigned[u.role] ?? 0) + 1;

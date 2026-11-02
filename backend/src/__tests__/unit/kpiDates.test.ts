@@ -1,7 +1,7 @@
 /** M1-T15: store-zone date helpers. Written zone-agnostic: the same boundaries are checked in a UTC+0 zone (Accra), a +13 zone and a -5 zone. */
 import { describe, it, expect } from '@jest/globals';
 import {
-  DEFAULT_TIME_ZONE, daysInMonth, endOfDay, localDate, monthRange, parseBound, parseInclusiveBound, startOfDay, addDays, weekRange,
+  DEFAULT_TIME_ZONE, daysInMonth, endOfDay, localDate, monthRange, parseBound, parseMonth, shiftMonth, parseInclusiveBound, startOfDay, addDays, weekRange,
 } from '../../services/kpi/dates';
 
 const ZONES = ['Africa/Accra', 'Pacific/Auckland', 'America/New_York'];
@@ -100,5 +100,19 @@ describe('weekRange', () => {
     const w = weekRange('2026-10-15', zone);
     expect(w.from.getTime()).toBe(startOfDay('2026-10-12', zone).getTime());
     expect(w.to.getTime()).toBe(startOfDay('2026-10-19', zone).getTime());
+  });
+});
+
+describe('month strings', () => {
+  it('parseMonth reads YYYY-MM and nothing else', () => {
+    expect(parseMonth('2026-10')).toEqual({ year: 2026, month: 10 });
+    for (const bad of ['2026-13', '2026-00', '2026-1', '2026-10-01', 'month', '']) expect(parseMonth(bad)).toBeNull();
+  });
+
+  it('shiftMonth moves across year ends', () => {
+    expect(shiftMonth('2026-01', -1)).toBe('2025-12');
+    expect(shiftMonth('2026-01', -2)).toBe('2025-11');
+    expect(shiftMonth('2026-11', 2)).toBe('2027-01');
+    expect(shiftMonth('2026-10', 0)).toBe('2026-10');
   });
 });

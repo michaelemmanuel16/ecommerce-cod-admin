@@ -4,7 +4,7 @@ import { AuthRequest } from '../types';
 import { AppError } from '../middleware/errorHandler';
 import { formatIssues } from '../tools/shared';
 
-/** Small helpers the thin controllers share (M6-T05). The role controller keeps its own copies until it switches over. */
+/** Small helpers the thin controllers share (M6-T05). */
 
 /** An async handler whose errors go to the error middleware. */
 export const handler = (fn: (req: AuthRequest, res: Response) => Promise<void>): RequestHandler =>

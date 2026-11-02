@@ -10,11 +10,9 @@ import bcrypt from 'bcrypt';
 import request from 'supertest';
 import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
-import { runInTenant } from '../../utils/tenantContext';
 import { generateAccessToken } from '../../utils/jwt';
 import { bearer, superAdminToken } from './helpers/superAdminToken';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
-import { getRepPay } from '../../services/rewardService';
 import { rates, outcomesByPartner, deliveredByRep } from '../../services/kpi/rates';
 
 jest.setTimeout(120_000);
@@ -100,7 +98,6 @@ describe('settings', () => {
     expect(res.body.noPayout).toEqual(['ai_agent', 'company']);
     const callRep = res.body.tiers.find((t: { roleId: number }) => t.roleId === callRepRole.id);
     expect(callRep).toMatchObject({ roleName: 'Call rep', tier100: null, tier120: null });
-    expect(await runInTenant(pair.a.id, async () => (await getRepPay()).baseCommission.toString())).toBe('8');
   });
 
   it('a 120% reward below the 100% reward is refused with TIER_ORDER and nothing is saved', async () => {
@@ -131,7 +128,6 @@ describe('settings', () => {
     expect(byRole(deliveryRole.id)).toMatchObject({ tier100: { amount: '250.00' }, tier120: { amount: '400.00', dayOff: true } });
     expect(read.repPay).toEqual({ baseCommission: '8.50', upsellPercent: '11.00' });
     expect(read.badgesDisplay).toBe(false);
-    expect(await runInTenant(pair.a.id, async () => (await getRepPay()).upsellPercent.toString())).toBe('11');
 
     await api.put(ownerA, '/api/rewards/settings', tiersBody(callRepRole.id, 310, 510));
     expect(await prismaBase.rewardTier.count({ where: { tenantId: pair.a.id, roleId: callRepRole.id } })).toBe(2);

@@ -10,6 +10,7 @@ import { deliveredByRep, outcomesByPartner } from './kpi/rates';
 import { currentMonth, getStoreTimeZone, localDate, monthRange, ymdOfUtc, MONTH_RE } from './kpi/dates';
 import { METRIC_BASIS, type MeasureBasis } from '../config/targetMetrics';
 import { monthStatus } from './targetActuals';
+import { pairKey } from './leaderboardMath';
 import { NO_DATA_FOR_METRIC, SET_A_TARGET, isMonthClosed, monthPersonTargets, monthRoleTargets, periodBounds } from './targetService';
 import { clearTenantFeaturesCache, getRewardFeatures, mergeFeatureKey, type RewardFeatures } from './tenantFeatures';
 import {
@@ -34,20 +35,15 @@ import type { RewardSettingsInput } from '../validators/rewardSchema';
 export const REP_PAY_DEFAULTS = { baseCommission: '8.00', upsellPercent: '10.00' } as const;
 export const SETTINGS_NOTICE = 'Saved. Tier changes apply from the next month close. Commission and upsell changes apply to orders delivered after the save.';
 
-/** The rep pay of a stored settings object, with the defaults for what is not set. Pure. */
+/**
+ * The rep pay of a stored settings object, with the defaults for what is not set: per delivered order the rep confirmed by call,
+ * and the share of the extra value they added. Pure. GL posting still reads `User.commissionAmount` until M6-T10 / M7 switch
+ * commission entries to this setting; until then a change here does not move a posted amount.
+ */
 const repPayOf = (stored: RewardFeatures) => ({
   baseCommission: Money.parse(stored.baseCommission ?? REP_PAY_DEFAULTS.baseCommission),
   upsellPercent: Money.parse(stored.upsellPercent ?? REP_PAY_DEFAULTS.upsellPercent),
 });
-
-/**
- * The rep pay of the tenant: per delivered order the rep confirmed by call, and the share of the extra value they added.
- * This is the one place the setting is read. GL posting still reads `User.commissionAmount` until M6-T10 / M7 switch commission
- * entries to this function; until then a change here does not move a posted amount.
- */
-export async function getRepPay() {
-  return repPayOf(await getRewardFeatures());
-}
 
 const tierView = (t: { amount: Prisma.Decimal; dayOff: boolean; payout: boolean } | undefined) =>
   t ? { amount: Money.toApi(t.amount), dayOff: t.dayOff, payout: t.payout } : null;
@@ -126,8 +122,6 @@ export async function saveRewardSettings(input: RewardSettingsInput) {
 type TierRow = { amount: Prisma.Decimal; dayOff: boolean; payout: boolean };
 type Tiers = Partial<Record<Tier, TierRow>>;
 
-const key = (userId: number, roleId: number) => `${userId}:${roleId}`;
-
 /**
  * Who is judged this month: everyone with a live person target for it, and everyone who holds a role now whose role is
  * measured (a call rep or delivery role, a role with a target metric, or a role with a target this month). A holder of the
@@ -148,10 +142,10 @@ async function peopleOfMonth(period: string, userId?: number, roleId?: number) {
     ...roleTargets.map((t) => t.roleId!),
   ]);
   const pairs = new Map<string, { userId: number; roleId: number }>();
-  for (const t of targets) pairs.set(key(t.userId!, t.roleId!), { userId: t.userId!, roleId: t.roleId! });
-  for (const h of holders) if (measured.has(h.roleId)) pairs.set(key(h.holderId, h.roleId), { userId: h.holderId, roleId: h.roleId });
+  for (const t of targets) pairs.set(pairKey(t.userId!, t.roleId!), { userId: t.userId!, roleId: t.roleId! });
+  for (const h of holders) if (measured.has(h.roleId)) pairs.set(pairKey(h.holderId, h.roleId), { userId: h.holderId, roleId: h.roleId });
   // The targets come oldest first: a later one of the same pair (a changed metric) replaces the earlier.
-  const targetOf = new Map(targets.map((t) => [key(t.userId!, t.roleId!), t]));
+  const targetOf = new Map(targets.map((t) => [pairKey(t.userId!, t.roleId!), t]));
   return { picked: [...pairs.values()], targetOf };
 }
 
@@ -251,7 +245,7 @@ export async function computeAttainment(period: string, filter: { userId?: numbe
 
   // What each row needs is read once for everyone who needs it, and not at all when no row does.
   const basisByRow = picked.map((p) => {
-    const target = targetOf.get(key(p.userId, p.roleId));
+    const target = targetOf.get(pairKey(p.userId, p.roleId));
     return target ? basisOf(target.metric, roleById.get(p.roleId)?.presetRole ?? null) : null;
   });
   const idsOf = (basis: MeasureBasis) => [...new Set(picked.filter((_, i) => basisByRow[i] === basis).map((p) => p.userId))];
@@ -262,14 +256,12 @@ export async function computeAttainment(period: string, filter: { userId?: numbe
     rateIds.length ? outcomesByPartner(tenantId, from, to, rateIds) : new Map<number, { delivered: number; failed: number; returned: number }>(),
   ]);
 
-  const money = (v: Money.MoneyInput) => Money.formatWithSign(v, currency);
-
   const rows: AttainmentRow[] = [];
   picked.forEach(({ userId: uid, roleId }, i) => {
     const user = userById.get(uid);
     const role = roleById.get(roleId);
     if (!user || !role) return;
-    const target = targetOf.get(key(uid, roleId)) ?? null;
+    const target = targetOf.get(pairKey(uid, roleId)) ?? null;
     const human = user.kind === 'person';
     const row = (over: Partial<AttainmentRow>): AttainmentRow => ({
       userId: uid, name: fullName(user), kind: user.kind, roleId, roleName: role.name, payout: human,
@@ -291,12 +283,12 @@ export async function computeAttainment(period: string, filter: { userId?: numbe
     const tiers = tiersOf.get(roleId) ?? {};
     const next = nextTier(tier);
     const nextRow = next === null ? undefined : tiers[next];
-    const distance = distanceTo(basis, tier, m, target.value, nextRow ? money(nextRow.amount) : null);
+    const distance = distanceTo(basis, tier, m, target.value, nextRow ? Money.formatWithSign(nextRow.amount, currency) : null);
     const paid = tier === null ? undefined : tiers[tier];
     const reward = paid && paid.payout ? { amount: Money.toApi(paid.amount), dayOff: paid.dayOff } : null;
     rows.push(row({
       ...shown, reward, distance, earned: closed && reward !== null,
-      message: rewardMessage({ tier, reward: reward && { ...reward, amount: money(reward.amount) }, distance: distance?.message ?? null, closed, human, percent: shown.percent }),
+      message: rewardMessage({ tier, reward: reward && { ...reward, amount: Money.formatWithSign(reward.amount, currency) }, distance: distance?.message ?? null, closed, human, percent: shown.percent }),
     }));
   });
 

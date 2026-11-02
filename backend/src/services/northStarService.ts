@@ -3,7 +3,7 @@ import prisma from '../utils/prisma';
 import { resolveTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
 import * as Money from '../utils/money';
-import { daysInMonth, getStoreTimeZone, localDate, MONTH_RE, parseYmd, utcDate, ymdOfUtc } from './kpi/dates';
+import { daysInMonth, getStoreTimeZone, localDate, parseMonth, parseYmd, utcDate, ymdOfUtc } from './kpi/dates';
 import { isOwnerRole } from '../config/defaultRoles';
 import { actualsOf } from './targetActuals';
 import { autoPlannedAov, plannedAovBounds, plannedAovWindow } from './kpi/leadership';
@@ -32,9 +32,9 @@ export const DEFAULT_NET_MARGIN = 35;
 
 /** [year, month] of a 'YYYY-MM' string, or 400. */
 const monthParts = (month: string): [number, number] => {
-  const m = MONTH_RE.exec(month);
-  if (!m) throw new AppError(`Invalid month "${month}"`, 400, 'INVALID_PERIOD');
-  return [Number(m[1]), Number(m[2])];
+  const parsed = parseMonth(month);
+  if (!parsed) throw new AppError(`Invalid month "${month}"`, 400, 'INVALID_PERIOD');
+  return [parsed.year, parsed.month];
 };
 
 const todayYmd = () => localDate(new Date(), getStoreTimeZone(resolveTenantId()));
@@ -296,8 +296,6 @@ async function profitPerOrder(tenantId: string): Promise<string | null> {
   return (await topProductByDelivered(from, to))?.profitPerOrder ?? null;
 }
 
-const money = (v: Money.MoneyInput) => Money.toApi(v);
-
 /**
  * The split a save would write, for the wizard and the Settings tab before anything is saved (F-1111, F-1112): four quarters and the
  * three months of each, with the months of this year that are past or closed kept as they are. Custom quarters that do not add up are
@@ -308,5 +306,5 @@ export async function previewNorthStar(input: Pick<NorthStarInput, 'year' | 'ann
     where: { metric: REVENUE_METRIC, roleId: null, userId: null, scope: { in: ['quarter', 'month'] }, periodStart: { gte: utcDate(input.year, 1), lte: utcDate(input.year, 12, 31) } },
   });
   const plan = planYear(existing, input);
-  return { quarters: plan.quarters.map((q) => money(q.value)), months: plan.quarters.map((q) => q.months.map(money)), kept: plan.extra };
+  return { quarters: plan.quarters.map((q) => Money.toApi(q.value)), months: plan.quarters.map((q) => q.months.map((v) => Money.toApi(v))), kept: plan.extra };
 }

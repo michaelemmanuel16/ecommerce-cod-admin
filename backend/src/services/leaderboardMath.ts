@@ -1,6 +1,5 @@
 import * as Money from '../utils/money';
 import { daysInMonth } from './kpi/dates';
-import { displayPercent } from './rewardMath';
 import { DAY_MS } from './kpi/dates';
 
 /**
@@ -19,8 +18,8 @@ export const NO_ACTIVITY_NOTE = 'No orders in this period yet.';
 /** Days an unpaid delivered order may wait before it spoils the "Zero unpaid over 8 days" badge. */
 export const UNPAID_DAYS = 8;
 
-/** Percent of target of a row, one decimal cut down: what the screen shows, and what ties are judged on. */
-export const rankPercent = (percent: Money.Money | null): number | null => (percent === null ? null : displayPercent(percent));
+/** The key of one person in one role (a Map or Set key). */
+export const pairKey = (userId: number, roleId: number | null): string => `${userId}:${roleId}`;
 
 /**
  * Competition ranks by percent of the person's own target, highest first: a tie shares a rank and the next rank skips
