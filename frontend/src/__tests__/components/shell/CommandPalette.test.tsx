@@ -72,8 +72,8 @@ describe('CommandPalette (M3-T35)', () => {
     expect(await screen.findByText('Ask the agent a question')).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /Orders/ })).toHaveTextContent('G O');
     expect(screen.getByRole('option', { name: /Customers/ })).toBeInTheDocument();
-    // targets is in the menu but has no page: no row; leaderboard is not in the menu
-    expect(screen.queryByRole('option', { name: /Targets/ })).not.toBeInTheDocument();
+    // targets is in the menu and has a page (M6-T15): a row with its shortcut; leaderboard is not in the menu
+    expect(screen.getByRole('option', { name: /Targets/ })).toHaveTextContent('G T');
     expect(screen.queryByRole('option', { name: /Leaderboard/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('option', { name: /Settings/ })).not.toBeInTheDocument(); // not in this menu
     expect(screen.queryByText('Actions')).not.toBeInTheDocument();
@@ -225,11 +225,12 @@ describe('CommandPalette (M3-T35)', () => {
       expect(screen.getByTestId('where')).toHaveTextContent('/customers');
     });
 
-    it('G L and G T do nothing yet: Leaderboard and Targets have no page', async () => {
+    it('G L opens the Leaderboard; G T opens Targets', async () => {
       renderPalette({ menu: [...MENU, 'leaderboard'] });
       await userEvent.keyboard('gl');
+      expect(screen.getByTestId('where')).toHaveTextContent('/leaderboard');
       await userEvent.keyboard('gt');
-      expect(screen.getByTestId('where')).toHaveTextContent('/customers');
+      expect(screen.getByTestId('where')).toHaveTextContent('/targets');
     });
 
     it('G O does nothing for a role without the orders menu key', async () => {

@@ -12,6 +12,7 @@ import { renderEmailTemplate } from './emailTemplateService';
 import { ensureUnsubscribeToken, buildUnsubscribeUrl, applyUnsubscribe } from './unsubscribeService';
 import * as Money from '../utils/money';
 import { getCurrency } from '../utils/currency';
+import { INVITE_TTL_DAYS } from '../utils/inviteToken';
 
 // ---------- Types ----------
 
@@ -204,13 +205,16 @@ async function sendViaResend(config: EmailConfig, options: SendEmailOptions): Pr
     resendApiKey = config.apiKey;
   }
   const from = options.from || `${config.fromName} <${config.fromEmail}>`;
-  await resendClient.emails.send({
+  // The Resend SDK does not throw when the API refuses a message: it answers `{ data, error }`. Without this check a refused
+  // send (unverified domain, bad key) read as sent, and the invite said "sent" when nothing went out.
+  const { error } = await resendClient.emails.send({
     from,
     to: options.to,
     subject: options.subject,
     html: options.html,
     headers: options.headers,
   });
+  if (error) throw new Error(`Resend refused the message: ${error.message}`);
 }
 
 async function sendViaSmtp(config: EmailConfig, options: SendEmailOptions): Promise<void> {
@@ -273,6 +277,24 @@ export async function sendPasswordResetEmail(
       <p><a href="${resetUrl}">Reset your password</a></p>
       <p>This link will expire in 15 minutes.</p>
       <p>If you didn't request a password reset, you can safely ignore this email.</p>
+    `,
+  });
+}
+
+export async function sendInviteEmail(
+  email: string,
+  firstName: string,
+  inviterName: string,
+  inviteUrl: string
+): Promise<void> {
+  await sendEmail({
+    to: email,
+    subject: 'You are invited to join the team - COD Admin',
+    html: `
+      <p>Hi ${escapeHtml(firstName)},</p>
+      <p>${escapeHtml(inviterName)} invited you to join their team. Click the link below to choose your password:</p>
+      <p><a href="${inviteUrl}">Accept the invite</a></p>
+      <p>This link works once and expires in ${INVITE_TTL_DAYS} days.</p>
     `,
   });
 }

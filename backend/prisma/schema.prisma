@@ -86,6 +86,9 @@ model Tenant {
   partnerSettlements      PartnerSettlement[]
   partnerSettlementLines  PartnerSettlementLine[]
   commissionEntries       CommissionEntry[]
+  rewardTiers             RewardTier[]
+  badgeAwards             BadgeAward[]
+  assignmentCursors       AssignmentCursor[]
 
   @@index([paystackCustomerCode])
   @@index([paystackSubscriptionCode])
@@ -138,6 +141,12 @@ model User {
   passwordResetToken    String?                 @unique @map("password_reset_token")
   passwordResetExpires  DateTime?               @map("password_reset_expires")
   commissionAmount      Decimal?                @default(0) @map("commission_amount") @db.Decimal(19, 4) /// Fixed commission amount per delivery (GHS)
+  /// M6 (F-1158): invite state; only the token hash is stored.
+  invitedAt             DateTime?               @map("invited_at")
+  inviteTokenHash       String?                 @unique @map("invite_token_hash")
+  inviteExpiresAt       DateTime?               @map("invite_expires_at")
+  /// M6 (F-1160): set when staff soft-delete a person (also isActive=false); cleared on restore. Not set by a plain deactivate.
+  deletedAt             DateTime?               @map("deleted_at")
   country               String?
   preferences           Json?
   vehicleType           String?                 @map("vehicle_type")
@@ -193,6 +202,7 @@ model User {
   payoutsRecorded       Payout[]                @relation("PayoutRecorder")
   kind                  UserKind                @default(person)
   roleAssignments       RoleAssignment[]        @relation("RoleAssignmentHolder")
+  badgeAwards           BadgeAward[]            @relation("BadgeAwardUser")
   sessions              UserSession[]
   customersCreated      Customer[]              @relation("CustomerCreatedBy")
   mcpApiKeys            McpApiKey[]             @relation("McpApiKeyUser")
@@ -1951,16 +1961,21 @@ model Target {
   roleId      Int?        @map("role_id")
   userId      Int?        @map("user_id")
   closedAt    DateTime?   @map("closed_at")
+  /// M6 (F-1113): auto or manual (planned AOV).
+  source      String      @default("auto")
   createdAt   DateTime    @default(now()) @map("created_at")
   updatedAt   DateTime    @updatedAt @map("updated_at")
   parent      Target?     @relation("TargetHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
   children    Target[]    @relation("TargetHierarchy")
+  role        Role?       @relation(fields: [roleId], references: [id], onDelete: SetNull)
   user        User?       @relation("TargetUser", fields: [userId], references: [id], onDelete: SetNull)
   tenantId    String      @map("tenant_id")
   tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([tenantId])
   @@index([tenantId, scope, periodStart])
+  @@index([roleId])
+  @@index([userId])
   @@map("targets")
 }
 
@@ -2035,22 +2050,31 @@ model FxRate {
   @@map("fx_rates")
 }
 
-/// M2-T01: minimal shape. M6 adds fields, UI and the permission matrix (F-1150).
+/// M2-T01: minimal shape, extended in M6 (F-1150).
 model Role {
-  id          Int              @id @default(autoincrement())
-  tenantId    String           @map("tenant_id")
-  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  name        String
-  area        String?
-  contract    Json?
-  tools       Json?
-  kpis        Json?
-  isSystem    Boolean          @default(false) @map("is_system")
-  createdAt   DateTime         @default(now()) @map("created_at")
-  updatedAt   DateTime         @updatedAt @map("updated_at")
-  assignments RoleAssignment[]
-  mcpApiKeys  McpApiKey[]
-  auditLogs   AuditLog[]
+  id                Int               @id @default(autoincrement())
+  tenantId          String            @map("tenant_id")
+  tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  name              String
+  area              String?
+  contract          Json?
+  tools             Json?
+  kpis              Json?
+  /// M6 (F-1154): fine permission grid; the 16 tool switches stay in `tools`.
+  permissions       Json?
+  /// M6 (F-1150): metric the role target measures.
+  targetMetric      String?           @map("target_metric")
+  /// M6 (F-1155): legacy UserRole this role came from (base preset); NULL on custom roles.
+  presetRole        UserRole?         @map("preset_role")
+  isSystem          Boolean           @default(false) @map("is_system")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+  assignments       RoleAssignment[]
+  mcpApiKeys        McpApiKey[]
+  auditLogs         AuditLog[]
+  rewardTiers       RewardTier[]
+  targets           Target[]
+  commissionEntries CommissionEntry[] @relation("CommissionEntryRole")
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -2071,8 +2095,59 @@ model RoleAssignment {
 
   @@index([tenantId])
   @@index([roleId])
-  @@index([holderId])
+  // M6: roles a person holds now, read on every request.
+  @@index([holderId, toDate])
   @@map("role_assignments")
+}
+
+/// M6 (F-1231): cash reward tier of a role; threshold is percent of target (100 or 120).
+model RewardTier {
+  id        Int      @id @default(autoincrement())
+  tenantId  String   @map("tenant_id")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  roleId    Int      @map("role_id")
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  threshold Int
+  amount    Decimal  @db.Decimal(19, 4)
+  dayOff    Boolean  @default(false) @map("day_off")
+  payout    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, roleId, threshold])
+  @@map("reward_tiers")
+}
+
+/// M6 (F-1109): result badge awarded at month close; period is "2026-10".
+model BadgeAward {
+  id        Int      @id @default(autoincrement())
+  tenantId  String   @map("tenant_id")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  userId    Int      @map("user_id")
+  user      User     @relation("BadgeAwardUser", fields: [userId], references: [id], onDelete: Cascade)
+  key       String
+  period    String   @db.VarChar(7)
+  awardedAt DateTime @default(now()) @map("awarded_at")
+
+  @@unique([tenantId, userId, key, period])
+  @@index([tenantId, period])
+  @@index([userId])
+  @@map("badge_awards")
+}
+
+/// M6 (F-513): round-robin cursor per (tenant, scope, preset role); the database fallback behind Redis.
+model AssignmentCursor {
+  id        Int      @id @default(autoincrement())
+  tenantId  String   @map("tenant_id")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  scope     String
+  role      UserRole
+  position  Int      @default(0)
+  state     Json?
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, scope, role])
+  @@map("assignment_cursors")
 }
 
 // One row per login (F-1224). tokenHash is the hash of the refresh token; the raw token is never stored.
@@ -2185,16 +2260,24 @@ model CommissionEntry {
   payoutId       Int?             @map("payout_id")
   journalEntryId Int?             @map("journal_entry_id")
   note           String?
+  /// M6 (F-916): month and role of a month-close reward; NULL on base and upsell entries.
+  period         String?          @db.VarChar(7)
+  roleId         Int?             @map("role_id")
   createdAt      DateTime         @default(now()) @map("created_at")
   updatedAt      DateTime         @updatedAt @map("updated_at")
   order          Order?           @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  role           Role?            @relation("CommissionEntryRole", fields: [roleId], references: [id], onDelete: SetNull)
   user           User             @relation("CommissionEntryUser", fields: [userId], references: [id])
   payout         Payout?          @relation(fields: [payoutId], references: [id], onDelete: SetNull)
   tenantId       String           @map("tenant_id")
   tenant         Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
+  // M6: one reward per person, role and month (NULLs never collide, so base and upsell rows are unaffected).
+  @@unique([tenantId, userId, kind, period, roleId])
+  @@index([roleId])
   @@index([tenantId])
   @@index([tenantId, userId, status, earnedAt])
+  @@index([tenantId, kind, period])
   @@index([orderId])
   @@index([payoutId])
   @@map("commission_entries")

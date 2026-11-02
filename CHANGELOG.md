@@ -8,6 +8,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **[Roles]**: M6 schema (reward tiers, badge awards, assignment cursors, role permission grid, preset role and target metric, invite fields) and system roles: one `DEFAULT_ROLES` table with Admin, Manager and Marketing, `mergeRolePermissions` shared by auth and the seed, Owner role cannot be deleted, and `migrate-users-to-roles.ts` (`--dry-run`, `--tenant`) that gives each person and company user a position role without changing the permission matrix. (COD-56)
+- **[Roles]**: Role service and API: role list, overview, create, update and delete; four ways to add a holder (existing user, invited person, AI agent with a role-limited MCP key, company); unassign keeps history and revokes the agent's keys; last-Owner guard and one rank rule for assign and unassign. (COD-56)
+- **[Permissions]**: 16 tool switches per role, a permission grid per role, and access as the union of a person's roles; one cache clear on every access change; deactivated users are refused at once; last-Owner race fixed. (COD-56)
+- **[Staff]**: Invite flow: staff join by a link sent by email, SMS or WhatsApp (or copied); resend and revoke; accept-invite page; old create-with-password routes return 410; a deactivated or deleted person's link stops working. (COD-56)
+- **[Staff]**: Staff service and API: list with tab counts, edit, reset password, deactivate, reactivate, soft delete with restore, permanent erase with a typed confirm, workload; last-Owner guard with row locks; role edits keep the position role in step. (COD-56)
+- **[Rewards]**: Reward settings (tiers by role at 100% and 120%, rep pay, badges) and attainment per person on delivery-date numbers, with distance to the next tier; AI agents get no payout. (COD-58)
+- **[Rewards]**: Month close: the Owner previews and closes a month, each person at 100% or more gets one reward entry for the tier reached, the month locks, and a job runs on day 1 in each tenant's time zone; safe to repeat, nothing is paid on partial data. (COD-58)
+- **[Rewards]**: Leaderboard and badges API: ranks by target attainment (managers see all, others their own row), badges are awarded inside the month close transaction, and `/api/rewards/progress` is an alias for one person. (COD-58)
+- **[Targets]**: Targets page: North Star card, year tree and role groups with an add-target dialog; the backend sets one status and colour for every target; the table stacks at 760 px. (COD-59)
+- **[Targets]**: North Star plan: year tree in even, grow or custom quarters, driver targets with planned AOV, calculators (orders delivered, to take in, a day, max cost per order) and the /api/targets routes; Owner-only North Star. (COD-57)
+- **[Targets]**: Target service: one locked write path for the North Star, quarter, month, role, person and daily targets; children must add up to the parent; closed months cannot change; the target of an unassigned person returns to the role pool with a notice; year pace follows the quarter plan. (COD-57)
+- **[Permissions]**: A failed permission read is an error and never fills the cache; a stale read stores nothing after a clear; `PERMISSION_DEBUG` logs the grid on a 403 (removed in COD-62). (COD-56)
+- **[API]**: Role cards carry `toolCatalog` and `payPolicy`; `GET /api/targets/tree?month` carries `roleAttainment` per role and takes `actuals=false`; `POST /api/targets/batch` saves several targets in one transaction. Fields are only added. (COD-62)
+- **[Dashboard]**: Top this month reads targets: the top 3 by percent of own role target, from the same ranking as the Leaderboard. (COD-58)
+- **[Rewards]**: Leaderboard page with call rep and delivery tabs, a period select, podium, ranking table, reward progress cards and badges; above 120% shows "Top tier reached". (COD-59)
+- **[Targets]**: North Star setup wizard (six steps, inside onboarding) and a Settings tab "North Star and targets"; a re-run keeps the wizard done and the first completion date. (COD-59)
+- **[Staff]**: Team table with tabs and counts, invite and edit windows, and row actions with one confirm pattern; AI agents show in the list. (COD-60)
+- **[Staff]**: Role cards with holders, target, progress and tool count, role detail with history, an assign menu (person, AI agent, company) and a new role window. (COD-60)
+- **[Rewards]**: Settings Rewards tab: cash tiers by role, rep pay, badges display, 3PL contract review flag, offer tags from checkout forms; a change applies from the next close. (COD-59)
+- **[Staff]**: Pay card for reps and delivery partners that opens the same payout form as Finance, with one shared history list and the delivery fees each partner keeps. (COD-60)
+- **[Permissions]**: 16 allowed-tool switches and an Advanced permissions grid in role detail, and a menu that follows each custom role's permissions. (COD-60)
+- **[Tests]**: M6 fixture tests (targets, calculators, attainment, month close, leaderboard), a two-tenant, permission and invite security sweep, two E2E flows (invite-accept, set-target), and tests that no longer depend on today's date. (COD-59, COD-61, COD-56)
+- **[Targets]**: Targets reads skip the 5 s request cache so a saved row shows at once; the call rep target metric in the UI is now `confirmed_delivered` to match the backend. (COD-61)
+- **[Assignment]**: Persistent smooth weighted round robin cursor in the database (one locked row per pick, survives restart), away users skipped without a reset, and an owner alert once per scope per hour when nobody is available. (COD-58)
 - **[Finance]**: Finance Overview with six tiles, payout reconciliation, unpaid by age and cash runway from one call, with a date range and a short-row expansion. (COD-52, COD-53)
 - **[Finance]**: Findings page, Orders "Unpaid by agent" tab with a count, and Agent collections with four aging buckets, a review modal, WhatsApp reminder, block and unblock. (COD-53)
 - **[Finance]**: Profit by product, last 3 months chart (`GET /api/financial/profit-by-product/trend`); the deposits route takes `recentDecided` to stay bounded. (COD-54)
@@ -98,6 +122,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **[CI/CD]**: Sentry DSN injected into staging and production deployments (MAN-16)
 
 ### Fixed
+- **[Security]**: Inviting or changing the role of staff now checks the role grid: a non-Owner can no longer give a role that has permissions they do not have (403 GRID_ABOVE_ACTOR). (COD-62)
 - **[Finance]**: The General ledger did not load because the accounts call asked for 200 and was refused; the list now allows up to 500. (COD-52)
 - **[Finance]**: The Expenses card title read "1–NaN Oct 2026"; it now shows the real range. (COD-52)
 - **[Finance]**: Figures did not reload after saving an expense or a payout, because a 60 s cache returned the old data; saving now clears the affected blocks. (COD-54)

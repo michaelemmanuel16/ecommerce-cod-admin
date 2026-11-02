@@ -25,7 +25,7 @@ jest.mock('../../services/orderSideEffects', () => ({
 jest.mock('../../services/stockService', () => ({ fulfilOrder: jest.fn(async () => undefined), reverseOrder: jest.fn(async () => undefined) }));
 // Commission entries void with the order (m5CommissionPosting.test.ts); here only the call is checked
 jest.mock('../../services/commissionService', () => ({ voidOpenEntriesForOrder: jest.fn(async () => 0) }));
-jest.mock('../../middleware/auth', () => ({ __esModule: true, hasPermission: jest.fn() }));
+jest.mock('../../services/permissionService', () => ({ __esModule: true, hasPermission: jest.fn() }));
 // The attempt row has its own integration test (deliveryProofAttempts.test.ts); here only the call is checked
 jest.mock('../../services/deliveryAttemptHook', () => ({ recordDeliveryAttempt: jest.fn(async () => undefined) }));
 // The fee stamp has its own integration test (feeRules.test.ts); here only the call is checked

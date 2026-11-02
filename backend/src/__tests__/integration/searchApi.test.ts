@@ -3,6 +3,7 @@
  * 10,000 seeded orders: p95 under 400 ms (the timing is printed). Phone in any format finds the same customer.
  * Row scope (rep), permission filter and two-tenant checks.
  */
+import { defaultRolePermissions } from '../../config/defaultRolePermissions';
 import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import '../mocks/logger.mock';
 import '../mocks/socketInstance.mock';
@@ -205,7 +206,8 @@ describe('row scope, permission filter, tenants', () => {
   it('results follow orders:view and customers:view', async () => {
     const rep = pair.a.users.salesRep;
     const saved = (resources: Record<string, string[]>) =>
-      prismaBase.systemConfig.updateMany({ where: { tenantId: pair.a.id }, data: { rolePermissions: { sales_rep: resources } as any } });
+      // The Call rep role grid is the one store of what a rep may do (M6-T04)
+      prismaBase.role.updateMany({ where: { tenantId: pair.a.id, name: 'Call rep' }, data: { permissions: { ...defaultRolePermissions().sales_rep, ...resources } } });
 
     await saved({ customers: [] });
     clearPermissionsCache();
@@ -219,7 +221,7 @@ describe('row scope, permission filter, tenants', () => {
     expect(res.body.orders).toEqual([]);
     expect(res.body.customers).toHaveLength(1);
 
-    await prismaBase.systemConfig.updateMany({ where: { tenantId: pair.a.id }, data: { rolePermissions: undefined } });
+    await saved({});
     clearPermissionsCache();
   });
 });

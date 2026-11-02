@@ -205,3 +205,70 @@ Two items touch the DB schema (index, constraints): those need a migration and t
 
 Found in: M2 (COD-21) QA / review, 2026-10-21
 Touches production deploy: yes (only via normal release). Touches production DB: yes for the index and constraint items (migrations, only via normal release); no for the rest.
+
+### 14. Before v2 launch: move old agent_deposit journal entries to the new key
+
+**What happens:** The old "mark COD deposited" route (`markCODAsDeposited` in `backend/src/services/financialService.ts`) used to key its journal entry on the lowest transaction id, under source type `agent_deposit`. A verified deposit uses the same source type with its own deposit id. The two id lists overlap. Fix dbd063c6 (M6, COD-56) changed the old route to use the negated lowest transaction id, so new entries do not collide. Entries already in production still use the positive id.
+
+**Risk:** After v2 goes live, a new verified deposit can have the same id as an old entry. Then the idempotency guard in `createDepositGLEntry` skips the new posting (the deposit has no journal entry), or a reject voids the old entry instead of the new one. Nothing shows an error. No risk before v2, because production does not run the new code.
+
+**Repro:** Covered by the regression test in `backend/src/__tests__/integration/cashChain.test.ts` (it puts an old-style positive key in place, then posts a verified deposit with the same id).
+
+**Suggested fix:** A one-time script, run with the T41 production migration step:
+1. Find the old-route entries: `agent_deposit` journal entries whose `sourceId` is the lowest id of a group of deposited transactions, and not a real deposit's entry. Check how to tell them apart on a production copy first (date, description, matching transactions). Do not guess.
+2. Set their `sourceId` to the negated value.
+3. Run on a production copy first. Count the rows before and after. Check that the balance sheet does not change.
+4. Owner runs it on production.
+
+Found in: M6 (COD-56) CI fix review, 2026-11-01
+Touches production deploy: no. Touches production DB: yes (one-time data script, owner runs it at the v2 launch with T41).
+
+### 15. M6 skipped clean-ups from the whole-M6 /simplify (grouped checklist, owner decides)
+
+Found in the T25 whole-M6 review and skipped because each one changes who can do what, changes the API, or touches the money path. Details and file:line in `docs/plan/M6-T25-simplify-fixes.md` (Skipped). Split a line into its own ticket when someone picks it up.
+
+- [ ] Targets routes gate on the `targets:view` / `targets:update` cells only, not role names plus `analytics:view` / `settings:update`. Changes access: a custom role with `targets:view` gains it; a manager without it loses it.
+- [ ] One menu rule table for all roles (today: F-102 name table for seeded roles, cell table for custom roles). Diff the two first.
+- [ ] One `assertMayGrant(actor, role, holder?)` policy instead of four rank/grid checks (`assertOutranks`, `assertGridWithin`, `assertMayTouchRole`, `assertMayManage`).
+- [ ] Owner rule in the service only, not also `requireSuperAdmin` in routes (MCP and queue call the services).
+- [ ] Role identity by a `positionOf` column (or unique preset flag), not by display name (rename or a custom "Admin" role changes which grid wins). Needs a migration.
+- [ ] One permission store: `Role.permissions` only; retire `SystemConfig.rolePermissions` and the fallback. Large.
+- [ ] "Measured" roles from `Role.targetMetric` only; drop the `sales_rep` / `delivery_agent` preset branches in rewards and leaderboard.
+- [ ] `setupNorthStar` menu item on a cell, not `role === 'super_admin'`; drop frontend `oldPageFor` role lists.
+- [ ] Remove the legacy per-UserRole matrix endpoint; Settings calls `PUT /roles/:id/permissions`.
+- [ ] Account-active check in `sessionService`, not in the generic auth middleware.
+- [ ] Access cache invalidation inside one Role/RoleAssignment write path, so no caller can forget it.
+- [ ] Leaderboard `daysToPayOf` as one SQL `AVG ... GROUP BY` instead of loading every order (year view).
+
+Found in: M6 (COD-56..61) T25 /simplify, 2026-11-02
+Touches production deploy: yes (only via normal release). Touches production DB: yes for the `positionOf` column and the permission-store move (migrations or data script); no for the rest.
+
+### 16. M6 /cso medium and low security findings (owner decides order)
+Source: /cso static audit of the M6 diff, run 1793593022052-c0164947a66d94af, 2026-11-02. The one high finding (grid check on staff invite and role change) is fixed on the M6 branch.
+
+- [ ] **Medium: self email change with no password check.** `PUT /api/staff/:self`, `/api/users/:self` and `/api/admin/users/:self` let a user change their own email with no current password and no notice to the old address (`adminService.updateUser` skips the rank check for self; `staffSchema` allows `email`). A stolen 15-minute admin token can become a full takeover: change email, then forgot-password. Fix: refuse a self email change there and send the person to the `/me` flow (it checks the password and sends the notice); notify the old address when someone else changes it.
+- [ ] **Low: ending a person's last role gives them the base-role default grid.** `permissionService.getUserPermissions` falls back to `getEffectivePermissions(user.role)`. A person invited into a narrow custom role has base `manager`; after unassign they get the full manager matrix. Fix: a person with no live assignment gets an empty grid; keep the fallback for AI agents and the system user only.
+- [ ] **Low: a role change does not end sessions.** Checks read `role` from the JWT; `authenticate` checks only `isActive`. A demoted admin keeps the old rank until the 15-minute access token ends. Fix: end sessions on role change, or compare the JWT role with the DB role in the active check.
+- [ ] **Low: targets that drive pay can change after the month ends and before close.** `targetService.saveRow` refuses only closed months; `unit` is free text, and `percent` skips the sum checks; audit rows hold only the new value. Fix: refuse ended-month writes unless Owner; lock `unit` to the metric; add the old value to the audit row.
+- [ ] **Low: month close plans outside the lock.** `periodCloseService` runs `plan()` and `wantedBadges()` before the transaction and advisory lock. A target or tier edit in that gap makes the payout differ from the final state (no double payout: the lock, re-check and unique key hold). Fix: plan inside the transaction after the lock, or abort if target `updatedAt` changed.
+- [ ] **Low: Owner-only target and reward writes rely on the `settings:update` cell only.** North Star, drivers, children and `PUT /rewards/settings` have no `requireSuperAdmin` (period close has it). Safe with the default matrix; a custom role given `settings:update` gets reward amounts too. Fix: add `requireSuperAdmin`.
+- [ ] **Low: loose limits.** `/targets/batch` takes 50 rows in one transaction with no timeout; `metric` is not checked against the registry; a daily `period` takes any year. Fix: set a timeout and lower cap, check `metric`, bound the year.
+- [ ] **Low: timing-based email discovery** on login (no bcrypt for an unknown email) and forgot-password; staff invite `409 EMAIL_EXISTS` tells any `users:create` holder that an email exists in some tenant. Fix: dummy bcrypt compare, send reset mail in the background, generic invite response or a rate limit.
+- [ ] **Low: admin-set passwords use a weaker rule.** Staff reset-password is `min(8).max(128)` and legacy admin reset checks only length; both skip the complexity rule and allow more than 72 bytes (bcrypt cuts there). Accept-invite is NOT weak: it uses the reset rule. Fix: one shared password schema with a 72 cap; force a change after an admin reset.
+- [ ] **Low (Owner only): MCP key cache and key route.** `mcp/auth.ts` key cache has no epoch guard and is per process (60 s stale after revoke in a separate MCP process); `POST /api/mcp-keys` can issue a key on the Owner role, which `assignToRole` refuses. Fix: epoch guard; reject the Owner role in `createKeyIn`.
+
+Found in: M6 (COD-56..62) Phase 7 /cso, 2026-11-02
+Touches production deploy: yes (only via normal release). Touches production DB: no.
+
+### 17. M6 /qa deferred issues and a launch step
+Source: /qa and T27 browser walk on the local app, report `.gstack/qa-reports/run-20261102T042435Z/`, 2026-11-02. ISSUE-001 and ISSUE-002 are fixed on the M6 branch.
+
+- [ ] **Launch step (T41): run `backend/scripts/migrate-users-to-roles.ts` on staging and production.** The leaderboard and Targets read role assignments. Without the script, they show 0 people. It ran on the local dev DB only.
+- [ ] **ISSUE-003 (low, M6):** Staff role cards show deactivated people with no "Deactivated" tag and count them as holders. Fix: tag them and leave them out of the count, as the Targets page now does.
+- [ ] **ISSUE-004 (low, M6):** Dashboard "Top this month" gives a person at 0% the green tag. The ranking follows PRD F-208; only the tag colour is wrong. Fix: no green tag below a set percent.
+- [ ] **ISSUE-005 (low, older):** Settings tab bar at about 780 px: an icon touches the label before it.
+- [ ] **ISSUE-006 (low, older):** Top search box text wraps onto 3 lines at about 780 px.
+- [ ] **ISSUE-007 (low, older, data):** "Logiswift Delivery" and "VDL Fulfilment" show the "Human" tag. They are companies. Fix the data or the kind rule.
+
+Found in: M6 (COD-56..62) Phase 7 /qa, 2026-11-02
+Touches production deploy: yes (only via normal release). Touches production DB: yes for the launch step (data script); no for the rest.

@@ -3,6 +3,7 @@
  * at 17 October 2026, 13:00. Fixture figures, the previous period, the same KPI on the Dashboard and on Reports, permissions,
  * error isolation per block, and the empty tenant.
  */
+import { setRoleGrid } from './helpers/roleGrid';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, jest } from '@jest/globals';
 import '../mocks/logger.mock';
 import '../mocks/socketInstance.mock';
@@ -36,8 +37,7 @@ const get = (token: string | null, path: string, query = RANGE) => {
   return token ? r.set('Authorization', `Bearer ${token}`) : r;
 };
 const setManagerPermissions = async (resources: Record<string, string[]>) => {
-  await prismaBase.systemConfig.updateMany({ where: { tenantId }, data: { rolePermissions: { manager: resources } as any } });
-  clearPermissionsCache();
+  await setRoleGrid(tenantId, 'manager', resources);
 };
 
 beforeAll(async () => {
@@ -66,8 +66,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   jest.useRealTimers();
-  await prismaBase.systemConfig.updateMany({ where: { tenantId }, data: { rolePermissions: undefined } });
-  clearPermissionsCache();
+  await setRoleGrid(tenantId, 'manager');
   await deleteFixtureRows(prismaBase, tenantId);
   await prismaBase.tenant.deleteMany({ where: { slug: FIXTURE_SLUG } });
   await prismaBase.$disconnect();

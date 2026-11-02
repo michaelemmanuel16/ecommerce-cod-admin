@@ -4,6 +4,7 @@
  * the cash tiles with deposits, tab permissions, the CSV and Excel files against the JSON, the "all reports" workbook and
  * the missing PDF route.
  */
+import { setRoleGrid } from './helpers/roleGrid';
 import { describe, it, expect, beforeAll, afterAll, jest } from '@jest/globals';
 import '../mocks/logger.mock';
 import '../mocks/socketInstance.mock';
@@ -51,8 +52,7 @@ const file = (token: string | null, tab: string, query: string) =>
     res.on('end', () => done(null, Buffer.concat(chunks)));
   });
 const setManagerPermissions = async (resources: Record<string, string[]>) => {
-  await prismaBase.systemConfig.updateMany({ where: { tenantId }, data: { rolePermissions: { manager: resources } as any } });
-  clearPermissionsCache();
+  await setRoleGrid(tenantId, 'manager', resources);
 };
 
 /** The sections of a CSV: blank lines split them; the first row is the title, the second the header. */
@@ -137,8 +137,7 @@ afterAll(async () => {
   jest.useRealTimers();
   await prismaBase.agentCollection.deleteMany({ where: { id: { in: extraRows.collections } } });
   await prismaBase.agentDeposit.deleteMany({ where: { id: { in: extraRows.deposits } } });
-  await prismaBase.systemConfig.updateMany({ where: { tenantId }, data: { rolePermissions: undefined } });
-  clearPermissionsCache();
+  await setRoleGrid(tenantId, 'manager');
   await deleteFixtureRows(prismaBase, tenantId);
   await prismaBase.tenant.deleteMany({ where: { slug: FIXTURE_SLUG } });
   await prismaBase.$disconnect();

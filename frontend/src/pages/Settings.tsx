@@ -17,6 +17,8 @@ import { SecurityTab } from './settings/SecurityTab';
 import { BusinessTab } from './settings/BusinessTab';
 import { StatusesTab } from './settings/StatusesTab';
 import { BillingTab } from './settings/BillingTab';
+import { NorthStarTab } from './settings/NorthStarTab';
+import { RewardsTab } from './settings/RewardsTab';
 import { SETTINGS_TABS, type SettingsTab, type TabDef } from './settings/tabs';
 
 const KNOWN: SettingsTab[] = SETTINGS_TABS.map((t) => t.id);
@@ -67,8 +69,8 @@ function NotificationsPointer() {
 export function Settings() {
   useV2Page();
   const [params, setParams] = useSearchParams();
-  const { can, isSuperAdmin } = usePermissions();
-  const access = { can, isSuperAdmin };
+  const { can, isSuperAdmin, isManager } = usePermissions();
+  const access = { can, isSuperAdmin, isManager };
 
   const [systemConfig, setSystemConfig] = useState<SystemConfig | null>(null);
   const loadSystemConfig = async () => {
@@ -133,6 +135,8 @@ export function Settings() {
         ) : <ViewOnly />;
       case 'statuses': return <StatusesTab />;
       case 'notifications': return <NotificationsPointer />;
+      case 'north-star': return <NorthStarTab editable={def.editable(access)} />;
+      case 'rewards': return <RewardsTab editable={def.editable(access)} />;
       case 'billing': return <BillingTab />;
       case 'users': return <Old><UserManagementTable /></Old>;
       case 'permissions': return <Old><RolePermissionsMatrix /></Old>;

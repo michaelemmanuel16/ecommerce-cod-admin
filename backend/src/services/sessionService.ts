@@ -4,6 +4,10 @@ import { withSoftDeleted } from '../utils/prismaExtensions';
 import { generateAccessToken, generateRefreshToken } from '../utils/jwt';
 import { deviceLabel } from '../utils/deviceLabel';
 import { AppError } from '../middleware/errorHandler';
+import { runInTenantOf } from '../utils/tenantContext';
+import * as Money from '../utils/money';
+import { getUserPermissions } from './permissionService';
+import type { User } from '@prisma/client';
 
 /**
  * Signed-in sessions (M3-T23, F-1224). One UserSession per login, holding the SHA-256 hash of the
@@ -36,6 +40,46 @@ export const requestMeta = (req: { ip?: string; get?(name: string): string | und
 const claims = (user: SessionUser) => ({ id: user.id, email: user.email, role: user.role, tenantId: user.tenantId ?? null });
 
 export const sessionService = {
+  /**
+   * Sign a verified user in (login and accept-invite share it): start the session, stamp the last login and read the role
+   * permissions together. Returns what the login answer carries; the controller sends it.
+   */
+  async signIn(user: User, meta: RequestMeta) {
+    return runInTenantOf(user.tenantId, 'auth-login', async () => {
+      const startSession = async () => {
+        if (user.tenantId) {
+          // One session per login (M3-T23)
+          const { accessToken, refreshToken } = await sessionService.start({ ...user, tenantId: user.tenantId }, meta);
+          await prisma.user.update({ where: { id: user.id }, data: { lastLogin: new Date() } });
+          return { accessToken, refreshToken };
+        }
+        // A user without a tenant cannot own a session row: old single-token flow
+        const tokenClaims = claims(user);
+        const accessToken = generateAccessToken(tokenClaims);
+        const refreshToken = generateRefreshToken(tokenClaims);
+        await prisma.user.update({ where: { id: user.id }, data: { refreshToken, lastLogin: new Date() } });
+        return { accessToken, refreshToken };
+      };
+      // The union of the roles the user holds: the same function as GET /api/auth/me (M6-T04)
+      const tokens = await startSession();
+      const permissions = await getUserPermissions({ id: user.id, role: user.role });
+      return {
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          role: user.role,
+          isPlatformAdmin: user.isPlatformAdmin || false,
+          commissionAmount: Money.orZero(user.commissionAmount),
+          preferences: user.preferences,
+        },
+        tokens,
+        permissions,
+      };
+    });
+  },
+
   /**
    * Start a session for a user of a tenant. Call inside that tenant's context. Returns both tokens;
    * the access token carries the session id (`sid`).

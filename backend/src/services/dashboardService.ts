@@ -3,8 +3,8 @@
  * GET /api/dashboard/owner from the M1 KPI functions (services/kpi/*); it does no counting of its own.
  * Every number and every tag key the mockup shows is in the response, so the frontend formats and never calculates.
  *
- * Blocks: header, ladder (year, quarter, month, day), quests, tiles, chart, drivers, recentOrders.
- * `top` (F-208) comes with M6, the margin chip (F-202) with M5; until then neither is in the response.
+ * Blocks: header, ladder (year, quarter, month, day), quests, tiles, chart, drivers, recentOrders, topThisMonth (F-208, M6-T12).
+ * The margin chip (F-202) comes with M5; until then it is not in the response.
  *
  *  - Error isolation: a block that throws becomes `{ error }`; the other blocks still answer.
  *  - Range (F-201) changes the tiles' rates, the chart and the recent orders. The ladder, the quests, the "orders today"
@@ -29,6 +29,7 @@ import { leadership, type Leadership, type Period } from './kpi/leadership';
 import { cashHeldByPartners } from './kpi/cash';
 import { failedDeliveryCalls, failedDeliveryCallsTarget, ordersPlacedByDay } from './kpi/daily';
 import { changePercent, paceChip, progressTag, questPercent, questTone, rateTag } from './kpi/status';
+import { topThisMonth } from './leaderboardService';
 import { daysInMonth, endOfDay, getStoreTimeZone, hourInZone, localDate, parseYmd, shiftYmd, startOfDay, weekRange } from './kpi/dates';
 
 export const DASHBOARD_RANGES = ['today', 'week', 'month', 'last_7_days', 'last_30_days', 'quarter', 'year'] as const;
@@ -66,6 +67,8 @@ export interface OwnerDashboard {
   chart: Block<Record<string, unknown>>;
   drivers: Block<Record<string, unknown>>;
   recentOrders?: Block<Array<Record<string, unknown>>>;
+  /** The top 3 of the month (M6-T12): `{ month, people }`, people empty when no one has a target. */
+  topThisMonth: Block<Record<string, unknown>>;
 }
 
 interface Context {
@@ -169,8 +172,10 @@ async function ladderBlock(c: Context) {
       actual: a.actual,
       target: a.target,
       percent: a.value,
-      /** Days gone / days in the period, percent. */
+      /** Pace marker, percent: days gone / days in the period; the year follows its quarter plan (see paceBasis). */
       pace: a.pace,
+      /** 'quarter_plan' when the pace follows the quarter targets (the year), else 'days'. */
+      paceBasis: a.paceBasis,
       daysLeft: gone.daysInPeriod - gone.daysGone,
       tag: progressTag(a.value, a.pace),
     };
@@ -319,6 +324,20 @@ async function driversBlock(c: Context) {
   };
 }
 
+/** Top this month (F-208): the top 3 by percent of own role target for the month that holds asOf. The ranking is the leaderboard's. */
+async function topThisMonthBlock(c: Context) {
+  const month = c.asOfDate.slice(0, 7);
+  // The top 3 does not depend on the range, so every range of the month shares one read (same TTL and clears as the dashboard cache).
+  const key = `${c.tenantId}|${month}`;
+  const hit = topCache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return { month, people: await hit.people };
+  const people = runInTenant(c.tenantId, () => topThisMonth(month));
+  const entry = { at: Date.now(), people };
+  topCache.set(key, entry);
+  people.catch(() => { if (topCache.get(key) === entry) topCache.delete(key); }); // a failed read is not kept
+  return { month, people: await people };
+}
+
 async function recentOrdersBlock(c: Context) {
   const [rows, storeCurrency] = await Promise.all([
     runInTenant(c.tenantId, () => prisma.order.findMany({
@@ -379,7 +398,7 @@ async function build(tenantId: string, range: DashboardRange, asOfDate: string):
     }),
   };
   // Every block is built for every viewer, so one cache entry serves all; `trim` takes out what a viewer may not see.
-  const [header, ladder, quests, tiles, chart, drivers, recentOrders] = await Promise.all([
+  const [header, ladder, quests, tiles, chart, drivers, recentOrders, top] = await Promise.all([
     isolate('header', tenantId, () => headerBlock(c)),
     isolate('ladder', tenantId, () => ladderBlock(c)),
     isolate('quests', tenantId, () => questsBlock(c)),
@@ -387,19 +406,23 @@ async function build(tenantId: string, range: DashboardRange, asOfDate: string):
     isolate('chart', tenantId, () => chartBlock(c)),
     isolate('drivers', tenantId, () => driversBlock(c)),
     isolate('recentOrders', tenantId, () => recentOrdersBlock(c)),
+    isolate('topThisMonth', tenantId, () => topThisMonthBlock(c)),
   ]);
-  return { header, ladder, quests, tiles, chart, drivers, recentOrders };
+  return { header, ladder, quests, tiles, chart, drivers, recentOrders, topThisMonth: top };
 }
 
 const cache = new Map<string, { at: number; body: OwnerDashboard }>();
+/** The top 3 of a month per tenant (`tenant|month`); the promise is kept so concurrent ranges share one read. */
+const topCache = new Map<string, { at: number; people: ReturnType<typeof topThisMonth> }>();
 /** Raised by every clear, so a build that started before an order event does not cache its stale body. */
 let generation = 0;
 
 /** Drop a tenant's cached dashboards (all tenants without an argument). */
 export function clearDashboardCache(tenantId?: string): void {
   generation += 1;
-  if (!tenantId) { cache.clear(); return; }
+  if (!tenantId) { cache.clear(); topCache.clear(); return; }
   for (const key of cache.keys()) if (key.startsWith(`${tenantId}|`)) cache.delete(key);
+  for (const key of topCache.keys()) if (key.startsWith(`${tenantId}|`)) topCache.delete(key);
 }
 
 let listening = false;

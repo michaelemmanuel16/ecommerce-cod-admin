@@ -6,8 +6,8 @@ import { PLATFORM_GROUP, visibleGroups, type NavItem } from './navModel';
 /**
  * "G then a letter" shortcuts, keyed by the letter, valued by the nav key they open.
  * A shortcut works only when its page exists and the person may see it: it resolves through the same list as the
- * "Go to" rows. Leaderboard and Targets have no page yet (`to: null` in navModel), so `G L` and `G T` do nothing
- * until those pages ship; `G O` opens Orders now.
+ * "Go to" rows. Leaderboard has no page yet (`to: null` in navModel), so `G L` does nothing until that page ships;
+ * `G O` opens Orders and `G T` opens Targets (M6-T15).
  */
 const GO_SHORTCUTS: Record<string, string> = { o: 'orders', l: 'leaderboard', t: 'targets' };
 

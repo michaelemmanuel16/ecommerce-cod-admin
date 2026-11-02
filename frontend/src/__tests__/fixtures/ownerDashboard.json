@@ -415,5 +415,13 @@
    "currency": "GHS",
    "createdAt": "2026-10-17T03:40:00.000Z"
   }
- ]
+ ],
+  "topThisMonth": {
+    "month": "2026-10",
+    "people": [
+      { "rank": 1, "userId": 11, "name": "Esi Badu", "kind": "person", "roleName": "Delivery", "family": "delivery", "percent": 92, "main": { "unit": "delivery_success", "value": 55 } },
+      { "rank": 2, "userId": 12, "name": "Kofi Appiah", "kind": "person", "roleName": "Delivery", "family": "delivery", "percent": 90, "main": { "unit": "delivery_success", "value": 54 } },
+      { "rank": 3, "userId": 13, "name": "Adwoa Darko", "kind": "person", "roleName": "Call rep", "family": "call_rep", "percent": 60, "main": { "unit": "confirmed_delivered", "value": 253 } }
+    ]
+  }
 }

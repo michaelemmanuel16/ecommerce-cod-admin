@@ -100,7 +100,21 @@ export interface RecentOrder {
   createdAt: string;
 }
 
-/** `recentOrders` is missing when the viewer has no orders:view. */
+export interface TopPerson {
+  rank: number;
+  userId: number;
+  name: string;
+  kind: 'person' | 'ai_agent' | 'company' | string;
+  roleName: string;
+  family: 'call_rep' | 'delivery';
+  /** Percent of the person's own target, one decimal. */
+  percent: number;
+  main: { unit: 'delivery_success' | 'confirmed_delivered'; value: number };
+}
+/** The top 3 of the month by percent of own role target (M6-T12, F-208). `people` is empty when no one has a target. */
+export interface TopThisMonth { month: string; people: TopPerson[] }
+
+/** `recentOrders` is missing when the viewer has no orders:view. `topThisMonth` is missing from a server older than M6-T12. */
 export interface OwnerDashboardData {
   header: Block<Header>;
   ladder: Block<Ladder>;
@@ -109,6 +123,7 @@ export interface OwnerDashboardData {
   chart: Block<Chart>;
   drivers: Block<Drivers>;
   recentOrders?: Block<RecentOrder[]>;
+  topThisMonth?: Block<TopThisMonth>;
 }
 
 export function isBlockError<T>(block: Block<T> | undefined): block is BlockError {

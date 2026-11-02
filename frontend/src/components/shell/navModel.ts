@@ -74,9 +74,9 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Team',
     items: [
-      { key: 'targets', label: 'Targets', icon: Target, to: null },
-      { key: 'leaderboard', label: 'Leaderboard', icon: Trophy, to: null },
-      { key: 'staff', label: 'Staff & roles', icon: UserCog, to: null },
+      { key: 'targets', label: 'Targets', icon: Target, to: '/targets' },
+      { key: 'leaderboard', label: 'Leaderboard', icon: Trophy, to: '/leaderboard' },
+      { key: 'staff', label: 'Staff & roles', icon: UserCog, to: '/staff' },
       // Customer reps page: replaced by Staff & roles (M6). Old Sidebar: manager and above.
       { key: 'customerReps', label: 'Customer reps', icon: Phone, to: '/customer-reps', oldPageFor: isManagerUp },
     ],
@@ -89,7 +89,7 @@ export const NAV_GROUPS: NavGroup[] = [
       // Webhooks page: replaced by Connections (M9). Guard in App.tsx: owner and admin.
       { key: 'webhooks', label: 'Webhooks', icon: Webhook, to: '/webhooks', oldPageFor: (r) => r === 'super_admin' || r === 'admin' },
       { key: 'settings', label: 'Settings', icon: Settings, to: '/settings' },
-      { key: 'setupNorthStar', label: 'Set up North Star', icon: Flag, to: null },
+      { key: 'setupNorthStar', label: 'Set up North Star', icon: Flag, to: '/onboarding' }, // the wizard resumes at its saved step; the menu drops it when step 6 is done
     ],
   },
 ];

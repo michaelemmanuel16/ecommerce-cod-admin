@@ -9,13 +9,24 @@ import { adminService } from '../../services/admin.service';
 import { billingService } from '../../services/billing.service';
 
 vi.mock('../../services/onboarding.service', () => ({
-  onboardingService: { getStatus: vi.fn(), saveStore: vi.fn(), addPartner: vi.fn(), skipPartner: vi.fn() },
+  onboardingService: { getStatus: vi.fn(), saveStore: vi.fn(), addPartner: vi.fn(), skipPartner: vi.fn(), saveNorthStarProgress: vi.fn() },
+}));
+// Steps 3 to 6 have their own tests (NorthStarWizard.test.tsx); here the wizard only has to arrive at them.
+vi.mock('../../services/targets.service', async (orig) => ({
+  ...(await orig<typeof import('../../services/targets.service')>()),
+  targetsService: {
+    drivers: vi.fn().mockResolvedValue({ year: 2026, plannedAov: { value: 245, source: 'auto', last30Days: 245, deliveredOrders: 38, required: false }, confirmationRate: { value: 70, source: 'default' }, deliverySuccessRate: { value: 60, source: 'default' }, netMargin: { value: 35, source: 'default' } }),
+    tree: vi.fn().mockResolvedValue({ year: 2026, metric: 'revenue', currency: 'GHS', marginTarget: 35, northStar: null, quarters: [], months: [] }),
+    preview: vi.fn().mockResolvedValue({ quarters: ['360000.00', '420000.00', '480000.00', '540000.00'], months: [] }),
+    calculators: vi.fn().mockRejectedValue(new Error('none')),
+  },
 }));
 vi.mock('../../services/admin.service', () => ({ adminService: { getSystemConfig: vi.fn() } }));
 vi.mock('../../services/billing.service', () => ({ billingService: { getSubscription: vi.fn(), startSubscription: vi.fn() } }));
 
 const status = (over: Partial<OnboardingStatus> & { store?: boolean; partner?: boolean; skipped?: boolean } = {}): OnboardingStatus => ({
   onboardingCompleted: false,
+  northStar: { step: 3, done: false },
   country: over.country ?? null,
   currency: over.currency ?? null,
   steps: [
@@ -31,21 +42,22 @@ beforeEach(() => {
   vi.mocked(onboardingService.saveStore).mockReset().mockResolvedValue();
   vi.mocked(onboardingService.addPartner).mockReset().mockResolvedValue();
   vi.mocked(onboardingService.skipPartner).mockReset().mockResolvedValue();
+  vi.mocked(onboardingService.saveNorthStarProgress).mockReset().mockResolvedValue();
   vi.mocked(adminService.getSystemConfig).mockReset().mockResolvedValue({} as never);
   vi.mocked(billingService.getSubscription).mockReset().mockResolvedValue({ subscriptionStatus: 'active', plan: { name: 'free', displayName: 'Free' }, billingEnabled: false } as never);
   updatePreferences.mockReset().mockResolvedValue(undefined);
-  useAuthStore.setState({ user: { id: 1, firstName: 'Ama', role: 'super_admin' } as never, isAuthenticated: true, updatePreferences } as never);
+  useAuthStore.setState({ user: { id: 1, firstName: 'Ama', role: 'super_admin', preferences: {} } as never, isAuthenticated: true, updatePreferences, patchUser: vi.fn(), refreshPermissions: vi.fn() } as never);
 });
 
 const renderPage = () => render(<MemoryRouter><Onboarding /></MemoryRouter>);
 
 describe('Onboarding wizard (M3-T67, F-124)', () => {
-  it('shows the six-step rail; steps 3 to 6 are disabled', async () => {
+  it('shows the six-step rail; steps 3 to 6 open once the store steps are done', async () => {
     vi.mocked(onboardingService.getStatus).mockResolvedValue(status());
     renderPage();
     await screen.findByRole('heading', { name: 'Your store' });
     for (const label of ['Set your North Star', 'Driver targets', 'Invite your team', 'Rewards']) {
-      expect(screen.getByText(label).closest('[aria-disabled="true"]')).not.toBeNull();
+      expect(screen.getByRole('button', { name: new RegExp(label) })).toBeDisabled();
     }
     expect(screen.getByRole('button', { name: /Your store/ })).toHaveAttribute('aria-current', 'step');
     expect(screen.getByRole('button', { name: /Connect your 3PL/ })).toBeDisabled();
@@ -101,14 +113,14 @@ describe('Onboarding wizard (M3-T67, F-124)', () => {
     expect(screen.getByLabelText(/Tax ID/)).toHaveValue('T-1');
   });
 
-  it('skips step 2 and finishes the wizard', async () => {
+  it('skips step 2 and moves on to step 3, saving the step', async () => {
     vi.mocked(onboardingService.getStatus).mockResolvedValue(status({ store: true, country: 'Ghana' }));
     renderPage();
     await screen.findByRole('heading', { name: 'Connect your 3PL' });
     await userEvent.click(screen.getByRole('button', { name: 'Skip for now' }));
-    await screen.findByRole('heading', { name: "You're all set" });
+    await screen.findByRole('heading', { name: 'What is your goal for 2026?' });
     expect(onboardingService.skipPartner).toHaveBeenCalled();
-    await waitFor(() => expect(updatePreferences).toHaveBeenCalledWith({ onboardingCompleted: true }));
+    await waitFor(() => expect(onboardingService.saveNorthStarProgress).toHaveBeenCalledWith(3));
   });
 
   it('adds the first partner in step 2', async () => {
@@ -118,18 +130,22 @@ describe('Onboarding wizard (M3-T67, F-124)', () => {
     await userEvent.type(screen.getByLabelText('Partner name'), 'Logiswift Ghana');
     await userEvent.type(screen.getByLabelText('Partner email'), 'ops@logiswift.test');
     await userEvent.click(screen.getByRole('button', { name: 'Add partner and continue' }));
-    await screen.findByRole('heading', { name: "You're all set" });
+    await screen.findByRole('heading', { name: 'What is your goal for 2026?' });
     expect(onboardingService.addPartner).toHaveBeenCalledWith({ name: 'Logiswift Ghana', type: '3pl', email: 'ops@logiswift.test', phone: undefined });
   });
 
-  it('opens on the final view when both steps are done', async () => {
+  it('opens at the North Star step when both store steps are done, and on the final view once step 6 is finished', async () => {
     vi.mocked(onboardingService.getStatus).mockResolvedValue(status({ store: true, partner: true, country: 'Ghana' }));
+    const first = renderPage();
+    await screen.findByRole('heading', { name: 'What is your goal for 2026?' });
+    first.unmount();
+    vi.mocked(onboardingService.getStatus).mockResolvedValue({ ...status({ store: true, partner: true, country: 'Ghana' }), northStar: { step: 6, done: true } });
     renderPage();
     await screen.findByRole('heading', { name: "You're all set" });
   });
 
   it('shows Activate for a pending paid plan on the final view', async () => {
-    vi.mocked(onboardingService.getStatus).mockResolvedValue(status({ store: true, partner: true, country: 'Ghana' }));
+    vi.mocked(onboardingService.getStatus).mockResolvedValue({ ...status({ store: true, partner: true, country: 'Ghana' }), northStar: { step: 6, done: true } });
     vi.mocked(billingService.getSubscription).mockResolvedValue({
       subscriptionStatus: 'pending', plan: { name: 'growth', displayName: 'Growth', priceNGN: 10000 }, billingEnabled: true, nextChargeAmount: 10000,
     } as never);

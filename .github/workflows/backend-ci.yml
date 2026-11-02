@@ -8,11 +8,11 @@ on:
       - 'scripts/deploy*.sh'
       - 'scripts/tests/**'
       - '.github/workflows/backend-ci.yml'
+      - '.github/actions/setup-backend/**'
   pull_request:
     branches: [main, develop]
 
 env:
-  NODE_VERSION: '20.x'
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}/backend
 
@@ -24,16 +24,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Set up backend
+        uses: ./.github/actions/setup-backend
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: backend/package-lock.json
-
-      - name: Install dependencies
-        working-directory: backend
-        run: npm ci
+          prisma: 'false'
 
       - name: Run ESLint
         working-directory: backend
@@ -42,9 +36,24 @@ jobs:
       - name: Deploy scripts stop when migrate deploy fails
         run: bash scripts/tests/deploy-guard.sh
 
-  test:
-    name: Run Tests
+  # One entry for the unit tests (everything outside __tests__/integration) and one per integration shard.
+  # SHARD_TOTAL (below) is the number of numeric entries in the matrix. Each entry has its own Postgres and Redis,
+  # collects coverage itself and uploads coverage-final.json; the `test` job merges them.
+  tests:
+    name: Tests (${{ matrix.part }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [unit, 1, 2, 3, 4]
+    env:
+      SHARD_TOTAL: 4
+      JEST_COVERAGE_PART: 1
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ecommerce_test
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      JWT_SECRET: ${{ secrets.TEST_JWT_SECRET }}
+      JWT_REFRESH_SECRET: ${{ secrets.TEST_JWT_REFRESH_SECRET }}
     services:
       postgres:
         image: postgres:15-alpine
@@ -74,74 +83,73 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: backend/package-lock.json
-
-      - name: Install dependencies
-        working-directory: backend
-        run: npm ci
-
-      - name: Generate Prisma Client
-        working-directory: backend
-        run: npx prisma generate
+      - name: Set up backend
+        uses: ./.github/actions/setup-backend
 
       - name: Run migrations
         working-directory: backend
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ecommerce_test
         run: npx prisma migrate deploy
 
+      # Once per run, not per shard.
       - name: Fail if schema.prisma differs from the migrated database
+        if: matrix.part == 'unit'
         working-directory: backend
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ecommerce_test
         run: npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
 
       - name: Run unit tests
+        if: matrix.part == 'unit'
         working-directory: backend
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ecommerce_test
-          REDIS_HOST: localhost
-          REDIS_PORT: 6379
-          JWT_SECRET: ${{ secrets.TEST_JWT_SECRET }}
-          JWT_REFRESH_SECRET: ${{ secrets.TEST_JWT_REFRESH_SECRET }}
-        run: npm run test:unit -- --forceExit --detectOpenHandles
+        run: npm run test:unit -- --forceExit
 
-      - name: Run integration tests
+      - name: Run integration tests (shard ${{ matrix.part }})
+        if: matrix.part != 'unit'
         working-directory: backend
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ecommerce_test
-          REDIS_HOST: localhost
-          REDIS_PORT: 6379
-          JWT_SECRET: ${{ secrets.TEST_JWT_SECRET }}
-          JWT_REFRESH_SECRET: ${{ secrets.TEST_JWT_REFRESH_SECRET }}
         # TEMP diagnostic (PR #342 hang): log long queries, lock waits and open transactions every 15 s
         run: |
           ( while true; do PGPASSWORD=postgres psql -h localhost -U postgres -d ecommerce_test -Atc "select now()::time(0), pid, state, wait_event_type, wait_event, now()-query_start, now()-xact_start, left(regexp_replace(query,'\s+',' ','g'),400), pg_blocking_pids(pid) from pg_stat_activity where datname='ecommerce_test' and pid<>pg_backend_pid() and ((state='active' and now()-query_start > interval '15 seconds') or wait_event_type='Lock' or (state like 'idle in transaction%' and now()-state_change > interval '15 seconds'))" >> /tmp/pgmon.log 2>&1; sleep 15; done ) &
-          npm run test:integration -- --forceExit
+          npm run test:integration -- "--shard=${{ matrix.part }}/$SHARD_TOTAL" --forceExit
 
       - name: TEMP print DB monitor log
-        if: always()
+        if: always() && matrix.part != 'unit'
         run: sort -u /tmp/pgmon.log | head -200 || true
 
-      - name: Generate coverage report
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.part }}
+          path: backend/coverage/coverage-final.json
+          if-no-files-found: error
+          retention-days: 3
+
+  # Keeps the job id and name `test` / "Run Tests": `build` waits on it, and branch protection may require it.
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    needs: [tests]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up backend
+        uses: ./.github/actions/setup-backend
+        with:
+          prisma: 'false'
+
+      - name: Download coverage
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-*
+          path: coverage-in
+
+      # Same global thresholds as jest.config.js, on all parts together. Fails CI when below.
+      - name: Merge coverage and check thresholds
         working-directory: backend
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ecommerce_test
-          REDIS_HOST: localhost
-          REDIS_PORT: 6379
-          JWT_SECRET: ${{ secrets.TEST_JWT_SECRET }}
-          JWT_REFRESH_SECRET: ${{ secrets.TEST_JWT_REFRESH_SECRET }}
-        run: npm run test:coverage -- --forceExit
+        run: node scripts/merge-coverage.js ../coverage-in ../coverage-in/merged/lcov.info
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4.6.0
         with:
-          files: ./backend/coverage/lcov.info
+          files: ./coverage-in/merged/lcov.info
           flags: backend
           name: backend-coverage
 

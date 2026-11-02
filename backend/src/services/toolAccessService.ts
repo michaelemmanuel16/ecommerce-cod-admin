@@ -1,6 +1,7 @@
 import prisma from '../utils/prisma';
-import { hasPermission } from '../middleware/auth';
-import { roleToolList } from '../config/defaultRoles';
+import { getTenantId } from '../utils/tenantContext';
+import { getTenantMatrix, hasPermission } from './permissionService';
+import { registryToolsOfRole, splitCell } from '../config/roleToolRules';
 
 /**
  * M2-T04: the database lookups behind the tool access decision. They live here because tool files and the
@@ -15,15 +16,17 @@ export interface AccessFacts {
   roleTools: readonly string[] | null;
 }
 
-/** Load the actor's base role and the role's tool list: two queries, for the whole decision. */
+/** Load the actor's base role and the role's tool list: three reads (the matrix is cached), for the whole decision. */
 export async function loadAccessFacts(actorId: number, roleId: number | null): Promise<AccessFacts> {
-  const [user, role] = await Promise.all([
+  const [user, role, matrix] = await Promise.all([
     prisma.user.findFirst({ where: { id: actorId }, select: { role: true } }),
-    roleId === null ? null : prisma.role.findFirst({ where: { id: roleId }, select: { tools: true } }),
+    roleId === null ? null : prisma.role.findFirst({ where: { id: roleId }, select: { tools: true, isSystem: true, permissions: true, presetRole: true } }),
+    getTenantMatrix(getTenantId() ?? null),
   ]);
   return {
     baseRole: user?.role ?? null,
-    roleTools: roleId === null ? null : roleToolList(role?.tools),
+    // A role that is missing allows nothing; otherwise the registry tools whose cell the role's grid grants (F-1153).
+    roleTools: roleId === null ? null : role ? registryToolsOfRole(role, matrix) : [],
   };
 }
 
@@ -32,7 +35,7 @@ export async function permittedCells(baseRole: string | null, cells: readonly st
   if (baseRole === null) return new Set();
   const unique = [...new Set(cells)];
   const held = await Promise.all(unique.map((cell) => {
-    const [resource, action] = cell.split(':');
+    const [resource, action] = splitCell(cell);
     return hasPermission({ role: baseRole }, resource, action);
   }));
   return new Set(unique.filter((_, i) => held[i]));

@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 import prisma from '../utils/prisma';
-import { hasPermission } from '../middleware/auth';
+import { hasPermission } from './permissionService';
 import { customerScope, orderScope, Requester } from '../utils/authUtils';
 import { looksLikePhone, phoneSearchConditions } from '../utils/phone';
 

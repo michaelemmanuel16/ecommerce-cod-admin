@@ -5,7 +5,6 @@
  * Create makes all three in one transaction. The user comes from adminService.createUser (the Staff modal swaps in at M6).
  * There is no coverage route and no fallback flag (decision O4). Fee rules are M5.
  */
-import { randomBytes } from 'crypto';
 import { PartnerDataSource, Prisma, UserKind } from '@prisma/client';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
@@ -18,6 +17,7 @@ import { auditService } from './auditService';
 import { DEFAULT_DAYS_TO_PAY } from './orderPaymentTag';
 import { defaultDataSource, feeRuleView, partnerTypeOf, type PartnerType } from './deliveryPartnerService';
 import { fullName } from '../utils/nameUtils';
+import { emailConflictOf } from '../utils/prismaErrors';
 
 /** Vehicle types the Staff person modal offers (F-707). */
 export const VEHICLE_TYPES = ['Motorbike', 'Car', 'Tricycle', 'Bicycle', 'On foot'] as const;
@@ -43,7 +43,7 @@ export interface CreatePartnerInput {
   lastName: string;
   email: string;
   phoneNumber?: string;
-  /** A person who signs in to the agent app sets one. Without it the account gets a random password nobody knows. */
+  /** A person who signs in to the agent app sets one. Without it the account has no password. */
   password?: string;
   baseTown?: string;
   daysToPay?: number;
@@ -59,7 +59,8 @@ const clean = (v: string | undefined) => (v ?? '').trim();
 function conflictOf(error: unknown): unknown {
   if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
     const target = String(error.meta?.target ?? '');
-    if (target.includes('email')) return new AppError('A user with this email already exists', 409, 'EMAIL_EXISTS');
+    const email = emailConflictOf(error);
+    if (email) return email;
     if (target.includes('name')) return new AppError('A stock location with this name already exists', 409, 'LOCATION_EXISTS');
     return new AppError('This partner already exists', 409, 'PARTNER_EXISTS');
   }
@@ -81,7 +82,8 @@ export async function createPartner(requester: Requester, input: CreatePartnerIn
     return await prisma.$transaction(async (tx) => {
       const user = (await adminService.createUser(requester, {
         email: clean(input.email),
-        password: input.password ?? randomBytes(24).toString('base64url'),
+        // A person who signs in to the agent app set a password; otherwise the account has none.
+        ...(input.password ? { password: input.password } : { access: 'none' as const }),
         firstName,
         lastName,
         phoneNumber: clean(input.phoneNumber) || undefined,

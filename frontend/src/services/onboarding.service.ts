@@ -11,6 +11,8 @@ export interface OnboardingStatus {
   onboardingCompleted: boolean;
   country: string | null;
   currency: string | null;
+  /** The North Star wizard (steps 3 to 6): the step the Owner reached and whether step 6 was finished. */
+  northStar: { step: number; done: boolean };
   steps: OnboardingStep[];
 }
 
@@ -44,6 +46,11 @@ export const onboardingService = {
 
   async addPartner(input: PartnerInput): Promise<void> {
     await apiClient.post('/api/onboarding/setup', { step: 2, ...input });
+  },
+
+  /** Save the step the Owner is on (3 to 6); `done` once step 6 is finished. */
+  async saveNorthStarProgress(step: number, done = false): Promise<void> {
+    await apiClient.post('/api/onboarding/north-star', { step, done });
   },
 
   async skipPartner(): Promise<void> {

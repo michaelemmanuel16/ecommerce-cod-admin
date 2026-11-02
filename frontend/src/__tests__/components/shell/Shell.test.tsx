@@ -82,10 +82,11 @@ describe('Shell', () => {
     expect(await screen.findByText('Customers page')).toBeInTheDocument();
   });
 
-  it('shows only menu keys that have a page: targets has none yet', async () => {
+  it('shows only menu keys that have a page: Targets opens /targets', async () => {
     renderShell();
     await screen.findByRole('link', { name: /Orders/ });
-    expect(screen.queryByRole('link', { name: /Targets/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Targets/ })).toHaveAttribute('href', '/targets');
+    expect(screen.queryByRole('link', { name: /Leaderboard/ })).not.toBeInTheDocument(); // no page yet
     expect(screen.queryByRole('link', { name: /Marketing/ })).not.toBeInTheDocument(); // not in the menu
     expect(screen.getByRole('link', { name: 'Finance 2 waiting' })).toHaveAttribute('href', '/finance');
     expect(screen.getByRole('link', { name: /Orders/ })).toHaveAttribute('aria-current', 'page');

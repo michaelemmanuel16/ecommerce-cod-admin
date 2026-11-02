@@ -3,6 +3,7 @@
 import { formatCurrency } from '../../utils/format';
 import { parseMoney } from '../../utils/money';
 import { getCurrencySymbol } from '../../utils/countries';
+import { initials as initialsOf } from '../../utils/people';
 import type { Chart, Header, Money, RecentOrder } from './types';
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -75,11 +76,7 @@ export function clockTime(iso: string, timeZone: string): string {
 export const plural = (n: number, one: string, many: string = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
 
 /** "AO" from "Abena Owusu". */
-export function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return '?';
-  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
-}
+export const initials = (name: string): string => initialsOf(name) || '?';
 
 /** The sub-line: "Friday 17 October. You need GH₵2,100 more delivered revenue today to stay on pace." */
 export function subLine(h: Header): string {

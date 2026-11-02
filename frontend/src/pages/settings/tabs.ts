@@ -1,13 +1,15 @@
-import { BadgeDollarSign, Bell, CreditCard, FileText, ListChecks, Puzzle, Shield, ShieldCheck, Store, UserRound, Users, type LucideIcon } from 'lucide-react';
+import { BadgeDollarSign, Bell, CreditCard, FileText, Flag, Gift, ListChecks, Puzzle, Shield, ShieldCheck, Store, UserRound, Users, type LucideIcon } from 'lucide-react';
 import type { Action, Resource } from '../../types';
 
 export type SettingsTab =
   | 'profile' | 'security' | 'business' | 'currencies' | 'statuses' | 'notifications' | 'billing'
-  | 'users' | 'permissions' | 'integrations' | 'checkout-forms';
+  | 'users' | 'permissions' | 'integrations' | 'checkout-forms' | 'north-star' | 'rewards';
 
 export interface TabAccess {
   can: (resource: Resource, action: Action) => boolean;
   isSuperAdmin: boolean;
+  /** Manager level and above: the people who see Targets. */
+  isManager?: boolean;
 }
 
 export interface TabDef {
@@ -25,11 +27,11 @@ export interface TabDef {
 const everyone = () => true;
 const owner = (a: TabAccess) => a.isSuperAdmin;
 const viewSettings = (a: TabAccess) => a.can('settings', 'view');
+const viewTargets = (a: TabAccess) => !!a.isManager && a.can('analytics', 'view');
 const updateSettings = (a: TabAccess) => a.can('settings', 'update');
 
 /**
- * The Settings sections in menu order. Later milestones add Operations, North Star and targets, Rewards (M6)
- * by adding a row here.
+ * The Settings sections in menu order. Later milestones add Operations by adding a row here.
  */
 export const SETTINGS_TABS: TabDef[] = [
   { id: 'profile', label: 'Profile', icon: UserRound, group: 'main', visible: everyone, editable: everyone },
@@ -38,6 +40,8 @@ export const SETTINGS_TABS: TabDef[] = [
   { id: 'currencies', label: 'Currencies & FX', icon: BadgeDollarSign, group: 'main', visible: viewSettings, editable: updateSettings },
   { id: 'statuses', label: 'Order statuses', icon: ListChecks, group: 'main', visible: viewSettings, editable: updateSettings },
   { id: 'notifications', label: 'Notifications', icon: Bell, group: 'main', visible: everyone, editable: everyone },
+  { id: 'north-star', label: 'North Star & targets', icon: Flag, group: 'main', visible: viewTargets, editable: owner },
+  { id: 'rewards', label: 'Rewards', icon: Gift, group: 'main', visible: viewSettings, editable: owner },
   { id: 'billing', label: 'Billing & plans', icon: CreditCard, group: 'main', visible: owner, editable: owner },
   { id: 'users', label: 'User management', icon: Users, group: 'moving', visible: owner, editable: owner },
   { id: 'permissions', label: 'Role permissions', icon: Shield, group: 'moving', visible: owner, editable: owner },

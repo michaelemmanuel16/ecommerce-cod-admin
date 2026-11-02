@@ -2,6 +2,7 @@
  * M5-T10 (COD-49): record partner payout, the one generic action (F-906): API `POST /api/partner-settlements` and the MCP
  * tool `partner_payout_record`. Validation, storage, idempotency by (partner, reference), permission, tenant, audit.
  */
+import { setRoleGrid } from './helpers/roleGrid';
 import { describe, it, expect, beforeAll, afterAll, jest } from '@jest/globals';
 import '../mocks/logger.mock';
 import fs from 'fs';
@@ -164,13 +165,7 @@ describe('POST /api/partner-settlements', () => {
     const body = { partnerId: partner, payoutDate: '2026-10-20', payoutAmount: 10, lines: [{ externalOrderRef: '1', expAmount: 10 }] };
     try {
       expect((await post(adm.token, { ...body, reference: 'OV-1' })).status).toBe(201);
-      await prismaBase.systemConfig.upsert({
-        where: { tenantId: other.id },
-        update: { rolePermissions: { admin: { payouts: ['view'] } } },
-        create: { tenantId: other.id, rolePermissions: { admin: { payouts: ['view'] } } } as any,
-      });
-      // permissions are cached for a short time per tenant; clear the cache the way the settings save does
-      clearPermissionsCache();
+      await setRoleGrid(other.id, 'admin', { payouts: ['view'] });
       expect((await post(adm.token, { ...body, reference: 'OV-2' })).status).toBe(403);
     } finally {
       await deleteTenantRows([other.id]);

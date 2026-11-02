@@ -1,22 +1,15 @@
 import { UserRole } from '@prisma/client';
 import prisma from '../utils/prisma';
-import { getEffectivePermissions } from '../middleware/auth';
+import { getTenantMatrix, getUserPermissions } from './permissionService';
+import { ROLE_NAME_BY_USER_ROLE, isPositionRole } from '../config/defaultRoles';
+import { gridOfRole } from '../config/roleToolRules';
+import { resolveTenantId } from '../utils/tenantContext';
+import { startOfUtcDay } from '../utils/startOfUtcDay';
 import { orderScope, Requester } from '../utils/authUtils';
 
 /** M3-T07: what the app shell needs per user: counts for the pills, menu keys, home route, role names (F-101, F-102, F-104). */
 
 type Permissions = Record<string, string[]>;
-
-/** Name shown for a base role when the person has no RoleAssignment (F-104). */
-const BASE_ROLE_NAME: Record<UserRole, string> = {
-  super_admin: 'Owner',
-  admin: 'Admin',
-  manager: 'Manager',
-  sales_rep: 'Call rep',
-  inventory_manager: 'Stock keeper',
-  delivery_agent: 'Delivery',
-  accountant: 'Finance clerk',
-};
 
 /** F-102 role home. Reps and agents stay on the current pages until the rep and agent apps ship (M7, M10). */
 const HOME_ROUTE: Record<UserRole, string> = {
@@ -67,29 +60,80 @@ export function menuKeys(role: UserRole, permissions: Permissions): string[] {
   return MENU_RULES.filter(([, allowed]) => allowed(ctx)).map(([key]) => key);
 }
 
+/**
+ * F-1163 menu table for a custom role (M6-T21): permissions only, no base role. The seeded roles keep the F-102 rules above, so
+ * the people who hold them see what they saw before; a custom role, such as a view-only one, sees exactly what its cells allow.
+ * "Dashboard" and "Inbox" and "Settings" are for any signed-in user.
+ */
+const CELL_RULES: Array<[key: string, allowed: (has: MenuCtx['has']) => boolean]> = [
+  ['dashboard', () => true],
+  ['inbox', () => true],
+  ['orders', (has) => has('orders', 'view')],
+  ['customers', (has) => has('customers', 'view')],
+  ['checkoutForms', (has) => has('products', 'update')],
+  ['messages', (has) => has('messages', 'view')],
+  ['products', (has) => has('products', 'view')],
+  ['inventory', (has) => has('products', 'view')],
+  ['deliveries', (has) => has('orders', 'assign') || has('users', 'view')],
+  ['finance', (has) => has('financial', 'view')],
+  ['marketing', (has) => has('marketing', 'view')],
+  ['reports', (has) => has('analytics', 'view')],
+  ['targets', (has) => has('targets', 'view')],
+  ['leaderboard', (has) => has('targets', 'view')],
+  ['staff', (has) => has('users', 'view')],
+  ['workflows', (has) => has('workflows', 'view')],
+  ['connections', (has) => has('settings', 'view')],
+  ['settings', () => true],
+];
+
+export interface HeldRole { presetRole: UserRole | null; name: string; grid: Permissions }
+
+/**
+ * The menu of a person who holds roles (F-1163, F-1155): each role gives its own items and the person sees the union, in menu
+ * order. A seeded role (Owner, Admin, Manager, Finance clerk, ...) follows the F-102 rules of its base role; any other role
+ * follows the cell table. A person with no role (an old account) follows the base role and the union of permissions.
+ */
+export function menuKeysForRoles(role: UserRole, permissions: Permissions, held: HeldRole[]): string[] {
+  if (held.length === 0) return menuKeys(role, permissions);
+  const keys = new Set<string>();
+  for (const r of held) {
+    if (r.presetRole && isPositionRole(r)) menuKeys(r.presetRole, r.grid).forEach((k) => keys.add(k));
+    else CELL_RULES.filter(([, allowed]) => allowed(hasIn(role, r.grid))).forEach(([k]) => keys.add(k));
+  }
+  // The Owner's North Star item is the base role's alone
+  if (role === 'super_admin') keys.add('setupNorthStar');
+  return MENU_RULES.map(([key]) => key).filter((key) => keys.has(key));
+}
+
 export const homeRouteFor = (role: UserRole): string => HOME_ROUTE[role];
 
-/** Role names from RoleAssignment (running today), else the base role name. */
-async function roleList(userId: number, role: UserRole): Promise<Array<{ id: number | null; name: string }>> {
-  const now = new Date();
-  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const assignments = await prisma.roleAssignment.findMany({
-    where: { holderId: userId, fromDate: { lte: today }, OR: [{ toDate: null }, { toDate: { gte: today } }] },
-    include: { role: { select: { id: true, name: true } } },
-    orderBy: { id: 'asc' },
-  });
-  const roles = assignments.map((a) => ({ id: a.role.id, name: a.role.name }));
-  return roles.length ? roles : [{ id: null, name: BASE_ROLE_NAME[role] }];
+/** Roles from RoleAssignment (running today): names for the shell, and the roles with their grids for the menu. */
+async function heldRoles(userId: number) {
+  const today = startOfUtcDay();
+  const [assignments, matrix] = await Promise.all([
+    prisma.roleAssignment.findMany({
+      where: { holderId: userId, fromDate: { lte: today }, OR: [{ toDate: null }, { toDate: { gte: today } }] },
+      include: { role: { select: { id: true, name: true, presetRole: true, permissions: true } } },
+      orderBy: { id: 'asc' },
+    }),
+    getTenantMatrix(resolveTenantId()),
+  ]);
+  return assignments.map((a) => ({ id: a.role.id, name: a.role.name, presetRole: a.role.presetRole, grid: gridOfRole(a.role, matrix) as Permissions }));
 }
 
 class NavService {
   /** Everything /api/auth/me adds for the shell. */
   async getShell(userId: number, role: UserRole) {
-    const [permissions, roles] = await Promise.all([getEffectivePermissions(role), roleList(userId, role)]);
+    const [permissions, held, owner] = await Promise.all([
+      getUserPermissions({ id: userId, role }), heldRoles(userId), prisma.user.findUnique({ where: { id: userId }, select: { preferences: true } }),
+    ]);
+    const roles = held.length ? held.map((r) => ({ id: r.id, name: r.name })) : [{ id: null, name: ROLE_NAME_BY_USER_ROLE[role] }];
+    // "Set up North Star" stays in the menu until the Owner finishes step 6 of the wizard (F-1111)
+    const northStarDone = (owner?.preferences as { northStarDone?: boolean } | null)?.northStarDone === true;
     return {
       permissions,
       homeRoute: homeRouteFor(role),
-      menu: menuKeys(role, permissions),
+      menu: menuKeysForRoles(role, permissions, held).filter((key) => !(northStarDone && key === 'setupNorthStar')),
       roles,
     };
   }
@@ -100,7 +144,7 @@ class NavService {
    * (a rep or an agent counts only their own). financeOpen: open Findings.
    */
   async getCounts(user: Requester) {
-    const permissions = await getEffectivePermissions(user.role);
+    const permissions = await getUserPermissions(user);
     const has = hasIn(user.role, permissions);
 
     const [inbox, ordersPending, financeOpen] = await Promise.all([

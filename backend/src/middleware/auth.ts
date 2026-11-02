@@ -2,62 +2,14 @@ import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../types';
 import { verifyAccessToken } from '../utils/jwt';
 import { UserRole } from '@prisma/client';
-import prisma from '../utils/prisma';
 import logger from '../utils/logger';
-import { enterTenant, getTenantId, withoutTenant } from '../utils/tenantContext';
+import { enterTenant, withoutTenant } from '../utils/tenantContext';
 import { isPlatformAdmin } from '../utils/platformAdmin';
 import { canSeeCost } from '../utils/costAccess';
-import { defaultRolePermissions } from '../config/defaultRolePermissions';
+import { getUserPermissions, hasPermission, isUserActive } from '../services/permissionService';
 
-// Per-tenant cache for role permissions to avoid database hits on every request.
-// Keyed by tenantId to prevent cross-tenant permission leakage.
-const permissionsCache = new Map<string, { data: any; timestamp: number }>();
-const CACHE_TTL = 60000; // 1 minute
-
-async function getPermissionsFromDatabase() {
-  const now = Date.now();
-  const tenantId = getTenantId() || '__global__';
-
-  const cached = permissionsCache.get(tenantId);
-  if (cached && (now - cached.timestamp) < CACHE_TTL) {
-    return cached.data;
-  }
-
-  let permissions: any;
-  try {
-    // The tenant's own row only (SystemConfig.tenantId is unique). No tenant reads the tenantId-null row.
-    const config = await prisma.systemConfig.findFirst({ where: { tenantId: getTenantId() ?? null } });
-
-    if (!config || !config.rolePermissions) {
-      logger.info('[auth.getPermissionsFromDatabase] No config or rolePermissions found, using defaults');
-      permissions = defaultRolePermissions();
-    } else {
-      logger.info('[auth.getPermissionsFromDatabase] Loaded permissions from database, merging with defaults');
-      // Merge stored permissions with defaults so new resources (e.g. calls, gl)
-      // are available even if the tenant saved permissions before those resources existed.
-      const defaults = defaultRolePermissions();
-      const stored = config.rolePermissions as Record<string, Record<string, string[]>>;
-      permissions = {} as any;
-      for (const role of Object.keys(defaults) as Array<keyof typeof defaults>) {
-        permissions[role] = { ...defaults[role], ...(stored[role] || {}) };
-      }
-    }
-  } catch (error) {
-    logger.error('[auth.getPermissionsFromDatabase] Error fetching from database, using defaults:', error);
-    permissions = defaultRolePermissions();
-  }
-
-  permissionsCache.set(tenantId, { data: permissions, timestamp: now });
-
-  // Evict stale entries to prevent unbounded growth
-  if (permissionsCache.size > 100) {
-    for (const [key, entry] of permissionsCache) {
-      if (now - entry.timestamp > CACHE_TTL) permissionsCache.delete(key);
-    }
-  }
-
-  return permissions;
-}
+// The permission checks live in permissionService; the middleware keeps the names callers already import.
+export { clearPermissionsCache, getEffectivePermissions, getUserPermissions, hasPermission } from '../services/permissionService';
 
 export const authenticate = (req: AuthRequest, res: Response, next: NextFunction): void => {
   try {
@@ -75,7 +27,19 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
       req.user = decoded;
       if (decoded.tenantId) {
         // Propagate tenantId into AsyncLocalStorage so Prisma extension can scope queries
-        enterTenant(decoded.tenantId, next);
+        const tenantId = decoded.tenantId;
+        enterTenant(tenantId, () => {
+          isUserActive(tenantId, decoded.id).then((active) => {
+            if (!active) {
+              res.status(401).json({ error: 'Account is no longer active', code: 'ACCOUNT_INACTIVE' });
+              return;
+            }
+            next();
+          }).catch((err) => {
+            logger.error('[AuthMiddleware] Active-user check failed:', err);
+            res.status(500).json({ error: 'Internal application error' });
+          });
+        });
         return;
       }
       // No tenant in the JWT: only a platform admin may continue (no tenant, on purpose).
@@ -167,26 +131,10 @@ export const requirePermission = (allowedRoles: UserRole[]) => {
 };
 
 /**
- * Permission check used by requireResourcePermission and the services:
- * super_admin always passes, other roles need the action in their (merged) role permissions.
+ * The grids of the roles the user holds now (assignments with no end date): the role's own `permissions`, else the tenant's
+ * matrix for its base role. A role with neither (the Legacy MCP role) gives nothing. Empty when the user holds no role that
+ * gives a grid, or the lookup cannot run (no tenant context).
  */
-export async function hasPermission(
-  user: { id?: number; role: UserRole | string },
-  resource: string,
-  action: string
-): Promise<boolean> {
-  if (user.role === 'super_admin') return true;
-  const permissions = await getPermissionsFromDatabase();
-  const list = permissions[user.role]?.[resource];
-  return Array.isArray(list) && list.includes(action);
-}
-
-/** The role's permissions as the checks above see them: the tenant's saved matrix merged over the defaults. */
-export async function getEffectivePermissions(role: UserRole | string): Promise<Record<string, string[]>> {
-  const permissions = await getPermissionsFromDatabase();
-  return permissions[role] ?? {};
-}
-
 // Resource-action permission middleware (SystemConfig.rolePermissions). Several actions mean "any of them".
 export const requireResourcePermission = (resource: string, ...actions: string[]) => {
   return async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
@@ -270,11 +218,10 @@ export const requireEitherPermission = (checks: Array<{ resource: string, action
         return;
       }
 
-      // Get permissions from database (or cache)
-      const permissions = await getPermissionsFromDatabase();
-      const rolePermissions = permissions[req.user.role];
+      // The union of the roles the user holds (or their base role's matrix)
+      const rolePermissions = await getUserPermissions(req.user);
 
-      if (!rolePermissions) {
+      if (Object.keys(rolePermissions).length === 0) {
         res.status(403).json({
           error: 'Forbidden: No permissions configured for your role',
           code: 'NO_ROLE_PERMISSIONS'
@@ -305,11 +252,6 @@ export const requireEitherPermission = (checks: Array<{ resource: string, action
       res.status(500).json({ error: 'Failed to check permissions' });
     }
   };
-};
-
-// Helper to clear permissions cache (call after updating permissions)
-export const clearPermissionsCache = (): void => {
-  permissionsCache.clear();
 };
 
 export const requireSuperAdmin = (req: AuthRequest, res: Response, next: NextFunction): void => {

@@ -11,3 +11,10 @@ export const initials = (name: string): string => {
 
 /** Avatar tint per customer, the five tones of TONE in the mockup. */
 export const AVATAR_TONES = ['pine', 'gold', 'violet', 'coral', 'mint'] as const;
+
+/**
+ * The class of an avatar: a tint per id from `tones` (a page with its own list passes it; [''] gives no tint), square for a company,
+ * violet for an AI agent. Any other kind gets the tint alone.
+ */
+export const avatarClass = (kind: string, id: number, tones: readonly string[] = AVATAR_TONES): string =>
+  ['a', tones[id % tones.length], kind === 'company' ? 'co' : kind === 'ai_agent' ? 'ai' : ''].filter(Boolean).join(' ');

@@ -69,11 +69,17 @@ export function localDate(instant: Date, zone: string): string {
   return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
 }
 
+/** The month of `now` in the store zone, 'YYYY-MM'. */
+export const currentMonth = (now: Date = new Date(), zone: string = getStoreTimeZone()): string => localDate(now, zone).slice(0, 7);
+
 /** UTC calendar date 'YYYY-MM-DD' of an instant (a Postgres DATE column read as UTC midnight). */
 export const ymdOfUtc = (instant: Date): string => localDate(instant, 'UTC');
 
 /** The UTC midnight of 'YYYY-MM-DD': the value a Postgres DATE column holds and Prisma reads back. */
 export const utcDateOfYmd = (ymd: string): Date => new Date(`${ymd}T00:00:00.000Z`);
+
+/** UTC midnight of a calendar day (month 1-12; day 1 by default): the value of a Postgres DATE column. */
+export const utcDate = (year: number, month: number, day = 1): Date => new Date(Date.UTC(year, month - 1, day));
 
 /** A date as YYYY-MM-DD (shape only; parseYmd checks it is a real day). */
 export const YMD = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -107,6 +113,18 @@ export function daysInMonth(year: number, month: number): number {
 
 /** A month as YYYY-MM (month 01-12). */
 export const MONTH_RE = /^(\d{4})-(0[1-9]|1[0-2])$/;
+
+/** The year and month of a 'YYYY-MM' string, or null when it is not one. */
+export function parseMonth(value: string): { year: number; month: number } | null {
+  const m = MONTH_RE.exec(value);
+  return m ? { year: Number(m[1]), month: Number(m[2]) } : null;
+}
+
+/** 'YYYY-MM' moved by `delta` months (negative = earlier): shiftMonth('2026-01', -1) is '2025-12'. */
+export function shiftMonth(value: string, delta: number): string {
+  const { year, month } = parseMonth(value) ?? parseYmd(`${value}-01`);
+  return new Date(Date.UTC(year, month - 1 + delta, 1)).toISOString().slice(0, 7);
+}
 
 /** [from, to) of a local calendar month (month 1-12). */
 export function monthRange(year: number, month: number, zone: string) {

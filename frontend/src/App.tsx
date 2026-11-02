@@ -20,6 +20,7 @@ import { Register } from './pages/Register';
 import { Onboarding } from './pages/Onboarding';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
+import { AcceptInvite } from './pages/AcceptInvite';
 import { DynamicDashboard } from './pages/DynamicDashboard';
 import { Dashboard } from './pages/Dashboard';
 import { SettingsTabRedirect } from './pages/settings/SettingsTabRedirect';
@@ -34,6 +35,9 @@ const Deliveries = lazy(() => import('./pages/Deliveries').then(m => ({ default:
 const CustomerReps = lazy(() => import('./pages/CustomerReps').then(m => ({ default: m.CustomerReps })));
 const Financial = lazy(() => import('./pages/Financial').then(m => ({ default: m.Financial })));
 const Findings = lazy(() => import('./pages/financial/Findings').then(m => ({ default: m.Findings })));
+const Staff = lazy(() => import('./pages/Staff').then(m => ({ default: m.Staff })));
+const Targets = lazy(() => import('./pages/Targets').then(m => ({ default: m.Targets })));
+const Leaderboard = lazy(() => import('./pages/Leaderboard').then(m => ({ default: m.Leaderboard })));
 const Reports = lazy(() => import('./pages/Reports').then(m => ({ default: m.Reports })));
 const Workflows = lazy(() => import('./pages/Workflows').then(m => ({ default: m.Workflows })));
 const WorkflowWizard = lazy(() => import('./pages/WorkflowWizard').then(m => ({ default: m.WorkflowWizard })));
@@ -212,6 +216,7 @@ function App() {
           <Route path="/register" element={<SaasRoute><Register /></SaasRoute>} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/accept-invite" element={<AcceptInvite />} />
           {/* Platform login on main domain — used by PlatformGuard redirect in local dev */}
           <Route path="/platform/login" element={
             <Suspense fallback={<Loading />}><PlatformLogin /></Suspense>
@@ -313,6 +318,15 @@ function App() {
             } />
             <Route path="reports" element={
               <Suspense fallback={<Loading />}><Reports /></Suspense>
+            } />
+            <Route path="staff" element={
+              <Suspense fallback={<Loading />}><Staff /></Suspense>
+            } />
+            <Route path="targets" element={
+              <Suspense fallback={<Loading />}><Targets /></Suspense>
+            } />
+            <Route path="leaderboard" element={
+              <Suspense fallback={<Loading />}><Leaderboard /></Suspense>
             } />
             <Route path="workflows" element={
               <Suspense fallback={<Loading />}><Workflows /></Suspense>

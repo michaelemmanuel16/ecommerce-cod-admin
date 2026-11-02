@@ -1,7 +1,7 @@
 import { ActorKind, DeclineReason, FailureReason, OrderStatus, PaymentStatus, Prisma, UserRole } from '@prisma/client';
 import prisma, { TransactionClient } from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
-import { hasPermission } from '../middleware/auth';
+import { hasPermission } from './permissionService';
 import { resolveTenantId } from '../utils/tenantContext';
 import { Requester } from '../utils/authUtils';
 import { OrderStatusChangedEvent } from '../utils/appEvents';

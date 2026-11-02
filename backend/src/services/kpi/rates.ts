@@ -100,6 +100,65 @@ export function closedOutcomeResult(
   };
 }
 
+/** The three outcomes of a delivery window, as order filters. One definition for `rates` and for the per-partner batch. */
+const deliveredIn = (window: { gte: Date; lt: Date }): Prisma.OrderWhereInput => ({ deletedAt: null, status: 'delivered', deliveryDate: window });
+const returnedIn = (window: { gte: Date; lt: Date }): Prisma.OrderWhereInput => ({ deletedAt: null, status: 'returned', returnedAt: window });
+const failedIn = (window: { gte: Date; lt: Date }): Prisma.OrderWhereInput => ({
+  deletedAt: null,
+  status: 'failed_delivery',
+  OR: [
+    { orderHistory: { some: { status: 'failed_delivery', createdAt: window } } },
+    { orderHistory: { none: { status: 'failed_delivery' } }, updatedAt: window },
+  ],
+});
+
+interface OutcomeCounts { delivered: number; failed: number; returned: number }
+
+/** Orders closed in the window (delivery basis) that match `scope`. Inside the tenant context. */
+async function countOutcomes(scope: Prisma.OrderWhereInput, window: { gte: Date; lt: Date }): Promise<OutcomeCounts> {
+  const [delivered, returned, failed] = await Promise.all([
+    prisma.order.count({ where: { ...scope, ...deliveredIn(window) } }),
+    prisma.order.count({ where: { ...scope, ...returnedIn(window) } }),
+    prisma.order.count({ where: { AND: [scope, failedIn(window)] } }),
+  ]);
+  return { delivered, failed, returned };
+}
+
+/**
+ * The same three counts per delivery partner (Order.deliveryAgentId), in three queries for every partner. The numbers are
+ * `rates({ basis: 'delivery', partnerId })` for each one. A partner with no closed orders is not in the map.
+ */
+export async function outcomesByPartner(tenantId: string, from: Date, to: Date, partnerIds: number[]): Promise<Map<number, OutcomeCounts>> {
+  const window = { gte: from, lt: to };
+  const scope: Prisma.OrderWhereInput = { status: { notIn: DIGITAL }, deliveryAgentId: { in: partnerIds } };
+  const group = (where: Prisma.OrderWhereInput) =>
+    prisma.order.groupBy({ by: ['deliveryAgentId'], where: { AND: [scope, where] }, _count: { _all: true } });
+  const [delivered, returned, failed] = await runInTenant(tenantId, () => Promise.all([group(deliveredIn(window)), group(returnedIn(window)), group(failedIn(window))]));
+  const byPartner = new Map<number, OutcomeCounts>();
+  const add = (rows: typeof delivered, key: keyof OutcomeCounts) => {
+    for (const r of rows) {
+      if (r.deliveryAgentId === null) continue;
+      const cur = byPartner.get(r.deliveryAgentId) ?? { delivered: 0, failed: 0, returned: 0 };
+      cur[key] += r._count._all;
+      byPartner.set(r.deliveryAgentId, cur);
+    }
+  };
+  add(delivered, 'delivered');
+  add(returned, 'returned');
+  add(failed, 'failed');
+  return byPartner;
+}
+
+/** Orders each rep confirmed that were delivered in [from, to), by delivery date (P7). `repIds` limits the reps. */
+export async function deliveredByRep(tenantId: string, from: Date, to: Date, repIds?: number[]): Promise<Map<number, number>> {
+  const groups = await runInTenant(tenantId, () => prisma.order.groupBy({
+    by: ['confirmedById'],
+    where: { ...deliveredIn({ gte: from, lt: to }), status: 'delivered', confirmedById: repIds ? { in: repIds } : { not: null } },
+    _count: { _all: true },
+  }));
+  return new Map(groups.flatMap((g) => (g.confirmedById === null ? [] : [[g.confirmedById, g._count._all] as const])));
+}
+
 export async function rates(tenantId: string, from: Date, to: Date, options: RateOptions = {}): Promise<Rates> {
   const basis: RateBasis = options.basis ?? 'cohort';
   const zone = getStoreTimeZone(tenantId);
@@ -132,20 +191,7 @@ export async function rates(tenantId: string, from: Date, to: Date, options: Rat
         const n = (s: OrderStatus) => groups.find((g) => g.status === s)?._count._all ?? 0;
         return { delivered: n('delivered'), failed: n('failed_delivery'), returned: n('returned') };
       }
-      const [delivered, returned, failed] = await Promise.all([
-        prisma.order.count({ where: { ...scope, ...rep, status: 'delivered', deliveryDate: window } }),
-        prisma.order.count({ where: { ...scope, ...rep, status: 'returned', returnedAt: window } }),
-        prisma.order.count({
-          where: {
-            ...scope, ...rep, status: 'failed_delivery',
-            OR: [
-              { orderHistory: { some: { status: 'failed_delivery', createdAt: window } } },
-              { orderHistory: { none: { status: 'failed_delivery' } }, updatedAt: window },
-            ],
-          },
-        }),
-      ]);
-      return { delivered, failed, returned };
+      return countOutcomes({ ...scope, ...rep }, window);
     };
 
     // Yield on closed day cohorts: one row per store-zone placement day. created_at is a UTC

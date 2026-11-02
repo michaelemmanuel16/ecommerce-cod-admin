@@ -1,23 +1,23 @@
 import { Response, NextFunction } from 'express';
-import crypto from 'crypto';
-import { safeEqual } from '../utils/crypto';
+import { safeEqual, sha256Hex, newHashedToken, RESET_TOKEN_TTL_MS } from '../utils/crypto';
+import { appUrl } from '../utils/appUrl';
 import bcrypt from 'bcrypt';
 import { AuthRequest } from '../types';
 import prisma from '../utils/prisma';
 import { withSoftDeleted } from '../utils/prismaExtensions';
 import { runInTenant, runInTenantOf, withoutTenant } from '../utils/tenantContext';
-import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt';
+import { generateAccessToken, verifyRefreshToken } from '../utils/jwt';
 import { AppError } from '../middleware/errorHandler';
 import navService from '../services/navService';
-import { adminService } from '../services/adminService';
 import { sendPasswordResetEmail } from '../services/emailService';
+import { acceptInvite as acceptInviteToken, checkInvite as checkInviteToken } from '../services/inviteService';
 import { SUBSCRIPTION_STATUS, SELF_SERVE_PLAN_NAMES } from '../config/billing';
 import { seedTenantDefaults } from '../services/tenantDefaultsService';
 import logger from '../utils/logger';
-import * as Money from '../utils/money';
 import { auditService } from '../services/auditService';
 import { accountService } from '../services/accountService';
 import { sessionService, hashToken, requestMeta } from '../services/sessionService';
+import { handler } from './helpers';
 import { slugify } from '../utils/slugify';
 import { purgeTenantRows } from '../services/platformService';
 
@@ -42,44 +42,7 @@ export const login = async (req: AuthRequest, res: Response, next: NextFunction)
       throw new AppError('Invalid credentials', 401);
     }
 
-    await runInTenantOf(user.tenantId, 'auth-login', async () => {
-      let accessToken: string;
-      let refreshToken: string;
-      if (user.tenantId) {
-        // One session per login (M3-T23)
-        ({ accessToken, refreshToken } = await sessionService.start({ ...user, tenantId: user.tenantId }, requestMeta(req)));
-        await prisma.user.update({ where: { id: user.id }, data: { lastLogin: new Date() } });
-      } else {
-        // A user without a tenant cannot own a session row: old single-token flow
-        const claims = { id: user.id, email: user.email, role: user.role, tenantId: null };
-        accessToken = generateAccessToken(claims);
-        refreshToken = generateRefreshToken(claims);
-        await prisma.user.update({ where: { id: user.id }, data: { refreshToken, lastLogin: new Date() } });
-      }
-
-      // Get user permissions from system config
-      const allPermissions = await adminService.getRolePermissions(req.user as any) as Record<string, any>;
-      const userPermissions = allPermissions[user.role] || {};
-
-      res.json({
-        message: 'Login successful',
-        user: {
-          id: user.id,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          role: user.role,
-          isPlatformAdmin: user.isPlatformAdmin || false,
-          commissionAmount: Money.orZero(user.commissionAmount),
-          preferences: user.preferences,
-        },
-        tokens: {
-          accessToken,
-          refreshToken
-        },
-        permissions: userPermissions
-      });
-    });
+    res.json({ message: 'Login successful', ...await sessionService.signIn(user, requestMeta(req)) });
   } catch (error) {
     next(error);
   }
@@ -233,20 +196,17 @@ export const forgotPassword = async (req: AuthRequest, res: Response, next: Next
     if (user && user.isActive && (user.role === 'super_admin' || user.role === 'admin')) {
       try {
         await runInTenantOf(user.tenantId, 'auth-forgot-password', async () => {
-          const rawToken = crypto.randomBytes(32).toString('hex');
-          const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
-          const expires = new Date(Date.now() + 15 * 60 * 1000);
+          const token = newHashedToken(RESET_TOKEN_TTL_MS);
 
           await prisma.user.update({
             where: { id: user.id },
             data: {
-              passwordResetToken: hashedToken,
-              passwordResetExpires: expires,
+              passwordResetToken: token.hash,
+              passwordResetExpires: token.expiresAt,
             },
           });
 
-          const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-          const resetUrl = `${frontendUrl}/reset-password?token=${rawToken}`;
+          const resetUrl = appUrl(`/reset-password?token=${token.raw}`);
 
           await sendPasswordResetEmail(email, user.firstName, resetUrl);
         });
@@ -265,7 +225,7 @@ export const resetPassword = async (req: AuthRequest, res: Response, next: NextF
   try {
     const { token, password } = req.body;
 
-    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+    const hashedToken = sha256Hex(token);
 
     const user = await withoutTenant('auth-reset-password', () => prisma.user.findFirst({
       where: {
@@ -276,10 +236,6 @@ export const resetPassword = async (req: AuthRequest, res: Response, next: NextF
 
     if (!user) {
       throw new AppError('Invalid or expired reset token', 400);
-    }
-
-    if (!password || password.length > 72) {
-      throw new AppError('Password is required and must be 72 characters or fewer', 400);
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -302,6 +258,19 @@ export const resetPassword = async (req: AuthRequest, res: Response, next: NextF
     next(error);
   }
 };
+
+/** POST /api/auth/accept-invite (public): the invited person chooses a password, becomes active and is signed in. */
+export const acceptInvite = handler(async (req, res) => {
+  const { token, password } = req.body;
+  const user = await acceptInviteToken(token, password, requestMeta(req));
+  res.json({ message: 'Login successful', ...await sessionService.signIn(user, requestMeta(req)) });
+});
+
+/** POST /api/auth/check-invite (public): is this invite link still good? 200, or the same 400 and 410 as accept. Writes nothing. */
+export const checkInvite = handler(async (req, res) => {
+  await checkInviteToken(req.body.token);
+  res.json({ valid: true });
+});
 
 export const me = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -429,8 +398,13 @@ export const registerTenant = async (req: AuthRequest, res: Response, next: Next
       return { tenant, user };
     });
 
-    // A failed seed is logged, not fatal: the startup seed fills any gap
-    await seedTenantDefaults(tenant.id).catch((err) => logger.error(`Seeding defaults failed for tenant ${tenant.id}:`, err));
+    // The owner holds the Owner role from the first day (F-1155); the seed gives it. The tenant is committed already, so a failed
+    // seed is logged and signup goes on: a retry with the same email would be refused. The next start-up seed fills what is missing.
+    try {
+      await seedTenantDefaults(tenant.id, user.id);
+    } catch (seedError) {
+      logger.error('Tenant defaults seed failed at signup; the start-up seed will retry', { tenantId: tenant.id, error: seedError });
+    }
 
     const { accessToken, refreshToken } = await runInTenantOf(user.tenantId, 'register-tenant', () =>
       sessionService.start({ ...user, tenantId: tenant.id }, requestMeta(req))

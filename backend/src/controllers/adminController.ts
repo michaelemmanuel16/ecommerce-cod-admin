@@ -1,6 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../types';
 import { adminService } from '../services/adminService';
+import { AppError } from '../middleware/errorHandler';
 
 const ACTIVE_FILTER = { true: true, false: false, all: 'all' } as const;
 
@@ -54,23 +55,9 @@ export const getRolePermissions = async (req: AuthRequest, res: Response, next: 
 
 export const updateRolePermissions = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const config = await adminService.updateRolePermissions(req.user!, req.body);
-
-    // Clear permissions cache
-    const { clearPermissionsCache } = await import('../middleware/auth');
-    clearPermissionsCache();
-
-    // Notify via socket
-    const { getSocketInstance } = await import('../utils/socketInstance');
-    const { emitPermissionsUpdated } = await import('../sockets');
-    const io = getSocketInstance();
-
-    if (io) {
-      const updatedRoles = Object.keys(req.body);
-      emitPermissionsUpdated(io, updatedRoles);
-    }
-
-    res.json(config.rolePermissions);
+    // The save drops cached access and tells the holders' browsers (rolePermissionService.saveGrid)
+    const saved = await adminService.updateRolePermissions(req.user!, req.body);
+    res.json(saved);
   } catch (error) {
     next(error);
   }
@@ -90,13 +77,9 @@ export const getAllUsers = async (req: AuthRequest, res: Response, next: NextFun
   }
 };
 
-export const createUser = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
-  try {
-    const user = await adminService.createUser(req.user!, req.body);
-    res.status(201).json(user);
-  } catch (error) {
-    next(error);
-  }
+/** M6-T06: a person is invited (POST /api/staff/invite), never created with a password. */
+export const createUser = async (_req: AuthRequest, _res: Response, next: NextFunction): Promise<void> => {
+  next(new AppError('Creating a user with a password is gone. Invite the person instead: POST /api/staff/invite.', 410, 'USE_INVITE'));
 };
 
 export const updateUser = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {

@@ -49,6 +49,12 @@ export async function notifyOrderAssigned(
   );
 }
 
+/** Admins of the current tenant only (the scoped query adds tenantId); not the system user. */
+export const findTenantAdmins = () => prisma.user.findMany({
+  where: { role: { in: ['admin', 'super_admin'] }, isActive: true, ...HUMAN_USERS_WHERE },
+  select: { id: true }
+});
+
 export async function notifyAdminsOverdueCollections(
   agents: { agentId: number; agentName: string; totalBalance: Money.Money; warningAmount: Money.Money; criticalAmount: Money.Money }[]
 ) {
@@ -56,10 +62,7 @@ export async function notifyAdminsOverdueCollections(
 
   // Admins of the current tenant only (the scoped query adds tenantId).
   // Callers run this once per tenant.
-  const admins = await prisma.user.findMany({
-    where: { role: { in: ['admin', 'super_admin'] }, isActive: true, ...HUMAN_USERS_WHERE }, // not the system user
-    select: { id: true }
-  });
+  const admins = await findTenantAdmins();
 
   const agentSummary = agents
     .map(a => `${a.agentName}: GHS ${Money.toApi(a.totalBalance)} (${a.criticalAmount.gt(0) ? '8+ days' : '4-7 days'})`)
@@ -119,4 +122,25 @@ export async function notifyAgentUnblocked(
     'Your account has been unblocked. You can now receive new deliveries.',
     {}
   );
+}
+
+/** One "nobody can take this order" alert per scope per hour, so a busy queue does not flood the inbox (F-1162). */
+const NO_ASSIGNEE_ALERT_WINDOW_MS = 60 * 60 * 1000;
+
+export async function notifyAdminsNoAssigneeAvailable(scope: string, role: string, noun: string) {
+  const since = new Date(Date.now() - NO_ASSIGNEE_ALERT_WINDOW_MS);
+  const recent = await prisma.notification.findFirst({
+    where: { type: 'no_assignee_available', createdAt: { gte: since }, data: { path: ['scope'], equals: scope } },
+    select: { id: true }
+  });
+  if (recent) return;
+  for (const admin of await findTenantAdmins()) {
+    await createNotification(
+      admin.id.toString(),
+      'no_assignee_available',
+      `No ${noun} is available`,
+      `New orders are waiting: every ${noun} is unavailable or away. Set someone to available so orders can be assigned.`,
+      { scope, role }
+    );
+  }
 }
