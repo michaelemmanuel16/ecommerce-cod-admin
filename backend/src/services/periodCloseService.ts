@@ -9,9 +9,10 @@ import { currentMonth, getStoreTimeZone, MONTH_RE } from './kpi/dates';
 import { openFindingOnce } from './findingService';
 import { postEntry } from './commissionService';
 import { computeAttainment } from './rewardService';
-import { awardMonthBadges } from './badgeService';
+import { saveBadges, wantedBadges } from './badgeService';
 import { getSystemUserId } from './systemUserService';
 import { isMonthClosed, periodBounds } from './targetService';
+import { pairKey } from './leaderboardMath';
 
 /**
  * M6-T10 (F-916, F-1110): month close. For a month that has ended it turns attainment into reward entries.
@@ -43,7 +44,6 @@ export interface PlannedReward {
 }
 
 export const DAY_OFF_NOTE = 'Paid day off';
-const pairKey = (userId: number, roleId: number | null) => `${userId}:${roleId}`;
 
 /** The month must have ended in the store time zone. */
 function assertPastMonth(period: string, tenantId: string): void {
@@ -144,6 +144,8 @@ async function closeMonth(period: string, actorUserId: number, tenantId: string)
     throw Object.assign(new AppError(`Month close ${period} stopped: attainment could not be read. Nothing was written.`, 502, 'KPI_UNAVAILABLE'), { detail });
   }
 
+  // Result badges of the month (F-1109): read before the transaction opens, so its lock is not held over the reads.
+  const wanted = await wantedBadges(period);
   const earnedAt = periodBounds('month', period).end; // the last day of the month
   const head = await prisma.$transaction(async (tx) => {
     // One close per tenant and month at a time; the second waits, then sees the month closed.
@@ -165,8 +167,8 @@ async function closeMonth(period: string, actorUserId: number, tenantId: string)
       }
       if (entry.journalEntryId === null) await postEntry(tx, entry.id, actorUserId);
     }
-    // Result badges of the month (F-1109), written with the entries: a close that fails writes no badge.
-    const { awarded: badges } = await awardMonthBadges(period, tx);
+    // The badges are written with the entries: a close that fails writes no badge.
+    const { awarded: badges } = await saveBadges(period, wanted, tx);
     const closed = await tx.target.updateMany({
       where: { periodStart: start, scope: { in: ['month', 'role', 'person'] }, closedAt: null },
       data: { closedAt: new Date() },
