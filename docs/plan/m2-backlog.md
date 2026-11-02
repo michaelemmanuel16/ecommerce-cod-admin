@@ -205,3 +205,20 @@ Two items touch the DB schema (index, constraints): those need a migration and t
 
 Found in: M2 (COD-21) QA / review, 2026-10-21
 Touches production deploy: yes (only via normal release). Touches production DB: yes for the index and constraint items (migrations, only via normal release); no for the rest.
+
+### 14. Before v2 launch: move old agent_deposit journal entries to the new key
+
+**What happens:** The old "mark COD deposited" route (`markCODAsDeposited` in `backend/src/services/financialService.ts`) used to key its journal entry on the lowest transaction id, under source type `agent_deposit`. A verified deposit uses the same source type with its own deposit id. The two id lists overlap. Fix dbd063c6 (M6, COD-56) changed the old route to use the negated lowest transaction id, so new entries do not collide. Entries already in production still use the positive id.
+
+**Risk:** After v2 goes live, a new verified deposit can have the same id as an old entry. Then the idempotency guard in `createDepositGLEntry` skips the new posting (the deposit has no journal entry), or a reject voids the old entry instead of the new one. Nothing shows an error. No risk before v2, because production does not run the new code.
+
+**Repro:** Covered by the regression test in `backend/src/__tests__/integration/cashChain.test.ts` (it puts an old-style positive key in place, then posts a verified deposit with the same id).
+
+**Suggested fix:** A one-time script, run with the T41 production migration step:
+1. Find the old-route entries: `agent_deposit` journal entries whose `sourceId` is the lowest id of a group of deposited transactions, and not a real deposit's entry. Check how to tell them apart on a production copy first (date, description, matching transactions). Do not guess.
+2. Set their `sourceId` to the negated value.
+3. Run on a production copy first. Count the rows before and after. Check that the balance sheet does not change.
+4. Owner runs it on production.
+
+Found in: M6 (COD-56) CI fix review, 2026-11-01
+Touches production deploy: no. Touches production DB: yes (one-time data script, owner runs it at the v2 launch with T41).
