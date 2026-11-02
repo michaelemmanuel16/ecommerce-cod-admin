@@ -130,7 +130,7 @@ export function buildGroups(roles: RoleRow[], attainment: Attainment | null, set
         const mine = holder.target;
         const noData = row?.warning === NO_DATA;
         const percent = row?.percent ?? null;
-        const detail = !mine ? '' : noData ? NO_DATA : row && row.actual !== null && row.target !== null ? `${row.actual} of ${row.target}${row.unit === 'percent' ? '%' : ''}` : '—';
+        const detail = !mine ? '' : noData ? NO_DATA : row && row.actual !== null && row.target !== null ? `${formatCount(Number(row.actual))} of ${formatCount(Number(row.target))}${row.unit === 'percent' ? '%' : ''}` : '—';
         return {
           holder, initials: initials(holder.name), targetText: mine ? targetWords(mine, currency) : null, row,
           bar: percent === null || noData ? null : Math.min(percent, 100), noData, detail,
