@@ -122,6 +122,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **[CI/CD]**: Sentry DSN injected into staging and production deployments (MAN-16)
 
 ### Fixed
+- **[Security]**: Inviting or changing the role of staff now checks the role grid: a non-Owner can no longer give a role that has permissions they do not have (403 GRID_ABOVE_ACTOR). (COD-62)
 - **[Finance]**: The General ledger did not load because the accounts call asked for 200 and was refused; the list now allows up to 500. (COD-52)
 - **[Finance]**: The Expenses card title read "1–NaN Oct 2026"; it now shows the real range. (COD-52)
 - **[Finance]**: Figures did not reload after saving an expense or a payout, because a 60 s cache returned the old data; saving now clears the affected blocks. (COD-54)
