@@ -1,8 +1,8 @@
-import { BadgeDollarSign, Bell, CreditCard, FileText, Flag, Gift, ListChecks, Puzzle, Shield, ShieldCheck, Store, UserRound, Users, type LucideIcon } from 'lucide-react';
+import { BadgeDollarSign, Bell, Clock, CreditCard, FileText, Flag, Gift, ListChecks, Puzzle, Shield, ShieldCheck, Store, UserRound, Users, type LucideIcon } from 'lucide-react';
 import type { Action, Resource } from '../../types';
 
 export type SettingsTab =
-  | 'profile' | 'security' | 'business' | 'currencies' | 'statuses' | 'notifications' | 'billing'
+  | 'profile' | 'security' | 'business' | 'operations' | 'currencies' | 'statuses' | 'notifications' | 'billing'
   | 'users' | 'permissions' | 'integrations' | 'checkout-forms' | 'north-star' | 'rewards';
 
 export interface TabAccess {
@@ -37,6 +37,7 @@ export const SETTINGS_TABS: TabDef[] = [
   { id: 'profile', label: 'Profile', icon: UserRound, group: 'main', visible: everyone, editable: everyone },
   { id: 'security', label: 'Security', icon: ShieldCheck, group: 'main', visible: everyone, editable: everyone },
   { id: 'business', label: 'Business details', icon: Store, group: 'main', visible: viewSettings, editable: updateSettings },
+  { id: 'operations', label: 'Operations', icon: Clock, group: 'main', visible: viewSettings, editable: owner },
   { id: 'currencies', label: 'Currencies & FX', icon: BadgeDollarSign, group: 'main', visible: viewSettings, editable: updateSettings },
   { id: 'statuses', label: 'Order statuses', icon: ListChecks, group: 'main', visible: viewSettings, editable: updateSettings },
   { id: 'notifications', label: 'Notifications', icon: Bell, group: 'main', visible: everyone, editable: everyone },

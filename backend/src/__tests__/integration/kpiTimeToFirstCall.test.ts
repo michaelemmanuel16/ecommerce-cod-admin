@@ -209,6 +209,8 @@ describe('Operations Settings API (GET/PUT /api/admin/settings/operations)', () 
       autoConfirmChannel: 'sms',
       queueWaitAlertMinutes: 30,
       firstCallTargetMinutes: 15,
+      defaultDaysToPay: 9,
+      lowStockCoverDays: 12,
     };
     const res = await request(app).put('/api/admin/settings/operations').set(auth(superToken)).send(payload);
     expect(res.status).toBe(200);
@@ -217,6 +219,8 @@ describe('Operations Settings API (GET/PUT /api/admin/settings/operations)', () 
       autoConfirmChannel: 'sms',
       queueWaitAlertMinutes: 30,
       firstCallTargetMinutes: 15,
+      defaultDaysToPay: 9,
+      lowStockCoverDays: 12,
     });
   });
 });

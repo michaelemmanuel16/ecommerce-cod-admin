@@ -8,6 +8,7 @@ import { OPEN_COLLECTION_STATUSES, outstandingOf } from '../utils/collectionCash
 import { DAY_MS, getStoreTimeZone, localDate, shiftYmd, startOfDay, utcDateOfYmd } from './kpi/dates';
 import { openFindingOnce } from './findingService';
 import { resolveDaysToPay } from './orderPaymentTag';
+import { adminService } from './adminService';
 import { getCurrency } from '../utils/currency';
 import { AppError } from '../middleware/errorHandler';
 import whatsappService from './whatsappService';
@@ -65,9 +66,13 @@ const ageInDays = (at: Date, zone: string, todayMs: number): number =>
 export class AgingService {
   /** Days to pay per partner profile of the tenant (`own`, keyed by partner); a partner with no profile or no value gets the default. */
   private async loadDaysToPay() {
-    const profiles = await prisma.deliveryPartnerProfile.findMany({ select: { userId: true, daysToPay: true } });
-    const own = new Map(profiles.map((p) => [p.userId, resolveDaysToPay(p)]));
-    return { own, daysToPayOf: (agentId: number): number => own.get(agentId) ?? resolveDaysToPay() };
+    const [profiles, settings] = await Promise.all([
+      prisma.deliveryPartnerProfile.findMany({ select: { userId: true, daysToPay: true } }),
+      adminService.getOperationsSettings(),
+    ]);
+    const config = { defaultDaysToPay: settings.defaultDaysToPay };
+    const own = new Map(profiles.map((p) => [p.userId, resolveDaysToPay(p, config)]));
+    return { own, daysToPayOf: (agentId: number): number => own.get(agentId) ?? resolveDaysToPay(undefined, config), config };
   }
 
   /**
@@ -120,7 +125,7 @@ export class AgingService {
     // Delivered before the start of (today - days to pay) means more than that many days old
     const cutoff = (days: number) => startOfDay(shiftYmd(todayYmd, -days), zone);
 
-    const { own, daysToPayOf } = await this.loadDaysToPay();
+    const { own, daysToPayOf, config } = await this.loadDaysToPay();
     const late = (agentId: Prisma.AgentCollectionWhereInput['agentId'], days: number): Prisma.AgentCollectionWhereInput =>
       ({ agentId, order: { deliveryDate: { lt: cutoff(days) } } });
 
@@ -131,7 +136,7 @@ export class AgingService {
       order: { status: 'delivered', deletedAt: null },
       OR: [
         ...[...own].map(([agentId, days]) => late(agentId, days)),
-        late({ notIn: [...own.keys()] }, resolveDaysToPay()),
+        late({ notIn: [...own.keys()] }, resolveDaysToPay(undefined, config)),
       ],
     };
     return {

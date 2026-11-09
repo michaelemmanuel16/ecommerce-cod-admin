@@ -112,4 +112,82 @@ describe('M7-T05: Operating hours and time-to-first-call clock unit tests', () =
       expect(workingMinutesBetween(orderAt, firstCallAt, null, ACCRA)).toBe(0);
     });
   });
+
+  describe('parseOperatingHours with defaultDaysToPay and lowStockCoverDays', () => {
+    it('parses valid defaultDaysToPay and lowStockCoverDays', () => {
+      const parsed = parseOperatingHours({
+        days: { monday: weekday },
+        defaultDaysToPay: 7,
+        lowStockCoverDays: 14,
+      });
+      expect(parsed.defaultDaysToPay).toBe(7);
+      expect(parsed.lowStockCoverDays).toBe(14);
+    });
+
+    it('rejects 0 and negative defaultDaysToPay', () => {
+      expect(() =>
+        parseOperatingHours({
+          days: { monday: weekday },
+          defaultDaysToPay: 0,
+        })
+      ).toThrow(RangeError);
+      expect(() =>
+        parseOperatingHours({
+          days: { monday: weekday },
+          defaultDaysToPay: -1,
+        })
+      ).toThrow(RangeError);
+    });
+
+    it('rejects fractional defaultDaysToPay', () => {
+      expect(() =>
+        parseOperatingHours({
+          days: { monday: weekday },
+          defaultDaysToPay: 2.5,
+        })
+      ).toThrow(RangeError);
+    });
+
+    it('rejects string defaultDaysToPay without coercion', () => {
+      expect(() =>
+        parseOperatingHours({
+          days: { monday: weekday },
+          defaultDaysToPay: '7' as any,
+        })
+      ).toThrow(RangeError);
+    });
+
+    it('rejects 0 and negative lowStockCoverDays', () => {
+      expect(() =>
+        parseOperatingHours({
+          days: { monday: weekday },
+          lowStockCoverDays: 0,
+        })
+      ).toThrow(RangeError);
+      expect(() =>
+        parseOperatingHours({
+          days: { monday: weekday },
+          lowStockCoverDays: -1,
+        })
+      ).toThrow(RangeError);
+    });
+
+    it('rejects fractional lowStockCoverDays', () => {
+      expect(() =>
+        parseOperatingHours({
+          days: { monday: weekday },
+          lowStockCoverDays: 2.5,
+        })
+      ).toThrow(RangeError);
+    });
+
+    it('rejects string lowStockCoverDays without coercion', () => {
+      expect(() =>
+        parseOperatingHours({
+          days: { monday: weekday },
+          lowStockCoverDays: '14' as any,
+        })
+      ).toThrow(RangeError);
+    });
+  });
 });
