@@ -83,13 +83,11 @@ export async function sendAutoConfirmForOrder(orderId: number, tenantId?: string
       },
     });
 
-    // Prepare message
+    // Prepare message (COD-64, M7-T08)
     const customerName = `${order.customer.firstName} ${order.customer.lastName}`.trim();
     const total = Money.toApi(Money.parse(order.totalAmount));
     const currency = order.currency ?? 'GHS';
-    const baseUrl = process.env.APP_URL || 'http://localhost:3000';
-    const confirmUrl = `${baseUrl}/c/${token}`;
-    const message = `Hello ${customerName}, thank you for your order #${order.id} of ${currency} ${total}. Reply YES to confirm your order or NO to cancel. You can also confirm online at: ${confirmUrl}`;
+    const message = `Hello ${customerName}, thank you for your order #${order.id} of ${currency} ${total}. Reply YES to confirm it. Reply NO if you want to change or cancel, and our team will call you.`;
 
     if (targetChannel === 'whatsapp') {
       try {

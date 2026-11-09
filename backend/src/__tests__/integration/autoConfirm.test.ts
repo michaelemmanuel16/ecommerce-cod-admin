@@ -8,6 +8,7 @@ import { sendAutoConfirmForOrder } from '../../services/autoConfirmService';
 import { whatsappService } from '../../services/whatsappService';
 import { smsService } from '../../services/smsService';
 import orderService from '../../services/orderService';
+import { runInTenant } from '../../utils/tenantContext';
 
 let pair: TwoTenants;
 let tenantId: string;
@@ -84,9 +85,12 @@ describe('M7-T08: Auto-confirm send and public confirmation API', () => {
       expect.objectContaining({
         orderId: order.id,
         customerId,
-        body: expect.stringContaining(`order #${order.id}`),
+        body: expect.stringMatching(/^Hello .+ thank you for your order #\d+ of [A-Z]{3} \d+\.\d{2}\. Reply YES to confirm it\. Reply NO if you want to change or cancel, and our team will call you\.$/),
       })
     );
+    const sentBody = (sendWhatsAppSpy.mock.calls[0][0] as any).body;
+    expect(sentBody).toContain('Reply YES to confirm it. Reply NO if you want to change or cancel, and our team will call you.');
+    expect(sentBody).not.toContain('/c/');
 
     const updatedOrder = await prismaBase.order.findUniqueOrThrow({ where: { id: order.id } });
     expect(updatedOrder.autoConfirmSentAt).not.toBeNull();
@@ -271,7 +275,42 @@ describe('M7-T08: Auto-confirm send and public confirmation API', () => {
     expect(checkOrder.customerResponse).toBeNull();
   });
 
-  it('POST /api/public/confirm/:token with action: no flags saidNo=true, requiresManualCall=true, order stays open', async () => {
+  it('shipped (out_for_delivery) order, then YES: no error, no change', async () => {
+    const order = await makeOrder({
+      tenantId,
+      customerId,
+      status: 'out_for_delivery',
+    });
+
+    // Direct service call: returns order, no change, no error
+    const directRes = await runInTenant(tenantId, () => orderService.confirmByCustomer(order.id));
+    expect(directRes?.status).toBe('out_for_delivery');
+
+    const tokenRecord = await prismaBase.confirmToken.create({
+      data: {
+        tenantId,
+        orderId: order.id,
+        token: 'test-token-shipped-reply',
+        channel: 'whatsapp',
+        expiresAt: new Date(Date.now() + 48 * 3600 * 1000),
+      },
+    });
+
+    // Public POST endpoint: token marked used, status returned, order unchanged
+    const res = await request(app).post(`/api/public/confirm/${tokenRecord.token}`).send({ action: 'yes' });
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('out_for_delivery');
+
+    const checkOrder = await prismaBase.order.findUniqueOrThrow({ where: { id: order.id } });
+    expect(checkOrder.status).toBe('out_for_delivery');
+    expect(checkOrder.customerResponse).toBeNull();
+
+    const checkToken = await prismaBase.confirmToken.findUniqueOrThrow({ where: { id: tokenRecord.id } });
+    expect(checkToken.usedAt).not.toBeNull();
+    expect(checkToken.response).toBe('yes');
+  });
+
+  it('POST /api/public/confirm/:token accepts only yes and change; anything else is 400', async () => {
     const order = await makeOrder({
       tenantId,
       customerId,
@@ -282,19 +321,52 @@ describe('M7-T08: Auto-confirm send and public confirmation API', () => {
       data: {
         tenantId,
         orderId: order.id,
-        token: 'test-token-no-reply',
+        token: 'test-token-invalid-actions',
         channel: 'whatsapp',
         expiresAt: new Date(Date.now() + 48 * 3600 * 1000),
       },
     });
 
-    const res = await request(app).post(`/api/public/confirm/${tokenRecord.token}`).send({ action: 'no' });
+    // action: no is rejected with 400
+    const resNo = await request(app).post(`/api/public/confirm/${tokenRecord.token}`).send({ action: 'no' });
+    expect(resNo.status).toBe(400);
+
+    // action: confirm is rejected with 400
+    const resConfirm = await request(app).post(`/api/public/confirm/${tokenRecord.token}`).send({ action: 'confirm' });
+    expect(resConfirm.status).toBe(400);
+
+    // token should remain unused
+    const checkToken = await prismaBase.confirmToken.findUniqueOrThrow({ where: { id: tokenRecord.id } });
+    expect(checkToken.usedAt).toBeNull();
+  });
+
+  it('POST /api/public/confirm/:token with action: change sets customerResponse=change, requiresManualCall=true, order stays pending_confirmation, token marked used', async () => {
+    const order = await makeOrder({
+      tenantId,
+      customerId,
+      status: 'pending_confirmation',
+    });
+
+    const tokenRecord = await prismaBase.confirmToken.create({
+      data: {
+        tenantId,
+        orderId: order.id,
+        token: 'test-token-change-reply',
+        channel: 'whatsapp',
+        expiresAt: new Date(Date.now() + 48 * 3600 * 1000),
+      },
+    });
+
+    const res = await request(app).post(`/api/public/confirm/${tokenRecord.token}`).send({ action: 'change' });
     expect(res.status).toBe(200);
 
     const checkOrder = await prismaBase.order.findUniqueOrThrow({ where: { id: order.id } });
     expect(checkOrder.status).toBe('pending_confirmation');
-    expect(checkOrder.saidNo).toBe(true);
+    expect(checkOrder.customerResponse).toBe('change');
     expect(checkOrder.requiresManualCall).toBe(true);
-    expect(checkOrder.customerResponse).toBe('no');
+
+    const checkToken = await prismaBase.confirmToken.findUniqueOrThrow({ where: { id: tokenRecord.id } });
+    expect(checkToken.usedAt).not.toBeNull();
+    expect(checkToken.response).toBe('change');
   });
 });

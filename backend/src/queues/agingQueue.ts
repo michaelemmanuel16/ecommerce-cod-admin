@@ -3,6 +3,9 @@ import agingService from '../services/agingService';
 import { notifyAdminsOverdueCollections } from '../services/notificationService';
 import logger from '../utils/logger';
 import { forEachTenant } from '../utils/tenantLoop';
+import prisma from '../utils/prisma';
+import { runInTenant, withoutTenant } from '../utils/tenantContext';
+import { checkQueueWaitAlerts } from '../services/queueAlertService';
 
 const redisConfig = {
     host: process.env.REDIS_HOST || 'localhost',
@@ -61,6 +64,26 @@ export const processNotifyOverdueCollections = async () => {
 };
 agingQueue.process('notify-overdue-collections', processNotifyOverdueCollections);
 
+// Process queue wait alerts (COD-64, M7-T05): runs every 5 minutes for each active tenant inside runInTenant
+export const processQueueWaitAlerts = async () => {
+    logger.info('Processing queue wait alerts job...');
+    const tenants = await withoutTenant('queue-wait-alerts', () =>
+        prisma.tenant.findMany({
+            where: { subscriptionStatus: 'active' },
+            select: { id: true },
+        })
+    );
+    for (const { id } of tenants) {
+        try {
+            await runInTenant(id, () => checkQueueWaitAlerts(id));
+        } catch (error: any) {
+            logger.error(`Queue wait alerts failed for tenant ${id}:`, error?.message ?? error);
+        }
+    }
+    logger.info('Queue wait alerts job completed.');
+};
+agingQueue.process('check-queue-wait-alerts', processQueueWaitAlerts);
+
 // Setup the daily cron jobs
 export const setupAgingCron = async () => {
     if (process.env.NODE_ENV === 'test') return;
@@ -85,7 +108,14 @@ export const setupAgingCron = async () => {
         }
     });
 
-    logger.info('Agent aging cron jobs scheduled (6:00 AM cash held Findings, 10:00 AM overdue notifications).');
+    // Add repeating queue wait alerts job every 5 minutes
+    await agingQueue.add('check-queue-wait-alerts', {}, {
+        repeat: {
+            cron: '*/5 * * * *'
+        }
+    });
+
+    logger.info('Agent aging cron jobs scheduled (6:00 AM cash held Findings, 10:00 AM overdue notifications, every 5m queue wait alerts).');
 };
 
 agingQueue.on('failed', (job: Bull.Job | undefined, err: Error) => {

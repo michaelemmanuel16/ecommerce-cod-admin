@@ -61,7 +61,6 @@ export async function checkQueueWaitAlerts(tenantId: string, now: Date = new Dat
       deletedAt: null,
       status: 'pending_confirmation',
       firstContactAt: null,
-      customerResponse: null,
     },
     select: {
       id: true,

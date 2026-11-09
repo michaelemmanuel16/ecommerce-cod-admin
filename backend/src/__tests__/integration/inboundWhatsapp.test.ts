@@ -349,24 +349,36 @@ describe('M7-T09: Inbound WhatsApp core integration tests', () => {
     expect(log!.messageBody).toBe('Hello, do you have sneakers?');
   });
 
-  it('duplicate webhook delivery with the same providerMessageId is idempotent', async () => {
-    const msgId = `wamid.idempotent.${Date.now()}`;
+  it('the same message delivered twice at once (Promise.all of two webhook calls) gives one MessageLog row and one status change', async () => {
+    const order = await makeOrder({
+      tenantId: tenantAId,
+      customerId: customerAId,
+      status: 'pending_confirmation',
+      paymentMethod: 'cod',
+      orderType: 'physical',
+    });
+    await prismaBase.order.update({
+      where: { id: order.id },
+      data: { autoConfirmSentAt: new Date() },
+    });
+
+    const msgId = `wamid.concurrent.${Date.now()}`;
     const raw = JSON.stringify(makePayload(phoneIdA, msgId, customerAPhone, 'YES'));
 
-    // First delivery
-    const res1 = await request(app)
-      .post('/api/whatsapp/webhook')
-      .set('Content-Type', 'application/json')
-      .set('x-hub-signature-256', sign(secretA, raw))
-      .send(raw);
-    expect(res1.status).toBe(200);
+    const [res1, res2] = await Promise.all([
+      request(app)
+        .post('/api/whatsapp/webhook')
+        .set('Content-Type', 'application/json')
+        .set('x-hub-signature-256', sign(secretA, raw))
+        .send(raw),
+      request(app)
+        .post('/api/whatsapp/webhook')
+        .set('Content-Type', 'application/json')
+        .set('x-hub-signature-256', sign(secretA, raw))
+        .send(raw),
+    ]);
 
-    // Duplicate delivery
-    const res2 = await request(app)
-      .post('/api/whatsapp/webhook')
-      .set('Content-Type', 'application/json')
-      .set('x-hub-signature-256', sign(secretA, raw))
-      .send(raw);
+    expect(res1.status).toBe(200);
     expect(res2.status).toBe(200);
 
     // Exactly one row exists with this providerMessageId
@@ -374,6 +386,45 @@ describe('M7-T09: Inbound WhatsApp core integration tests', () => {
       where: { providerMessageId: msgId },
     });
     expect(count).toBe(1);
+
+    // Exactly one status change to confirmed
+    const updatedOrder = await prismaBase.order.findUniqueOrThrow({ where: { id: order.id } });
+    expect(updatedOrder.status).toBe('confirmed');
+
+    const confirmedEvents = await prismaBase.orderHistory.findMany({
+      where: { orderId: order.id, status: 'confirmed' },
+    });
+    expect(confirmedEvents.length).toBe(1);
+  });
+
+  it('inbound YES on already non-pending order is stored only (no status change, customerResponse null)', async () => {
+    const order = await makeOrder({
+      tenantId: tenantAId,
+      customerId: customerAId,
+      status: 'out_for_delivery',
+      paymentMethod: 'cod',
+    });
+
+    const msgId = `wamid.nonpending.yes.${Date.now()}`;
+    const raw = JSON.stringify(makePayload(phoneIdA, msgId, customerAPhone, 'YES'));
+
+    const res = await request(app)
+      .post('/api/whatsapp/webhook')
+      .set('Content-Type', 'application/json')
+      .set('x-hub-signature-256', sign(secretA, raw))
+      .send(raw);
+    expect(res.status).toBe(200);
+
+    const checkOrder = await prismaBase.order.findUniqueOrThrow({ where: { id: order.id } });
+    expect(checkOrder.status).toBe('out_for_delivery');
+    expect(checkOrder.customerResponse).toBeNull();
+
+    // Message is stored
+    const log = await prismaBase.messageLog.findFirst({
+      where: { providerMessageId: msgId },
+    });
+    expect(log).not.toBeNull();
+    expect(log!.tenantId).toBe(tenantAId);
   });
 
   it('links inbound message to answered outbound message via context.id', async () => {

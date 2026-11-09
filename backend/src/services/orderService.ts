@@ -1314,21 +1314,15 @@ export class OrderService {
       throw new AppError('Order not found', 404);
     }
 
-    // A reply after the order is cancelled is ignored and logged
-    if (order.status === 'cancelled') {
-      logger.info('Customer confirm reply received for cancelled order - ignored', { orderId });
+    // Customer confirm acts only on an order waiting for confirmation (pending_confirmation).
+    // Any other status (confirmed by a rep, cancelled, shipped, delivered, ...):
+    // change nothing, log at info level with orderId and status, return the order.
+    if (order.status !== 'pending_confirmation') {
+      logger.info('Customer confirm reply received for non-pending order - ignored', {
+        orderId,
+        status: order.status,
+      });
       return order;
-    }
-
-    // A second YES is ignored (200, no change)
-    if (order.status === 'confirmed') {
-      if (order.customerResponse !== 'yes') {
-        await prisma.order.update({
-          where: { id: orderId },
-          data: { customerResponse: 'yes' },
-        });
-      }
-      return prisma.order.findUnique({ where: { id: orderId }, include: ORDER_EVENT_INCLUDE });
     }
 
     const now = new Date();

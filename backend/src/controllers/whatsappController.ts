@@ -216,6 +216,37 @@ async function processInboundWhatsappMessage(tenantId: string, message: any): Pr
     });
   }
 
+  // Store first: create the MessageLog row before any order change
+  // providerMessageId is unique: on Prisma P2002, log duplicate and return
+  let createdLog: any = null;
+  try {
+    createdLog = await prisma.messageLog.create({
+      data: {
+        tenantId,
+        customerId: customer?.id ?? answeredMessage?.customerId ?? null,
+        orderId: null,
+        channel: MessageChannel.whatsapp,
+        direction: MessageDirection.inbound,
+        status: MessageStatus.delivered,
+        messageBody: trimmed || rawText || `[${message.type || 'message'}]`,
+        providerMessageId: message.id || null,
+        metadata: {
+          from: fromPhone,
+          type: message.type,
+          context: message.context ?? null,
+          answeredMessageLogId: answeredMessage?.id ?? null,
+          matchedKeyword: isYes ? 'yes' : isNo ? 'no' : null,
+        },
+      },
+    });
+  } catch (err: any) {
+    if (err?.code === 'P2002') {
+      logger.info('Duplicate WhatsApp webhook message ignored', { messageId: message.id });
+      return;
+    }
+    throw err;
+  }
+
   // Resolve target order
   let targetOrder: any = null;
   if (answeredMessage?.orderId) {
@@ -242,14 +273,16 @@ async function processInboundWhatsappMessage(tenantId: string, message: any): Pr
   }
 
   // Handle keywords
-  if (targetOrder) {
-    if (isYes && (targetOrder.autoConfirmSentAt || targetOrder.status === 'confirmed')) {
+  // YES and NO act only on an open auto-confirm: status pending_confirmation and autoConfirmSentAt not null.
+  // A YES or NO on any other order is stored only.
+  if (targetOrder && targetOrder.status === 'pending_confirmation' && targetOrder.autoConfirmSentAt !== null) {
+    if (isYes) {
       await orderService.confirmByCustomer(targetOrder.id);
       await prisma.confirmToken.updateMany({
         where: { orderId: targetOrder.id, usedAt: null },
         data: { usedAt: new Date(), response: 'yes' },
       });
-    } else if (isNo && targetOrder.status === 'pending_confirmation') {
+    } else if (isNo) {
       await prisma.order.update({
         where: { id: targetOrder.id },
         data: {
@@ -265,27 +298,14 @@ async function processInboundWhatsappMessage(tenantId: string, message: any): Pr
     }
   }
 
-  // Store inbound message in MessageLog (tenant-scoped)
-  // Unknown number: stored with customerId: null, not dropped
-  await prisma.messageLog.create({
-    data: {
-      tenantId,
-      customerId: customer?.id ?? answeredMessage?.customerId ?? null,
-      orderId: targetOrder?.id ?? answeredMessage?.orderId ?? null,
-      channel: MessageChannel.whatsapp,
-      direction: MessageDirection.inbound,
-      status: MessageStatus.delivered,
-      messageBody: trimmed || rawText || `[${message.type || 'message'}]`,
-      providerMessageId: message.id || null,
-      metadata: {
-        from: fromPhone,
-        type: message.type,
-        context: message.context ?? null,
-        answeredMessageLogId: answeredMessage?.id ?? null,
-        matchedKeyword: isYes ? 'yes' : isNo ? 'no' : null,
-      },
-    },
-  });
+  // After the order step, update that row's orderId if an order was found
+  const resolvedOrderId = targetOrder?.id ?? answeredMessage?.orderId ?? null;
+  if (resolvedOrderId && createdLog?.id) {
+    await prisma.messageLog.update({
+      where: { id: createdLog.id },
+      data: { orderId: resolvedOrderId },
+    });
+  }
 }
 
 /**

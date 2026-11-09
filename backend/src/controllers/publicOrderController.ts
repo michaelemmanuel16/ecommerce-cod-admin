@@ -794,8 +794,8 @@ export const postConfirmOrder = async (req: Request, res: Response, next: NextFu
     const { token } = req.params;
     const { action } = req.body;
 
-    if (!action || !['yes', 'change', 'no', 'confirm'].includes(action)) {
-      throw new AppError('Action must be "yes", "no", or "change"', 400, 'INVALID_ACTION');
+    if (!action || !['yes', 'change'].includes(action)) {
+      throw new AppError('Action must be "yes" or "change"', 400, 'INVALID_ACTION');
     }
 
     const confirmToken = await withoutTenant('public-confirm-token-post', () =>
@@ -811,10 +811,8 @@ export const postConfirmOrder = async (req: Request, res: Response, next: NextFu
       throw new AppError('Confirmation token not found', 404, 'TOKEN_NOT_FOUND');
     }
 
-    const normAction = action === 'confirm' ? 'yes' : action;
-
     // A second YES is ignored (200, no change)
-    if (confirmToken.response === 'yes' && normAction === 'yes') {
+    if (confirmToken.response === 'yes' && action === 'yes') {
       res.json({ message: 'Order is already confirmed', status: confirmToken.order.status });
       return;
     }
@@ -826,48 +824,29 @@ export const postConfirmOrder = async (req: Request, res: Response, next: NextFu
 
     const { order } = confirmToken;
 
-    // A reply after the order is cancelled is ignored and logged
-    if (order.status === 'cancelled') {
-      logger.info('Confirmation received after order was cancelled - ignored', { orderId: order.id, action: normAction });
-      res.json({ message: 'Order is cancelled', status: 'cancelled' });
-      return;
-    }
-
     await runInTenant(confirmToken.tenantId, async () => {
-      if (normAction === 'yes') {
-        await orderService.confirmByCustomer(order.id);
+      if (action === 'yes') {
+        const updated = await orderService.confirmByCustomer(order.id);
         await prisma.confirmToken.update({
           where: { id: confirmToken.id },
           data: { usedAt: new Date(), response: 'yes' },
         });
-        res.json({ message: 'Order confirmed successfully', status: 'confirmed' });
+        res.json({ message: 'Order confirmed successfully', status: updated?.status ?? order.status });
         return;
       }
 
-      if (normAction === 'no') {
-        await prisma.order.update({
-          where: { id: order.id },
-          data: {
-            saidNo: true,
-            requiresManualCall: true,
-            customerResponse: 'no',
-          },
-        });
-        await prisma.confirmToken.update({
-          where: { id: confirmToken.id },
-          data: { usedAt: new Date(), response: 'no' },
-        });
-        res.json({ message: 'Order cancellation noted', status: order.status });
-        return;
-      }
-
-      if (normAction === 'change') {
-        await prisma.order.update({
-          where: { id: order.id },
-          data: {
-            customerResponse: 'change',
-          },
-        });
+      if (action === 'change') {
+        if (order.status === 'pending_confirmation') {
+          await prisma.order.update({
+            where: { id: order.id },
+            data: {
+              customerResponse: 'change',
+              requiresManualCall: true,
+            },
+          });
+        } else {
+          logger.info('Change request received for non-pending order - ignored', { orderId: order.id, status: order.status });
+        }
         await prisma.confirmToken.update({
           where: { id: confirmToken.id },
           data: { usedAt: new Date(), response: 'change' },

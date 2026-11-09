@@ -134,4 +134,40 @@ describe('M7-T05: Queue wait alert service tests', () => {
     expect(alerted).toEqual([]);
     expect(mockCreateNotification).not.toHaveBeenCalled();
   });
+
+  it('a said-NO order waiting 31 open minutes alerts; the second run does not alert again', async () => {
+    mockPrisma.systemConfig.findUnique.mockResolvedValue({
+      operatingHours: {
+        days: { monday: { open: '08:00', close: '20:00', enabled: true } },
+        queueWaitAlertMinutes: 30,
+      },
+      timeZone: 'Africa/Accra',
+    });
+
+    const createdAt = new Date('2026-10-05T08:00:00Z');
+    const now = new Date('2026-10-05T08:31:00Z'); // 31 min open
+    mockPrisma.order.findMany.mockResolvedValue([
+      {
+        id: 401,
+        orderNumber: 'ORD-401',
+        createdAt,
+        tenantId,
+        customerResponse: 'no',
+      },
+    ]);
+
+    // First run: no notification exists yet
+    mockPrisma.notification.findFirst.mockResolvedValueOnce(null);
+    mockPrisma.user.findMany.mockResolvedValue([{ id: 1, role: 'admin' }]);
+
+    const alertedFirst = await checkQueueWaitAlerts(tenantId, now);
+    expect(alertedFirst).toEqual([401]);
+    expect(mockCreateNotification).toHaveBeenCalledTimes(1);
+
+    // Second run: notification exists
+    mockPrisma.notification.findFirst.mockResolvedValueOnce({ id: 888 });
+    const alertedSecond = await checkQueueWaitAlerts(tenantId, now);
+    expect(alertedSecond).toEqual([]);
+    expect(mockCreateNotification).toHaveBeenCalledTimes(1); // not called again
+  });
 });
