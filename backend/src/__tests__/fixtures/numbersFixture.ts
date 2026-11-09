@@ -273,12 +273,12 @@ function attemptTimeline(d: Draft, placedAt: number, rng: Rng): Timeline | null 
     const last = i === d.callCount - 1;
     let outcome: string;
     let declineReason: string | null = null;
-    if (!last) outcome = ['no_answer', 'not_reachable', 'rescheduled'][rng.int(3)];
+    if (!last) outcome = ['not_reachable', 'not_reachable', 'call_back_later'][rng.int(3)]; // M7: old no_answer and rescheduled map to these
     else if (d.group === 'cancelled') {
-      outcome = d.declineReason ? 'declined' : 'cancelled';
+      outcome = 'declined'; // M7: old cancelled maps to declined
       declineReason = d.declineReason;
     } else outcome = 'confirmed';
-    calls.push({ at, outcome, durationSec: outcome === 'no_answer' || outcome === 'not_reachable' ? 0 : 30 + rng.int(240), declineReason });
+    calls.push({ at, outcome, durationSec: outcome === 'not_reachable' ? 0 : 30 + rng.int(240), declineReason });
     if (!last) at += Math.round(rng.between(15, 60) * MIN);
   }
   const resolvedAt = at + (rep === 'confirm' ? 1 : 2) * MIN;
