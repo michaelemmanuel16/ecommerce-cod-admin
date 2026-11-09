@@ -6,7 +6,23 @@ import { readDateBound } from '../utils/kpiRequest';
 
 export const createCall = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { customerId, orderId, outcome, duration, notes, startedAt, source, declineReason, callbackAt, orderChanges } = req.body;
+    const {
+      customerId,
+      orderId,
+      outcome,
+      duration,
+      notes,
+      startedAt,
+      source,
+      declineReason,
+      callbackAt,
+      openedAt,
+      expectedUpdatedAt,
+      orderUpdatedAt,
+      lastUpdatedAt,
+      expectedStatusVersion,
+      orderChanges,
+    } = req.body;
 
     const call = await callService.createCall({
       customerId,
@@ -19,6 +35,9 @@ export const createCall = async (req: AuthRequest, res: Response): Promise<void>
       declineReason,
       callbackAt: callbackAt ? new Date(callbackAt) : undefined,
       salesRepId: req.user!.id,
+      openedAt: openedAt ?? orderChanges?.openedAt,
+      expectedUpdatedAt: expectedUpdatedAt ?? orderUpdatedAt ?? lastUpdatedAt,
+      expectedStatusVersion: expectedStatusVersion ?? orderChanges?.expectedStatusVersion,
       orderChanges,
     });
 

@@ -155,7 +155,7 @@ export const basisOf = (metric: string | null, preset: UserRole | null): Measure
   return preset === 'sales_rep' ? 'count' : preset === 'delivery_agent' ? 'rate' : null;
 };
 
-interface Distance { next: '100' | '120'; amount: number | null; unit: string; message: string }
+export interface Distance { next: '100' | '120'; amount: number | null; unit: string; message: string }
 
 export interface AttainmentRow {
   userId: number;
