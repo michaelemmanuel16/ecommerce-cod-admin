@@ -1,4 +1,5 @@
 import prisma, { prismaBase } from '../utils/prisma';
+import { withSoftDeleted } from '../utils/prismaExtensions';
 import { resolveTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma, OrderStatus, DeclineReason, FailureReason } from '@prisma/client';
@@ -58,6 +59,7 @@ interface CreateOrderData {
   landmark?: string;
   notes?: string;
   estimatedDelivery?: Date;
+  packageId?: number;
   createdById?: number;
   /** F-317: the call rep and delivery agent. A sales_rep requester is always the call rep; only `orders:assign` roles may set either. */
   customerRepId?: number;
@@ -413,6 +415,9 @@ export class OrderService {
         throw new AppError('Customer not found', 404);
       }
     } else if (data.customerPhone) {
+      if (/[a-z]/i.test(data.customerPhone)) {
+        throw new AppError('Phone number can only have digits, spaces, + and dashes', 400);
+      }
       // Find customer by phone or create new one. Unparseable input is stored as typed (orders never fail on it).
       const customerPhone = normalizePhoneForStorage(data.customerPhone);
       const alternatePhone = normalizePhoneForStorage(data.alternatePhone) || undefined;
@@ -436,6 +441,7 @@ export class OrderService {
             state: data.deliveryState,
             area: data.deliveryArea,
             landmark: cleanText(data.landmark) || null,
+            createdById: data.createdById ?? data.requester?.id,
           }
         });
       } else {
@@ -465,8 +471,15 @@ export class OrderService {
     // Call rep and delivery agent (F-317). A rep's own order is theirs; the assign fields need `orders:assign`.
     let customerRepId = data.customerRepId;
     let deliveryAgentId = data.deliveryAgentId;
-    if (data.requester?.role === 'sales_rep') {
-      customerRepId = data.requester.id;
+    let isRep = data.requester?.role === 'sales_rep';
+    if (!isRep && data.createdById && !data.requester) {
+      const creator = await prisma.user.findUnique({ where: { id: data.createdById }, select: { role: true } });
+      if (creator?.role === 'sales_rep') {
+        isRep = true;
+      }
+    }
+    if (isRep) {
+      customerRepId = data.requester ? data.requester.id : data.createdById;
       if (deliveryAgentId) throw new AppError('You cannot assign a delivery agent.', 403, 'FORBIDDEN');
     } else if ((customerRepId || deliveryAgentId) && data.requester && !(await hasPermission(data.requester, 'orders', 'assign'))) {
       throw new AppError('You do not have permission to assign this order.', 403, 'FORBIDDEN');
@@ -479,13 +492,43 @@ export class OrderService {
 
     // Validate products and check stock (batch query to avoid N+1)
     const productIds = [...new Set(data.orderItems.map(item => item.productId))];
-    const products = await prisma.product.findMany({
+    const products = await withSoftDeleted(() => prisma.product.findMany({
       where: { id: { in: productIds } }
-    });
+    }));
     const productMap = new Map<number, any>(products.map(p => [p.id, p]));
     for (const item of data.orderItems) {
-      if (!productMap.has(item.productId)) {
+      const prod = productMap.get(item.productId);
+      if (!prod) {
         throw new AppError(`Product ID ${item.productId} not found`, 404);
+      }
+      if (prod.isActive === false) {
+        throw new AppError('Archived products are not selectable', 400);
+      }
+    }
+
+    // Validate packages (archived packages are not selectable, F-355/M7-T07)
+    const packageIds: number[] = [];
+    if (data.packageId != null) packageIds.push(Number(data.packageId));
+    for (const item of data.orderItems) {
+      const pkgId = (item as any).packageId ?? item.metadata?.packageId;
+      if (pkgId != null) packageIds.push(Number(pkgId));
+    }
+    if (packageIds.length > 0) {
+      const packages = await withSoftDeleted(() => prisma.formPackage.findMany({
+        where: { id: { in: packageIds } },
+        include: { form: { include: { product: true } } }
+      }));
+      const packageMap = new Map<number, any>(packages.map(pkg => [pkg.id, pkg]));
+      for (const pkgId of packageIds) {
+        const pkg = packageMap.get(pkgId);
+        if (!pkg) {
+          throw new AppError('Archived packages are not selectable', 400);
+        }
+        const isFormArchived = pkg.form?.archivedAt != null || !pkg.form?.isActive;
+        const isProductActive = pkg.form?.product ? pkg.form.product.isActive : true;
+        if (isFormArchived || !isProductActive) {
+          throw new AppError('Archived packages are not selectable', 400);
+        }
       }
     }
 

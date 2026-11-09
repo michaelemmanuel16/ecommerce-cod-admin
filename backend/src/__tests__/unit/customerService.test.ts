@@ -47,19 +47,17 @@ describe('CustomerService', () => {
       expect(prismaMock.customer.create).toHaveBeenCalled();
     });
 
-    it('should throw error when phone number already exists', async () => {
+    it('returns existing customer with duplicate: true when phone number already exists', async () => {
       prismaMock.customer.findMany.mockResolvedValue([{
         id: 2,
         firstName: 'Abena',
         lastName: 'Owusu',
-        phoneNumber: '+1234567890'
+        phoneNumber: '+1234567890',
+        isActive: true
       } as any]);
 
-      await expect(
-        customerService.createCustomer(createCustomerData)
-      ).rejects.toThrow(
-        new AppError('This number belongs to Abena Owusu', 409)
-      );
+      const result = await customerService.createCustomer(createCustomerData);
+      expect(result).toMatchObject({ id: 2, duplicate: true });
     });
   });
 

@@ -40,6 +40,10 @@ export const getCustomerTowns = async (req: AuthRequest, res: Response): Promise
 
 export const createCustomer = async (req: AuthRequest, res: Response): Promise<void> => {
   const customer = await customerService.createCustomer(req.body, req.user);
+  if ((customer as any).duplicate) {
+    res.status(200).json({ customer, duplicate: true });
+    return;
+  }
   res.status(201).json({ customer });
 };
 
