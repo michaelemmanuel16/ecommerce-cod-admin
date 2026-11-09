@@ -105,8 +105,20 @@ async function setupTenant(label: string) {
   });
   pkg3Id = p3.id;
 
+  const archivedForm = await prismaBase.checkoutForm.create({
+    data: {
+      name: 'Archived Set Form',
+      slug: `archived-set-${SUFFIX}`,
+      productId,
+      fields: {},
+      styling: {},
+      regions: {},
+      archivedAt: new Date(),
+      tenantId,
+    },
+  });
   const pArchived = await prismaBase.formPackage.create({
-    data: { formId, name: 'Special Bundle (Archived)', description: '(archived)', price: 350, quantity: 1, sortOrder: 4 },
+    data: { formId: archivedForm.id, name: 'Special Bundle', price: 350, quantity: 1, sortOrder: 4 },
   });
   archivedPkgId = pArchived.id;
 
@@ -365,7 +377,7 @@ describe('M7-T04: Upsell service rules', () => {
         subtotal: 249,
         totalAmount: 249,
         codAmount: 249,
-        customerRepId: adwoaId,
+        customerRepId: null,
         deliveryAgentId: agentId,
         tenantId,
       } as any,
@@ -575,5 +587,108 @@ describe('M7-T04: Upsell service rules', () => {
     expect(earnedBase!.status).toBe('earned');
     expect(earnedBase!.journalEntryId).not.toBeNull();
     expect(Money.parse(earnedBase!.amount).toFixed(2)).toBe('8.00');
+  });
+
+  it('F5: a sales_rep cannot upsell an order assigned to another rep (403)', async () => {
+    const order = await prismaBase.order.create({
+      data: {
+        customerId,
+        status: 'pending_confirmation',
+        subtotal: 249,
+        totalAmount: 249,
+        codAmount: 249,
+        customerRepId: adwoaId,
+        tenantId,
+      } as any,
+    });
+
+    const res = await request(app)
+      .post(`/api/orders/${order.id}/upsell`)
+      .set('Authorization', `Bearer ${nanaToken}`)
+      .send({
+        packageId: pkg2Id,
+      });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('F5: only orders in pending_confirmation or confirmed may be upsold (409 otherwise)', async () => {
+    const order = await prismaBase.order.create({
+      data: {
+        customerId,
+        status: 'delivered',
+        subtotal: 249,
+        totalAmount: 249,
+        codAmount: 249,
+        customerRepId: adwoaId,
+        tenantId,
+      } as any,
+    });
+
+    const res = await request(app)
+      .post(`/api/orders/${order.id}/upsell`)
+      .set('Authorization', `Bearer ${adwoaToken}`)
+      .send({
+        packageId: pkg2Id,
+      });
+
+    expect(res.status).toBe(409);
+  });
+
+  it('F5: two sequential saves give the right total (no double-count)', async () => {
+    const order = await prismaBase.order.create({
+      data: {
+        customerId,
+        status: 'pending_confirmation',
+        subtotal: 249,
+        totalAmount: 249,
+        codAmount: 249,
+        customerRepId: adwoaId,
+        tenantId,
+      } as any,
+    });
+
+    await prismaBase.formSubmission.create({
+      data: {
+        formId,
+        orderId: order.id,
+        formData: {},
+        selectedPackage: { id: pkg1Id, name: '1 Set', price: 249 },
+        totalAmount: 249,
+        tenantId,
+      },
+    });
+
+    // Save 1: package 2 (price 449, extra 200)
+    const res1 = await request(app)
+      .post(`/api/orders/${order.id}/upsell`)
+      .set('Authorization', `Bearer ${adwoaToken}`)
+      .send({ packageId: pkg2Id });
+
+    expect(res1.status).toBe(200);
+    expect(Money.parse(res1.body.order.totalAmount).toFixed(4)).toBe('449.0000');
+    expect(Money.parse(res1.body.extraValue).toFixed(4)).toBe('200.0000');
+
+    // Save 2: package 3 (price 629, extra 380)
+    const res2 = await request(app)
+      .post(`/api/orders/${order.id}/upsell`)
+      .set('Authorization', `Bearer ${adwoaToken}`)
+      .send({ packageId: pkg3Id });
+
+    expect(res2.status).toBe(200);
+    expect(Money.parse(res2.body.order.totalAmount).toFixed(4)).toBe('629.0000');
+    expect(Money.parse(res2.body.extraValue).toFixed(4)).toBe('380.0000');
+
+    const inDb = await prismaBase.order.findUnique({ where: { id: order.id } });
+    expect(Money.parse(inDb!.totalAmount).toFixed(4)).toBe('629.0000');
+    expect(Money.parse(inDb!.subtotal).toFixed(4)).toBe('629.0000');
+
+    // Active upsell lines should only be package 3
+    const activeLines = await prismaBase.upsellLine.findMany({
+      where: { orderId: order.id, status: 'active' },
+    });
+    expect(activeLines).toHaveLength(1);
+    expect(activeLines[0].sourceId).toBe(pkg3Id);
+    expect(Money.parse(activeLines[0].extraValue).toFixed(4)).toBe('380.0000');
   });
 });

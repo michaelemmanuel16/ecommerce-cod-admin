@@ -31,7 +31,7 @@ export async function createCommissionEntriesOnConfirm(
     select: { id: true, kind: true, role: true, tenantId: true },
   });
   // Auto-confirmed, self-service, no-rep and AI-agent orders: no entries (owner decision: no entry for AI agents)
-  if (!rep || rep.kind !== 'person') {
+  if (!rep || rep.kind !== 'person' || rep.role !== 'sales_rep') {
     return { baseEntry: null, upsellEntry: null };
   }
 
@@ -102,7 +102,7 @@ export async function createCommissionEntriesOnConfirm(
 export async function earnEntriesForOrder(
   tx: TransactionClient,
   orderId: number,
-  actorUserIdResolver?: number | (() => Promise<number>),
+  actorUserIdResolver: number | (() => Promise<number>),
   earnedAt?: Date,
 ): Promise<{ earned: number; posted: number }> {
   const pending = await tx.$queryRaw<{ id: number }[]>`
@@ -113,7 +113,7 @@ export async function earnEntriesForOrder(
 
   const actorUserId = typeof actorUserIdResolver === 'function'
     ? await actorUserIdResolver()
-    : (actorUserIdResolver ?? 0);
+    : actorUserIdResolver;
 
   const effectiveDate = earnedAt ?? new Date();
   let postedCount = 0;

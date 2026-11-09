@@ -20,6 +20,7 @@ export const applyUpsell = async (req: AuthRequest, res: Response, next: NextFun
     const result = await upsellService.applyUpsell({
       orderId,
       repId: req.user!.id,
+      role: req.user!.role,
       packageId: packageId != null ? parseInt(packageId, 10) : undefined,
       addOnIds: Array.isArray(addOnIds) ? addOnIds.map((id: any) => parseInt(id, 10)) : undefined,
       openedAt,

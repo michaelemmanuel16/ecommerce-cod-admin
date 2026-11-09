@@ -1,20 +1,22 @@
-import prisma from '../utils/prisma';
+import prisma, { TransactionClient } from '../utils/prisma';
 import { getTenantId, resolveTenantId, runInTenant } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
 import * as Money from '../utils/money';
 import { UpsellKind, UpsellStatus } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import logger from '../utils/logger';
-import { createCommissionEntriesOnConfirm } from './commissionService';
+import { UPSELL_COMMISSION_RATE } from './commissionService';
 
 export interface ApplyUpsellInput {
   orderId: number;
   repId: number;
+  role?: string;
   packageId?: number;
   addOnIds?: number[];
   openedAt?: Date | string;
   expectedStatusVersion?: number;
   tenantId?: string;
+  tx?: TransactionClient;
   // Any client-provided value/extraValue fields must be ignored
   value?: any;
   extraValue?: any;
@@ -108,30 +110,14 @@ export class UpsellService {
       throw new AppError('Order not found', 404);
     }
 
-    // Sort submissions newest first
-    const submissions = [...order.formSubmissions].sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-
-    let form: any = submissions[0]?.form ?? null;
-    if (!form && order.orderItems[0]?.productId) {
-      form = await prisma.checkoutForm.findFirst({
-        where: { productId: order.orderItems[0].productId, archivedAt: null },
-        include: {
-          packages: true,
-          upsells: {
-            where: { isActive: true },
-            include: { product: true },
-          },
-          product: true,
-        },
-      });
-    }
-
     // Determine current package from submission or order items
     let currentPackageId: number | null = null;
     let currentPackageName: string | null = null;
     let currentPackagePrice = Money.parse(order.subtotal);
+
+    const submissions = [...order.formSubmissions].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
 
     const submission = submissions[0];
     if (submission?.selectedPackage) {
@@ -149,25 +135,51 @@ export class UpsellService {
       }
     }
 
-    // Form packages: filter out archived packages
-    // A package is archived if form.archivedAt is set, or if package is marked archived,
-    // or if the underlying product is archived (!form.product.isActive).
-    const packages = [...(form?.packages ?? [])].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-    const isFormArchived = form?.archivedAt != null;
-    const isProductArchived = form?.product ? !form.product.isActive : false;
+    // Collect productIds for this order
+    const productIds: number[] = [];
+    for (const item of order.orderItems) {
+      if (item.productId && !productIds.includes(item.productId)) {
+        productIds.push(item.productId);
+      }
+    }
+    for (const sub of order.formSubmissions) {
+      if (sub.form?.productId && !productIds.includes(sub.form.productId)) {
+        productIds.push(sub.form.productId);
+      }
+    }
 
+    // Load active forms for these products
+    const forms = await prisma.checkoutForm.findMany({
+      where: {
+        productId: { in: productIds },
+        archivedAt: null,
+      },
+      include: {
+        packages: true,
+        upsells: {
+          where: { isActive: true },
+          include: { product: true },
+        },
+        product: true,
+      },
+    });
+
+    const subForm = submissions[0]?.form;
+    if (subForm && subForm.archivedAt == null && !forms.some((f) => f.id === subForm.id)) {
+      forms.push(subForm as any);
+    }
+
+    // Packages: A package is not offered when its form has archivedAt set or its product is not active.
     const availablePackages: UpsellOptionPackage[] = [];
-    if (!isFormArchived && !isProductArchived) {
-      for (const pkg of packages) {
-        // Exclude archived packages (e.g. description includes [archived] or flag)
-        const isPkgArchived = (pkg as any).archivedAt != null ||
-          (pkg as any).isActive === false ||
-          pkg.name.toLowerCase().includes('(archived)') ||
-          pkg.description?.toLowerCase().includes('(archived)');
+    const seenPkgIds = new Set<number>();
+    for (const f of forms) {
+      if (f.archivedAt != null) continue;
+      if (f.product && !f.product.isActive) continue;
 
-        if (isPkgArchived) {
-          continue;
-        }
+      const packages = [...(f.packages ?? [])].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+      for (const pkg of packages) {
+        if (seenPkgIds.has(pkg.id)) continue;
+        seenPkgIds.add(pkg.id);
 
         const pkgPrice = Money.parse(pkg.price);
         const diff = Money.sub(pkgPrice, currentPackagePrice);
@@ -185,20 +197,27 @@ export class UpsellService {
       }
     }
 
-    // Upsells/addons
+    // Addons
     const availableAddons: UpsellOptionAddon[] = [];
-    const upsells = [...(form?.upsells ?? [])].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-    for (const addon of upsells) {
-      if (!addon.isActive) continue;
-      if (addon.product && !addon.product.isActive) continue;
+    const seenAddonIds = new Set<number>();
+    for (const f of forms) {
+      if (f.archivedAt != null) continue;
+      if (f.product && !f.product.isActive) continue;
 
-      availableAddons.push({
-        id: addon.id,
-        name: addon.name,
-        price: Money.parse(addon.price).toFixed(4),
-        productId: addon.productId,
-        isActive: addon.isActive,
-      });
+      const upsells = [...(f.upsells ?? [])].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+      for (const addon of upsells) {
+        if (!addon.isActive || (addon.product && !addon.product.isActive)) continue;
+        if (seenAddonIds.has(addon.id)) continue;
+        seenAddonIds.add(addon.id);
+
+        availableAddons.push({
+          id: addon.id,
+          name: addon.name,
+          price: Money.parse(addon.price).toFixed(4),
+          productId: addon.productId,
+          isActive: addon.isActive,
+        });
+      }
     }
 
     return {
@@ -216,16 +235,26 @@ export class UpsellService {
   async applyUpsell(input: ApplyUpsellInput): Promise<ApplyUpsellResult> {
     const tid = input.tenantId ?? getTenantId();
     if (tid) {
-      return runInTenant(tid, () => this.doApplyUpsell(input, tid));
+      return runInTenant(tid, () => this.executeApplyUpsell(input, tid));
     }
-    return this.doApplyUpsell(input);
+    return this.executeApplyUpsell(input);
   }
 
-  private async doApplyUpsell(input: ApplyUpsellInput, tid?: string): Promise<ApplyUpsellResult> {
-    const { orderId, repId, packageId, addOnIds, openedAt, expectedStatusVersion } = input;
+  private async executeApplyUpsell(input: ApplyUpsellInput, tid?: string): Promise<ApplyUpsellResult> {
+    if (input.tx) {
+      return this.doApplyUpsell(input.tx, input, tid);
+    }
+    return prisma.$transaction((tx) => this.doApplyUpsell(tx, input, tid));
+  }
 
-    // Load order
-    const order = await prisma.order.findUnique({
+  private async doApplyUpsell(tx: TransactionClient, input: ApplyUpsellInput, tid?: string): Promise<ApplyUpsellResult> {
+    const { orderId, repId, role, packageId, addOnIds, openedAt, expectedStatusVersion } = input;
+    const resolvedTid = resolveTenantId(tid ?? input.tenantId);
+
+    // Concurrency / Row lock: take lock inside transaction
+    await tx.$queryRaw`SELECT id FROM orders WHERE id = ${orderId} AND tenant_id = ${resolvedTid} FOR UPDATE`;
+
+    const order = await tx.order.findUnique({
       where: { id: orderId },
       include: {
         formSubmissions: {
@@ -248,17 +277,27 @@ export class UpsellService {
       throw new AppError('Order not found', 404);
     }
 
+    // F5 item 1: sales_rep ownership check
+    if (role === 'sales_rep') {
+      if (order.customerRepId != null && order.customerRepId !== repId) {
+        throw new AppError("You cannot upsell another rep's order", 403, 'FORBIDDEN');
+      }
+    }
+
+    // F5 item 2: only pending_confirmation or confirmed orders
+    if (order.status !== 'pending_confirmation' && order.status !== 'confirmed') {
+      throw new AppError('Upsell is only allowed on pending confirmation or confirmed orders', 409, 'INVALID_ORDER_STATUS');
+    }
+
     const tenantId = resolveTenantId(tid ?? input.tenantId ?? order.tenantId);
 
-    // Concurrency detection:
-    // If openedAt is provided, and order was updated after openedAt or other upsell lines exist created after openedAt
+    // Concurrency detection
     let warningFlag = false;
     let warning: string | undefined;
 
     if (openedAt) {
       const openedTime = new Date(openedAt).getTime();
       const lastOrderUpdateTime = new Date(order.updatedAt).getTime();
-      // Allow 1 second clock leeway
       if (lastOrderUpdateTime > openedTime + 1000) {
         warningFlag = true;
         warning = 'Order was modified concurrently by another user; your changes were saved.';
@@ -268,23 +307,19 @@ export class UpsellService {
       warning = 'Order status changed concurrently; your changes were saved.';
     }
 
-    // Sort submissions newest first
     const submissions = [...order.formSubmissions].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
 
-    // Determine baseline order amounts (before any active upsell lines were applied)
     const currentActiveUpsells = order.upsellLines.filter((l) => l.status === 'active');
     const existingActiveExtraValue = Money.sum(currentActiveUpsells.map((l) => l.extraValue));
 
-    // Baseline amounts before any active upsells
     const baselineSubtotal = Money.sub(order.subtotal, existingActiveExtraValue);
     const baselineTotalAmount = Money.sub(order.totalAmount, existingActiveExtraValue);
     const baselineCodAmount = order.codAmount
       ? Money.sub(order.codAmount, existingActiveExtraValue)
       : baselineTotalAmount;
 
-    // Determine baseline package price
     let baselinePackagePrice = baselineSubtotal;
     const submission = submissions[0];
     if (submission?.selectedPackage) {
@@ -300,12 +335,11 @@ export class UpsellService {
       }
     }
 
-    // Server calculates extra value:
-    // 1. Package extra value
+    // F5 item 4: Package validation
     let packageExtraValue = new Decimal(0);
     let selectedPackageRecord: any = null;
     if (packageId != null) {
-      selectedPackageRecord = await prisma.formPackage.findUnique({
+      selectedPackageRecord = await tx.formPackage.findUnique({
         where: { id: packageId },
         include: { form: { include: { product: true } } },
       });
@@ -314,15 +348,10 @@ export class UpsellService {
         throw new AppError('Selected package not found', 404);
       }
 
-      // Check if package is archived
-      const isPkgArchived = (selectedPackageRecord as any).archivedAt != null ||
-        (selectedPackageRecord as any).isActive === false ||
-        selectedPackageRecord.form?.archivedAt != null ||
-        (selectedPackageRecord.form?.product && !selectedPackageRecord.form.product.isActive) ||
-        selectedPackageRecord.name.toLowerCase().includes('(archived)') ||
-        selectedPackageRecord.description?.toLowerCase().includes('(archived)');
+      const isFormArchived = selectedPackageRecord.form?.archivedAt != null;
+      const isProductActive = selectedPackageRecord.form?.product ? selectedPackageRecord.form.product.isActive : true;
 
-      if (isPkgArchived) {
+      if (isFormArchived || !isProductActive) {
         throw new AppError('Selected package is archived and no longer offered', 400);
       }
 
@@ -332,11 +361,11 @@ export class UpsellService {
       }
     }
 
-    // 2. Add-ons extra value
+    // Addons validation
     const validAddons: { id: number; price: Decimal }[] = [];
     if (addOnIds && addOnIds.length > 0) {
       for (const addonId of addOnIds) {
-        const addon = await prisma.formUpsell.findUnique({
+        const addon = await tx.formUpsell.findUnique({
           where: { id: addonId },
           include: { product: true },
         });
@@ -355,83 +384,112 @@ export class UpsellService {
       }
     }
 
+    // F5 item 5: UPSELL_COMMISSION_RATE
     const addonsExtraValue = Money.sum(validAddons.map((a) => a.price));
     const totalExtraValue = Money.add(packageExtraValue, addonsExtraValue);
-    const estimatedReward = Money.roundHalfUp(Money.mul(totalExtraValue, 0.10), 2);
+    const estimatedReward = Money.roundHalfUp(Money.mul(totalExtraValue, UPSELL_COMMISSION_RATE), 2);
 
-    // Apply in transaction (Last save wins)
-    const result = await prisma.$transaction(async (tx) => {
-      // 1. Void any previous active upsell lines for this order (last save wins)
-      if (currentActiveUpsells.length > 0) {
-        await tx.upsellLine.updateMany({
-          where: { orderId, status: 'active' },
-          data: { status: 'void' },
-        });
-      }
+    // Void previous active upsell lines (last save wins)
+    if (currentActiveUpsells.length > 0) {
+      await tx.upsellLine.updateMany({
+        where: { orderId, status: 'active' },
+        data: { status: 'void' },
+      });
+    }
 
-      // 2. Create new active upsell lines
-      const createdLines: any[] = [];
-
-      if (packageId != null && packageExtraValue.gt(0)) {
-        const pkgLine = await tx.upsellLine.create({
-          data: {
-            tenantId,
-            orderId,
-            repId,
-            kind: 'package',
-            sourceId: packageId,
-            extraValue: packageExtraValue,
-            status: 'active',
-          },
-        });
-        createdLines.push(pkgLine);
-      }
-
-      for (const addon of validAddons) {
-        const addonLine = await tx.upsellLine.create({
-          data: {
-            tenantId,
-            orderId,
-            repId,
-            kind: 'addon',
-            sourceId: addon.id,
-            extraValue: addon.price,
-            status: 'active',
-          },
-        });
-        createdLines.push(addonLine);
-      }
-
-      // 3. Update order totals
-      const newSubtotal = Money.add(baselineSubtotal, totalExtraValue);
-      const newTotalAmount = Money.add(baselineTotalAmount, totalExtraValue);
-      const newCodAmount = Money.add(baselineCodAmount, totalExtraValue);
-
-      const updatedOrder = await tx.order.update({
-        where: { id: orderId },
+    // Create new active upsell lines
+    const createdLines: any[] = [];
+    if (packageId != null && packageExtraValue.gt(0)) {
+      const pkgLine = await tx.upsellLine.create({
         data: {
-          subtotal: newSubtotal,
-          totalAmount: newTotalAmount,
-          codAmount: newCodAmount,
+          tenantId,
+          orderId,
+          repId,
+          kind: 'package',
+          sourceId: packageId,
+          extraValue: packageExtraValue,
+          status: 'active',
         },
       });
+      createdLines.push(pkgLine);
+    }
 
-      // 4. If order is already confirmed, sync pending commission entries
-      if (order.status === 'confirmed') {
-        await createCommissionEntriesOnConfirm(tx, orderId, repId);
-      }
+    for (const addon of validAddons) {
+      const addonLine = await tx.upsellLine.create({
+        data: {
+          tenantId,
+          orderId,
+          repId,
+          kind: 'addon',
+          sourceId: addon.id,
+          extraValue: addon.price,
+          status: 'active',
+        },
+      });
+      createdLines.push(addonLine);
+    }
 
-      return {
-        createdLines,
-        updatedOrder,
-      };
+    // Update order totals
+    const newSubtotal = Money.add(baselineSubtotal, totalExtraValue);
+    const newTotalAmount = Money.add(baselineTotalAmount, totalExtraValue);
+    const newCodAmount = Money.add(baselineCodAmount, totalExtraValue);
+
+    const updatedOrder = await tx.order.update({
+      where: { id: orderId },
+      data: {
+        subtotal: newSubtotal,
+        totalAmount: newTotalAmount,
+        codAmount: newCodAmount,
+      },
     });
+
+    // F5 item 6: On already confirmed order, only update the upsell entry of the rep who owns the live base entry
+    if (order.status === 'confirmed') {
+      const liveBaseEntry = await tx.commissionEntry.findFirst({
+        where: { orderId, kind: 'base', status: { not: 'void' } },
+      });
+      if (liveBaseEntry) {
+        const liveUpsellEntry = await tx.commissionEntry.findFirst({
+          where: { orderId, kind: 'upsell', status: { not: 'void' } },
+        });
+        if (totalExtraValue.gt(0)) {
+          const upsellAmount = Money.roundHalfUp(Money.mul(totalExtraValue, UPSELL_COMMISSION_RATE), 2);
+          if (upsellAmount.gt(0)) {
+            if (liveUpsellEntry) {
+              if (liveUpsellEntry.status === 'pending' && !Money.parse(liveUpsellEntry.amount).equals(upsellAmount)) {
+                await tx.commissionEntry.update({
+                  where: { id: liveUpsellEntry.id },
+                  data: { amount: upsellAmount, userId: liveBaseEntry.userId },
+                });
+              }
+            } else {
+              await tx.commissionEntry.create({
+                data: {
+                  tenantId,
+                  orderId,
+                  userId: liveBaseEntry.userId,
+                  kind: 'upsell',
+                  status: 'pending',
+                  amount: upsellAmount,
+                  note: 'Upsell commission on order update',
+                },
+              });
+            }
+          }
+        } else if (liveUpsellEntry && liveUpsellEntry.status === 'pending') {
+          await tx.commissionEntry.update({
+            where: { id: liveUpsellEntry.id },
+            data: { status: 'void' },
+          });
+        }
+      }
+    }
 
     logger.info('Applied upsell to order', {
       orderId,
       repId,
       totalExtraValue: totalExtraValue.toFixed(4),
-      linesCount: result.createdLines.length,
+      linesCount: createdLines.length,
       warningFlag,
     });
 
@@ -440,7 +498,7 @@ export class UpsellService {
       repId,
       extraValue: totalExtraValue.toFixed(4),
       estimatedReward: estimatedReward.toFixed(2),
-      lines: result.createdLines.map((l) => ({
+      lines: createdLines.map((l) => ({
         id: l.id,
         kind: l.kind,
         sourceId: l.sourceId,
@@ -450,10 +508,10 @@ export class UpsellService {
       warningFlag,
       warning,
       order: {
-        id: result.updatedOrder.id,
-        subtotal: Money.parse(result.updatedOrder.subtotal).toFixed(4),
-        totalAmount: Money.parse(result.updatedOrder.totalAmount).toFixed(4),
-        codAmount: Money.parse(result.updatedOrder.codAmount ?? result.updatedOrder.totalAmount).toFixed(4),
+        id: updatedOrder.id,
+        subtotal: Money.parse(updatedOrder.subtotal).toFixed(4),
+        totalAmount: Money.parse(updatedOrder.totalAmount).toFixed(4),
+        codAmount: Money.parse(updatedOrder.codAmount ?? updatedOrder.totalAmount).toFixed(4),
       },
     };
   }

@@ -98,10 +98,15 @@ export class CallService {
       }
     }
 
-    // Normalize outcome alias (call_back -> call_back_later)
+    // Normalize outcome aliases (F3)
     let outcome = data.outcome;
-    if ((outcome as string) === 'call_back') {
+    const rawOutcome = outcome as string;
+    if (rawOutcome === 'call_back' || rawOutcome === 'rescheduled') {
       outcome = CallOutcome.call_back_later;
+    } else if (rawOutcome === 'no_answer') {
+      outcome = CallOutcome.not_reachable;
+    } else if (rawOutcome === 'cancelled') {
+      outcome = CallOutcome.declined;
     }
 
     // M7-T03 Outcome validations:
@@ -136,86 +141,111 @@ export class CallService {
     let startedAt = data.startedAt && data.startedAt <= now ? data.startedAt : now;
     if (order && startedAt < order.createdAt) startedAt = order.createdAt;
 
-    // Create call log
     const declineReason = outcome === CallOutcome.wrong_number ? ('wrong_number' as DeclineReason) : data.declineReason;
-    const call = await prisma.call.create({
-      data: {
-        tenantId: resolveTenantId(customer.tenantId),
-        customerId: data.customerId,
-        orderId: data.orderId,
-        salesRepId: data.salesRepId,
-        outcome,
-        duration: data.duration,
-        notes: data.notes,
-        startedAt,
-        source: data.source ?? CallSource.manual,
-        declineReason,
-        callbackAt: data.callbackAt ? new Date(data.callbackAt) : null,
-      },
-      include: {
-        customer: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            phoneNumber: true
-          }
+    const isAutoConfirm = data.source === CallSource.auto_confirm || (data.source as string) === 'auto_confirm';
+
+    // F2: Atomic transaction for call row insert, firstContactAt, upsell apply, order transition, commission entries, wrongNumber update
+    const txResult = await prisma.$transaction(async (tx) => {
+      // 1. Create call log row
+      const callRow = await tx.call.create({
+        data: {
+          tenantId: resolveTenantId(customer.tenantId),
+          customerId: data.customerId,
+          orderId: data.orderId,
+          salesRepId: data.salesRepId,
+          outcome,
+          duration: data.duration,
+          notes: data.notes,
+          startedAt,
+          source: data.source ?? CallSource.manual,
+          declineReason,
+          callbackAt: data.callbackAt ? new Date(data.callbackAt) : null,
         },
-        salesRep: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true
-          }
-        },
-        order: {
-          select: {
-            id: true,
-            status: true
+        include: {
+          customer: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              phoneNumber: true
+            }
+          },
+          salesRep: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true
+            }
+          },
+          order: {
+            select: {
+              id: true,
+              status: true
+            }
           }
         }
-      }
-    });
-
-    // M7-T03: Set firstContactAt on the first rep call attempt only; auto_confirm calls never set it.
-    const isAutoConfirm = data.source === CallSource.auto_confirm || (data.source as string) === 'auto_confirm';
-    if (!isAutoConfirm && data.orderId) {
-      await prisma.order.updateMany({
-        where: { id: data.orderId, firstContactAt: null },
-        data: { firstContactAt: startedAt }
       });
-    }
 
-    // M7-T04: Upsell changes via call card (server computes extra value, client sends only IDs)
-    let upsellResult: any = null;
-    if (data.orderChanges && data.orderId) {
-      const { upsellService } = await import('./upsellService');
-      upsellResult = await upsellService.applyUpsell({
-        orderId: data.orderId,
-        repId: data.salesRepId,
-        packageId: data.orderChanges.packageId,
-        addOnIds: data.orderChanges.addOnIds,
-        openedAt: data.orderChanges.openedAt,
-        expectedStatusVersion: data.orderChanges.expectedStatusVersion,
-        tenantId: resolveTenantId(salesRep.tenantId),
-      });
-    }
-
-    // M7-T03: Order status transitions and side effects
-    if (order && data.orderId) {
-      const actor: TransitionActor = { kind: 'user', userId: data.salesRepId, role: salesRep.role as any };
-      if (outcome === CallOutcome.confirmed) {
-        await transitionOrder(data.orderId, 'confirmed', actor);
-      } else if (outcome === CallOutcome.declined) {
-        await transitionOrder(data.orderId, 'cancelled', actor, { declineReason: data.declineReason });
-      } else if (outcome === CallOutcome.wrong_number) {
-        await transitionOrder(data.orderId, 'cancelled', actor, { declineReason: 'wrong_number' as any });
-        await prisma.customer.update({
-          where: { id: data.customerId },
-          data: { wrongNumber: true },
+      // 2. M7-T03: Set firstContactAt on the first rep call attempt only; auto_confirm calls never set it.
+      if (!isAutoConfirm && data.orderId) {
+        await tx.order.updateMany({
+          where: { id: data.orderId, firstContactAt: null },
+          data: { firstContactAt: startedAt }
         });
       }
-    }
+
+      // 3. M7-T04: Upsell changes via call card (server computes extra value, client sends only IDs)
+      let upsellResult: any = null;
+      if (data.orderChanges && data.orderId) {
+        const { upsellService } = await import('./upsellService');
+        upsellResult = await upsellService.applyUpsell({
+          orderId: data.orderId,
+          repId: data.salesRepId,
+          role: salesRep.role,
+          packageId: data.orderChanges.packageId,
+          addOnIds: data.orderChanges.addOnIds,
+          openedAt: data.orderChanges.openedAt,
+          expectedStatusVersion: data.orderChanges.expectedStatusVersion,
+          tenantId: resolveTenantId(salesRep.tenantId),
+          tx,
+        });
+      }
+
+      // 4. M7-T03: Order status transitions and side effects
+      let transitionResult: any = null;
+      if (order && data.orderId) {
+        const actor: TransitionActor = { kind: 'user', userId: data.salesRepId, role: salesRep.role as any };
+        if (outcome === CallOutcome.confirmed) {
+          transitionResult = await transitionOrder(data.orderId, 'confirmed', actor, { tx });
+        } else if (outcome === CallOutcome.declined) {
+          transitionResult = await transitionOrder(data.orderId, 'cancelled', actor, { declineReason: data.declineReason, tx });
+        } else if (outcome === CallOutcome.wrong_number) {
+          transitionResult = await transitionOrder(data.orderId, 'cancelled', actor, { declineReason: 'wrong_number' as any, tx });
+          await tx.customer.update({
+            where: { id: data.customerId },
+            data: { wrongNumber: true },
+          });
+        }
+      }
+
+      // 5. F1 (money, P6): Commission entries are created ONLY when a person rep logs a confirmed call with source not auto_confirm
+      if (outcome === CallOutcome.confirmed && !isAutoConfirm && data.orderId && salesRep.role === 'sales_rep') {
+        const { createCommissionEntriesOnConfirm } = await import('./commissionService');
+        await createCommissionEntriesOnConfirm(tx, data.orderId, data.salesRepId);
+      }
+
+      return {
+        call: callRow,
+        upsellResult,
+        transitionResult,
+      };
+    });
+
+    // Run afterCommit from transitionOrder after outer transaction commits
+    txResult.transitionResult?.afterCommit?.();
+
+    const call = txResult.call;
+    const upsellResult = txResult.upsellResult;
 
     // M7-T03: Next queue order id in the rep's queue
     let nextOrderId: number | null = null;
@@ -547,4 +577,5 @@ export class CallService {
   }
 }
 
-export default new CallService();
+export const callService = new CallService();
+export default callService;

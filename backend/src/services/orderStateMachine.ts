@@ -7,7 +7,7 @@ import { Requester } from '../utils/authUtils';
 import { OrderStatusChangedEvent } from '../utils/appEvents';
 import { afterCommitEffects, applyGlEffects, GlEffects } from './orderSideEffects';
 import { fulfilOrder, reverseOrder } from './stockService';
-import { createCommissionEntriesOnConfirm, earnEntriesForOrder, voidOpenEntriesForOrder } from './commissionService';
+import { earnEntriesForOrder, voidOpenEntriesForOrder } from './commissionService';
 import { getSystemUserId } from './systemUserService';
 import { recordDeliveryAttempt } from './deliveryAttemptHook';
 import { stampDeliveryFee, DeliveryFeeStamp } from './feeRuleService';
@@ -289,17 +289,10 @@ async function applySideEffects(
   historyId: number,
   stamp: DeliveryFeeStamp | null,
 ): Promise<GlEffects> {
-  if (to === 'confirmed' && actor.kind === 'user' && actor.userId != null) {
-    if (typeof createCommissionEntriesOnConfirm === 'function') {
-      await createCommissionEntriesOnConfirm(tx, order.id, actor.userId);
-    }
-  }
   if (to === 'delivered') {
     await fulfilOrder(tx, order, actor.userId);
     // M7-T02: Delivery flips pending commission entries to earned and posts to ledger
-    if (typeof earnEntriesForOrder === 'function') {
-      await earnEntriesForOrder(tx, order.id, async () => actor.userId ?? await getSystemUserId(), options.deliveryDate ?? new Date());
-    }
+    await earnEntriesForOrder(tx, order.id, async () => actor.userId ?? await getSystemUserId(), options.deliveryDate ?? new Date());
   } else if (from === 'delivered') {
     await reverseOrder(tx, order, actor.userId);
     // F-914: an order that leaves delivered voids its unpaid commission entries (M5-T18); the actor is read only for a reversal
@@ -309,12 +302,10 @@ async function applySideEffects(
     if (from !== 'delivered') {
       await voidOpenEntriesForOrder(tx, order.id, async () => actor.userId ?? await getSystemUserId());
     }
-    if (tx.upsellLine?.updateMany) {
-      await tx.upsellLine.updateMany({
-        where: { orderId: order.id, status: 'active' },
-        data: { status: 'void' },
-      });
-    }
+    await tx.upsellLine.updateMany({
+      where: { orderId: order.id, status: 'active' },
+      data: { status: 'void' },
+    });
   }
   return applyGlEffects(tx, order, from, to, actor.userId, historyId, stamp, { postRevenueAlways: options.postRevenueAlways });
 }
@@ -331,7 +322,7 @@ export async function transitionOrder(
 ): Promise<TransitionResult> {
   if (options.tx) return run(options.tx, orderId, to, actor, options);
   const result = await prisma.$transaction((tx) => run(tx, orderId, to, actor, options));
-  result?.afterCommit?.();
+  result.afterCommit?.();
   return result;
 }
 

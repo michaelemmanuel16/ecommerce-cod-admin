@@ -13,6 +13,8 @@ import prisma, { prismaBase } from '../../utils/prisma';
 import { runInTenant } from '../../utils/tenantContext';
 import { transitionOrder, TransitionActor } from '../../services/orderStateMachine';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
+import { CallOutcome, CallSource } from '@prisma/client';
+import { callService } from '../../services/callService';
 import {
   BASE_COMMISSION_AMOUNT,
   createCommissionEntriesOnConfirm,
@@ -120,9 +122,16 @@ describe('M7-T02: Commission entry creation and delivery lifecycle', () => {
       },
     });
 
-    // Rep confirms order
-    const repActor: TransitionActor = { kind: 'user', userId: adwoaId, role: 'sales_rep' };
-    await inTenant(() => transitionOrder(order.id, 'confirmed', repActor));
+    // Rep confirms order via call
+    await inTenant(() =>
+      callService.createCall({
+        customerId,
+        orderId: order.id,
+        salesRepId: adwoaId,
+        outcome: CallOutcome.confirmed,
+        source: CallSource.manual,
+      })
+    );
 
     // Verify pending entries: base GH₵8, upsell GH₵20 (10% of 200)
     const entries = await prismaBase.commissionEntry.findMany({
@@ -214,8 +223,15 @@ describe('M7-T02: Commission entry creation and delivery lifecycle', () => {
       } as any,
     });
 
-    const repActor: TransitionActor = { kind: 'user', userId: adwoaId, role: 'sales_rep' };
-    await inTenant(() => transitionOrder(order.id, 'confirmed', repActor));
+    await inTenant(() =>
+      callService.createCall({
+        customerId,
+        orderId: order.id,
+        salesRepId: adwoaId,
+        outcome: CallOutcome.confirmed,
+        source: CallSource.manual,
+      })
+    );
 
     // Order is reassigned to Nana
     await prismaBase.order.update({
@@ -272,8 +288,15 @@ describe('M7-T02: Commission entry creation and delivery lifecycle', () => {
         tenantId,
       } as any,
     });
-    const aiActor: TransitionActor = { kind: 'user', userId: aiRepId, role: 'sales_rep' };
-    await inTenant(() => transitionOrder(aiOrder.id, 'confirmed', aiActor));
+    await inTenant(() =>
+      callService.createCall({
+        customerId,
+        orderId: aiOrder.id,
+        salesRepId: aiRepId,
+        outcome: CallOutcome.confirmed,
+        source: CallSource.manual,
+      })
+    );
     await move(aiOrder.id, 'ready_for_pickup');
     await move(aiOrder.id, 'out_for_delivery');
     await move(aiOrder.id, 'delivered');
@@ -296,8 +319,15 @@ describe('M7-T02: Commission entry creation and delivery lifecycle', () => {
       } as any,
     });
 
-    const repActor: TransitionActor = { kind: 'user', userId: adwoaId, role: 'sales_rep' };
-    await inTenant(() => transitionOrder(order.id, 'confirmed', repActor));
+    await inTenant(() =>
+      callService.createCall({
+        customerId,
+        orderId: order.id,
+        salesRepId: adwoaId,
+        outcome: CallOutcome.confirmed,
+        source: CallSource.manual,
+      })
+    );
 
     const beforePay = await balance('2020');
     await move(order.id, 'ready_for_pickup');
@@ -315,6 +345,92 @@ describe('M7-T02: Commission entry creation and delivery lifecycle', () => {
     expect(voided!.status).toBe('void');
     // Balance 2020 reversed back to beforePay
     expect(await balance('2020')).toBe(beforePay);
+  });
+
+  it('F1: admin status change to confirmed creates no commission entry', async () => {
+    const order = await prismaBase.order.create({
+      data: {
+        customerId,
+        status: 'pending_confirmation',
+        subtotal: 150,
+        totalAmount: 150,
+        codAmount: 150,
+        customerRepId: adwoaId,
+        deliveryAgentId: agentId,
+        tenantId,
+      } as any,
+    });
+
+    // Admin moves to confirmed directly (e.g. from Orders screen)
+    await move(order.id, 'confirmed');
+
+    const entries = await prismaBase.commissionEntry.findMany({
+      where: { orderId: order.id },
+    });
+    expect(entries).toHaveLength(0);
+  });
+
+  it('F1: auto_confirm source call with confirmed outcome creates no commission entry', async () => {
+    const order = await prismaBase.order.create({
+      data: {
+        customerId,
+        status: 'pending_confirmation',
+        subtotal: 150,
+        totalAmount: 150,
+        codAmount: 150,
+        customerRepId: adwoaId,
+        deliveryAgentId: agentId,
+        tenantId,
+      } as any,
+    });
+
+    await inTenant(() =>
+      callService.createCall({
+        customerId,
+        orderId: order.id,
+        salesRepId: adwoaId,
+        outcome: CallOutcome.confirmed,
+        source: CallSource.auto_confirm,
+      })
+    );
+
+    const entries = await prismaBase.commissionEntry.findMany({
+      where: { orderId: order.id },
+    });
+    expect(entries).toHaveLength(0);
+  });
+
+  it('F1: rep confirmed call creates base GH₵8 entry for that rep', async () => {
+    const order = await prismaBase.order.create({
+      data: {
+        customerId,
+        status: 'pending_confirmation',
+        subtotal: 150,
+        totalAmount: 150,
+        codAmount: 150,
+        customerRepId: adwoaId,
+        deliveryAgentId: agentId,
+        tenantId,
+      } as any,
+    });
+
+    await inTenant(() =>
+      callService.createCall({
+        customerId,
+        orderId: order.id,
+        salesRepId: adwoaId,
+        outcome: CallOutcome.confirmed,
+        source: CallSource.manual,
+      })
+    );
+
+    const entries = await prismaBase.commissionEntry.findMany({
+      where: { orderId: order.id, kind: 'base' },
+    });
+    expect(entries).toHaveLength(1);
+    expect(entries[0].status).toBe('pending');
+    expect(Number(entries[0].amount)).toBe(8);
+    expect(entries[0].userId).toBe(adwoaId);
   });
 
   it('backfill fixture: Adwoa 253 delivered orders -> base 2,024, upsell extra 6,100 -> 610; Nana 13 orders -> 104, extra 300 -> 30', async () => {

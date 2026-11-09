@@ -436,4 +436,182 @@ describe('M7-T03: Call outcome service rules', () => {
     expect(res.status).toBe(201);
     expect(res.body.nextOrderId).toBe(order2.id);
   });
+
+  it('F2: a transition that fails leaves no call row and no upsell line', async () => {
+    const product = await prismaBase.product.create({
+      data: {
+        name: 'Item F2',
+        sku: `ITEM-F2-${Date.now()}`,
+        category: 'General',
+        price: 100,
+        cogs: 50,
+        stockQuantity: 10,
+        tenantId,
+      },
+    });
+    const form = await prismaBase.checkoutForm.create({
+      data: {
+        name: 'Form F2',
+        slug: `form-f2-${Date.now()}`,
+        productId: product.id,
+        fields: {},
+        styling: {},
+        regions: {},
+        tenantId,
+      },
+    });
+    const pkg = await prismaBase.formPackage.create({
+      data: { formId: form.id, name: 'Pkg 2', price: 200, quantity: 2 },
+    });
+
+    const order = await prismaBase.order.create({
+      data: {
+        customerId,
+        status: 'delivered',
+        subtotal: 100,
+        totalAmount: 100,
+        codAmount: 100,
+        customerRepId: rep1Id,
+        tenantId,
+      } as any,
+    });
+
+    const res = await request(app)
+      .post('/api/calls')
+      .set('Authorization', `Bearer ${rep1Token}`)
+      .send({
+        customerId,
+        orderId: order.id,
+        outcome: 'confirmed',
+        orderChanges: { packageId: pkg.id },
+      });
+
+    expect(res.status).toBe(409);
+
+    const callCount = await prismaBase.call.count({ where: { orderId: order.id } });
+    expect(callCount).toBe(0);
+
+    const upsellLineCount = await prismaBase.upsellLine.count({ where: { orderId: order.id } });
+    expect(upsellLineCount).toBe(0);
+  });
+
+  describe('F3: outcome aliases (rescheduled, no_answer, cancelled)', () => {
+    it('maps rescheduled to call_back_later and enforces future callbackAt', async () => {
+      const order = await prismaBase.order.create({
+        data: {
+          customerId,
+          status: 'pending_confirmation',
+          subtotal: 100,
+          totalAmount: 100,
+          codAmount: 100,
+          customerRepId: rep1Id,
+          tenantId,
+        } as any,
+      });
+
+      // Without callbackAt -> 400
+      const failRes = await request(app)
+        .post('/api/calls')
+        .set('Authorization', `Bearer ${rep1Token}`)
+        .send({
+          customerId,
+          orderId: order.id,
+          outcome: 'rescheduled',
+        });
+      expect(failRes.status).toBe(400);
+
+      // With future callbackAt -> 201 and mapped to call_back_later
+      const futureDate = new Date(Date.now() + 3600_000).toISOString();
+      const res = await request(app)
+        .post('/api/calls')
+        .set('Authorization', `Bearer ${rep1Token}`)
+        .send({
+          customerId,
+          orderId: order.id,
+          outcome: 'rescheduled',
+          callbackAt: futureDate,
+        });
+      expect(res.status).toBe(201);
+      expect(res.body.call.outcome).toBe('call_back_later');
+
+      const callInDb = await prismaBase.call.findUnique({ where: { id: res.body.call.id } });
+      expect(callInDb!.outcome).toBe('call_back_later');
+    });
+
+    it('maps no_answer to not_reachable and keeps order in pending_confirmation', async () => {
+      const order = await prismaBase.order.create({
+        data: {
+          customerId,
+          status: 'pending_confirmation',
+          subtotal: 100,
+          totalAmount: 100,
+          codAmount: 100,
+          customerRepId: rep1Id,
+          tenantId,
+        } as any,
+      });
+
+      const res = await request(app)
+        .post('/api/calls')
+        .set('Authorization', `Bearer ${rep1Token}`)
+        .send({
+          customerId,
+          orderId: order.id,
+          outcome: 'no_answer',
+        });
+      expect(res.status).toBe(201);
+      expect(res.body.call.outcome).toBe('not_reachable');
+
+      const callInDb = await prismaBase.call.findUnique({ where: { id: res.body.call.id } });
+      expect(callInDb!.outcome).toBe('not_reachable');
+
+      const orderInDb = await prismaBase.order.findUnique({ where: { id: order.id } });
+      expect(orderInDb!.status).toBe('pending_confirmation');
+    });
+
+    it('maps cancelled to declined, requires declineReason, and cancels order', async () => {
+      const order = await prismaBase.order.create({
+        data: {
+          customerId,
+          status: 'pending_confirmation',
+          subtotal: 100,
+          totalAmount: 100,
+          codAmount: 100,
+          customerRepId: rep1Id,
+          tenantId,
+        } as any,
+      });
+
+      // Without declineReason -> 400
+      const failRes = await request(app)
+        .post('/api/calls')
+        .set('Authorization', `Bearer ${rep1Token}`)
+        .send({
+          customerId,
+          orderId: order.id,
+          outcome: 'cancelled',
+        });
+      expect(failRes.status).toBe(400);
+
+      // With declineReason -> 201, mapped to declined, cancels order
+      const res = await request(app)
+        .post('/api/calls')
+        .set('Authorization', `Bearer ${rep1Token}`)
+        .send({
+          customerId,
+          orderId: order.id,
+          outcome: 'cancelled',
+          declineReason: 'changed_mind',
+        });
+      expect(res.status).toBe(201);
+      expect(res.body.call.outcome).toBe('declined');
+
+      const callInDb = await prismaBase.call.findUnique({ where: { id: res.body.call.id } });
+      expect(callInDb!.outcome).toBe('declined');
+
+      const orderInDb = await prismaBase.order.findUnique({ where: { id: order.id } });
+      expect(orderInDb!.status).toBe('cancelled');
+      expect(orderInDb!.declineReason).toBe('changed_mind');
+    });
+  });
 });
