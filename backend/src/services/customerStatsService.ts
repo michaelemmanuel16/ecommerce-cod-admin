@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { prismaBase, TransactionClient } from '../utils/prisma';
+import { prismaBase } from '../utils/prisma';
 import logger from '../utils/logger';
 import {
   AppEvent, OrderCreatedEvent, OrderDeletedEvent, OrderStatusChangedEvent, onOrderEvent,
@@ -86,9 +86,8 @@ const tenantScope = (tenantId: string | null) =>
 
 export const customerStatsService = {
   /** Rebuild one customer's stats from their orders. Returns true when a stored value changed. */
-  async recompute(customerId: number, db: TransactionClient | typeof prismaBase = prismaBase): Promise<boolean> {
-    const scope = Prisma.sql`c.id = ${customerId}`;
-    const changed = await db.$executeRaw(statsSql('update', scope));
+  async recompute(customerId: number): Promise<boolean> {
+    const changed = await prismaBase.$executeRaw(statsSql('update', Prisma.sql`c.id = ${customerId}`));
     return changed > 0;
   },
 

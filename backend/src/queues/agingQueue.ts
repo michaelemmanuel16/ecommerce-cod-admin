@@ -1,8 +1,10 @@
 import Bull from 'bull';
 import agingService from '../services/agingService';
-import { notifyAdminsOverdueCollections } from '../services/notificationService';
+import { checkAndNotifyLateCallbacks, notifyAdminsOverdueCollections } from '../services/notificationService';
 import logger from '../utils/logger';
 import { forEachTenant } from '../utils/tenantLoop';
+import { runInTenant, withoutTenant } from '../utils/tenantContext';
+import prisma from '../utils/prisma';
 
 const redisConfig = {
     host: process.env.REDIS_HOST || 'localhost',
@@ -61,6 +63,42 @@ export const processNotifyOverdueCollections = async () => {
 };
 agingQueue.process('notify-overdue-collections', processNotifyOverdueCollections);
 
+// Process late call-back alerts (once per active tenant, M7-T12)
+export const processLateCallbackAlerts = async () => {
+    logger.info('Processing late call-back alerts job...');
+    const tenants = await withoutTenant('late-callbacks-loop', () =>
+        prisma.tenant.findMany({
+            where: { subscriptionStatus: { notIn: ['suspended', 'cancelled'] } },
+            select: { id: true },
+        })
+    );
+    const failed: string[] = [];
+    for (const { id } of tenants) {
+        try {
+            await runInTenant(id, () => checkAndNotifyLateCallbacks(id));
+        } catch (error: any) {
+            failed.push(id);
+            logger.error(`Late call-back alerts check failed for tenant ${id}:`, error?.message ?? error);
+        }
+    }
+    if (failed.length > 0) {
+        throw new Error(`Late call-back alerts check failed for ${failed.length}/${tenants.length} tenants: ${failed.join(', ')}`);
+    }
+    logger.info('Late call-back alerts job completed.');
+};
+agingQueue.process('check-late-callbacks', processLateCallbackAlerts);
+
+export const setupLateCallbackCron = async () => {
+    if (process.env.NODE_ENV === 'test') return;
+
+    await agingQueue.add('check-late-callbacks', {}, {
+        repeat: {
+            cron: '*/5 * * * *',
+        },
+    });
+    logger.info('Late call-back alerts cron job scheduled (every 5 minutes).');
+};
+
 // Setup the daily cron jobs
 export const setupAgingCron = async () => {
     if (process.env.NODE_ENV === 'test') return;
@@ -84,6 +122,9 @@ export const setupAgingCron = async () => {
             cron: '0 10 * * *'
         }
     });
+
+    // Add late call-back alerts job every 5 minutes (M7-T12)
+    await setupLateCallbackCron();
 
     logger.info('Agent aging cron jobs scheduled (6:00 AM cash held Findings, 10:00 AM overdue notifications).');
 };

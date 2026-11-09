@@ -36,17 +36,17 @@ export async function createNotification(
 }
 
 export async function notifyOrderAssigned(
-  userId: string | number,
-  orderId: string | number,
+  userId: string,
+  orderId: string,
   orderNumber: string,
   role: string
 ) {
   return createNotification(
-    String(userId),
-    'order_assigned',
+    userId,
+    'order',
     'New Order Assigned',
     `You have been assigned to order ${orderNumber} as ${role}`,
-    { orderId: Number(orderId), orderNumber: String(orderNumber), role }
+    { orderId, orderNumber, role }
   );
 }
 
@@ -55,7 +55,8 @@ export async function notifyLateCallback(
   orderId: string | number,
   orderNumber: string,
   callbackAt: Date | string,
-  customerName?: string
+  customerName?: string,
+  callId?: number
 ) {
   const cbStr = typeof callbackAt === 'string' ? callbackAt : callbackAt.toISOString();
   return createNotification(
@@ -68,6 +69,7 @@ export async function notifyLateCallback(
       orderNumber: String(orderNumber),
       callbackAt: cbStr,
       customerName,
+      callId,
     }
   );
 }
@@ -78,55 +80,61 @@ export async function checkAndNotifyLateCallbacks(tenantId?: string): Promise<nu
   const now = new Date();
   const CLOSED_STATUSES: OrderStatus[] = ['delivered', 'digital_delivered', 'returned', 'cancelled'];
 
-  const lateCalls = await prisma.call.findMany({
+  const openOrders = await prisma.order.findMany({
     where: {
       tenantId: resolvedTenant,
-      outcome: 'call_back_later',
-      callbackAt: { lt: now },
-      orderId: { not: null },
-      order: {
-        deletedAt: null,
-        status: { notIn: CLOSED_STATUSES },
-      },
+      deletedAt: null,
+      status: { notIn: CLOSED_STATUSES },
+      calls: { some: {} },
     },
-    include: {
-      order: {
-        select: {
-          id: true,
-          customerRepId: true,
-          status: true,
-        },
-      },
+    select: {
+      id: true,
+      customerRepId: true,
       customer: {
         select: {
           firstName: true,
           lastName: true,
         },
       },
+      calls: {
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: 1,
+        select: {
+          id: true,
+          outcome: true,
+          callbackAt: true,
+          salesRepId: true,
+        },
+      },
     },
   });
 
   let count = 0;
-  for (const call of lateCalls) {
-    if (!call.orderId || !call.order) continue;
-    const targetUserId = call.order.customerRepId ?? call.salesRepId;
+  for (const order of openOrders) {
+    const latestCall = order.calls[0];
+    if (!latestCall) continue;
+    if (latestCall.outcome !== 'call_back_later') continue;
+    if (!latestCall.callbackAt || latestCall.callbackAt >= now) continue;
+
+    const targetUserId = order.customerRepId ?? latestCall.salesRepId;
     if (!targetUserId) continue;
 
     const existing = await prisma.notification.findFirst({
       where: {
         userId: targetUserId,
         type: 'late_callback',
-        isRead: false,
-        data: { path: ['orderId'], equals: call.orderId },
+        data: { path: ['callId'], equals: latestCall.id },
       },
     });
+
     if (!existing) {
       await notifyLateCallback(
         targetUserId,
-        call.order.id,
-        String(call.order.id),
-        call.callbackAt!,
-        call.customer ? `${call.customer.firstName} ${call.customer.lastName}`.trim() : undefined
+        order.id,
+        String(order.id),
+        latestCall.callbackAt,
+        order.customer ? `${order.customer.firstName} ${order.customer.lastName}`.trim() : undefined,
+        latestCall.id
       );
       count++;
     }

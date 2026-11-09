@@ -244,11 +244,6 @@ export async function leaderboard(actor: Requester, query: { role: Family; perio
       };
     }
 
-    const repRole = await prisma.role.findFirst({
-      where: { presetRole: 'sales_rep', isSystem: false },
-      select: { id: true, name: true },
-    });
-
     const linesByRep = new Map<number, typeof lines>();
     for (const line of lines) {
       linesByRep.set(line.repId, [...(linesByRep.get(line.repId) ?? []), line]);
@@ -262,18 +257,11 @@ export async function leaderboard(actor: Requester, query: { role: Family; perio
         userId: rep.id,
         name: human ? fullName(rep) : rep.firstName,
         kind: rep.kind,
-        roleId: repRole?.id ?? 0,
-        roleName: repRole?.name ?? 'Sales Representative',
         payout: human,
         ranked: true,
-        reason: null,
-        target: null,
         actual: totalExtraValue.toNumber(),
-        percent: null,
         extraValue: Money.toApi(totalExtraValue),
         upsellCount: repLines.length,
-        delivered: repLines.length,
-        closed: repLines.length,
         totalExtraValue,
       };
     });
@@ -290,10 +278,16 @@ export async function leaderboard(actor: Requester, query: { role: Family; perio
       if (index > 0 && !entry.totalExtraValue.equals(repEntries[index - 1].totalExtraValue)) {
         currentRank = index + 1;
       }
-      const { totalExtraValue, ...rest } = entry;
       return {
         rank: currentRank,
-        ...rest,
+        userId: entry.userId,
+        name: entry.name,
+        kind: entry.kind,
+        payout: entry.payout,
+        ranked: entry.ranked,
+        actual: entry.actual,
+        extraValue: entry.extraValue,
+        upsellCount: entry.upsellCount,
       };
     });
 

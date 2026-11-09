@@ -267,6 +267,24 @@ describe('M7-T12 (COD-65): Calls stats, upsell leaderboard, rep inbox events', (
       expect(adminRes.body.rows[0].userId).toBe(rep2Id);
       expect(adminRes.body.rows[0].rank).toBe(1);
       expect(Number(adminRes.body.rows[0].actual)).toBe(300);
+      expect(Object.keys(adminRes.body.rows[0]).sort()).toEqual([
+        'actual',
+        'extraValue',
+        'kind',
+        'name',
+        'payout',
+        'rank',
+        'ranked',
+        'upsellCount',
+        'userId',
+      ]);
+      expect(adminRes.body.rows[0].roleId).toBeUndefined();
+      expect(adminRes.body.rows[0].roleName).toBeUndefined();
+      expect(adminRes.body.rows[0].target).toBeUndefined();
+      expect(adminRes.body.rows[0].percent).toBeUndefined();
+      expect(adminRes.body.rows[0].delivered).toBeUndefined();
+      expect(adminRes.body.rows[0].closed).toBeUndefined();
+      expect(adminRes.body.rows[0].reason).toBeUndefined();
 
       // Rank 2: Rep 1 (extraValue 150)
       expect(adminRes.body.rows[1].userId).toBe(rep1Id);
@@ -323,10 +341,10 @@ describe('M7-T12 (COD-65): Calls stats, upsell leaderboard, rep inbox events', (
       );
 
       const notif = await prismaBase.notification.findFirst({
-        where: { userId: rep1Id, type: 'order_assigned' },
+        where: { userId: rep1Id, type: 'order' },
       });
       expect(notif).toBeDefined();
-      expect(notif?.title).toBe('New Order Assigned');
+      expect(notif?.title).toBe('Order assigned to you');
       expect((notif?.data as any)?.orderId).toBe(orderA.id);
     });
 
@@ -334,7 +352,7 @@ describe('M7-T12 (COD-65): Calls stats, upsell leaderboard, rep inbox events', (
       const pastCallback = new Date(Date.now() - 3600_000); // 1 hour ago
 
       // Log a call with call_back_later in the past for rep 2 on open order B
-      await prismaBase.call.create({
+      const call = await prismaBase.call.create({
         data: {
           tenantId,
           customerId,
@@ -355,12 +373,77 @@ describe('M7-T12 (COD-65): Calls stats, upsell leaderboard, rep inbox events', (
       expect(notif).toBeDefined();
       expect(notif?.title).toBe('Late Call-Back');
       expect((notif?.data as any)?.orderId).toBe(orderB.id);
+      expect((notif?.data as any)?.callId).toBe(call.id);
+
+      // Second run gives no second notice even after the first is read
+      await prismaBase.notification.update({
+        where: { id: notif!.id },
+        data: { isRead: true },
+      });
+      const secondRunCount = await runInTenant(tenantId, () => checkAndNotifyLateCallbacks(tenantId));
+      expect(secondRunCount).toBe(0);
+      const rep2Notifs = await prismaBase.notification.findMany({
+        where: { userId: rep2Id, type: 'late_callback' },
+      });
+      expect(rep2Notifs.length).toBe(1);
+    });
+
+    it('newer call after the call-back gives no notice', async () => {
+      const pastCallback = new Date(Date.now() - 3600_000); // 1 hour ago
+
+      // Create a fresh open order
+      const orderC = await prismaBase.order.create({
+        data: {
+          tenantId,
+          customerId,
+          status: 'pending_confirmation',
+          subtotal: 100,
+          totalAmount: 100,
+          deliveryAddress: 'Accra',
+          deliveryState: 'Greater Accra',
+          deliveryArea: 'Accra',
+        },
+      });
+
+      // Call 1: call_back_later in past
+      await prismaBase.call.create({
+        data: {
+          tenantId,
+          customerId,
+          orderId: orderC.id,
+          salesRepId: rep2Id,
+          outcome: 'call_back_later',
+          callbackAt: pastCallback,
+          createdAt: new Date(Date.now() - 7200_000),
+        },
+      });
+
+      // Call 2: newer call with outcome 'not_reachable'
+      await prismaBase.call.create({
+        data: {
+          tenantId,
+          customerId,
+          orderId: orderC.id,
+          salesRepId: rep2Id,
+          outcome: 'not_reachable',
+          createdAt: new Date(Date.now() - 1800_000),
+        },
+      });
+
+      // Run checkAndNotifyLateCallbacks: newest call is 'not_reachable', so no late callback notice
+      const count = await runInTenant(tenantId, () => checkAndNotifyLateCallbacks(tenantId));
+      expect(count).toBe(0);
+
+      const notifC = await prismaBase.notification.findFirst({
+        where: { userId: rep2Id, data: { path: ['orderId'], equals: orderC.id } },
+      });
+      expect(notifC).toBeNull();
     });
 
     it('a reps inbox list returns only their own rows (tested with two reps)', async () => {
-      // Rep 1 inbox via /api/inbox
+      // Rep 1 inbox via /api/notifications
       const rep1Inbox = await request(app)
-        .get('/api/inbox')
+        .get('/api/notifications')
         .set('Authorization', `Bearer ${rep1Token}`);
 
       expect(rep1Inbox.status).toBe(200);

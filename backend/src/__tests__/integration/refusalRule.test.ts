@@ -22,6 +22,7 @@ import orderService from '../../services/orderService';
 import { runInTenant } from '../../utils/tenantContext';
 import { customerNeedsManualCall } from '../../services/refusalRuleService';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
+import { registerCustomerStatsListeners } from '../../services/customerStatsService';
 
 jest.setTimeout(120_000);
 
@@ -52,6 +53,7 @@ const until = async (check: (c: Awaited<ReturnType<typeof getCustomer>>) => bool
 };
 
 beforeAll(async () => {
+  registerCustomerStatsListeners();
   const tenant = await createTenant('Refusal Rule Tenant');
   tenantId = tenant.id;
   await seedTenantDefaults(tenantId);
@@ -266,6 +268,30 @@ describe('M7-T06 Refusal rule service integration', () => {
       expect(c.codBlocked).toBe(true);
       expect(c.codOverride).toBe(false);
       expect(c.codOverrideNote).toBe('Turned off by manager due to suspicious activity');
+      expect(c.refusedOrders).toBe(0);
+      expect(c.riskLevel).toBe('normal');
+      expect(customerNeedsManualCall(c)).toBe(true);
+    });
+
+    it('override allow=false on customer with past refusals restarts refusal count to 0 and keeps blocked true', async () => {
+      await prismaBase.customer.update({
+        where: { id: customerId },
+        data: { codOverride: false, codOverrideAt: null, codBlocked: true, refusedOrders: 3, riskLevel: 'high' },
+      });
+
+      const res = await request(app)
+        .post(`/api/customers/${customerId}/cod-override`)
+        .set(bearer(managerToken))
+        .send({ allow: false, note: 'Manual lock while having refusals' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.customer.codBlocked).toBe(true);
+
+      const c = await getCustomer();
+      expect(c.codBlocked).toBe(true);
+      expect(c.codOverride).toBe(false);
+      expect(c.refusedOrders).toBe(0);
+      expect(c.riskLevel).toBe('normal');
       expect(customerNeedsManualCall(c)).toBe(true);
     });
   });

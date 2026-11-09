@@ -11,6 +11,7 @@ import { normalizePhoneForStorage, phoneLookupVariants, phoneSearchConditions } 
 import { withSoftDeleted } from '../utils/prismaExtensions';
 import { auditService } from './auditService';
 import { getStoreTimeZone, localDate, startOfDay } from './kpi/dates';
+import customerStatsService from './customerStatsService';
 
 /** The customer form fields (F-355). Opt-out flags and stats are not on the form, so they are never taken from the body. */
 const FORM_FIELDS = ['firstName', 'lastName', 'email', 'phoneNumber', 'alternatePhone', 'address', 'state', 'area', 'landmark', 'notes'] as const;
@@ -520,19 +521,24 @@ export class CustomerService {
     }
 
     const now = new Date();
-    const updateData: Prisma.CustomerUpdateInput = {
-      codOverride: data.allow,
-      codOverrideAt: now,
-      codOverrideNote: data.note.trim(),
-      codOverrideBy: { connect: { id: requester.id } },
-      codBlocked: !data.allow,
-      ...(data.allow ? { refusedOrders: 0, riskLevel: 'normal' } : { riskLevel: 'high' }),
-    };
-
-    const updated = await prisma.customer.update({
+    await prisma.customer.update({
       where: { id: customerId },
-      data: updateData,
+      data: {
+        codOverride: data.allow,
+        codOverrideAt: now,
+        codOverrideNote: data.note.trim(),
+        codOverrideBy: { connect: { id: requester.id } },
+      },
     });
+
+    await customerStatsService.recompute(customerId);
+
+    const updated = await prisma.customer.findUnique({
+      where: { id: customerId },
+    });
+    if (!updated) {
+      throw new AppError('Customer not found', 404, 'NOT_FOUND');
+    }
 
     await this.audit(
       requester,
