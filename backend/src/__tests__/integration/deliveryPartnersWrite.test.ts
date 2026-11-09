@@ -17,7 +17,7 @@ import assignmentService from '../../services/assignmentService';
 import workflowService from '../../services/workflowService';
 import { executeAction } from '../../queues/workflowQueue';
 import { getSocketInstance } from '../../utils/socketInstance';
-import { bearer } from './helpers/superAdminToken';
+import { bearer, superAdminToken } from './helpers/superAdminToken';
 import { stockUp } from './helpers/stock';
 
 jest.mock('../../utils/socketInstance', () => ({
@@ -110,6 +110,16 @@ describe('POST /api/delivery-partners (F-708)', () => {
     expect(profile).toMatchObject({ daysToPay: 7, isTrial: false, dataSource: 'app', tenantId });
     const audit = await prismaBase.auditLog.findFirstOrThrow({ where: { tenantId, resource: 'delivery_partner', resourceId: String(p.id), action: 'create' } });
     expect(audit).toMatchObject({ userId: U.admin.id, channel: 'app' });
+  });
+
+  it('a partner created with no daysToPay gets defaultDaysToPay from settings', async () => {
+    const token = await superAdminToken(tenantId, `sadmin-${SUFFIX}`);
+    await request(app).put('/api/admin/settings/operations').set(bearer(token)).send({ defaultDaysToPay: 5 });
+    const res = await post('admin', person('defpay', { baseTown: 'Takoradi' }));
+    expect(res.status).toBe(201);
+    expect(res.body.partner.profile.daysToPay).toBe(5);
+    const profile = await prismaBase.deliveryPartnerProfile.findUniqueOrThrow({ where: { userId: res.body.partner.id } });
+    expect(profile.daysToPay).toBe(5);
   });
 
   it('a company: 3PL location, CSV data source, trial flag and days to pay from the request', async () => {

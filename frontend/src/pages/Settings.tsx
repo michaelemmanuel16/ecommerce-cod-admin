@@ -15,6 +15,7 @@ import { NoAccess } from './NoAccess';
 import { ProfileTab } from './settings/ProfileTab';
 import { SecurityTab } from './settings/SecurityTab';
 import { BusinessTab } from './settings/BusinessTab';
+import { OperationsTab } from './settings/OperationsTab';
 import { StatusesTab } from './settings/StatusesTab';
 import { BillingTab } from './settings/BillingTab';
 import { NorthStarTab } from './settings/NorthStarTab';
@@ -28,7 +29,7 @@ const KNOWN: SettingsTab[] = SETTINGS_TABS.map((t) => t.id);
  * Checkout forms page, which exists. User management, Role permissions and Integrations stay here until Staff (M6)
  * and Connections (M9) ship; their tabs keep their old content.
  */
-const TAB_ALIASES: Record<string, SettingsTab> = { roles: 'permissions' };
+const TAB_ALIASES: Record<string, SettingsTab> = { roles: 'permissions', ops: 'operations' };
 
 /** The old Settings tabs keep their light look until each gets its new page (the shell does the same for old pages). */
 function Old({ children }: { children: React.ReactNode }) {
@@ -127,6 +128,7 @@ export function Settings() {
       case 'profile': return <ProfileTab />;
       case 'security': return <SecurityTab />;
       case 'business': return isSuperAdmin ? <BusinessTab systemConfig={systemConfig} onSaved={loadSystemConfig} onOpenCurrencies={() => open('currencies')} /> : <ViewOnly />;
+      case 'operations': return <OperationsTab editable={def.editable(access)} />;
       case 'currencies':
         return isSuperAdmin ? (
           <Old>

@@ -20,6 +20,8 @@ export interface OperatingHours {
   days: Partial<Record<Weekday, DayHours>>;
   firstCallTargetMinutes?: number;
   queueWaitAlertMinutes?: number;
+  defaultDaysToPay?: number;
+  lowStockCoverDays?: number;
 }
 
 const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -56,6 +58,14 @@ export function parseOperatingHours(value: unknown): OperatingHours {
     if (input[key] === undefined) continue;
     const n = input[key];
     if (typeof n !== 'number' || !Number.isFinite(n) || n <= 0) throw new RangeError(`operatingHours.${key} must be a positive number`);
+    out[key] = n;
+  }
+  for (const key of ['defaultDaysToPay', 'lowStockCoverDays'] as const) {
+    if (input[key] === undefined) continue;
+    const n = input[key];
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 1) {
+      throw new RangeError(`operatingHours.${key} must be a positive whole number`);
+    }
     out[key] = n;
   }
   const { firstCallTargetMinutes: target, queueWaitAlertMinutes: alert } = out;

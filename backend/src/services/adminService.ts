@@ -217,14 +217,21 @@ export const adminService = {
       await this.checkAdminPrivilege(requester, 'manager');
     }
     const tenantId = getTenantId();
-    const config = await this.getSystemConfig();
+    const config = tenantId
+      ? await prisma.systemConfig.findUnique({ where: { tenantId } })
+      : await prisma.systemConfig.findFirst({ where: { tenantId: null } });
+    const opHours = (config?.operatingHours && typeof config.operatingHours === 'object' && !Array.isArray(config.operatingHours))
+      ? (config.operatingHours as any)
+      : null;
     return {
-      operatingHours: config.operatingHours,
-      autoConfirmEnabled: config.autoConfirmEnabled ?? false,
-      autoConfirmChannel: config.autoConfirmChannel ?? 'whatsapp',
-      timeZone: config.timeZone || getStoreTimeZone(tenantId),
-      queueWaitAlertMinutes: (config.operatingHours as any)?.queueWaitAlertMinutes ?? 30,
-      firstCallTargetMinutes: (config.operatingHours as any)?.firstCallTargetMinutes ?? 15,
+      operatingHours: config?.operatingHours ?? null,
+      autoConfirmEnabled: config?.autoConfirmEnabled ?? false,
+      autoConfirmChannel: (config?.autoConfirmChannel as 'whatsapp' | 'sms') ?? 'whatsapp',
+      timeZone: config?.timeZone || getStoreTimeZone(tenantId),
+      queueWaitAlertMinutes: opHours?.queueWaitAlertMinutes ?? 30,
+      firstCallTargetMinutes: opHours?.firstCallTargetMinutes ?? 15,
+      defaultDaysToPay: opHours?.defaultDaysToPay ?? 7,
+      lowStockCoverDays: opHours?.lowStockCoverDays ?? 14,
     };
   },
 
@@ -235,6 +242,8 @@ export const adminService = {
     timeZone?: string;
     queueWaitAlertMinutes?: number;
     firstCallTargetMinutes?: number;
+    defaultDaysToPay?: number;
+    lowStockCoverDays?: number;
   }) {
     await this.checkAdminPrivilege(requester, 'super_admin');
     if (data.autoConfirmChannel !== undefined && data.autoConfirmChannel !== 'whatsapp' && data.autoConfirmChannel !== 'sms') {
@@ -256,19 +265,32 @@ export const adminService = {
       if (data.firstCallTargetMinutes !== undefined) {
         cloned.firstCallTargetMinutes = data.firstCallTargetMinutes;
       }
+      if (data.defaultDaysToPay !== undefined) {
+        cloned.defaultDaysToPay = data.defaultDaysToPay;
+      }
+      if (data.lowStockCoverDays !== undefined) {
+        cloned.lowStockCoverDays = data.lowStockCoverDays;
+      }
       try {
         operatingHours = parseOperatingHours(cloned);
       } catch (error) {
         if (error instanceof RangeError) throw new AppError(error.message, 400, 'INVALID_OPERATING_HOURS');
         throw error;
       }
-    } else if (data.queueWaitAlertMinutes !== undefined || data.firstCallTargetMinutes !== undefined) {
+    } else if (
+      data.queueWaitAlertMinutes !== undefined ||
+      data.firstCallTargetMinutes !== undefined ||
+      data.defaultDaysToPay !== undefined ||
+      data.lowStockCoverDays !== undefined
+    ) {
       const current = await this.getSystemConfig();
       const currentHours = current.operatingHours && typeof current.operatingHours === 'object' && !Array.isArray(current.operatingHours)
         ? { ...(current.operatingHours as object) }
         : { days: {} };
       if (data.queueWaitAlertMinutes !== undefined) (currentHours as any).queueWaitAlertMinutes = data.queueWaitAlertMinutes;
       if (data.firstCallTargetMinutes !== undefined) (currentHours as any).firstCallTargetMinutes = data.firstCallTargetMinutes;
+      if (data.defaultDaysToPay !== undefined) (currentHours as any).defaultDaysToPay = data.defaultDaysToPay;
+      if (data.lowStockCoverDays !== undefined) (currentHours as any).lowStockCoverDays = data.lowStockCoverDays;
       try {
         operatingHours = parseOperatingHours(currentHours);
       } catch (error) {
