@@ -475,5 +475,24 @@ describe('M7-T10 Rep API part 1: summary, Today, queue, call card, one-save guar
       expect(res2.status).toBe(409);
       expect(res2.body.message).toBe('Already handled');
     });
+
+    it('the order drawer can still log a call on a confirmed order (no expectedUpdatedAt)', async () => {
+      const order = await makeOrder({ tenantId, customerId, customerRepId: rep1Id, status: 'confirmed' });
+      const res = await request(app)
+        .post('/api/calls')
+        .set(auth(adminToken))
+        .send({ customerId, orderId: order.id, outcome: 'not_reachable', notes: 'Delivery follow-up' });
+      expect(res.status).toBe(201);
+    });
+
+    it('a call card save on an order confirmed meanwhile gives 409', async () => {
+      const order = await makeOrder({ tenantId, customerId, customerRepId: rep1Id, status: 'confirmed' });
+      const res = await request(app)
+        .post('/api/calls')
+        .set(auth(rep1Token))
+        .send({ customerId, orderId: order.id, outcome: 'not_reachable', expectedUpdatedAt: order.updatedAt.toISOString() });
+      expect(res.status).toBe(409);
+      expect(res.body.message).toBe('Already handled');
+    });
   });
 });

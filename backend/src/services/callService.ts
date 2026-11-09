@@ -145,8 +145,10 @@ export class CallService {
 
     // F2: Atomic transaction for call row insert, firstContactAt, upsell apply, order transition, commission entries, wrongNumber update
     const txResult = await prisma.$transaction(async (tx) => {
-      // M7-T10 One-save guard inside the transaction: atomic conditional update
-      if (data.orderId) {
+      // M7-T10 One-save guard inside the transaction: atomic conditional update.
+      // It applies to a save from the call card (expectedUpdatedAt sent) or on an order that was pending when
+      // the save started. The order drawer can still log a call (no expectedUpdatedAt) on an order in any other status.
+      if (order && (order.status === 'pending_confirmation' || data.expectedUpdatedAt)) {
         const orderTenantId = order?.tenantId ?? resolveTenantId(customer.tenantId);
         const guardResult = await tx.order.updateMany({
           where: {
