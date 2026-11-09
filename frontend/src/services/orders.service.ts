@@ -163,6 +163,8 @@ export interface OrderDetail {
   source: string;
   sourceLabel: string;
   notes: string | null;
+  declineReason?: DeclineReason | null;
+  failureReason?: FailureReason | null;
   deliveryAddress: string | null;
   deliveryState: string | null;
   deliveryArea: string | null;
@@ -188,6 +190,8 @@ export interface OrderDetail {
     id: number;
     outcome: string;
     notes: string | null;
+    declineReason?: DeclineReason | null;
+    failureReason?: FailureReason | null;
     duration?: number | null;
     createdAt: string;
     salesRep: { id: number; firstName: string; lastName: string };
