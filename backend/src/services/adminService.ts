@@ -37,6 +37,7 @@ import { clearCheckoutFormConfigCache } from './checkoutFormService';
 import { currencyOfTenant, getCurrency } from '../utils/currency';
 import { changeStoreCurrency } from './fxService';
 import { parseOperatingHours } from './kpi/workingTime';
+import { getStoreTimeZone } from './kpi/dates';
 import { normalizeInternationalPhone } from '../utils/phone';
 import { isValidTimeZone } from '../utils/timeZone';
 import { defaultRolePermissions } from '../config/defaultRolePermissions';
@@ -211,6 +212,81 @@ export const adminService = {
     };
   },
 
+  async getOperationsSettings(requester?: Requester) {
+    if (requester) {
+      await this.checkAdminPrivilege(requester, 'manager');
+    }
+    const tenantId = getTenantId();
+    const config = await this.getSystemConfig();
+    return {
+      operatingHours: config.operatingHours,
+      autoConfirmEnabled: config.autoConfirmEnabled ?? false,
+      autoConfirmChannel: config.autoConfirmChannel ?? 'whatsapp',
+      timeZone: config.timeZone || getStoreTimeZone(tenantId),
+      queueWaitAlertMinutes: (config.operatingHours as any)?.queueWaitAlertMinutes ?? 30,
+      firstCallTargetMinutes: (config.operatingHours as any)?.firstCallTargetMinutes ?? 15,
+    };
+  },
+
+  async updateOperationsSettings(requester: Requester, data: {
+    operatingHours?: any;
+    autoConfirmEnabled?: boolean;
+    autoConfirmChannel?: string;
+    timeZone?: string;
+    queueWaitAlertMinutes?: number;
+    firstCallTargetMinutes?: number;
+  }) {
+    await this.checkAdminPrivilege(requester, 'super_admin');
+    if (data.autoConfirmChannel !== undefined && data.autoConfirmChannel !== 'whatsapp' && data.autoConfirmChannel !== 'sms') {
+      throw new AppError('autoConfirmChannel must be "whatsapp" or "sms"', 400, 'INVALID_CHANNEL');
+    }
+    if (data.autoConfirmEnabled !== undefined && typeof data.autoConfirmEnabled !== 'boolean') {
+      throw new AppError('autoConfirmEnabled must be boolean', 400, 'INVALID_AUTO_CONFIRM_ENABLED');
+    }
+
+    let operatingHours = data.operatingHours;
+    if (operatingHours !== undefined && operatingHours !== null) {
+      if (typeof operatingHours !== 'object' || Array.isArray(operatingHours)) {
+        throw new AppError('operatingHours must be an object', 400, 'INVALID_OPERATING_HOURS');
+      }
+      const cloned = { ...operatingHours };
+      if (data.queueWaitAlertMinutes !== undefined) {
+        cloned.queueWaitAlertMinutes = data.queueWaitAlertMinutes;
+      }
+      if (data.firstCallTargetMinutes !== undefined) {
+        cloned.firstCallTargetMinutes = data.firstCallTargetMinutes;
+      }
+      try {
+        operatingHours = parseOperatingHours(cloned);
+      } catch (error) {
+        if (error instanceof RangeError) throw new AppError(error.message, 400, 'INVALID_OPERATING_HOURS');
+        throw error;
+      }
+    } else if (data.queueWaitAlertMinutes !== undefined || data.firstCallTargetMinutes !== undefined) {
+      const current = await this.getSystemConfig();
+      const currentHours = current.operatingHours && typeof current.operatingHours === 'object' && !Array.isArray(current.operatingHours)
+        ? { ...(current.operatingHours as object) }
+        : { days: {} };
+      if (data.queueWaitAlertMinutes !== undefined) (currentHours as any).queueWaitAlertMinutes = data.queueWaitAlertMinutes;
+      if (data.firstCallTargetMinutes !== undefined) (currentHours as any).firstCallTargetMinutes = data.firstCallTargetMinutes;
+      try {
+        operatingHours = parseOperatingHours(currentHours);
+      } catch (error) {
+        if (error instanceof RangeError) throw new AppError(error.message, 400, 'INVALID_OPERATING_HOURS');
+        throw error;
+      }
+    }
+
+    const payload: any = {};
+    if (operatingHours !== undefined) payload.operatingHours = operatingHours;
+    if (data.autoConfirmEnabled !== undefined) payload.autoConfirmEnabled = data.autoConfirmEnabled;
+    if (data.autoConfirmChannel !== undefined) payload.autoConfirmChannel = data.autoConfirmChannel;
+    if (data.timeZone !== undefined) payload.timeZone = data.timeZone;
+
+    await this.updateSystemConfig(requester, payload);
+    return this.getOperationsSettings(requester);
+  },
+
   async updateSystemConfig(requester: Requester, data: {
     businessName?: string;
     businessEmail?: string;
@@ -222,6 +298,8 @@ export const adminService = {
     taxId?: string;
     currency?: string;
     operatingHours?: any;
+    autoConfirmEnabled?: boolean;
+    autoConfirmChannel?: string;
     smsProvider?: any;
     emailProvider?: any;
     whatsappProvider?: any;

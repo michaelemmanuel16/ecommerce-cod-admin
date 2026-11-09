@@ -68,6 +68,7 @@ import notificationRoutes from './routes/notificationRoutes';
 import healthRoutes from './routes/health.routes';
 import uploadRoutes from './routes/uploadRoutes';
 import adminRoutes from './routes/adminRoutes';
+import settingsRoutes from './routes/settingsRoutes';
 import checkoutFormRoutes from './routes/checkoutFormRoutes';
 import publicOrderRoutes from './routes/publicOrderRoutes';
 import unsubscribeRoutes from './routes/unsubscribeRoutes';
@@ -263,6 +264,7 @@ app.use('/', healthRoutes);
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', apiLimiter, adminRoutes);
+app.use('/api/settings', apiLimiter, settingsRoutes);
 app.use('/api/users', apiLimiter, userRoutes);
 app.use('/api/customers', apiLimiter, customerRoutes);
 app.use('/api/products', apiLimiter, productRoutes);
