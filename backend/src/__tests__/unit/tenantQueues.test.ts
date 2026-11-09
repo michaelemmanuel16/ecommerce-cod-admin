@@ -17,8 +17,10 @@ jest.mock('../../services/agingService', () => ({
 }));
 
 const mockNotifyAdmins = jest.fn<(agents: any[]) => Promise<void>>();
+const mockLateCallbacks = jest.fn<(tenantId: string) => Promise<number>>();
 jest.mock('../../services/notificationService', () => ({
   notifyAdminsOverdueCollections: (...a: any[]) => (mockNotifyAdmins as any)(...a),
+  checkAndNotifyLateCallbacks: (...a: any[]) => (mockLateCallbacks as any)(...a),
 }));
 
 jest.mock('../../utils/logger', () => ({
@@ -30,7 +32,7 @@ jest.mock('../../utils/socketInstance', () => ({
   getSocketInstance: jest.fn(() => null),
 }));
 
-import { processSyncCashFindings, processNotifyOverdueCollections } from '../../queues/agingQueue';
+import { processSyncCashFindings, processNotifyOverdueCollections, processLateCallbackAlerts } from '../../queues/agingQueue';
 import { processCleanupOldMessages } from '../../queues/messageCleanupQueue';
 import { processCleanupStalePending } from '../../queues/pendingCheckoutCleanupQueue';
 import { processExecuteWorkflow } from '../../queues/workflowQueue';
@@ -76,6 +78,27 @@ describe('job processors run inside a tenant context', () => {
     await processNotifyOverdueCollections();
 
     expect(seen).toEqual(['read:tenant-a', 'notify:tenant-a', 'read:tenant-b', 'notify:tenant-b']);
+  });
+
+  it('agingQueue check-late-callbacks: runs once per tenant inside its own context', async () => {
+    const seen: string[] = [];
+    mockLateCallbacks.mockImplementation(async (tid: string) => { seen.push(`${tid}:${getTenantId()}`); return 0; });
+
+    await processLateCallbackAlerts();
+
+    expect(seen).toEqual(['tenant-a:tenant-a', 'tenant-b:tenant-b']);
+  });
+
+  it('agingQueue check-late-callbacks: one failing tenant does not stop the others', async () => {
+    const seen: string[] = [];
+    mockLateCallbacks.mockImplementation(async (tid: string) => {
+      seen.push(tid);
+      if (tid === 'tenant-a') throw new Error('boom');
+      return 0;
+    });
+
+    await expect(processLateCallbackAlerts()).rejects.toThrow('1/2 tenants');
+    expect(seen).toEqual(['tenant-a', 'tenant-b']);
   });
 
   it('messageCleanupQueue: deletes inside each tenant context', async () => {
