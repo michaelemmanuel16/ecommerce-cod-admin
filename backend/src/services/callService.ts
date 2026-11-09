@@ -524,9 +524,10 @@ export class CallService {
           avgDuration: Math.round(avgDuration),
           outcomeBreakdown: {
             confirmed: outcomes.confirmed || 0,
-            rescheduled: outcomes.rescheduled || 0,
-            no_answer: outcomes.no_answer || 0,
-            cancelled: outcomes.cancelled || 0,
+            not_reachable: outcomes.not_reachable || 0,
+            call_back_later: outcomes.call_back_later || 0,
+            declined: outcomes.declined || 0,
+            wrong_number: outcomes.wrong_number || 0,
             other: outcomes.other || 0
           },
           timeline

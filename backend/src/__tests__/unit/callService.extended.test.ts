@@ -91,7 +91,7 @@ describe('CallService (extended branch coverage)', () => {
       (prismaMock.call.count as any).mockResolvedValue(5);
       (prismaMock.call.groupBy as any).mockResolvedValue([
         { outcome: 'confirmed', _count: 3 },
-        { outcome: 'no_answer', _count: 2 },
+        { outcome: 'not_reachable', _count: 2 },
       ] as any);
       (prismaMock.call.findMany as any).mockResolvedValue([
         { duration: 60, createdAt: new Date() },

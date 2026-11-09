@@ -65,8 +65,8 @@ beforeAll(async () => {
   calls = await mkOrder(tenantA, custA.id, 'confirmed');
   await prismaBase.call.createMany({
     data: [
-      { orderId: calls, customerId: custA.id, salesRepId: repId, outcome: 'no_answer', createdAt: at(18), tenantId: tenantA },
-      { orderId: calls, customerId: custA.id, salesRepId: repId, outcome: 'no_answer', createdAt: at(8), tenantId: tenantA },
+      { orderId: calls, customerId: custA.id, salesRepId: repId, outcome: 'not_reachable', createdAt: at(18), tenantId: tenantA },
+      { orderId: calls, customerId: custA.id, salesRepId: repId, outcome: 'not_reachable', createdAt: at(8), tenantId: tenantA },
     ],
   });
 

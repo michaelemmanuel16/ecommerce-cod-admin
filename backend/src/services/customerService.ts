@@ -73,8 +73,8 @@ export class CustomerService {
   }
 
   /**
-   * Ids (of `among`, or all in the tenant) whose newest call is not_reachable or no_answer. The newest call being
-   * one of those also means no later `confirmed` call (F-351).
+   * Ids (of `among`, or all in the tenant) whose newest call is not_reachable. The newest call being
+   * that also means no later `confirmed` call (F-351).
    */
   private async notReachableIds(among?: number[]): Promise<number[]> {
     if (among && !among.length) return [];
@@ -86,7 +86,7 @@ export class CustomerService {
           ${among ? Prisma.sql`AND customer_id = ANY(${among}::int[])` : Prisma.empty}
         ORDER BY customer_id, created_at DESC, id DESC
       ) newest
-      WHERE outcome IN ('not_reachable', 'no_answer')`);
+      WHERE outcome = 'not_reachable'`);
     return rows.map((r) => r.customer_id);
   }
 

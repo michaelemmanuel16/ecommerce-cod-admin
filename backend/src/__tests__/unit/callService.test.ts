@@ -399,7 +399,7 @@ describe('CallService', () => {
       {
         id: 2,
         salesRepId: 5,
-        outcome: 'no_answer',
+        outcome: 'not_reachable',
         duration: 30,
         createdAt: new Date('2024-12-27T14:00:00'),
         salesRep: { id: 5, firstName: 'John', lastName: 'Doe' }
@@ -411,7 +411,7 @@ describe('CallService', () => {
       prismaMock.call.count.mockResolvedValue(2);
       prismaMock.call.groupBy.mockResolvedValue([
         { outcome: 'confirmed', _count: 1 },
-        { outcome: 'no_answer', _count: 1 }
+        { outcome: 'not_reachable', _count: 1 }
       ] as any);
       prismaMock.call.findMany.mockResolvedValue(mockCalls as any);
 
@@ -428,6 +428,14 @@ describe('CallService', () => {
       expect(result[0]).toHaveProperty('avgCallsPerDay');
       expect(result[0]).toHaveProperty('avgDuration');
       expect(result[0]).toHaveProperty('outcomeBreakdown');
+      expect(result[0].outcomeBreakdown).toEqual({
+        confirmed: 1,
+        not_reachable: 1,
+        call_back_later: 0,
+        declined: 0,
+        wrong_number: 0,
+        other: 0
+      });
       expect(result[0]).toHaveProperty('timeline');
     });
 
@@ -438,7 +446,7 @@ describe('CallService', () => {
       prismaMock.call.count.mockResolvedValue(2);
       prismaMock.call.groupBy.mockResolvedValue([
         { outcome: 'confirmed', _count: 1 },
-        { outcome: 'no_answer', _count: 1 }
+        { outcome: 'not_reachable', _count: 1 }
       ] as any);
       prismaMock.call.findMany.mockResolvedValue(mockCalls as any);
 
@@ -452,7 +460,7 @@ describe('CallService', () => {
       prismaMock.call.count.mockResolvedValue(2);
       prismaMock.call.groupBy.mockResolvedValue([
         { outcome: 'confirmed', _count: 1 },
-        { outcome: 'no_answer', _count: 1 }
+        { outcome: 'not_reachable', _count: 1 }
       ] as any);
       prismaMock.call.findMany.mockResolvedValue(mockCalls as any);
 

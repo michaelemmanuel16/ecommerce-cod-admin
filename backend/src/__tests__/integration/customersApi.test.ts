@@ -83,8 +83,8 @@ beforeAll(async () => {
   await addCustomer('made', 'Made', 10, { createdById: rep1.id });
   await addCustomer('gone', 'Gone', 11, { isActive: false, totalOrders: 1 });
 
-  // Not reachable: the newest call is not_reachable / no_answer. Efua was reached later, so she is not.
-  await call(ids.nii, 'no_answer', 10);
+  // Not reachable: the newest call is not_reachable. Efua was reached later, so she is not.
+  await call(ids.nii, 'not_reachable', 10);
   await call(ids.efua, 'not_reachable', 30);
   await call(ids.efua, 'confirmed', 5);
   await call(ids.kwesi, 'confirmed', 60);

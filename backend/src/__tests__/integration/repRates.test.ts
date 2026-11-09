@@ -65,7 +65,7 @@ beforeAll(async () => {
   const call = (salesRepId: number, outcome: any) =>
     prismaBase.call.create({ data: { customerId, salesRepId, outcome, tenantId, createdAt: day } });
   await call(repA, 'confirmed');
-  await call(repA, 'no_answer');
+  await call(repA, 'not_reachable');
   await call(repA, 'not_reachable');
   await call(repB, 'confirmed');
 

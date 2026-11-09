@@ -154,7 +154,7 @@ describe('quests (F-203)', () => {
     const failed = await prismaBase.order.findMany({ where: { tenantId, status: 'failed_delivery' }, take: 2, select: { id: true, customerId: true } });
     const at = new Date('2026-10-17T10:00:00Z');
     await prismaBase.call.createMany({
-      data: [failed[0], failed[0], failed[1]].map((o) => ({ orderId: o.id, customerId: o.customerId, salesRepId: reps.id, outcome: 'no_answer' as const, createdAt: at, tenantId })),
+      data: [failed[0], failed[0], failed[1]].map((o) => ({ orderId: o.id, customerId: o.customerId, salesRepId: reps.id, outcome: 'not_reachable' as const, createdAt: at, tenantId })),
     });
     const target = await prismaBase.target.create({
       data: { tenantId, scope: 'daily', metric: 'failed_delivery_calls_per_day', unit: 'count', periodStart: new Date('2026-10-01'), periodEnd: new Date('2026-12-31'), value: 4 },
