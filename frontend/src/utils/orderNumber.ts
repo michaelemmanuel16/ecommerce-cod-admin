@@ -4,8 +4,6 @@
  */
 export const formatOrderNumber = (id: number | string): string => `#${id}`;
 
-export const orderNumber = formatOrderNumber;
-
 /** The order id in "1042" or "#1042" (the order number on screen). Null for anything else. */
 export function parseOrderNumber(ref: string): number | null {
   const m = /^#?\s*(\d{1,9})$/.exec(ref.trim());

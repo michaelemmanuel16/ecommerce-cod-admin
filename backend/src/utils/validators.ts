@@ -272,11 +272,7 @@ export const createCallValidation: ValidationChain[] = [
   body('orderChanges').optional().isObject().withMessage('orderChanges must be an object'),
   body('orderChanges.packageId').optional().isInt().withMessage('packageId must be an integer'),
   body('orderChanges.addOnIds').optional().isArray().withMessage('addOnIds must be an array'),
-  body('openedAt').optional(),
-  body('expectedUpdatedAt').optional(),
-  body('orderUpdatedAt').optional(),
-  body('lastUpdatedAt').optional(),
-  body('expectedStatusVersion').optional()
+  body('expectedUpdatedAt').optional().isISO8601().withMessage('expectedUpdatedAt must be an ISO date')
 ];
 
 export const createAccountValidation: ValidationChain[] = [

@@ -18,16 +18,10 @@ interface CreateCallData {
   source?: CallSource;
   declineReason?: DeclineReason;
   callbackAt?: Date;
-  openedAt?: Date | string;
   expectedUpdatedAt?: Date | string;
-  orderUpdatedAt?: Date | string;
-  lastUpdatedAt?: Date | string;
-  expectedStatusVersion?: number;
   orderChanges?: {
     packageId?: number;
     addOnIds?: number[];
-    openedAt?: Date | string;
-    expectedStatusVersion?: number;
     value?: any;
     extraValue?: any;
   };
@@ -151,59 +145,22 @@ export class CallService {
 
     // F2: Atomic transaction for call row insert, firstContactAt, upsell apply, order transition, commission entries, wrongNumber update
     const txResult = await prisma.$transaction(async (tx) => {
-      // M7-T10 One-save guard & concurrency check inside the transaction
+      // M7-T10 One-save guard inside the transaction: atomic conditional update
       if (data.orderId) {
-        const currentOrder = await tx.order.findUnique({
-          where: { id: data.orderId },
-        });
-
-        if (!currentOrder) {
-          throw new AppError('Order not found', 404);
-        }
-
-        // M7-T03: Rep logging a call on another rep's order -> 403
-        if (salesRep.role === 'sales_rep') {
-          if (currentOrder.customerRepId != null && currentOrder.customerRepId !== data.salesRepId) {
-            throw new AppError("You cannot log a call on another rep's order", 403, 'FORBIDDEN');
-          }
-        }
-
-        // Order not in pending_confirmation (e.g. already handled / confirmed / cancelled) -> 409 "Already handled"
-        if (currentOrder.status !== 'pending_confirmation') {
-          throw new AppError('Already handled', 409, 'ALREADY_HANDLED');
-        }
-
-        // Expected updatedAt check (concurrency: two reps saving the same card)
-        const expectedUpdated = data.expectedUpdatedAt ?? data.orderUpdatedAt ?? data.lastUpdatedAt;
-        if (expectedUpdated) {
-          const expectedTime = new Date(expectedUpdated).getTime();
-          if (currentOrder.updatedAt.getTime() !== expectedTime) {
-            throw new AppError('Already handled', 409, 'ALREADY_HANDLED');
-          }
-        }
-
-        // Opened at check (card opened before order was modified)
-        const openedAt = data.openedAt ?? data.orderChanges?.openedAt;
-        if (openedAt) {
-          const openedTime = new Date(openedAt).getTime();
-          if (currentOrder.updatedAt.getTime() > openedTime + 500) {
-            throw new AppError('Already handled', 409, 'ALREADY_HANDLED');
-          }
-        }
-
-        // Expected status version check
-        const expectedVersion = data.expectedStatusVersion ?? data.orderChanges?.expectedStatusVersion;
-        if (expectedVersion !== undefined) {
-          if (currentOrder.statusVersion !== expectedVersion) {
-            throw new AppError('Already handled', 409, 'ALREADY_HANDLED');
-          }
-        }
-
-        // Touch order updatedAt inside the transaction to invalidate any concurrent card sessions
-        await tx.order.update({
-          where: { id: data.orderId },
+        const orderTenantId = order?.tenantId ?? resolveTenantId(customer.tenantId);
+        const guardResult = await tx.order.updateMany({
+          where: {
+            id: data.orderId,
+            tenantId: orderTenantId,
+            status: 'pending_confirmation',
+            ...(data.expectedUpdatedAt ? { updatedAt: new Date(data.expectedUpdatedAt) } : {}),
+          },
           data: { updatedAt: new Date() },
         });
+
+        if (guardResult.count === 0) {
+          throw new AppError('Already handled', 409, 'ALREADY_HANDLED');
+        }
       }
 
       // 1. Create call log row
@@ -264,8 +221,6 @@ export class CallService {
           role: salesRep.role,
           packageId: data.orderChanges.packageId,
           addOnIds: data.orderChanges.addOnIds,
-          openedAt: data.orderChanges.openedAt,
-          expectedStatusVersion: data.orderChanges.expectedStatusVersion,
           tenantId: resolveTenantId(salesRep.tenantId),
           tx,
         });

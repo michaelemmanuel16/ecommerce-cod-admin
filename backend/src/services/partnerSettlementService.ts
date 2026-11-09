@@ -20,7 +20,7 @@ import { TRANSACTION_CONFIG } from '../config/transactionConfig';
 import { resolveTenantId } from '../utils/tenantContext';
 import { getCurrency } from '../utils/currency';
 import { phoneLookupVariants } from '../utils/phone';
-import { parseOrderNumber } from '../utils/orderNumber';
+import { formatOrderNumber, parseOrderNumber } from '../utils/orderNumber';
 import { loadOrdersByRefs } from '../utils/orderLookup';
 import { isUniqueViolation } from '../utils/prismaErrors';
 import { OPEN_COLLECTION_STATUSES, outstandingOf } from '../utils/collectionCash';
@@ -465,7 +465,7 @@ export async function recordManualPayout(actor: SettlementActor, input: ManualPa
     const { unpaid, owedOrders, plan, orderOf } = planned;
     await tx.partnerSettlementLine.createMany({
       data: plan.covers.map((c) => ({
-        tenantId, settlementId: settlement.id, orderId: orderOf.get(c.id)!, externalOrderRef: `#${orderOf.get(c.id)}`,
+        tenantId, settlementId: settlement.id, orderId: orderOf.get(c.id)!, externalOrderRef: formatOrderNumber(orderOf.get(c.id)!),
         expAmount: c.take, charge: Money.ZERO, matched: true, matchedBy: 'fifo', outcome: 'delivered' as const,
       })),
     });

@@ -1,6 +1,10 @@
 import prisma from '../utils/prisma';
 import { getStoreTimeZone } from './kpi/dates';
-import { readOperatingHours, workingMinutesBetween } from './kpi/workingTime';
+import {
+  readOperatingHours,
+  workingMinutesBetween,
+  DEFAULT_QUEUE_WAIT_ALERT_MINUTES,
+} from './kpi/workingTime';
 import { createNotification } from './notificationService';
 import { HUMAN_USERS_WHERE } from './systemUserService';
 import { formatOrderNumber } from '../utils/orderNumber';
@@ -31,7 +35,7 @@ export async function notifyQueueWaitAlert(order: QueueWaitAlertInput): Promise<
 
   const recipients = await findQueueAlertRecipients(order.tenantId);
   const rounded = Math.round(order.waitMinutes);
-  const orderRef = order.orderNumber?.startsWith('#') ? order.orderNumber : formatOrderNumber(order.id);
+  const orderRef = formatOrderNumber(order.id);
   const title = 'Queue wait alert';
   const message = `Order ${orderRef} has been waiting ${rounded} min in the call queue (limit: ${order.alertMinutes} min)`;
   const data = {
@@ -53,7 +57,7 @@ export async function checkQueueWaitAlerts(tenantId: string, now: Date = new Dat
     select: { operatingHours: true, timeZone: true },
   });
   const hours = readOperatingHours(config?.operatingHours);
-  const alertMinutes = (config?.operatingHours as any)?.queueWaitAlertMinutes ?? 30;
+  const alertMinutes = (config?.operatingHours as any)?.queueWaitAlertMinutes ?? DEFAULT_QUEUE_WAIT_ALERT_MINUTES;
   const zone = config?.timeZone || getStoreTimeZone(tenantId);
 
   const waitingOrders = await prisma.order.findMany({

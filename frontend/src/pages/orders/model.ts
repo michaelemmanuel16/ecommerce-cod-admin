@@ -74,7 +74,7 @@ export const STATUS_TONE: Record<OrderStatus, TagTone> = {
 };
 
 /** "#24118" (F-300). One place, so every screen writes an order number the same way. */
-export { orderNumber, formatOrderNumber } from '../../utils/orderNumber';
+export { formatOrderNumber, formatOrderNumber as orderNumber } from '../../utils/orderNumber';
 
 export const customerName = (row: OrderListRow): string => personName(row.customer);
 

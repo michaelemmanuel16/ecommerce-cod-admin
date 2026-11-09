@@ -1,4 +1,4 @@
-import { OrderStatus, Prisma } from '@prisma/client';
+import { OrderStatus, Prisma, UpsellStatus } from '@prisma/client';
 import prisma from '../utils/prisma';
 import { resolveTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
@@ -6,11 +6,15 @@ import { Requester, isManagerUp } from '../utils/authUtils';
 import { getCurrency } from '../utils/currency';
 import { fullName } from '../utils/nameUtils';
 import * as Money from '../utils/money';
-import { workingMinutesBetween, readOperatingHours } from "./kpi/workingTime";
-import { timeToFirstCall } from "./kpi/timeToFirstCall";
-import { repRates } from "./kpi/reps";
-import { upsellService } from "./upsellService";
-import { formatOrderNumber } from "../utils/orderNumber";
+import {
+  workingMinutesBetween,
+  readOperatingHours,
+  DEFAULT_FIRST_CALL_TARGET_MINUTES,
+  DEFAULT_QUEUE_WAIT_ALERT_MINUTES,
+} from './kpi/workingTime';
+import { timeToFirstCall } from './kpi/timeToFirstCall';
+import { repRates } from './kpi/reps';
+import { upsellService } from './upsellService';
 
 import { leaderboard } from './leaderboardService';
 import * as rewardService from './rewardService';
@@ -645,14 +649,6 @@ export async function getPayouts(actor: Requester, query: RepPayoutsQuery = {}) 
 }
 
 
-function formatWaitMinutes(mins: number): string {
-  const m = Math.max(0, Math.floor(mins));
-  if (m < 60) return `${m} min`;
-  const h = Math.floor(m / 60);
-  const rem = m % 60;
-  return `${h} h ${rem.toString().padStart(2, '0')} min`;
-}
-
 /**
  * Shell summary: badge counts for the nav (queue pill, unread inbox, today's confirmed).
  */
@@ -666,35 +662,28 @@ export async function getShellSummary(tenantId: string, repId: number) {
         deletedAt: null,
       },
     }),
-    prisma.notification
-      .count({
-        where: {
-          tenantId,
-          userId: repId,
-          isRead: false,
+    prisma.notification.count({
+      where: {
+        tenantId,
+        userId: repId,
+        isRead: false,
+      },
+    }),
+    prisma.call.count({
+      where: {
+        tenantId,
+        salesRepId: repId,
+        outcome: 'confirmed',
+        createdAt: {
+          gte: startOfDay(localDate(new Date(), getStoreTimeZone(tenantId)), getStoreTimeZone(tenantId)),
         },
-      })
-      .catch(() => 0),
-    prisma.call
-      .count({
-        where: {
-          tenantId,
-          salesRepId: repId,
-          outcome: 'confirmed',
-          createdAt: {
-            gte: startOfDay(localDate(new Date(), getStoreTimeZone(tenantId)), getStoreTimeZone(tenantId)),
-          },
-        },
-      })
-      .catch(() => 0),
+      },
+    }),
   ]);
 
   return {
     queue: queueCount,
-    pending: queueCount,
-    queueCount,
     inbox: unreadInbox,
-    unreadInbox,
     todayConfirmed: confirmedToday,
   };
 }
@@ -704,15 +693,14 @@ export async function getShellSummary(tenantId: string, repId: number) {
  */
 export async function getToday(tenantId: string, repId: number) {
   const zone = getStoreTimeZone(tenantId);
-  const todayYmd = localDate(new Date(), zone);
+  const now = new Date();
+  const todayYmd = localDate(now, zone);
   const dayStart = startOfDay(todayYmd, zone);
   const dayEnd = endOfDay(todayYmd, zone);
 
-  const currentMonthStr = todayYmd.slice(0, 7);
-  const monthFrom = startOfDay(`${currentMonthStr}-01`, zone);
-  const [yr, mo] = currentMonthStr.split('-').map(Number);
-  const nextMoYmd = mo === 12 ? `${yr + 1}-01-01` : `${yr}-${String(mo + 1).padStart(2, '0')}-01`;
-  const monthTo = startOfDay(nextMoYmd, zone);
+  const currentMonthStr = currentMonth(now, zone);
+  const { year, month } = parseMonth(currentMonthStr)!;
+  const { from: monthFrom, to: monthTo } = monthRange(year, month, zone);
 
   const [callsDone, confirmedCalls, upsellLines, ttfcResult, ratesResult, attainmentRows] = await Promise.all([
     prisma.call.count({
@@ -734,21 +722,19 @@ export async function getToday(tenantId: string, repId: number) {
       where: {
         tenantId,
         repId,
-        status: { not: 'void' as any },
+        status: { not: UpsellStatus.void },
         createdAt: { gte: dayStart, lte: dayEnd },
       },
       select: { extraValue: true },
     }),
-    timeToFirstCall(tenantId, monthFrom, monthTo, { repId }).catch(() => null),
-    repRates(tenantId, monthFrom, monthTo).catch(() => null),
-    rewardService.computeAttainment(currentMonthStr, { userId: repId }).catch(() => null),
+    timeToFirstCall(tenantId, monthFrom, monthTo, { repId }),
+    repRates(tenantId, monthFrom, monthTo),
+    rewardService.computeAttainment(currentMonthStr, { userId: repId }),
   ]);
 
-  const upsellExtra = Money.sum(upsellLines.map((u: { extraValue: any }) => u.extraValue));
+  const upsellExtra = Money.sum(upsellLines.map((u) => u.extraValue));
 
-  const repAttainment = attainmentRows?.results?.find(
-    (r: any) => r.userId === repId && (r.roleName.toLowerCase().includes('rep') || r.userId === repId)
-  );
+  const repAttainment = attainmentRows?.results?.find((r) => r.userId === repId);
 
   let targetProgress;
   if (!repAttainment || repAttainment.target === null) {
@@ -795,6 +781,8 @@ export async function getToday(tenantId: string, repId: number) {
   };
 }
 
+const VALID_QUEUE_TABS = new Set(['new', 'call_back', 'said_no', 'not_reachable']);
+
 /**
  * Queue: orders waiting for rep's call, categorized into tabs:
  * New, Call back, Said NO, Not reachable.
@@ -804,6 +792,12 @@ export async function getQueue(
   repId: number,
   options: { tab?: string; q?: string } = {}
 ) {
+  if (options.tab !== undefined && options.tab !== null && options.tab !== '') {
+    if (!VALID_QUEUE_TABS.has(options.tab)) {
+      throw new AppError(`Invalid tab: ${options.tab}`, 400, 'INVALID_TAB');
+    }
+  }
+
   const zone = getStoreTimeZone(tenantId);
   const now = new Date();
 
@@ -812,8 +806,8 @@ export async function getQueue(
     select: { operatingHours: true },
   });
   const hours = readOperatingHours(config?.operatingHours);
-  const targetMinutes = hours?.firstCallTargetMinutes ?? 15;
-  const alertMinutes = hours?.queueWaitAlertMinutes ?? 30;
+  const targetMinutes = hours?.firstCallTargetMinutes ?? DEFAULT_FIRST_CALL_TARGET_MINUTES;
+  const alertMinutes = hours?.queueWaitAlertMinutes ?? DEFAULT_QUEUE_WAIT_ALERT_MINUTES;
 
   const orders = await prisma.order.findMany({
     where: {
@@ -873,7 +867,6 @@ export async function getQueue(
       waitMinutes >= alertMinutes ? 'coral' : waitMinutes >= targetMinutes ? 'gold' : 'normal';
 
     let callbackDue = false;
-    let callbackDueFormatted: string | null = null;
     let callbackSeverity: 'normal' | 'gold' | 'coral' | null = null;
     let callbackAt: Date | null = null;
 
@@ -882,34 +875,21 @@ export async function getQueue(
       const cb = new Date(latestCall.callbackAt);
       const diffMinutes = Math.round((cb.getTime() - now.getTime()) / 60000);
       callbackDue = cb <= now;
-      if (diffMinutes < 0) {
-        callbackDueFormatted = `Overdue ${Math.abs(diffMinutes)} min`;
-        callbackSeverity = 'coral';
-      } else if (diffMinutes === 0) {
-        callbackDueFormatted = 'Due now';
+      if (diffMinutes <= 0) {
         callbackSeverity = 'coral';
       } else if (diffMinutes < 30) {
-        callbackDueFormatted =
-          diffMinutes >= 60
-            ? `In ${Math.floor(diffMinutes / 60)} h ${String(diffMinutes % 60).padStart(2, '0')}`
-            : `In ${diffMinutes} min`;
         callbackSeverity = 'gold';
       } else {
-        callbackDueFormatted =
-          diffMinutes >= 60
-            ? `In ${Math.floor(diffMinutes / 60)} h ${String(diffMinutes % 60).padStart(2, '0')}`
-            : `In ${diffMinutes} min`;
         callbackSeverity = 'normal';
       }
     }
 
     const itemsSummary = o.orderItems.map((item) => `${item.quantity}x ${item.product.name}`).join(', ');
-    const customerName = `${o.customer.firstName} ${o.customer.lastName}`.trim();
+    const customerName = fullName(o.customer);
     const area = o.deliveryArea || o.customer.area || o.deliveryState || o.customer.state || '';
 
     return {
       id: o.id,
-      orderNumber: formatOrderNumber(o.id),
       status: o.status,
       customer: {
         id: o.customer.id,
@@ -925,15 +905,13 @@ export async function getQueue(
       },
       area,
       itemsSummary,
-      totalAmount: o.totalAmount,
+      totalAmount: Money.toApi(o.totalAmount),
       saidNo: o.saidNo,
       tab,
       waitMinutes: Math.round(waitMinutes * 10) / 10,
-      waitTimerFormatted: formatWaitMinutes(waitMinutes),
       waitTimerSeverity,
       callbackAt,
       callbackDue,
-      callbackDueFormatted,
       callbackSeverity,
       createdAt: o.createdAt,
       updatedAt: o.updatedAt,
@@ -950,33 +928,21 @@ export async function getQueue(
   };
 
   let filtered = queueItems;
-  if (options.tab && options.tab !== 'all') {
-    const rawTab = options.tab.toLowerCase().replace(/[\s-]/g, '_');
-    const targetTab =
-      rawTab === 'callback' || rawTab === 'callbacks' || rawTab === 'call_back'
-        ? 'call_back'
-        : rawTab === 'saidno' || rawTab === 'said_no'
-        ? 'said_no'
-        : rawTab === 'notreachable' || rawTab === 'not_reachable'
-        ? 'not_reachable'
-        : rawTab === 'new'
-        ? 'new'
-        : null;
-
-    if (targetTab) {
-      filtered = filtered.filter((i) => i.tab === targetTab);
-    }
+  if (options.tab) {
+    filtered = filtered.filter((i) => i.tab === options.tab);
   }
 
   if (options.q && options.q.trim()) {
-    const qLower = options.q.trim().toLowerCase();
+    const rawSearch = options.q.trim();
+    const qLower = rawSearch.toLowerCase();
+    const cleanId = rawSearch.startsWith('#') ? rawSearch.slice(1).trim() : rawSearch;
     filtered = filtered.filter((i) => {
       const matchName = i.customer.name.toLowerCase().includes(qLower);
       const matchPhone =
         (i.customer.phoneNumber || '').toLowerCase().includes(qLower) ||
         (i.customer.alternatePhone || '').toLowerCase().includes(qLower);
       const matchArea = i.area.toLowerCase().includes(qLower);
-      const matchId = String(i.id).includes(qLower) || i.orderNumber.toLowerCase().includes(qLower);
+      const matchId = cleanId && /^\d+$/.test(cleanId) ? i.id === Number(cleanId) : false;
       return matchName || matchPhone || matchArea || matchId;
     });
   }
@@ -993,9 +959,10 @@ export async function getQueue(
 
   return {
     tabs: tabCounts,
-    counts: tabCounts,
     orders: filtered,
     total: filtered.length,
+    firstCallTargetMinutes: targetMinutes,
+    queueWaitAlertMinutes: alertMinutes,
   };
 }
 
@@ -1044,12 +1011,7 @@ export async function getCallCard(
     }
   }
 
-  let packages = null;
-  try {
-    packages = await upsellService.getUpsellOptions(order.id, tenantId);
-  } catch {
-    // Non-fatal if upsell options cannot be retrieved
-  }
+  const packages = await upsellService.getUpsellOptions(order.id, tenantId);
 
   const previousOrders = await prisma.order.findMany({
     where: {
@@ -1083,24 +1045,23 @@ export async function getCallCard(
   return {
     order: {
       id: order.id,
-      orderNumber: formatOrderNumber(order.id),
       status: order.status,
-      totalAmount: order.totalAmount,
-      subtotal: order.subtotal,
-      deliveryFee: order.deliveryFee,
+      totalAmount: Money.toApi(order.totalAmount),
+      subtotal: order.subtotal != null ? Money.toApi(order.subtotal) : Money.toApi(order.totalAmount),
+      deliveryFee: order.deliveryFee != null ? Money.toApi(order.deliveryFee) : null,
       customerRepId: order.customerRepId,
       deliveryAgentId: order.deliveryAgentId,
       deliveryAgent: order.deliveryAgent
         ? {
             id: order.deliveryAgent.id,
-            name: `${order.deliveryAgent.firstName} ${order.deliveryAgent.lastName}`.trim(),
+            name: fullName(order.deliveryAgent),
             phoneNumber: order.deliveryAgent.phoneNumber,
           }
         : null,
       customerRep: order.customerRep
         ? {
             id: order.customerRep.id,
-            name: `${order.customerRep.firstName} ${order.customerRep.lastName}`.trim(),
+            name: fullName(order.customerRep),
           }
         : null,
       createdAt: order.createdAt,
@@ -1118,7 +1079,7 @@ export async function getCallCard(
       id: order.customer.id,
       firstName: order.customer.firstName,
       lastName: order.customer.lastName,
-      name: `${order.customer.firstName} ${order.customer.lastName}`.trim(),
+      name: fullName(order.customer),
       phoneNumber: order.customer.phoneNumber,
       alternatePhone: order.customer.alternatePhone,
       email: order.customer.email,
@@ -1132,9 +1093,8 @@ export async function getCallCard(
       wrongNumber: order.customer.wrongNumber,
       previousOrders: previousOrders.map((po) => ({
         id: po.id,
-        orderNumber: formatOrderNumber(po.id),
         createdAt: po.createdAt,
-        totalAmount: po.totalAmount,
+        totalAmount: Money.toApi(po.totalAmount),
         status: po.status,
       })),
     },
@@ -1143,8 +1103,8 @@ export async function getCallCard(
       productId: item.productId,
       productName: item.product?.name ?? 'Unknown',
       quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      totalPrice: item.totalPrice,
+      unitPrice: Money.toApi(item.unitPrice),
+      totalPrice: Money.toApi(item.totalPrice),
     })),
     packages,
     lastCalls: order.calls.map((c) => ({
@@ -1159,7 +1119,7 @@ export async function getCallCard(
       salesRep: c.salesRep
         ? {
             id: c.salesRep.id,
-            name: `${c.salesRep.firstName} ${c.salesRep.lastName}`.trim(),
+            name: fullName(c.salesRep),
           }
         : null,
     })),

@@ -16,11 +16,7 @@ export const createCall = async (req: AuthRequest, res: Response): Promise<void>
       source,
       declineReason,
       callbackAt,
-      openedAt,
       expectedUpdatedAt,
-      orderUpdatedAt,
-      lastUpdatedAt,
-      expectedStatusVersion,
       orderChanges,
     } = req.body;
 
@@ -35,9 +31,7 @@ export const createCall = async (req: AuthRequest, res: Response): Promise<void>
       declineReason,
       callbackAt: callbackAt ? new Date(callbackAt) : undefined,
       salesRepId: req.user!.id,
-      openedAt: openedAt ?? orderChanges?.openedAt,
-      expectedUpdatedAt: expectedUpdatedAt ?? orderUpdatedAt ?? lastUpdatedAt,
-      expectedStatusVersion: expectedStatusVersion ?? orderChanges?.expectedStatusVersion,
+      expectedUpdatedAt,
       orderChanges,
     });
 

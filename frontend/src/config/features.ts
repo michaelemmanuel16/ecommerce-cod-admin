@@ -7,7 +7,7 @@
  * login "Sign up" link. A build-time flag, so it must match the backend's SAAS_SIGNUP_ENABLED (which makes the API answer 404).
  */
 export const features = {
-  repApp: import.meta.env.VITE_FEATURE_REP_APP !== 'false',
+  repApp: import.meta.env.VITE_FEATURE_REP_APP === 'true',
   agentApp: import.meta.env.VITE_FEATURE_AGENT_APP === 'true',
   saasSignup: import.meta.env.VITE_SAAS_SIGNUP_ENABLED === 'true',
 };

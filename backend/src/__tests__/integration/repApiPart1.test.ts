@@ -9,7 +9,7 @@ import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
 import { makeOrder, makeUser } from './helpers/kpiOrders';
 import { CallOutcome } from '@prisma/client';
 
-describe('M7-T10 Rep API part 1: shell summary, Today, queue, call card, one-save guard', () => {
+describe('M7-T10 Rep API part 1: summary, Today, queue, call card, one-save guard', () => {
   let pair: TwoTenants;
   let tenantId: string;
   let customerId: number;
@@ -34,8 +34,8 @@ describe('M7-T10 Rep API part 1: shell summary, Today, queue, call card, one-sav
     rep2Id = rep2User.id;
     rep2Token = generateAccessToken({ id: rep2Id, email: rep2User.email, role: 'sales_rep', tenantId });
 
-    // Configure operating hours on tenant A: 08:00 to 20:00 weekdays, target 15, alert 30
-    const weekday = { open: '08:00', close: '20:00', enabled: true };
+    // Configure operating hours on tenant A: 00:00 to 23:59 (24/7 so tests pass at any hour), target 15, alert 30
+    const weekday = { open: '00:00', close: '23:59', enabled: true };
     await prismaBase.systemConfig.update({
       where: { tenantId },
       data: {
@@ -46,8 +46,8 @@ describe('M7-T10 Rep API part 1: shell summary, Today, queue, call card, one-sav
             wednesday: weekday,
             thursday: weekday,
             friday: weekday,
-            saturday: { open: '09:00', close: '18:00', enabled: true },
-            sunday: { open: '10:00', close: '16:00', enabled: false },
+            saturday: weekday,
+            sunday: weekday,
           },
           firstCallTargetMinutes: 15,
           queueWaitAlertMinutes: 30,
@@ -60,17 +60,23 @@ describe('M7-T10 Rep API part 1: shell summary, Today, queue, call card, one-sav
     await pair.cleanup();
   });
 
-  describe('1. Shell summary (GET /api/rep/me/summary, GET /api/rep/summary)', () => {
-    it('returns queue counts scoped to the rep; rep B never sees rep A orders', async () => {
+  describe('1. Shell summary (GET /api/rep/summary)', () => {
+    it('returns queue counts scoped to the rep; rep B never sees rep A orders; one field per value', async () => {
       // Create 2 pending orders for rep 1 and 1 pending order for rep 2
       await makeOrder({ tenantId, customerId, customerRepId: rep1Id, status: 'pending_confirmation' });
       await makeOrder({ tenantId, customerId, customerRepId: rep1Id, status: 'pending_confirmation' });
       await makeOrder({ tenantId, customerId, customerRepId: rep2Id, status: 'pending_confirmation' });
 
       // Rep 1 sees at least 2 pending orders
-      const res1 = await request(app).get('/api/rep/me/summary').set(auth(rep1Token));
+      const res1 = await request(app).get('/api/rep/summary').set(auth(rep1Token));
       expect(res1.status).toBe(200);
       expect(res1.body.queue).toBeGreaterThanOrEqual(2);
+      expect(res1.body.inbox).toBeDefined();
+      expect(res1.body.todayConfirmed).toBeDefined();
+      // One field per value: aliases removed
+      expect(res1.body.pending).toBeUndefined();
+      expect(res1.body.queueCount).toBeUndefined();
+      expect(res1.body.unreadInbox).toBeUndefined();
 
       // Rep 2 sees exactly 1 pending order
       const res2 = await request(app).get('/api/rep/summary').set(auth(rep2Token));
@@ -86,9 +92,20 @@ describe('M7-T10 Rep API part 1: shell summary, Today, queue, call card, one-sav
       const resForbidden = await request(app).get(`/api/rep/summary?repId=${rep2Id}`).set(auth(rep1Token));
       expect(resForbidden.status).toBe(403);
     });
+
+    it('bad repId gives 400 for a rep', async () => {
+      const res1 = await request(app).get('/api/rep/summary?repId=bad').set(auth(rep1Token));
+      expect(res1.status).toBe(400);
+
+      const res2 = await request(app).get('/api/rep/summary?repId=-5').set(auth(rep1Token));
+      expect(res2.status).toBe(400);
+
+      const res3 = await request(app).get('/api/rep/summary?repId=0').set(auth(rep1Token));
+      expect(res3.status).toBe(400);
+    });
   });
 
-  describe('2. Today page (GET /api/rep/me/today, GET /api/rep/today)', () => {
+  describe('2. Today page (GET /api/rep/today)', () => {
     it('returns calls done, confirmed, upsell extra, time to first call, and "No target set" when none', async () => {
       // Rep 1 logs a confirmed call and an upsell line
       const order = await makeOrder({ tenantId, customerId, customerRepId: rep1Id, status: 'pending_confirmation' });
@@ -113,7 +130,7 @@ describe('M7-T10 Rep API part 1: shell summary, Today, queue, call card, one-sav
         },
       });
 
-      const res = await request(app).get('/api/rep/me/today').set(auth(rep1Token));
+      const res = await request(app).get('/api/rep/today').set(auth(rep1Token));
       expect(res.status).toBe(200);
       expect(res.body.callsDone).toBeGreaterThanOrEqual(1);
       expect(res.body.confirmed).toBeGreaterThanOrEqual(1);
@@ -136,8 +153,8 @@ describe('M7-T10 Rep API part 1: shell summary, Today, queue, call card, one-sav
     });
   });
 
-  describe('3. Queue (GET /api/rep/me/queue, tabs, wait timers, callback due flag)', () => {
-    it('returns 4 tabs (New, Call back, Said NO, Not reachable) with server-computed wait timers and callback due flag', async () => {
+  describe('3. Queue (GET /api/rep/queue, tabs, wait timers, callback due flag)', () => {
+    it('returns 4 tabs (New, Call back, Said NO, Not reachable) with numeric wait timers, minutes values, and no formatting', async () => {
       // Clean up past test orders for rep 1 to have predictable queue tab counts
       await prismaBase.order.updateMany({
         where: { tenantId, customerRepId: rep1Id, status: 'pending_confirmation' },
@@ -152,6 +169,7 @@ describe('M7-T10 Rep API part 1: shell summary, Today, queue, call card, one-sav
         customerRepId: rep1Id,
         status: 'pending_confirmation',
         createdAt: date20MinAgo,
+        totalAmount: 150,
       });
 
       // 2. Said NO order
@@ -203,7 +221,7 @@ describe('M7-T10 Rep API part 1: shell summary, Today, queue, call card, one-sav
         },
       });
 
-      const res = await request(app).get('/api/rep/me/queue').set(auth(rep1Token));
+      const res = await request(app).get('/api/rep/queue').set(auth(rep1Token));
       expect(res.status).toBe(200);
       expect(res.body.tabs).toBeDefined();
       expect(res.body.tabs.new).toBe(1);
@@ -211,27 +229,45 @@ describe('M7-T10 Rep API part 1: shell summary, Today, queue, call card, one-sav
       expect(res.body.tabs.call_back).toBe(1);
       expect(res.body.tabs.not_reachable).toBe(1);
       expect(res.body.total).toBe(4);
+      // Added minute values and removed counts alias
+      expect(res.body.firstCallTargetMinutes).toBe(15);
+      expect(res.body.queueWaitAlertMinutes).toBe(30);
+      expect(res.body.counts).toBeUndefined();
 
-      // Check callback due flag and formatted text
+      // Check callback item: raw numbers and flags, no server-formatted strings
       const cbItem = res.body.orders.find((o: any) => o.id === oCallback.id);
       expect(cbItem).toBeDefined();
       expect(cbItem.callbackDue).toBe(true);
-      expect(cbItem.callbackDueFormatted).toMatch(/Overdue/);
+      expect(cbItem.callbackDueFormatted).toBeUndefined();
+      expect(cbItem.orderNumber).toBeUndefined();
       expect(cbItem.callbackSeverity).toBe('coral');
 
-      // Check wait timer values on oNew
+      // Check wait timer values on oNew: no waitTimerFormatted, totalAmount is string via Money.toApi
       const newItem = res.body.orders.find((o: any) => o.id === oNew.id);
       expect(newItem).toBeDefined();
       expect(newItem.waitMinutes).toBeGreaterThanOrEqual(18);
-      expect(newItem.waitTimerFormatted).toBeDefined();
+      expect(newItem.waitTimerFormatted).toBeUndefined();
       expect(newItem.waitTimerSeverity).toBe('gold');
+      expect(typeof newItem.totalAmount).toBe('string');
 
       // Filtering by tab=call_back
-      const resCbTab = await request(app).get('/api/rep/me/queue?tab=call_back').set(auth(rep1Token));
+      const resCbTab = await request(app).get('/api/rep/queue?tab=call_back').set(auth(rep1Token));
       expect(resCbTab.status).toBe(200);
       expect(resCbTab.body.orders.length).toBe(1);
       expect(resCbTab.body.orders[0].id).toBe(oCallback.id);
       expect(resCbTab.body.tabs.total).toBe(4); // Preserves total tabs counts
+    });
+
+    it('bad tab returns 400', async () => {
+      // Alias spellings like callback or saidno are rejected with 400
+      const resAlias = await request(app).get('/api/rep/queue?tab=callback').set(auth(rep1Token));
+      expect(resAlias.status).toBe(400);
+
+      const resSaidNo = await request(app).get('/api/rep/queue?tab=saidno').set(auth(rep1Token));
+      expect(resSaidNo.status).toBe(400);
+
+      const resInvalid = await request(app).get('/api/rep/queue?tab=invalid_tab').set(auth(rep1Token));
+      expect(resInvalid.status).toBe(400);
     });
 
     it('an order reassigned away leaves the queue at once', async () => {
@@ -243,7 +279,7 @@ describe('M7-T10 Rep API part 1: shell summary, Today, queue, call card, one-sav
       });
 
       // Verify it is in rep 1's queue
-      let q1 = await request(app).get('/api/rep/me/queue').set(auth(rep1Token));
+      let q1 = await request(app).get('/api/rep/queue').set(auth(rep1Token));
       expect(q1.body.orders.some((o: any) => o.id === order.id)).toBe(true);
 
       // Reassign to rep 2
@@ -253,11 +289,11 @@ describe('M7-T10 Rep API part 1: shell summary, Today, queue, call card, one-sav
       });
 
       // Immediately leaves rep 1's queue
-      q1 = await request(app).get('/api/rep/me/queue').set(auth(rep1Token));
+      q1 = await request(app).get('/api/rep/queue').set(auth(rep1Token));
       expect(q1.body.orders.some((o: any) => o.id === order.id)).toBe(false);
 
       // Appears in rep 2's queue
-      const q2 = await request(app).get('/api/rep/me/queue').set(auth(rep2Token));
+      const q2 = await request(app).get('/api/rep/queue').set(auth(rep2Token));
       expect(q2.body.orders.some((o: any) => o.id === order.id)).toBe(true);
     });
 
@@ -269,7 +305,7 @@ describe('M7-T10 Rep API part 1: shell summary, Today, queue, call card, one-sav
         status: 'pending_confirmation',
       });
 
-      let q = await request(app).get('/api/rep/me/queue').set(auth(rep1Token));
+      let q = await request(app).get('/api/rep/queue').set(auth(rep1Token));
       expect(q.body.orders.some((o: any) => o.id === order.id)).toBe(true);
 
       // Order gets auto-confirmed (status becomes confirmed)
@@ -278,13 +314,13 @@ describe('M7-T10 Rep API part 1: shell summary, Today, queue, call card, one-sav
         data: { status: 'confirmed' },
       });
 
-      q = await request(app).get('/api/rep/me/queue').set(auth(rep1Token));
+      q = await request(app).get('/api/rep/queue').set(auth(rep1Token));
       expect(q.body.orders.some((o: any) => o.id === order.id)).toBe(false);
     });
   });
 
   describe('4. Call card (GET /api/rep/orders/:id/card)', () => {
-    it('returns order, customer risk fields, items, packages, last calls, next queue order id', async () => {
+    it('returns order, customer risk fields, items, packages, last calls, next queue order id (without orderNumber, money as toApi)', async () => {
       // Clean up past pending orders for rep 1
       await prismaBase.order.updateMany({
         where: { tenantId, customerRepId: rep1Id, status: 'pending_confirmation' },
@@ -308,6 +344,12 @@ describe('M7-T10 Rep API part 1: shell summary, Today, queue, call card, one-sav
         customerId,
         customerRepId: rep1Id,
         status: 'pending_confirmation',
+        totalAmount: 250,
+      });
+
+      await prismaBase.order.update({
+        where: { id: order1.id },
+        data: { deliveryFee: 15, subtotal: 235 },
       });
 
       const order2 = await makeOrder({
@@ -333,7 +375,11 @@ describe('M7-T10 Rep API part 1: shell summary, Today, queue, call card, one-sav
       const res = await request(app).get(`/api/rep/orders/${order1.id}/card`).set(auth(rep1Token));
       expect(res.status).toBe(200);
       expect(res.body.order.id).toBe(order1.id);
-      expect(res.body.order.orderNumber).toBe(`#${order1.id}`);
+      // orderNumber formatting stays in frontend
+      expect(res.body.order.orderNumber).toBeUndefined();
+      expect(typeof res.body.order.totalAmount).toBe('string');
+      expect(typeof res.body.order.subtotal).toBe('string');
+      expect(typeof res.body.order.deliveryFee).toBe('string');
       expect(res.body.customer.riskLevel).toBe('high');
       expect(res.body.customer.refusedOrders).toBe(2);
       expect(res.body.lastCalls.length).toBeGreaterThanOrEqual(1);
@@ -352,7 +398,7 @@ describe('M7-T10 Rep API part 1: shell summary, Today, queue, call card, one-sav
   });
 
   describe('5. One-save guard (POST /api/calls)', () => {
-    it('two reps saving one card: the second gets 409 "Already handled"', async () => {
+    it('two saves on one card at the same time give one 201 and one 409 (Promise.all)', async () => {
       const order = await makeOrder({
         tenantId,
         customerId,
@@ -360,38 +406,39 @@ describe('M7-T10 Rep API part 1: shell summary, Today, queue, call card, one-sav
         status: 'pending_confirmation',
       });
 
-      const openedAt = new Date().toISOString();
+      const initialUpdatedAt = order.updatedAt.toISOString();
 
-      // Rep 1 confirms the order
-      const res1 = await request(app)
-        .post('/api/calls')
-        .set(auth(rep1Token))
-        .send({
-          customerId,
-          orderId: order.id,
-          outcome: 'confirmed',
-          notes: 'Customer confirmed on the phone',
-          openedAt,
-        });
-      expect(res1.status).toBe(201);
+      // Run two saves concurrently using Promise.all
+      const [res1, res2] = await Promise.all([
+        request(app)
+          .post('/api/calls')
+          .set(auth(rep1Token))
+          .send({
+            customerId,
+            orderId: order.id,
+            outcome: 'confirmed',
+            notes: 'Concurrent save attempt 1',
+            expectedUpdatedAt: initialUpdatedAt,
+          }),
+        request(app)
+          .post('/api/calls')
+          .set(auth(rep1Token))
+          .send({
+            customerId,
+            orderId: order.id,
+            outcome: 'confirmed',
+            notes: 'Concurrent save attempt 2',
+            expectedUpdatedAt: initialUpdatedAt,
+          }),
+      ]);
 
-      // Rep 2 attempts to save on the same order card that was already handled
-      const res2 = await request(app)
-        .post('/api/calls')
-        .set(auth(adminToken)) // Manager/admin or rep saving same card
-        .send({
-          customerId,
-          orderId: order.id,
-          outcome: 'confirmed',
-          notes: 'Concurrent save attempt',
-          openedAt,
-        });
-
-      expect(res2.status).toBe(409);
-      expect(res2.body.message).toBe('Already handled');
+      const statuses = [res1.status, res2.status].sort();
+      expect(statuses).toEqual([201, 409]);
+      const conflictRes = res1.status === 409 ? res1 : res2;
+      expect(conflictRes.body.message).toBe('Already handled');
     });
 
-    it('second save with expectedUpdatedAt mismatch gets 409 "Already handled"', async () => {
+    it('second save with stale expectedUpdatedAt gives 409 "Already handled"', async () => {
       const order = await makeOrder({
         tenantId,
         customerId,

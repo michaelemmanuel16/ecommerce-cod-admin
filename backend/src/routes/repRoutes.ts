@@ -23,15 +23,9 @@ router.use(tenantRateLimiter);
 router.get('/stats/time-to-first-call', requireResourcePermission('analytics', 'view'), getTimeToFirstCall);
 
 // M7-T10 (F-750, F-752, F-754, F-756) Rep API part 1
-router.get('/me/summary', requireResourcePermission('orders', 'view'), getSummary);
 router.get('/summary', requireResourcePermission('orders', 'view'), getSummary);
-
-router.get('/me/today', requireResourcePermission('analytics', 'view'), getToday);
 router.get('/today', requireResourcePermission('analytics', 'view'), getToday);
-
-router.get('/me/queue', requireResourcePermission('orders', 'view'), getQueue);
 router.get('/queue', requireResourcePermission('orders', 'view'), getQueue);
-
 router.get('/orders/:id/card', requireResourcePermission('orders', 'view'), getCallCard);
 
 // M7-T11 (COD-65): rep API part 2 (one path per endpoint)
