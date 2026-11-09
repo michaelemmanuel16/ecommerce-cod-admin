@@ -89,6 +89,8 @@ model Tenant {
   rewardTiers             RewardTier[]
   badgeAwards             BadgeAward[]
   assignmentCursors       AssignmentCursor[]
+  upsellLines             UpsellLine[]
+  confirmTokens           ConfirmToken[]
 
   @@index([paystackCustomerCode])
   @@index([paystackSubscriptionCode])
@@ -205,6 +207,8 @@ model User {
   badgeAwards           BadgeAward[]            @relation("BadgeAwardUser")
   sessions              UserSession[]
   customersCreated      Customer[]              @relation("CustomerCreatedBy")
+  customerCodOverrides  Customer[]              @relation("CustomerCodOverrideBy")
+  upsellLines           UpsellLine[]            @relation("UpsellLineRep")
   mcpApiKeys            McpApiKey[]             @relation("McpApiKeyUser")
   tenantId              String?                 @map("tenant_id")
   tenant                Tenant?                 @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -239,17 +243,25 @@ model Customer {
   whatsappOptOut   Boolean      @default(false) @map("whatsapp_opt_out")
   emailOptOut      Boolean      @default(false) @map("email_opt_out")
   // Stored 32-byte random hex (not signed, not derived from id); generated lazily before marketing sends.
-  unsubscribeToken String?      @unique @map("unsubscribe_token")
-  createdAt        DateTime     @default(now()) @map("created_at")
-  updatedAt        DateTime     @updatedAt @map("updated_at")
-  firstName        String       @map("first_name")
-  lastName         String       @map("last_name")
+  unsubscribeToken String?            @unique @map("unsubscribe_token")
+  codBlocked       Boolean            @default(false) @map("cod_blocked")
+  codOverride      Boolean            @default(false) @map("cod_override")
+  codOverrideNote  String?            @map("cod_override_note")
+  codOverrideById  Int?               @map("cod_override_by_id")
+  codOverrideAt    DateTime?          @map("cod_override_at")
+  riskLevel        CustomerRiskLevel  @default(normal) @map("risk_level")
+  wrongNumber      Boolean            @default(false) @map("wrong_number")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+  firstName        String             @map("first_name")
+  lastName         String             @map("last_name")
   calls            Call[]
   orders           Order[]
   messageLogs      MessageLog[]
-  tenantId         String?      @map("tenant_id")
-  tenant           Tenant?      @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  createdBy        User?        @relation("CustomerCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  tenantId         String?            @map("tenant_id")
+  tenant           Tenant?            @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  createdBy        User?              @relation("CustomerCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  codOverrideBy    User?              @relation("CustomerCodOverrideBy", fields: [codOverrideById], references: [id], onDelete: SetNull)
 
   @@unique([phoneNumber, tenantId], map: "customers_phone_number_tenant_key")
   @@index([isActive])
@@ -351,6 +363,9 @@ model Order {
   createdById        Int?                    @map("created_by_id")
   // True when COD is off for the customer and the order needs a manual call first (F-317, F-357).
   requiresManualCall Boolean                 @default(false) @map("requires_manual_call")
+  autoConfirmSentAt  DateTime?               @map("auto_confirm_sent_at")
+  customerResponse   CustomerResponse?       @map("customer_response")
+  saidNo             Boolean                 @default(false) @map("said_no")
   createdAt          DateTime                @default(now()) @map("created_at")
   updatedAt          DateTime                @updatedAt @map("updated_at")
   deletedAt          DateTime?               @map("deleted_at")
@@ -393,6 +408,8 @@ model Order {
   deliveryAttempts   DeliveryAttempt[]
   settlementLines    PartnerSettlementLine[]
   commissionEntries  CommissionEntry[]
+  upsellLines        UpsellLine[]
+  confirmTokens      ConfirmToken[]
   messageLogs        MessageLog[]
   downloadTokens     DownloadToken[]
   tenantId           String?                 @map("tenant_id")
@@ -795,6 +812,8 @@ model SystemConfig {
   timeZone              String   @default("Africa/Accra") @map("time_zone")
   taxId                 String?  @map("tax_id")
   operatingHours        Json?    @map("operating_hours")
+  autoConfirmEnabled    Boolean  @default(false) @map("auto_confirm_enabled")
+  autoConfirmChannel    String   @default("whatsapp") @map("auto_confirm_channel")
   smsProvider           Json?    @map("sms_provider")
   emailProvider         Json?    @map("email_provider")
   whatsappProvider      Json?    @map("whatsapp_provider")
@@ -1322,13 +1341,32 @@ enum WorkflowActionType {
 
 enum CallOutcome {
   confirmed
-  rescheduled
-  no_answer
-  cancelled
-  other
-  // M1: values only. The rename of the old values and wrong_number land in M7.
   not_reachable
+  call_back_later
   declined
+  wrong_number
+  other
+}
+
+enum CustomerRiskLevel {
+  normal
+  high
+}
+
+enum CustomerResponse {
+  yes
+  no
+  change
+}
+
+enum UpsellKind {
+  package
+  addon
+}
+
+enum UpsellStatus {
+  active
+  void
 }
 
 enum DeclineReason {
@@ -2281,4 +2319,45 @@ model CommissionEntry {
   @@index([orderId])
   @@index([payoutId])
   @@map("commission_entries")
+}
+
+model UpsellLine {
+  id         Int          @id @default(autoincrement())
+  orderId    Int          @map("order_id")
+  repId      Int          @map("rep_id")
+  kind       UpsellKind
+  sourceId   Int?         @map("source_id")
+  extraValue Decimal      @map("extra_value") @db.Decimal(19, 4)
+  status     UpsellStatus @default(active)
+  createdAt  DateTime     @default(now()) @map("created_at")
+  updatedAt  DateTime     @updatedAt @map("updated_at")
+  order      Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  rep        User         @relation("UpsellLineRep", fields: [repId], references: [id])
+  tenantId   String       @map("tenant_id")
+  tenant     Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([tenantId])
+  @@index([orderId])
+  @@index([repId])
+  @@map("upsell_lines")
+}
+
+model ConfirmToken {
+  id        Int       @id @default(autoincrement())
+  orderId   Int       @map("order_id")
+  token     String    @unique
+  channel   String
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  response  String?
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  order     Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  tenantId  String    @map("tenant_id")
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([tenantId])
+  @@index([orderId])
+  @@index([token])
+  @@map("confirm_tokens")
 }
