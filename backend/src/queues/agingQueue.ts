@@ -3,8 +3,6 @@ import agingService from '../services/agingService';
 import { notifyAdminsOverdueCollections } from '../services/notificationService';
 import logger from '../utils/logger';
 import { forEachTenant } from '../utils/tenantLoop';
-import prisma from '../utils/prisma';
-import { runInTenant, withoutTenant } from '../utils/tenantContext';
 import { checkQueueWaitAlerts } from '../services/queueAlertService';
 
 const redisConfig = {
@@ -64,23 +62,16 @@ export const processNotifyOverdueCollections = async () => {
 };
 agingQueue.process('notify-overdue-collections', processNotifyOverdueCollections);
 
-// Process queue wait alerts (COD-64, M7-T05): runs every 5 minutes for each active tenant inside runInTenant
+// Queue wait alerts (COD-64, M7-T05): every 5 minutes, once per tenant inside its own tenant context
 export const processQueueWaitAlerts = async () => {
-    logger.info('Processing queue wait alerts job...');
-    const tenants = await withoutTenant('queue-wait-alerts', () =>
-        prisma.tenant.findMany({
-            where: { subscriptionStatus: 'active' },
-            select: { id: true },
-        })
-    );
-    for (const { id } of tenants) {
-        try {
-            await runInTenant(id, () => checkQueueWaitAlerts(id));
-        } catch (error: any) {
-            logger.error(`Queue wait alerts failed for tenant ${id}:`, error?.message ?? error);
-        }
+    try {
+        await forEachTenant('Queue wait alerts', async (tenantId) => {
+            await checkQueueWaitAlerts(tenantId);
+        });
+    } catch (error: any) {
+        logger.error('Queue wait alerts job failed:', error.message);
+        throw error;
     }
-    logger.info('Queue wait alerts job completed.');
 };
 agingQueue.process('check-queue-wait-alerts', processQueueWaitAlerts);
 

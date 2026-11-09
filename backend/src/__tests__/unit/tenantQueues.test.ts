@@ -95,7 +95,7 @@ describe('job processors run inside a tenant context', () => {
     expect(seen).toEqual(['tenant-a:tenant-a', 'tenant-b:tenant-b']);
   });
 
-  it('agingQueue check-queue-wait-alerts: one failing tenant logs and continues to others without throwing', async () => {
+  it('agingQueue check-queue-wait-alerts: one failing tenant does not stop the others', async () => {
     const seen: Array<string | null> = [];
     mockCheckQueueWaitAlerts.mockImplementation(async (tid: string) => {
       seen.push(tid);
@@ -103,7 +103,7 @@ describe('job processors run inside a tenant context', () => {
       return [];
     });
 
-    await expect(processQueueWaitAlerts()).resolves.not.toThrow();
+    await expect(processQueueWaitAlerts()).rejects.toThrow('1/2 tenants');
     expect(seen).toEqual(['tenant-a', 'tenant-b']);
   });
 
