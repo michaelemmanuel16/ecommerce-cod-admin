@@ -20,6 +20,8 @@ export interface OperatingHours {
   days: Partial<Record<Weekday, DayHours>>;
   firstCallTargetMinutes?: number;
   queueWaitAlertMinutes?: number;
+  defaultDaysToPay?: number;
+  lowStockCoverDays?: number;
 }
 
 const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -52,10 +54,13 @@ export function parseOperatingHours(value: unknown): OperatingHours {
     days[key as Weekday] = { open: d.open, close: d.close, enabled: d.enabled };
   }
   const out: OperatingHours = { days };
-  for (const key of ['firstCallTargetMinutes', 'queueWaitAlertMinutes'] as const) {
-    if (input[key] === undefined) continue;
-    const n = input[key];
-    if (typeof n !== 'number' || !Number.isFinite(n) || n <= 0) throw new RangeError(`operatingHours.${key} must be a positive number`);
+  for (const key of ['firstCallTargetMinutes', 'queueWaitAlertMinutes', 'defaultDaysToPay', 'lowStockCoverDays'] as const) {
+    const rawVal = input[key] ?? (key === 'lowStockCoverDays' ? input['lowStockDaysOfCover'] : undefined);
+    if (rawVal === undefined) continue;
+    const n = typeof rawVal === 'string' && rawVal.trim() !== '' ? Number(rawVal) : rawVal;
+    if (typeof n !== 'number' || !Number.isFinite(n) || (key === 'defaultDaysToPay' ? n < 0 : n <= 0)) {
+      throw new RangeError(`operatingHours.${key} must be a ${key === 'defaultDaysToPay' ? 'non-negative' : 'positive'} number`);
+    }
     out[key] = n;
   }
   const { firstCallTargetMinutes: target, queueWaitAlertMinutes: alert } = out;

@@ -112,4 +112,42 @@ describe('M7-T05: Operating hours and time-to-first-call clock unit tests', () =
       expect(workingMinutesBetween(orderAt, firstCallAt, null, ACCRA)).toBe(0);
     });
   });
+
+  describe('parseOperatingHours with defaultDaysToPay and lowStockCoverDays', () => {
+    it('parses valid defaultDaysToPay and lowStockCoverDays', () => {
+      const parsed = parseOperatingHours({
+        days: { monday: weekday },
+        defaultDaysToPay: 7,
+        lowStockCoverDays: 14,
+      });
+      expect(parsed.defaultDaysToPay).toBe(7);
+      expect(parsed.lowStockCoverDays).toBe(14);
+    });
+
+    it('supports lowStockDaysOfCover alias', () => {
+      const parsed = parseOperatingHours({
+        days: { monday: weekday },
+        lowStockDaysOfCover: 21,
+      });
+      expect(parsed.lowStockCoverDays).toBe(21);
+    });
+
+    it('rejects negative defaultDaysToPay', () => {
+      expect(() =>
+        parseOperatingHours({
+          days: { monday: weekday },
+          defaultDaysToPay: -1,
+        })
+      ).toThrow(RangeError);
+    });
+
+    it('rejects non-positive lowStockCoverDays', () => {
+      expect(() =>
+        parseOperatingHours({
+          days: { monday: weekday },
+          lowStockCoverDays: 0,
+        })
+      ).toThrow(RangeError);
+    });
+  });
 });
