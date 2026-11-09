@@ -18,6 +18,7 @@ import { upsellService } from './upsellService';
 
 import { leaderboard } from './leaderboardService';
 import * as rewardService from './rewardService';
+import { hasPermission } from './permissionService';
 import payoutService, { summarize } from './payoutService';
 import { teamReport } from './teamReportService';
 import {
@@ -55,6 +56,13 @@ export function resolveTargetRepId(actor: Requester, requestedRepId?: number): n
   return requestedRepId ?? actor.id;
 }
 
+/** Another rep's money (earnings, pay ledger) also needs payouts:view, so a tenant that removes it hides the money here too. */
+async function assertCanSeeMoneyOf(actor: Requester, targetRepId: number): Promise<void> {
+  if (targetRepId !== actor.id && !(await hasPermission(actor, 'payouts', 'view'))) {
+    throw new AppError("You cannot see another rep's earnings", 403);
+  }
+}
+
 export interface RepOrdersQuery {
   repId?: number;
   q?: string;
@@ -70,14 +78,8 @@ export async function getOrders(actor: Requester, query: RepOrdersQuery = {}) {
   const page = Math.max(1, query.page ?? 1);
   const limit = Math.min(100, Math.max(1, query.limit ?? 25));
 
-  // Orders owned, confirmed or called by the rep
-  const repCondition: Prisma.OrderWhereInput = {
-    OR: [
-      { customerRepId: targetRepId },
-      { confirmedById: targetRepId },
-      { calls: { some: { salesRepId: targetRepId } } },
-    ],
-  };
+  // The rep's own orders: the same row scope as orderScope() for a sales_rep. A reassigned order leaves the list.
+  const repCondition: Prisma.OrderWhereInput = { customerRepId: targetRepId };
 
   const and: Prisma.OrderWhereInput[] = [
     { tenantId, deletedAt: null },
@@ -381,6 +383,7 @@ export interface RepEarningsQuery {
 
 export async function getEarnings(actor: Requester, query: RepEarningsQuery = {}) {
   const targetRepId = resolveTargetRepId(actor, query.repId);
+  await assertCanSeeMoneyOf(actor, targetRepId);
   const tenantId = resolveTenantId();
 
   const [rep, settings, currency] = await Promise.all([
@@ -628,6 +631,7 @@ export interface RepPayoutsQuery {
 
 export async function getPayouts(actor: Requester, query: RepPayoutsQuery = {}) {
   const targetRepId = resolveTargetRepId(actor, query.repId);
+  await assertCanSeeMoneyOf(actor, targetRepId);
   const page = Math.max(1, query.page ?? 1);
   const limit = Math.min(100, Math.max(1, query.limit ?? 50));
 

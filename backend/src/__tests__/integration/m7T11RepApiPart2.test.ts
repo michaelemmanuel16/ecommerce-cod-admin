@@ -25,6 +25,7 @@ import { teamReport } from '../../services/teamReportService';
 import payoutService from '../../services/payoutService';
 import * as rewardService from '../../services/rewardService';
 import { getCurrency } from '../../utils/currency';
+import { clearPermissionsCache } from '../../middleware/auth';
 import { currentMonth, getStoreTimeZone, localDate, monthRange, parseMonth, shiftYmd, startOfDay } from '../../services/kpi/dates';
 import { runInTenant } from '../../utils/tenantContext';
 import { CallOutcome, CallSource } from '@prisma/client';
@@ -940,5 +941,47 @@ describe('7. Two-rep test (Rep sees own rows only)', () => {
       .get(`/api/rep/payouts?repId=${rep2Id}`)
       .set('Authorization', bearer(rep1Token));
     expect(res.status).toBe(403);
+  });
+});
+
+describe('8. Security review fixes', () => {
+  it('an order reassigned to another rep leaves My orders, even if this rep confirmed it', async () => {
+    const moved = await prismaBase.order.create({
+      data: { tenantId, customerId: customer1Id, customerRepId: rep2Id, confirmedById: rep1Id, status: 'confirmed', subtotal: 99, totalAmount: 99 },
+    });
+    const res = await request(app).get('/api/rep/orders?limit=100').set('Authorization', bearer(rep1Token));
+    expect(res.status).toBe(200);
+    expect(res.body.orders.map((o: { id: number }) => o.id)).not.toContain(moved.id);
+  });
+
+  it("a manager without payouts:view cannot see another rep's earnings or pay ledger", async () => {
+    const manager = await prismaBase.user.create({
+      data: { email: `mgr-${SUFFIX}@t11.test`, password: 'x', firstName: 'Mgr', lastName: 'NoPay', role: 'manager', tenantId },
+    });
+    const managerToken = generateAccessToken({ id: manager.id, email: manager.email, role: 'manager', tenantId });
+    // The tenant's manager position role holds the grid the checks use. Take payouts:view out of it for this test.
+    const managerRoles = await prismaBase.role.findMany({ where: { tenantId, presetRole: 'manager' } });
+    for (const r of managerRoles) {
+      const grid = { ...((r.permissions as Record<string, string[]>) ?? {}) };
+      delete grid.payouts;
+      await prismaBase.role.update({ where: { id: r.id }, data: { permissions: grid } });
+    }
+    expect(managerRoles.length).toBeGreaterThan(0);
+    clearPermissionsCache();
+    try {
+      const earnings = await request(app).get(`/api/rep/earnings?repId=${rep1Id}`).set('Authorization', bearer(managerToken));
+      expect(earnings.status).toBe(403);
+      const payouts = await request(app).get(`/api/rep/payouts?repId=${rep1Id}`).set('Authorization', bearer(managerToken));
+      expect(payouts.status).toBe(403);
+      const own = await request(app).get('/api/rep/payouts').set('Authorization', bearer(managerToken));
+      expect(own.status).toBe(200);
+      const admin = await request(app).get(`/api/rep/earnings?repId=${rep1Id}`).set('Authorization', bearer(adminToken));
+      expect(admin.status).toBe(200);
+    } finally {
+      for (const r of managerRoles) {
+        await prismaBase.role.update({ where: { id: r.id }, data: { permissions: r.permissions ?? undefined } });
+      }
+      clearPermissionsCache();
+    }
   });
 });
