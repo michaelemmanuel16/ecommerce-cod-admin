@@ -34,7 +34,7 @@ export const attainmentQuerySchema = z.object({
 
 /** M6-T11: `GET /api/leaderboard`. `period`: today, week, month (default), year or a month like 2026-10. */
 export const leaderboardQuerySchema = z.object({
-  role: z.enum(['call_rep', 'delivery']),
+  role: z.enum(['call_rep', 'delivery', 'upsell']),
   period: z.union([z.enum(['today', 'week', 'month', 'year']), z.string().regex(MONTH_RE, 'Period must be today, week, month, year or a month like 2026-10')]).optional(),
 });
 

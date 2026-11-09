@@ -284,6 +284,7 @@ app.use('/api/dashboard', apiLimiter, dashboardRoutes);
 app.use('/api/reports', apiLimiter, reportRoutes);
 app.use('/api/rep', apiLimiter, repRoutes);
 app.use('/api/notifications', apiLimiter, notificationRoutes);
+app.use('/api/inbox', apiLimiter, notificationRoutes);
 app.use('/api/upload', apiLimiter, uploadRoutes);
 app.use('/api/checkout-forms', apiLimiter, checkoutFormRoutes);
 app.use('/api/calls', apiLimiter, callRoutes);

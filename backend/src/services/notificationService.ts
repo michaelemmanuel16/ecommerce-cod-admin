@@ -1,3 +1,4 @@
+import { OrderStatus } from '@prisma/client';
 import prisma from '../utils/prisma';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitNotification } from '../sockets';
@@ -35,18 +36,102 @@ export async function createNotification(
 }
 
 export async function notifyOrderAssigned(
-  userId: string,
-  orderId: string,
+  userId: string | number,
+  orderId: string | number,
   orderNumber: string,
   role: string
 ) {
   return createNotification(
-    userId,
-    'order',
+    String(userId),
+    'order_assigned',
     'New Order Assigned',
     `You have been assigned to order ${orderNumber} as ${role}`,
-    { orderId, orderNumber, role }
+    { orderId: Number(orderId), orderNumber: String(orderNumber), role }
   );
+}
+
+export async function notifyLateCallback(
+  userId: string | number,
+  orderId: string | number,
+  orderNumber: string,
+  callbackAt: Date | string,
+  customerName?: string
+) {
+  const cbStr = typeof callbackAt === 'string' ? callbackAt : callbackAt.toISOString();
+  return createNotification(
+    String(userId),
+    'late_callback',
+    'Late Call-Back',
+    `Call-back time passed for order ${orderNumber}. The order is still open.`,
+    {
+      orderId: Number(orderId),
+      orderNumber: String(orderNumber),
+      callbackAt: cbStr,
+      customerName,
+    }
+  );
+}
+
+/** Check for late callbacks (callbackAt in past, order still open) and notify assigned reps. */
+export async function checkAndNotifyLateCallbacks(tenantId?: string): Promise<number> {
+  const resolvedTenant = resolveTenantId(tenantId);
+  const now = new Date();
+  const CLOSED_STATUSES: OrderStatus[] = ['delivered', 'digital_delivered', 'returned', 'cancelled'];
+
+  const lateCalls = await prisma.call.findMany({
+    where: {
+      tenantId: resolvedTenant,
+      outcome: 'call_back_later',
+      callbackAt: { lt: now },
+      orderId: { not: null },
+      order: {
+        deletedAt: null,
+        status: { notIn: CLOSED_STATUSES },
+      },
+    },
+    include: {
+      order: {
+        select: {
+          id: true,
+          customerRepId: true,
+          status: true,
+        },
+      },
+      customer: {
+        select: {
+          firstName: true,
+          lastName: true,
+        },
+      },
+    },
+  });
+
+  let count = 0;
+  for (const call of lateCalls) {
+    if (!call.orderId || !call.order) continue;
+    const targetUserId = call.order.customerRepId ?? call.salesRepId;
+    if (!targetUserId) continue;
+
+    const existing = await prisma.notification.findFirst({
+      where: {
+        userId: targetUserId,
+        type: 'late_callback',
+        isRead: false,
+        data: { path: ['orderId'], equals: call.orderId },
+      },
+    });
+    if (!existing) {
+      await notifyLateCallback(
+        targetUserId,
+        call.order.id,
+        String(call.order.id),
+        call.callbackAt!,
+        call.customer ? `${call.customer.firstName} ${call.customer.lastName}`.trim() : undefined
+      );
+      count++;
+    }
+  }
+  return count;
 }
 
 /** Admins of the current tenant only (the scoped query adds tenantId); not the system user. */

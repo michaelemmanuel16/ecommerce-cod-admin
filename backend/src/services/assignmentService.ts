@@ -5,7 +5,7 @@ import { AppError } from '../middleware/errorHandler';
 import { resolveTenantId } from '../utils/tenantContext';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderAssigned, emitOrderUpdated } from '../sockets';
-import { createNotification, notifyAdminsNoAssigneeAvailable } from './notificationService';
+import { notifyOrderAssigned, notifyAdminsNoAssigneeAvailable } from './notificationService';
 import { pickWithCursor } from './assignmentCursor';
 
 /**
@@ -383,10 +383,10 @@ export class AssignmentService {
       }
     });
 
-    // Inbox notification for the new holder (F-314); nobody is told about their own assignment.
+    // Inbox notification for the new holder (F-314, M7-T12); nobody is told about their own assignment.
     if (actor.userId !== userId) {
       try {
-        await createNotification(String(userId), 'order', 'Order assigned to you', `Order #${orderId} was assigned to you by ${actorName}`, { orderId, role });
+        await notifyOrderAssigned(userId, orderId, String(orderId), kind.label);
       } catch (error) {
         logger.warn('Assignment notification failed', { orderId, userId, error: (error as Error).message });
       }

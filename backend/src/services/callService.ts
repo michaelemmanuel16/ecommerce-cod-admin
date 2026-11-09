@@ -504,11 +504,32 @@ export class CallService {
         const totalDuration = callsWithDuration.reduce((sum, c) => sum + (c.duration || 0), 0);
         const avgDuration = callsWithDuration.length > 0 ? totalDuration / callsWithDuration.length : 0;
 
-        // Build outcome breakdown
-        const outcomes = outcomeBreakdown.reduce((acc, item) => {
-          acc[item.outcome] = item._count;
-          return acc;
-        }, {} as Record<string, number>);
+        // Build outcome breakdown: five outcomes plus "other" for legacy rows (COD-65)
+        const standardOutcomes = new Set([
+          'confirmed',
+          'not_reachable',
+          'call_back_later',
+          'declined',
+          'wrong_number',
+        ]);
+        let otherCount = 0;
+        const normalizedOutcomes: Record<string, number> = {
+          confirmed: 0,
+          not_reachable: 0,
+          call_back_later: 0,
+          declined: 0,
+          wrong_number: 0,
+          other: 0,
+        };
+        for (const item of outcomeBreakdown) {
+          const outcomeKey = item.outcome as string;
+          if (standardOutcomes.has(outcomeKey)) {
+            normalizedOutcomes[outcomeKey] = item._count;
+          } else {
+            otherCount += item._count;
+          }
+        }
+        normalizedOutcomes.other = otherCount;
 
         // Get timeline (calls per day for last 30 days)
         const timeline = await this.getCallTimeline(rep.id, 30);
@@ -523,12 +544,12 @@ export class CallService {
           avgCallsPerDay: Math.round(avgCallsPerDay * 10) / 10,
           avgDuration: Math.round(avgDuration),
           outcomeBreakdown: {
-            confirmed: outcomes.confirmed || 0,
-            not_reachable: outcomes.not_reachable || 0,
-            call_back_later: outcomes.call_back_later || 0,
-            declined: outcomes.declined || 0,
-            wrong_number: outcomes.wrong_number || 0,
-            other: outcomes.other || 0
+            confirmed: normalizedOutcomes.confirmed,
+            not_reachable: normalizedOutcomes.not_reachable,
+            call_back_later: normalizedOutcomes.call_back_later,
+            declined: normalizedOutcomes.declined,
+            wrong_number: normalizedOutcomes.wrong_number,
+            other: normalizedOutcomes.other,
           },
           timeline
         };
