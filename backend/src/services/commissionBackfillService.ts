@@ -1,21 +1,22 @@
+import { CommissionKind } from '@prisma/client';
 import prisma from '../utils/prisma';
 import { runInTenant } from '../utils/tenantContext';
 import { GL_ACCOUNTS } from '../config/glAccounts';
 import { getSystemUserId } from './systemUserService';
-import { postEntry } from './commissionService';
+import { BASE_COMMISSION_AMOUNT, UPSELL_COMMISSION_RATE, postEntry } from './commissionService';
+import logger from '../utils/logger';
 import * as Money from '../utils/money';
 
 /**
- * Backfill of commission entries (F-914, M5-T18). Every delivered order with `commissionPaid = false` and a
- * confirming rep who has a rate becomes one `earned` entry of kind `base`.
+ * Backfill of commission entries (F-914, M5-T18, M7-T02).
+ * Every delivered order with `commissionPaid = false` that was confirmed by a call rep becomes:
+ * - One `earned` entry of kind `base` (GH₵8 or journal amount if previously booked).
+ * - One `earned` entry of kind `upsell` (10% of active UpsellLine extra value) if upsell lines exist.
  *
- * Amount and ledger: the delivery journal entry of an old order already booked DR 5050, CR 2020 for the rep's
- * commission. When it did, the entry takes that amount and points at that journal entry, so nothing posts twice
- * and 2020 stays right. When the order has no such line (the rate was 0 then), the entry takes the rep's current
- * rate and posts DR 5050, CR 2020 itself, dated the delivery date.
+ * Auto-confirmed (customer YES), self-service, no-rep, and AI-agent orders get no entries.
  *
- * Idempotent: an order with a live `base` entry is never read again. Runs inside the tenant's context.
- * `dryRun` counts and writes nothing.
+ * Idempotent: an order with live entries is not duplicated. Runs inside the tenant's context.
+ * Dry run prints counts and total first; apply is separate.
  */
 
 const BATCH = 200;
@@ -23,6 +24,7 @@ const BATCH = 200;
 export interface BackfillRow {
   orderId: number;
   repId: number;
+  kind?: CommissionKind;
   amount: Money.Money;
   earnedAt: Date;
   /** The order's delivery journal entry when it already booked the commission; null means the entry posts its own. */
@@ -35,6 +37,8 @@ export interface BackfillPlan {
   total: Money.Money;
   /** Entries that point at the delivery journal entry (no new posting); the rest of `rows` post their own. */
   adopted: number;
+  baseCount: number;
+  upsellCount: number;
 }
 
 /** Orders that need an entry, with the amount each would get. Reads only. */
@@ -49,17 +53,32 @@ export async function planCommissionBackfill(tenantId: string): Promise<Backfill
           deletedAt: null,
           status: 'delivered',
           commissionPaid: false,
-          customerRepId: { not: null },
-          commissionEntries: { none: { kind: 'base', status: { not: 'void' } } },
         },
         orderBy: { id: 'asc' },
         take: BATCH,
         select: {
           id: true,
           customerRepId: true,
+          confirmedById: true,
+          customerResponse: true,
           deliveryDate: true,
           updatedAt: true,
-          customerRep: { select: { commissionAmount: true, kind: true } },
+          customerRep: { select: { id: true, commissionAmount: true, kind: true } },
+          confirmedBy: { select: { id: true, commissionAmount: true, kind: true } },
+          calls: {
+            where: { outcome: 'confirmed' },
+            orderBy: { id: 'desc' },
+            take: 1,
+            select: { salesRep: { select: { id: true, commissionAmount: true, kind: true } } },
+          },
+          upsellLines: {
+            where: { status: 'active' },
+            select: { extraValue: true },
+          },
+          commissionEntries: {
+            where: { status: { not: 'void' } },
+            select: { kind: true },
+          },
         },
       });
       if (orders.length === 0) break;
@@ -83,22 +102,60 @@ export async function planCommissionBackfill(tenantId: string): Promise<Backfill
       }
 
       for (const order of orders) {
-        const rep = order.customerRep;
+        // Skip auto-confirmed orders (customer YES)
+        if (order.customerResponse === 'yes') continue;
+
+        // Rep who confirmed the order: confirming call takes priority (rule P6), then confirmedBy, then customerRep
+        const rep = order.calls[0]?.salesRep ?? order.confirmedBy ?? order.customerRep;
         if (!rep || rep.kind !== 'person') continue; // AI agents earn nothing (F-914)
-        const journal = booked.get(order.id);
-        const amount = journal ? journal.amount : Money.orZero(rep.commissionAmount);
-        if (!amount.gt(0)) continue;
-        rows.push({
-          orderId: order.id,
-          repId: order.customerRepId as number,
-          amount,
-          earnedAt: order.deliveryDate ?? order.updatedAt,
-          adoptJournalEntryId: journal ? journal.id : null,
-        });
+
+        const earnedAt = order.deliveryDate ?? order.updatedAt;
+
+        // 1. Base entry
+        const hasBase = order.commissionEntries.some((e) => e.kind === 'base');
+        if (!hasBase) {
+          const journal = booked.get(order.id);
+          const repAmount = rep.commissionAmount != null ? Money.parse(rep.commissionAmount) : BASE_COMMISSION_AMOUNT;
+          const amount = journal ? journal.amount : repAmount;
+          if (amount.gt(0)) {
+            rows.push({
+              orderId: order.id,
+              repId: rep.id,
+              kind: 'base',
+              amount,
+              earnedAt,
+              adoptJournalEntryId: journal ? journal.id : null,
+            });
+          }
+        }
+
+        // 2. Upsell entry (10% of active UpsellLine extra value)
+        const hasUpsell = order.commissionEntries.some((e) => e.kind === 'upsell');
+        if (!hasUpsell && order.upsellLines.length > 0) {
+          const extraValue = Money.sum(order.upsellLines.map((l) => l.extraValue));
+          if (extraValue.gt(0)) {
+            const upsellAmount = Money.roundHalfUp(Money.mul(extraValue, UPSELL_COMMISSION_RATE), 2);
+            if (upsellAmount.gt(0)) {
+              rows.push({
+                orderId: order.id,
+                repId: rep.id,
+                kind: 'upsell',
+                amount: upsellAmount,
+                earnedAt,
+                adoptJournalEntryId: null,
+              });
+            }
+          }
+        }
       }
     }
     const adopted = rows.filter((r) => r.adoptJournalEntryId !== null).length;
-    return { rows, total: Money.sum(rows.map((r) => r.amount)), adopted };
+    const baseCount = rows.filter((r) => (r.kind ?? 'base') === 'base').length;
+    const upsellCount = rows.filter((r) => r.kind === 'upsell').length;
+    const total = Money.sum(rows.map((r) => r.amount));
+
+    logger.info(`Commission backfill plan: ${rows.length} rows (${baseCount} base, ${upsellCount} upsell), total: ${total.toString()}, adopted: ${adopted}`);
+    return { rows, total, adopted, baseCount, upsellCount };
   });
 }
 
@@ -111,16 +168,22 @@ export async function applyCommissionBackfill(tenantId: string, plan: BackfillPl
     for (let i = 0; i < plan.rows.length; i += BATCH) {
       const chunk = plan.rows.slice(i, i + BATCH);
       await prisma.$transaction(async (tx) => {
-        // A repeat or a concurrent run: orders that already have a live base entry are skipped
+        // A repeat or a concurrent run: orders that already have an entry of this kind are skipped
         const have = await tx.commissionEntry.findMany({
-          where: { orderId: { in: chunk.map((r) => r.orderId) }, kind: 'base', status: { not: 'void' } },
-          select: { orderId: true },
+          where: { orderId: { in: chunk.map((r) => r.orderId) }, status: { not: 'void' } },
+          select: { orderId: true, kind: true },
         });
-        const skip = new Set(have.map((e) => e.orderId));
-        const fresh = chunk.filter((r) => !skip.has(r.orderId));
+        const skip = new Set(have.map((e) => `${e.orderId}:${e.kind}`));
+        const fresh = chunk.filter((r) => !skip.has(`${r.orderId}:${r.kind ?? 'base'}`));
         const entry = (r: BackfillRow) => ({
-          tenantId, orderId: r.orderId, userId: r.repId, kind: 'base' as const, status: 'earned' as const,
-          amount: r.amount, earnedAt: r.earnedAt, note: 'Backfilled from the order (M5)',
+          tenantId,
+          orderId: r.orderId,
+          userId: r.repId,
+          kind: r.kind ?? ('base' as const),
+          status: 'earned' as const,
+          amount: r.amount,
+          earnedAt: r.earnedAt,
+          note: r.kind === 'upsell' ? 'Backfilled upsell commission (M7)' : 'Backfilled from the order (M5)',
         });
 
         // Entries that keep the delivery journal entry need no posting: one insert

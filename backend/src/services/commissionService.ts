@@ -1,4 +1,4 @@
-import { CommissionEntry, JournalSourceType } from '@prisma/client';
+import { CommissionEntry, JournalSourceType, Prisma } from '@prisma/client';
 import { AppError } from '../middleware/errorHandler';
 import { TransactionClient } from '../utils/prisma';
 import { resolveTenantId } from '../utils/tenantContext';
@@ -7,13 +7,123 @@ import { GLAutomationService } from './glAutomationService';
 import * as Money from '../utils/money';
 
 /**
- * Commission posting (F-914, M5-T18). A `CommissionEntry` is the pay ledger of a rep. When it is earned it posts
- * DR 5050 Sales rep commission, CR 2020 Commissions payable. A returned order voids its open entries and reverses
- * the posting. The payout (payoutService) later debits 2020 and marks the entries paid.
- *
- * Creating entries for new orders is M7; this file only posts, reverses and (commissionBackfillService) backfills.
- * Everything runs in the caller's transaction and is idempotent.
+ * Commission posting (F-914, M5-T18, M7-T02). A `CommissionEntry` is the pay ledger of a rep.
+ * When an order is confirmed by a call rep: base GH₵8 pending, upsell 10% pending (P6).
+ * On delivery: pending entries flip to earned and post DR 5050 Sales rep commission, CR 2020 Commissions payable.
+ * On return or cancel: void open entries and reverse GL accruals.
  */
+
+export const BASE_COMMISSION_AMOUNT = Money.fromNumber(8);
+export const UPSELL_COMMISSION_RATE = new Prisma.Decimal('0.10');
+
+/**
+ * Creates pending commission entries (base GH₵8 and upsell 10%) on order confirmation by a rep call (F-769, P6).
+ * Only human reps (kind === 'person') qualify; auto-confirmed, self-service, no-rep, and AI-agent orders get no entries.
+ * Idempotent: if live base/upsell entries already exist for this order, they are not duplicated.
+ */
+export async function createCommissionEntriesOnConfirm(
+  tx: TransactionClient,
+  orderId: number,
+  confirmingRepId: number,
+): Promise<{ baseEntry: CommissionEntry | null; upsellEntry: CommissionEntry | null }> {
+  const rep = await tx.user.findUnique({
+    where: { id: confirmingRepId },
+    select: { id: true, kind: true, role: true, tenantId: true },
+  });
+  // Auto-confirmed, self-service, no-rep and AI-agent orders: no entries (owner decision: no entry for AI agents)
+  if (!rep || rep.kind !== 'person') {
+    return { baseEntry: null, upsellEntry: null };
+  }
+
+  const order = await tx.order.findUnique({
+    where: { id: orderId },
+    select: { id: true, tenantId: true },
+  });
+  if (!order) throw new AppError('Order not found', 404);
+  const tenantId = resolveTenantId(order.tenantId);
+
+  // 1. Base entry: GH₵8 pending
+  let baseEntry = await tx.commissionEntry.findFirst({
+    where: { orderId, kind: 'base', status: { not: 'void' } },
+  });
+  if (!baseEntry) {
+    baseEntry = await tx.commissionEntry.create({
+      data: {
+        tenantId,
+        orderId,
+        userId: confirmingRepId,
+        kind: 'base',
+        status: 'pending',
+        amount: BASE_COMMISSION_AMOUNT,
+        note: 'Base commission on call confirmation (M7)',
+      },
+    });
+  }
+
+  // 2. Upsell entry: 10% of active UpsellLine extra value pending
+  const upsellLines = await tx.upsellLine.findMany({
+    where: { orderId, status: 'active' },
+  });
+  const extraValueSum = Money.sum(upsellLines.map((l) => l.extraValue));
+  let upsellEntry = await tx.commissionEntry.findFirst({
+    where: { orderId, kind: 'upsell', status: { not: 'void' } },
+  });
+  if (extraValueSum.gt(0)) {
+    const upsellAmount = Money.roundHalfUp(Money.mul(extraValueSum, UPSELL_COMMISSION_RATE), 2);
+    if (upsellAmount.gt(0)) {
+      if (!upsellEntry) {
+        upsellEntry = await tx.commissionEntry.create({
+          data: {
+            tenantId,
+            orderId,
+            userId: confirmingRepId,
+            kind: 'upsell',
+            status: 'pending',
+            amount: upsellAmount,
+            note: 'Upsell commission on call confirmation (M7)',
+          },
+        });
+      } else if (upsellEntry.status === 'pending' && !Money.parse(upsellEntry.amount).equals(upsellAmount)) {
+        upsellEntry = await tx.commissionEntry.update({
+          where: { id: upsellEntry.id },
+          data: { amount: upsellAmount },
+        });
+      }
+    }
+  }
+
+  return { baseEntry, upsellEntry };
+}
+
+/**
+ * Delivery flips entries to earned exactly once (idempotent, re-delivery event does nothing).
+ * Posts earned entries to the GL ledger (DR 5050 / CR 2020) via postEntry.
+ */
+export async function earnEntriesForOrder(
+  tx: TransactionClient,
+  orderId: number,
+  actorUserId: number,
+  earnedAt?: Date,
+): Promise<{ earned: number; posted: number }> {
+  const pending = await tx.$queryRaw<{ id: number }[]>`
+    SELECT id FROM commission_entries
+    WHERE order_id = ${orderId} AND tenant_id = ${resolveTenantId()} AND status = 'pending'
+    ORDER BY id FOR UPDATE`;
+  if (pending.length === 0) return { earned: 0, posted: 0 };
+
+  const effectiveDate = earnedAt ?? new Date();
+  let postedCount = 0;
+  for (const { id } of pending) {
+    await tx.commissionEntry.update({
+      where: { id },
+      data: { status: 'earned', earnedAt: effectiveDate },
+    });
+    const res = await postEntry(tx, id, actorUserId);
+    if (res.posted) postedCount++;
+  }
+  logger.info(`Earned and posted ${pending.length} commission entries for order ${orderId}`);
+  return { earned: pending.length, posted: postedCount };
+}
 
 /** Lock one entry row for the rest of the transaction, so two callers on the same entry take turns. */
 export async function lockEntry(tx: TransactionClient, entryId: number): Promise<CommissionEntry | null> {
