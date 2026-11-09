@@ -53,7 +53,7 @@ describe('CallService', () => {
     const mockOrder = {
       id: 100,
       customerId: 1, // Must match validCallData.customerId
-      status: 'confirmed'
+      status: 'pending_confirmation'
     };
 
     const mockCreatedCall = {

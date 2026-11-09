@@ -255,11 +255,13 @@ export const resetPasswordValidation: ValidationChain[] = [
 export const createCallValidation: ValidationChain[] = [
   body('customerId').isInt().withMessage('Customer ID is required'),
   body('orderId').optional().isInt(),
-  body('outcome').isIn(['confirmed', 'rescheduled', 'no_answer', 'cancelled', 'other']).withMessage('Invalid call outcome'),
+  body('outcome').isIn(['confirmed', 'not_reachable', 'call_back_later', 'call_back', 'declined', 'wrong_number', 'other', 'rescheduled', 'no_answer', 'cancelled']).withMessage('Invalid call outcome'),
   body('duration').optional().isInt({ min: 0 }).withMessage('Duration must be a positive number'),
   body('notes').optional().isString().isLength({ max: 500 }).withMessage('Notes must be 500 characters or less'),
   body('startedAt').optional().isISO8601().withMessage('startedAt must be an ISO date'),
-  body('source').optional().isIn(['manual', 'auto_confirm', 'tap_to_call']).withMessage('Invalid call source')
+  body('source').optional().isIn(['manual', 'auto_confirm', 'tap_to_call']).withMessage('Invalid call source'),
+  body('declineReason').optional().isIn(['price_too_high', 'prank_or_mistake', 'changed_mind', 'bought_elsewhere', 'wrong_number', 'other']).withMessage('Invalid decline reason'),
+  body('callbackAt').optional().isISO8601().withMessage('callbackAt must be an ISO date')
 ];
 
 export const createAccountValidation: ValidationChain[] = [

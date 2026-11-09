@@ -102,7 +102,7 @@ export async function createCommissionEntriesOnConfirm(
 export async function earnEntriesForOrder(
   tx: TransactionClient,
   orderId: number,
-  actorUserId: number,
+  actorUserIdResolver?: number | (() => Promise<number>),
   earnedAt?: Date,
 ): Promise<{ earned: number; posted: number }> {
   const pending = await tx.$queryRaw<{ id: number }[]>`
@@ -110,6 +110,10 @@ export async function earnEntriesForOrder(
     WHERE order_id = ${orderId} AND tenant_id = ${resolveTenantId()} AND status = 'pending'
     ORDER BY id FOR UPDATE`;
   if (pending.length === 0) return { earned: 0, posted: 0 };
+
+  const actorUserId = typeof actorUserIdResolver === 'function'
+    ? await actorUserIdResolver()
+    : (actorUserIdResolver ?? 0);
 
   const effectiveDate = earnedAt ?? new Date();
   let postedCount = 0;

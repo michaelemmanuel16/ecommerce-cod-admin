@@ -11,6 +11,7 @@ const tx: any = {
   orderHistory: { create: jest.fn() },
   auditLog: { create: jest.fn() },
   agentCollection: { findFirst: jest.fn() },
+  upsellLine: { updateMany: jest.fn() },
 };
 
 jest.mock('../../utils/prisma', () => ({
@@ -24,7 +25,11 @@ jest.mock('../../services/orderSideEffects', () => ({
 }));
 jest.mock('../../services/stockService', () => ({ fulfilOrder: jest.fn(async () => undefined), reverseOrder: jest.fn(async () => undefined) }));
 // Commission entries void with the order (m5CommissionPosting.test.ts); here only the call is checked
-jest.mock('../../services/commissionService', () => ({ voidOpenEntriesForOrder: jest.fn(async () => 0) }));
+jest.mock('../../services/commissionService', () => ({
+  voidOpenEntriesForOrder: jest.fn(async () => 0),
+  earnEntriesForOrder: jest.fn(async () => []),
+  createCommissionEntriesOnConfirm: jest.fn(async () => []),
+}));
 jest.mock('../../services/permissionService', () => ({ __esModule: true, hasPermission: jest.fn() }));
 // The attempt row has its own integration test (deliveryProofAttempts.test.ts); here only the call is checked
 jest.mock('../../services/deliveryAttemptHook', () => ({ recordDeliveryAttempt: jest.fn(async () => undefined) }));

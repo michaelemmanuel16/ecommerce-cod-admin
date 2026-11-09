@@ -1,10 +1,11 @@
 import prisma from '../utils/prisma';
 import { resolveTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
-import { CallOutcome, CallSource, Prisma } from '@prisma/client';
+import { CallOutcome, CallSource, DeclineReason, OrderStatus, Prisma } from '@prisma/client';
 import logger from '../utils/logger';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitCallLogged } from '../sockets/index';
+import { transitionOrder, TransitionActor } from './orderStateMachine';
 
 interface CreateCallData {
   customerId: number;
@@ -15,6 +16,8 @@ interface CreateCallData {
   salesRepId: number;
   startedAt?: Date;
   source?: CallSource;
+  declineReason?: DeclineReason;
+  callbackAt?: Date;
 }
 
 interface CallFilters {
@@ -49,11 +52,11 @@ export class CallService {
     }
 
     // Validate order exists if provided
-    let order: { createdAt: Date; customerId: number } | null = null;
+    let order: { id: number; createdAt: Date; customerId: number; status: OrderStatus; customerRepId: number | null; tenantId: string | null } | null = null;
     if (data.orderId) {
       order = await prisma.order.findUnique({
         where: { id: data.orderId }
-      });
+      }) as any;
 
       if (!order) {
         throw new AppError('Order not found', 404);
@@ -80,6 +83,45 @@ export class CallService {
       throw new AppError('User does not have permission to log calls', 403);
     }
 
+    // M7-T03: Rep logging a call on another rep's order -> 403
+    if (order && salesRep.role === 'sales_rep') {
+      if (order.customerRepId != null && order.customerRepId !== data.salesRepId) {
+        throw new AppError("You cannot log a call on another rep's order", 403, 'FORBIDDEN');
+      }
+    }
+
+    // Normalize outcome alias (call_back -> call_back_later)
+    let outcome = data.outcome;
+    if ((outcome as string) === 'call_back') {
+      outcome = CallOutcome.call_back_later;
+    }
+
+    // M7-T03 Outcome validations:
+    // 1. Confirm on already-confirmed order -> 409
+    if (outcome === CallOutcome.confirmed && order) {
+      if (order.status === 'confirmed') {
+        throw new AppError('Order is already confirmed', 409, 'ALREADY_CONFIRMED');
+      }
+    }
+
+    // 2. Declined needs a reason
+    if (outcome === CallOutcome.declined) {
+      if (!data.declineReason) {
+        throw new AppError('Decline reason is required', 400, 'DECLINE_REASON_REQUIRED');
+      }
+    }
+
+    // 3. Call back in the past -> 400
+    if (outcome === CallOutcome.call_back_later) {
+      if (!data.callbackAt) {
+        throw new AppError('Call back time is required', 400, 'CALLBACK_TIME_REQUIRED');
+      }
+      const cbTime = new Date(data.callbackAt).getTime();
+      if (isNaN(cbTime) || cbTime < Date.now() - 60_000) {
+        throw new AppError('Call back time cannot be in the past', 400, 'INVALID_CALLBACK_TIME');
+      }
+    }
+
     // A client-sent start time may not be in the future or before the order existed:
     // it feeds firstContactAt and so the time-to-first-call KPI.
     const now = new Date();
@@ -87,17 +129,20 @@ export class CallService {
     if (order && startedAt < order.createdAt) startedAt = order.createdAt;
 
     // Create call log
+    const declineReason = outcome === CallOutcome.wrong_number ? ('wrong_number' as DeclineReason) : data.declineReason;
     const call = await prisma.call.create({
       data: {
         tenantId: resolveTenantId(customer.tenantId),
         customerId: data.customerId,
         orderId: data.orderId,
         salesRepId: data.salesRepId,
-        outcome: data.outcome,
+        outcome,
         duration: data.duration,
         notes: data.notes,
         startedAt,
-        source: data.source ?? CallSource.manual
+        source: data.source ?? CallSource.manual,
+        declineReason,
+        callbackAt: data.callbackAt ? new Date(data.callbackAt) : null,
       },
       include: {
         customer: {
@@ -124,14 +169,51 @@ export class CallService {
       }
     });
 
-    // First contact: every call has a rep (same rule as backfill-order-timestamps.ts).
-    // updateMany with firstContactAt: null is race-safe and never overwrites.
-    if (data.orderId) {
+    // M7-T03: Set firstContactAt on the first rep call attempt only; auto_confirm calls never set it.
+    const isAutoConfirm = data.source === CallSource.auto_confirm || (data.source as string) === 'auto_confirm';
+    if (!isAutoConfirm && data.orderId) {
       await prisma.order.updateMany({
         where: { id: data.orderId, firstContactAt: null },
         data: { firstContactAt: startedAt }
       });
     }
+
+    // M7-T03: Order status transitions and side effects
+    if (order && data.orderId) {
+      const actor: TransitionActor = { kind: 'user', userId: data.salesRepId, role: salesRep.role as any };
+      if (outcome === CallOutcome.confirmed) {
+        await transitionOrder(data.orderId, 'confirmed', actor);
+      } else if (outcome === CallOutcome.declined) {
+        await transitionOrder(data.orderId, 'cancelled', actor, { declineReason: data.declineReason });
+      } else if (outcome === CallOutcome.wrong_number) {
+        await transitionOrder(data.orderId, 'cancelled', actor, { declineReason: 'wrong_number' as any });
+        await prisma.customer.update({
+          where: { id: data.customerId },
+          data: { wrongNumber: true },
+        });
+      }
+    }
+
+    // M7-T03: Next queue order id in the rep's queue
+    let nextOrderId: number | null = null;
+    if (data.orderId) {
+      const nextOrder = await prisma.order.findFirst({
+        where: {
+          customerRepId: data.salesRepId,
+          status: 'pending_confirmation',
+          id: { not: data.orderId },
+        },
+        orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
+        select: { id: true },
+      });
+      nextOrderId = nextOrder?.id ?? null;
+    }
+
+    Object.defineProperty(call, 'nextOrderId', {
+      value: nextOrderId,
+      enumerable: false,
+      writable: true,
+    });
 
     logger.info('Call logged', {
       callId: call.id,
