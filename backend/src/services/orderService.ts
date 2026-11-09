@@ -415,9 +415,6 @@ export class OrderService {
         throw new AppError('Customer not found', 404);
       }
     } else if (data.customerPhone) {
-      if (/[a-z]/i.test(data.customerPhone)) {
-        throw new AppError('Phone number can only have digits, spaces, + and dashes', 400);
-      }
       // Find customer by phone or create new one. Unparseable input is stored as typed (orders never fail on it).
       const customerPhone = normalizePhoneForStorage(data.customerPhone);
       const alternatePhone = normalizePhoneForStorage(data.alternatePhone) || undefined;
@@ -471,15 +468,8 @@ export class OrderService {
     // Call rep and delivery agent (F-317). A rep's own order is theirs; the assign fields need `orders:assign`.
     let customerRepId = data.customerRepId;
     let deliveryAgentId = data.deliveryAgentId;
-    let isRep = data.requester?.role === 'sales_rep';
-    if (!isRep && data.createdById && !data.requester) {
-      const creator = await prisma.user.findUnique({ where: { id: data.createdById }, select: { role: true } });
-      if (creator?.role === 'sales_rep') {
-        isRep = true;
-      }
-    }
-    if (isRep) {
-      customerRepId = data.requester ? data.requester.id : data.createdById;
+    if (data.requester?.role === 'sales_rep') {
+      customerRepId = data.requester.id;
       if (deliveryAgentId) throw new AppError('You cannot assign a delivery agent.', 403, 'FORBIDDEN');
     } else if ((customerRepId || deliveryAgentId) && data.requester && !(await hasPermission(data.requester, 'orders', 'assign'))) {
       throw new AppError('You do not have permission to assign this order.', 403, 'FORBIDDEN');

@@ -67,9 +67,13 @@ export const customersService = {
     };
   },
 
-  async createCustomer(customer: any): Promise<Customer> {
+  async createCustomer(customer: any): Promise<Customer & { duplicate?: boolean }> {
     const response = await apiClient.post('/api/customers', customer);
-    return response.data.customer || response.data;
+    const data = response.data.customer || response.data;
+    if (response.data?.duplicate || (data as any)?.duplicate) {
+      data.duplicate = true;
+    }
+    return data;
   },
 
   async updateCustomer(id: number, customer: any): Promise<Customer> {

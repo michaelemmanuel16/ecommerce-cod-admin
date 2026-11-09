@@ -313,18 +313,18 @@ describe('create and edit (F-355)', () => {
     expect(owner.body.customer).toMatchObject({ id: ids.archived, isActive: true });
   });
 
-  it('duplicate phone on create returns existing customer with duplicate: true; on edit duplicate is 409', async () => {
-    // Abena duplicate phone returns existing customer with duplicate: true
+  it('the 409 carries the customer id only when the requester can open that customer', async () => {
+    // Abena is outside rep1's scope: name in the message, no id (409)
     const out = await request(app).post('/api/customers').set(bearer(tokens.rep1)).send(body(6));
-    expect(out.status).toBe(200);
-    expect(out.body.duplicate).toBe(true);
-    expect(out.body.customer.id).toBe(ids.abena);
-    // Kofi is rep1's own customer: returns existing customer with duplicate: true
+    expect(out.status).toBe(409);
+    expect(out.body.message).toBe('This number belongs to Abena Owusu');
+    expect(out.body.customerId).toBeUndefined();
+    // Kofi is rep1's own customer: 200 duplicate with record
     const inside = await request(app).post('/api/customers').set(bearer(tokens.rep1)).send(body(1));
     expect(inside.status).toBe(200);
     expect(inside.body.duplicate).toBe(true);
     expect(inside.body.customer.id).toBe(ids.kofi);
-    // Admin roles also get duplicate: true and the record
+    // Manager can open Abena: 200 duplicate with record
     const admin = await request(app).post('/api/customers').set(bearer(tokens.manager)).send(body(6));
     expect(admin.status).toBe(200);
     expect(admin.body.duplicate).toBe(true);

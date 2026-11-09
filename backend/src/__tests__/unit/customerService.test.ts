@@ -59,6 +59,26 @@ describe('CustomerService', () => {
       const result = await customerService.createCustomer(createCustomerData);
       expect(result).toMatchObject({ id: 2, duplicate: true });
     });
+
+    it('throws 409 when requester cannot open existing duplicate customer', async () => {
+      prismaMock.customer.findMany.mockResolvedValue([{
+        id: 2,
+        firstName: 'Abena',
+        lastName: 'Owusu',
+        phoneNumber: '+1234567890',
+        isActive: true
+      } as any]);
+      prismaMock.customer.count.mockResolvedValue(0);
+
+      await expect(
+        customerService.createCustomer(createCustomerData, { id: 99, role: 'sales_rep' as any })
+      ).rejects.toMatchObject({
+        message: 'This number belongs to Abena Owusu',
+        statusCode: 409,
+        errorCode: 'PHONE_BELONGS_TO_OTHER_CUSTOMER',
+        details: { customerName: 'Abena Owusu' },
+      });
+    });
   });
 
   describe('updateCustomer', () => {

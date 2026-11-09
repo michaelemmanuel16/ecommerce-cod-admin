@@ -448,7 +448,7 @@ describe('M7-T07: customer and order creation for reps', () => {
       // Duplicate check with format without leading plus 233245559876
       const dup2 = await request(app)
         .post('/api/customers')
-        .set(bearer(rep2Token))
+        .set(bearer(rep1Token))
         .send({
           firstName: 'PhoneFormat3',
           phoneNumber: '233245559876',
@@ -459,6 +459,22 @@ describe('M7-T07: customer and order creation for reps', () => {
       expect(dup2.status).toBe(200);
       expect(dup2.body.duplicate).toBe(true);
       expect(dup2.body.customer.id).toBe(createdId);
+
+      // Rep 2 cannot open this customer -> 409 PHONE_BELONGS_TO_OTHER_CUSTOMER with name only
+      const dupRep2 = await request(app)
+        .post('/api/customers')
+        .set(bearer(rep2Token))
+        .send({
+          firstName: 'PhoneFormat4',
+          phoneNumber: '233245559876',
+          address: 'Accra Mall',
+          state: 'Greater Accra',
+          area: 'Accra',
+        });
+      expect(dupRep2.status).toBe(409);
+      expect(dupRep2.body.code).toBe('PHONE_BELONGS_TO_OTHER_CUSTOMER');
+      expect(dupRep2.body.message).toContain('This number belongs to PhoneFormat Tester');
+      expect(dupRep2.body.customerId).toBeUndefined();
     });
 
     it('phone number with letters returns 400 on customer create', async () => {

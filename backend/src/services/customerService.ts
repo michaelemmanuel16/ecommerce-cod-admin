@@ -301,12 +301,10 @@ export class CustomerService {
 
   /**
    * Create new customer. `createdById` is set so a rep sees the customer they added (F-355).
-   * Duplicate phone returns the existing customer (200 with duplicate: true).
+   * Duplicate phone returns the existing customer (200 with duplicate: true) when the requester can open it,
+   * or 409 PHONE_BELONGS_TO_OTHER_CUSTOMER with name only when they cannot.
    */
   async createCustomer(data: CreateCustomerData, requester?: Requester) {
-    if (data.phoneNumber && /[a-z]/i.test(data.phoneNumber)) {
-      throw new AppError('Phone number can only have digits, spaces, + and dashes', 400);
-    }
     const phoneNumber = normalizePhoneForStorage(data.phoneNumber);
     const alternatePhone = normalizePhoneForStorage(data.alternatePhone);
 
@@ -338,6 +336,15 @@ export class CustomerService {
         err.details = canSee ? { customerId: existing.id, customerName: fullName(existing) } : { customerName: fullName(existing) };
         throw err;
       }
+
+      const scope = this.scopeWhere(requester);
+      const canSee = !scope || (await prisma.customer.count({ where: { id: existing.id, AND: [scope] } })) > 0;
+      if (!canSee) {
+        const err = new AppError(`This number belongs to ${fullName(existing)}`, 409, 'PHONE_BELONGS_TO_OTHER_CUSTOMER');
+        err.details = { customerName: fullName(existing) };
+        throw err;
+      }
+
       logger.info('Duplicate customer phone on create, returning existing customer', { customerId: existing.id, phoneNumber: existing.phoneNumber });
       return Object.assign(existing, { duplicate: true });
     }
@@ -462,12 +469,6 @@ export class CustomerService {
     const changes: Partial<Record<FormField, string | undefined>> = {};
     for (const field of FORM_FIELDS) {
       if (updateData[field] !== undefined) changes[field] = updateData[field];
-    }
-    if (changes.phoneNumber && /[a-z]/i.test(changes.phoneNumber)) {
-      throw new AppError('Phone number can only have digits, spaces, + and dashes', 400);
-    }
-    if (changes.alternatePhone && /[a-z]/i.test(changes.alternatePhone)) {
-      throw new AppError('Alternate phone can only have digits, spaces, + and dashes', 400);
     }
     if (changes.phoneNumber) changes.phoneNumber = normalizePhoneForStorage(changes.phoneNumber);
     if (changes.alternatePhone) changes.alternatePhone = normalizePhoneForStorage(changes.alternatePhone);

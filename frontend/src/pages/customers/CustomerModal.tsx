@@ -128,6 +128,12 @@ export function CustomerModal({ open, onClose, customer, onSaved }: CustomerModa
       const saved = customer
         ? await customersService.updateCustomer(customer.id, body)
         : await customersService.createCustomer(body);
+      if ((saved as any)?.duplicate) {
+        setSaving(false);
+        const name = customerName({ firstName: saved.firstName, lastName: saved.lastName });
+        setClash({ message: `This number belongs to ${name}`, id: saved.id, name, archived: false });
+        return;
+      }
       onSaved(customerName({ firstName: body.firstName, lastName: body.lastName }), saved.id);
     } catch (e) {
       setSaving(false);
