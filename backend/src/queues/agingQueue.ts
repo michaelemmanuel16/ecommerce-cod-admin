@@ -3,6 +3,7 @@ import agingService from '../services/agingService';
 import { notifyAdminsOverdueCollections } from '../services/notificationService';
 import logger from '../utils/logger';
 import { forEachTenant } from '../utils/tenantLoop';
+import { checkQueueWaitAlerts } from '../services/queueAlertService';
 
 const redisConfig = {
     host: process.env.REDIS_HOST || 'localhost',
@@ -61,6 +62,19 @@ export const processNotifyOverdueCollections = async () => {
 };
 agingQueue.process('notify-overdue-collections', processNotifyOverdueCollections);
 
+// Queue wait alerts (COD-64, M7-T05): every 5 minutes, once per tenant inside its own tenant context
+export const processQueueWaitAlerts = async () => {
+    try {
+        await forEachTenant('Queue wait alerts', async (tenantId) => {
+            await checkQueueWaitAlerts(tenantId);
+        });
+    } catch (error: any) {
+        logger.error('Queue wait alerts job failed:', error.message);
+        throw error;
+    }
+};
+agingQueue.process('check-queue-wait-alerts', processQueueWaitAlerts);
+
 // Setup the daily cron jobs
 export const setupAgingCron = async () => {
     if (process.env.NODE_ENV === 'test') return;
@@ -85,7 +99,14 @@ export const setupAgingCron = async () => {
         }
     });
 
-    logger.info('Agent aging cron jobs scheduled (6:00 AM cash held Findings, 10:00 AM overdue notifications).');
+    // Add repeating queue wait alerts job every 5 minutes
+    await agingQueue.add('check-queue-wait-alerts', {}, {
+        repeat: {
+            cron: '*/5 * * * *'
+        }
+    });
+
+    logger.info('Agent aging cron jobs scheduled (6:00 AM cash held Findings, 10:00 AM overdue notifications, every 5m queue wait alerts).');
 };
 
 agingQueue.on('failed', (job: Bull.Job | undefined, err: Error) => {

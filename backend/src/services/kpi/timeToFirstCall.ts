@@ -33,10 +33,9 @@ export interface TimeToFirstCall extends KpiResult<number | null> {
 }
 
 export async function timeToFirstCall(tenantId: string, from: Date, to: Date, options: TimeToFirstCallOptions = {}): Promise<TimeToFirstCall> {
-  const zone = getStoreTimeZone(tenantId);
   return runInTenant(tenantId, async () => {
     const [config, orders] = await Promise.all([
-      prisma.systemConfig.findUnique({ where: { tenantId }, select: { operatingHours: true } }),
+      prisma.systemConfig.findUnique({ where: { tenantId }, select: { operatingHours: true, timeZone: true } }),
       prisma.order.findMany({
         where: {
           deletedAt: null,
@@ -46,19 +45,20 @@ export async function timeToFirstCall(tenantId: string, from: Date, to: Date, op
           ...(options.partnerId !== undefined ? { deliveryAgentId: options.partnerId } : {}),
         },
         select: {
-          id: true, createdAt: true, firstContactAt: true,
+          id: true, createdAt: true, firstContactAt: true, customerResponse: true,
           calls: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: 1, select: { source: true } },
         },
       }),
     ]);
+    const zone = config?.timeZone || getStoreTimeZone(tenantId);
     const hours = readOperatingHours(config?.operatingHours);
 
     const minutes: number[] = [];
     let autoConfirmed = 0;
     let noContact = 0;
     for (const o of orders) {
+      if (o.customerResponse === 'yes' || o.calls[0]?.source === 'auto_confirm') { autoConfirmed += 1; continue; }
       if (!o.firstContactAt) { noContact += 1; continue; }
-      if (o.calls[0]?.source === 'auto_confirm') { autoConfirmed += 1; continue; }
       minutes.push(workingMinutesBetween(o.createdAt, o.firstContactAt, hours, zone));
     }
     return {

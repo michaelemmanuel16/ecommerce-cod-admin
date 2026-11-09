@@ -133,4 +133,8 @@ router.get('/download/:token', publicDownloadLimiter, async (req, res) => {
   }
 });
 
+// M7-T08: Customer auto-confirm token endpoints
+router.get('/confirm/:token', publicOrderLimiter, publicOrderController.getConfirmOrder);
+router.post('/confirm/:token', publicOrderLimiter, publicOrderController.postConfirmOrder);
+
 export default router;

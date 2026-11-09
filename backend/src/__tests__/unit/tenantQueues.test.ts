@@ -21,6 +21,11 @@ jest.mock('../../services/notificationService', () => ({
   notifyAdminsOverdueCollections: (...a: any[]) => (mockNotifyAdmins as any)(...a),
 }));
 
+const mockCheckQueueWaitAlerts = jest.fn<(tenantId: string) => Promise<any>>();
+jest.mock('../../services/queueAlertService', () => ({
+  checkQueueWaitAlerts: (...a: any[]) => (mockCheckQueueWaitAlerts as any)(...a),
+}));
+
 jest.mock('../../utils/logger', () => ({
   __esModule: true,
   default: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
@@ -30,7 +35,7 @@ jest.mock('../../utils/socketInstance', () => ({
   getSocketInstance: jest.fn(() => null),
 }));
 
-import { processSyncCashFindings, processNotifyOverdueCollections } from '../../queues/agingQueue';
+import { processSyncCashFindings, processNotifyOverdueCollections, processQueueWaitAlerts } from '../../queues/agingQueue';
 import { processCleanupOldMessages } from '../../queues/messageCleanupQueue';
 import { processCleanupStalePending } from '../../queues/pendingCheckoutCleanupQueue';
 import { processExecuteWorkflow } from '../../queues/workflowQueue';
@@ -76,6 +81,30 @@ describe('job processors run inside a tenant context', () => {
     await processNotifyOverdueCollections();
 
     expect(seen).toEqual(['read:tenant-a', 'notify:tenant-a', 'read:tenant-b', 'notify:tenant-b']);
+  });
+
+  it('agingQueue check-queue-wait-alerts: runs for each active tenant inside runInTenant', async () => {
+    const seen: Array<string | null> = [];
+    mockCheckQueueWaitAlerts.mockImplementation(async (tid: string) => {
+      seen.push(`${tid}:${getTenantId()}`);
+      return [];
+    });
+
+    await processQueueWaitAlerts();
+
+    expect(seen).toEqual(['tenant-a:tenant-a', 'tenant-b:tenant-b']);
+  });
+
+  it('agingQueue check-queue-wait-alerts: one failing tenant does not stop the others', async () => {
+    const seen: Array<string | null> = [];
+    mockCheckQueueWaitAlerts.mockImplementation(async (tid: string) => {
+      seen.push(tid);
+      if (tid === 'tenant-a') throw new Error('alert failure');
+      return [];
+    });
+
+    await expect(processQueueWaitAlerts()).rejects.toThrow('1/2 tenants');
+    expect(seen).toEqual(['tenant-a', 'tenant-b']);
   });
 
   it('messageCleanupQueue: deletes inside each tenant context', async () => {

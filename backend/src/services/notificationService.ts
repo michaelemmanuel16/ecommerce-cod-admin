@@ -144,3 +144,5 @@ export async function notifyAdminsNoAssigneeAvailable(scope: string, role: strin
     );
   }
 }
+
+export { checkQueueWaitAlerts, notifyQueueWaitAlert } from './queueAlertService';
