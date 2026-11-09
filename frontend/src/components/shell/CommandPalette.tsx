@@ -6,7 +6,8 @@ import { useAuthStore } from '../../stores/authStore';
 import { useShellStore } from '../../stores/shellStore';
 import { searchService, type SearchResults } from '../../services/search.service';
 import { formatCurrency, formatPhoneLocal } from '../../utils/format';
-import { ORDER_STATUS_LABELS } from '../../utils/orderStatus';
+import { formatOrderNumber } from '../../utils/orderNumber';
+import { ORDER_STATUS_LABELS, getOrderStatusLabel } from '../../utils/orderStatus';
 import { useLayer } from '../ui-v2/useLayer';
 import { useToast } from '../ui-v2';
 import {
@@ -175,8 +176,8 @@ function Panel({ pages, menu, actions, onClose }: PanelProps) {
         rows: results.orders.map((o) => ({
           id: `order-${o.id}`,
           icon: ShoppingBag,
-          label: `#${o.id}${o.customer ? ` · ${o.customer.firstName} ${o.customer.lastName}`.trimEnd() : ''}`,
-          hint: `${formatCurrency(o.totalAmount)} · ${ORDER_STATUS_LABELS[o.status as keyof typeof ORDER_STATUS_LABELS] ?? o.status}`,
+          label: `${formatOrderNumber(o.id)}${o.customer ? ` · ${o.customer.firstName} ${o.customer.lastName}`.trimEnd() : ''}`,
+          hint: `${formatCurrency(o.totalAmount)} · ${getOrderStatusLabel(o.status as any)}`,
           run: go(`/orders/${o.id}`),
         })),
       }, {

@@ -2,6 +2,8 @@ import { io, Socket } from 'socket.io-client';
 import { useAuthStore } from '../stores/authStore';
 import toast from 'react-hot-toast';
 import { normalizeMoney } from '../utils/money';
+import { formatOrderNumber } from '../utils/orderNumber';
+import { getOrderStatusLabel } from '../utils/orderStatus';
 import { refreshAccessToken, handleSessionExpired } from './tokenRefresh';
 import { isOwnMove } from './ownMoves';
 
@@ -66,9 +68,10 @@ export const connectSocket = () => {
     // A move made in this tab has its own toast
     if (isOwnMove(Number(data.orderId))) return;
     // The server sends `newStatus`; `status` is kept for older payloads.
-    const statusText = String(data.newStatus ?? data.status ?? '').split('_').join(' ');
+    const rawStatus = data.newStatus ?? data.status;
+    const statusText = rawStatus ? getOrderStatusLabel(rawStatus) : '';
     // Orders are named by their number, as everywhere else
-    toast.success(`Order #${data.orderId} status changed to ${statusText}`);
+    toast.success(`Order ${formatOrderNumber(data.orderId)} status changed to ${statusText}`);
   });
 
   return socket;

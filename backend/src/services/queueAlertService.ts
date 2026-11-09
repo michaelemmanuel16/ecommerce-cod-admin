@@ -3,6 +3,7 @@ import { getStoreTimeZone } from './kpi/dates';
 import { readOperatingHours, workingMinutesBetween } from './kpi/workingTime';
 import { createNotification } from './notificationService';
 import { HUMAN_USERS_WHERE } from './systemUserService';
+import { formatOrderNumber } from '../utils/orderNumber';
 
 export const findQueueAlertRecipients = (tenantId: string) => prisma.user.findMany({
   where: { tenantId, role: { in: ['super_admin', 'admin', 'manager'] }, isActive: true, ...HUMAN_USERS_WHERE },
@@ -30,7 +31,7 @@ export async function notifyQueueWaitAlert(order: QueueWaitAlertInput): Promise<
 
   const recipients = await findQueueAlertRecipients(order.tenantId);
   const rounded = Math.round(order.waitMinutes);
-  const orderRef = order.orderNumber ? `#${order.orderNumber}` : `#${order.id}`;
+  const orderRef = order.orderNumber?.startsWith('#') ? order.orderNumber : formatOrderNumber(order.id);
   const title = 'Queue wait alert';
   const message = `Order ${orderRef} has been waiting ${rounded} min in the call queue (limit: ${order.alertMinutes} min)`;
   const data = {
