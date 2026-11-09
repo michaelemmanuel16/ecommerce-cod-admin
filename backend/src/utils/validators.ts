@@ -84,6 +84,12 @@ export const updateCustomerValidation: ValidationChain[] = [
   body('alternatePhone').optional({ values: 'falsy' }).custom(customerPhone('Alternate phone')),
 ];
 
+export const codOverrideValidation: ValidationChain[] = [
+  param('id').isInt({ min: 1 }).withMessage('Invalid customer ID').toInt(),
+  body('allow').isBoolean().withMessage('allow must be a boolean'),
+  body('note').isString().trim().notEmpty().withMessage('note is required'),
+];
+
 
 const NO_STOCK_QUANTITY = 'stockQuantity is not accepted. Give openingStock when you create a product, or use Adjust quantity in Inventory.';
 

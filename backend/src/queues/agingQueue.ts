@@ -1,6 +1,6 @@
 import Bull from 'bull';
 import agingService from '../services/agingService';
-import { notifyAdminsOverdueCollections } from '../services/notificationService';
+import { checkAndNotifyLateCallbacks, notifyAdminsOverdueCollections } from '../services/notificationService';
 import logger from '../utils/logger';
 import { forEachTenant } from '../utils/tenantLoop';
 import { checkQueueWaitAlerts } from '../services/queueAlertService';
@@ -75,6 +75,30 @@ export const processQueueWaitAlerts = async () => {
 };
 agingQueue.process('check-queue-wait-alerts', processQueueWaitAlerts);
 
+// Late call-back alerts (M7-T12): every 5 minutes, once per tenant inside its own tenant context
+export const processLateCallbackAlerts = async () => {
+    try {
+        await forEachTenant('Late call-back alerts', async (tenantId) => {
+            await checkAndNotifyLateCallbacks(tenantId);
+        });
+    } catch (error: any) {
+        logger.error('Late call-back alerts job failed:', error.message);
+        throw error;
+    }
+};
+agingQueue.process('check-late-callbacks', processLateCallbackAlerts);
+
+export const setupLateCallbackCron = async () => {
+    if (process.env.NODE_ENV === 'test') return;
+
+    await agingQueue.add('check-late-callbacks', {}, {
+        repeat: {
+            cron: '*/5 * * * *',
+        },
+    });
+    logger.info('Late call-back alerts cron job scheduled (every 5 minutes).');
+};
+
 // Setup the daily cron jobs
 export const setupAgingCron = async () => {
     if (process.env.NODE_ENV === 'test') return;
@@ -106,7 +130,11 @@ export const setupAgingCron = async () => {
         }
     });
 
-    logger.info('Agent aging cron jobs scheduled (6:00 AM cash held Findings, 10:00 AM overdue notifications, every 5m queue wait alerts).');
+
+    // Add late call-back alerts job every 5 minutes (M7-T12)
+    await setupLateCallbackCron();
+
+    logger.info('Agent aging cron jobs scheduled (6:00 AM cash held Findings, 10:00 AM overdue notifications, every 5m queue wait and late call-back alerts).');
 };
 
 agingQueue.on('failed', (job: Bull.Job | undefined, err: Error) => {

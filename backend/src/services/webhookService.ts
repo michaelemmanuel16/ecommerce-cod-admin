@@ -11,6 +11,7 @@ import { resolveTenantId, runInTenant, withoutTenant } from '../utils/tenantCont
 import { findAndReactivateCustomerByPhone } from '../utils/customerLookup';
 import { normalizePhoneForStorage } from '../utils/phone';
 import * as Money from '../utils/money';
+import { customerNeedsManualCall } from './refusalRuleService';
 
 
 interface CreateWebhookData {
@@ -466,6 +467,7 @@ export class WebhookService {
               shippingCost,
               totalAmount,
               codAmount: totalAmount,
+              requiresManualCall: customerNeedsManualCall(customer),
                             deliveryAddress: mappedData.deliveryAddress || externalOrder.address || customer.address,
               deliveryState: mappedData.deliveryState || externalOrder.state || customer.state,
               deliveryArea: mappedData.deliveryArea || externalOrder.area || customer.area,

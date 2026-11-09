@@ -11,6 +11,7 @@ import { normalizePhoneForStorage, phoneLookupVariants, phoneSearchConditions } 
 import { withSoftDeleted } from '../utils/prismaExtensions';
 import { auditService } from './auditService';
 import { getStoreTimeZone, localDate, startOfDay } from './kpi/dates';
+import customerStatsService from './customerStatsService';
 
 /** The customer form fields (F-355). Opt-out flags and stats are not on the form, so they are never taken from the body. */
 const FORM_FIELDS = ['firstName', 'lastName', 'email', 'phoneNumber', 'alternatePhone', 'address', 'state', 'area', 'landmark', 'notes'] as const;
@@ -47,6 +48,8 @@ export const riskOf = (refusedOrders: number): CustomerRisk => (refusedOrders >=
 export const COD_BLOCK_REFUSALS = 3;
 /** The AI problem finder rule for "repeat refuser" (F-353); M11 moves it into the finder service. */
 const FLAGGED_REFUSALS = 2;
+
+export { customerNeedsManualCall, riskLevelOf, isCodBlocked } from './refusalRuleService';
 
 interface CustomerFilters {
   search?: string;
@@ -124,8 +127,8 @@ export class CustomerService {
 
     if (risk === 'low') and.push({ refusedOrders: 0 });
     if (risk === 'watch') and.push({ refusedOrders: 1 });
-    if (risk === 'high') and.push({ refusedOrders: { gte: 2 } });
-    if (blocked !== undefined) and.push({ refusedOrders: blocked ? { gte: COD_BLOCK_REFUSALS } : { lt: COD_BLOCK_REFUSALS } });
+    if (risk === 'high') and.push({ OR: [{ refusedOrders: { gte: 2 } }, { riskLevel: 'high' }] });
+    if (blocked !== undefined) and.push(blocked ? { OR: [{ codBlocked: true }, { refusedOrders: { gte: COD_BLOCK_REFUSALS }, codOverride: false }] } : { codBlocked: false, OR: [{ refusedOrders: { lt: COD_BLOCK_REFUSALS } }, { codOverride: true }] });
 
     if (segment === 'repeat') and.push({ totalOrders: { gte: 2 } });
     if (segment === 'first_time') and.push({ totalOrders: 1 });
@@ -175,7 +178,7 @@ export class CustomerService {
   }
 
   /** The stored stats plus the derived risk, COD block and "not reachable" tag of one customer row. */
-  private withDerived<T extends { id: number; refusedOrders: number; deliveredValue: Prisma.Decimal; unsubscribeToken?: string | null }>(
+  private withDerived<T extends { id: number; refusedOrders: number; deliveredValue: Prisma.Decimal; unsubscribeToken?: string | null; codBlocked?: boolean; riskLevel?: any }>(
     customer: T, notReachable: Set<number>
   ) {
     const { unsubscribeToken, ...row } = customer;
@@ -184,7 +187,7 @@ export class CustomerService {
       // The old "Total spent" column; the list now shows delivered value
       totalSpent: customer.deliveredValue,
       risk: riskOf(customer.refusedOrders),
-      codBlocked: customer.refusedOrders >= COD_BLOCK_REFUSALS,
+      codBlocked: customer.codBlocked ?? (customer.refusedOrders >= COD_BLOCK_REFUSALS),
       notReachable: notReachable.has(customer.id),
     };
   }
@@ -537,6 +540,56 @@ export class CustomerService {
 
     logger.info('Customer deactivated', { customerId: id });
     return { message: 'Customer deactivated successfully' };
+  }
+
+  /**
+   * COD override (F-357, M7-T06).
+   * POST /api/customers/:id/cod-override { allow: boolean, note: string }
+   * Only owner (super_admin), admin and manager.
+   * Stores who, when and why (codOverride* fields).
+   * Restarts the refusal count at 0, clears the block when allow=true.
+   */
+  async overrideCod(customerId: number, data: { allow: boolean; note: string }, requester: Requester) {
+    if (!isAdminRole(requester)) {
+      throw new AppError('You do not have permission to override customer COD status', 403, 'FORBIDDEN');
+    }
+    const customer = await prisma.customer.findUnique({
+      where: { id: customerId }
+    });
+    if (!customer) {
+      throw new AppError('Customer not found', 404, 'NOT_FOUND');
+    }
+
+    const now = new Date();
+    await prisma.customer.update({
+      where: { id: customerId },
+      data: {
+        codOverride: data.allow,
+        codOverrideAt: now,
+        codOverrideNote: data.note.trim(),
+        codOverrideBy: { connect: { id: requester.id } },
+      },
+    });
+
+    await customerStatsService.recompute(customerId);
+
+    const updated = await prisma.customer.findUnique({
+      where: { id: customerId },
+    });
+    if (!updated) {
+      throw new AppError('Customer not found', 404, 'NOT_FOUND');
+    }
+
+    await this.audit(
+      requester,
+      'cod_override',
+      updated,
+      { codBlocked: customer.codBlocked, codOverride: customer.codOverride, refusedOrders: customer.refusedOrders },
+      { codBlocked: updated.codBlocked, codOverride: updated.codOverride, refusedOrders: updated.refusedOrders, note: data.note.trim() }
+    );
+
+    logger.info('Customer COD override applied', { customerId, allow: data.allow, userId: requester.id });
+    return this.withDerived(updated, new Set());
   }
 }
 

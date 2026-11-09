@@ -34,8 +34,8 @@ import type { MeasureBasis } from '../config/targetMetrics';
  * Tiers, distance to the next tier, the contract review flag and badges show for a month or a year only (F-1107).
  */
 
-export type Family = 'call_rep' | 'delivery';
-const PRESET: Record<Family, UserRole> = { call_rep: 'sales_rep', delivery: 'delivery_agent' };
+export type Family = 'call_rep' | 'delivery' | 'upsell';
+const PRESET: Record<Family, UserRole> = { call_rep: 'sales_rep', delivery: 'delivery_agent', upsell: 'sales_rep' };
 
 type PeriodKind = 'today' | 'week' | 'month' | 'year';
 interface PeriodSpec { key: string; kind: PeriodKind; label: string; first: string; last: string; from: Date; to: Date; month: string | null }
@@ -211,6 +211,98 @@ export async function leaderboard(actor: Requester, query: { role: Family; perio
   const zone = getStoreTimeZone(tenantId);
   const spec = resolvePeriod(query.period ?? 'month', zone);
   const withRewards = spec.kind === 'month' || spec.kind === 'year';
+
+  if (query.role === 'upsell') {
+    const currency = await getCurrency();
+    const lines = await prisma.upsellLine.findMany({
+      where: {
+        tenantId,
+        status: 'active',
+        createdAt: { gte: spec.from, lte: spec.to },
+      },
+      include: {
+        rep: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            kind: true,
+            role: true,
+          },
+        },
+      },
+    });
+
+    if (!lines.length) {
+      return {
+        role: query.role,
+        period: { key: spec.key, kind: spec.kind, label: spec.label, from: spec.first, to: spec.last, closed: false },
+        note: null,
+        currency,
+        rewards: null,
+        rows: [],
+      };
+    }
+
+    const linesByRep = new Map<number, typeof lines>();
+    for (const line of lines) {
+      linesByRep.set(line.repId, [...(linesByRep.get(line.repId) ?? []), line]);
+    }
+
+    const repEntries = [...linesByRep.values()].map((repLines) => {
+      const rep = repLines[0].rep;
+      const totalExtraValue = Money.sum(repLines.map((l) => l.extraValue));
+      const human = rep.kind === 'person';
+      return {
+        userId: rep.id,
+        name: human ? fullName(rep) : rep.firstName,
+        kind: rep.kind,
+        payout: human,
+        ranked: true,
+        actual: totalExtraValue.toNumber(),
+        extraValue: Money.toApi(totalExtraValue),
+        upsellCount: repLines.length,
+        totalExtraValue,
+      };
+    });
+
+    repEntries.sort((a, b) => {
+      if (!b.totalExtraValue.equals(a.totalExtraValue)) {
+        return b.totalExtraValue.minus(a.totalExtraValue).toNumber();
+      }
+      return String(a.name).localeCompare(String(b.name));
+    });
+
+    let currentRank = 1;
+    const rankedRows = repEntries.map((entry, index) => {
+      if (index > 0 && !entry.totalExtraValue.equals(repEntries[index - 1].totalExtraValue)) {
+        currentRank = index + 1;
+      }
+      return {
+        rank: currentRank,
+        userId: entry.userId,
+        name: entry.name,
+        kind: entry.kind,
+        payout: entry.payout,
+        ranked: entry.ranked,
+        actual: entry.actual,
+        extraValue: entry.extraValue,
+        upsellCount: entry.upsellCount,
+      };
+    });
+
+    const seeAll = isManagerUp(actor);
+    const visibleRows = seeAll ? rankedRows : rankedRows.filter((r) => r.userId === actor.id);
+
+    return {
+      role: query.role,
+      period: { key: spec.key, kind: spec.kind, label: spec.label, from: spec.first, to: spec.last, closed: false },
+      note: null,
+      currency,
+      rewards: null,
+      rows: visibleRows,
+    };
+  }
 
   const [base, currency, features] = await Promise.all([boardBase(query.role, spec), getCurrency(), getRewardFeatures()]);
   const ranks = rankRows(base);

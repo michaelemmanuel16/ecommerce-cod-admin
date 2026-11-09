@@ -20,6 +20,7 @@ import { formatOrderNumber } from '../utils/orderNumber';
 import { getFrontendUrl } from '../utils/url';
 import { AppError } from '../middleware/errorHandler';
 import orderService from '../services/orderService';
+import { customerNeedsManualCall } from '../services/refusalRuleService';
 
 // Buyer-selectable payment methods (F-402). `cod` settles on delivery; the two online methods charge through the
 // form's payment provider on the tenant's own account: `online_full` for the whole total, `online_deposit` for a
@@ -546,6 +547,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
         discount,
         totalAmount: finalTotal,
         codAmount: finalTotal,
+        requiresManualCall: customerNeedsManualCall(customer),
         balanceDue: 0,
         deliveryAddress: deliveryAddressOf(formData.address, landmark),
         deliveryState: formData.state || null,

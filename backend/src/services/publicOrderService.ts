@@ -6,6 +6,7 @@ import { Prisma } from '@prisma/client';
 import * as Money from '../utils/money';
 import { normalizeOrderRegion } from './regionService';
 import { getAvailableToSell } from './stockService';
+import { customerNeedsManualCall } from './refusalRuleService';
 
 interface PublicOrderData {
   // Customer info
@@ -195,6 +196,7 @@ export class PublicOrderService {
           subtotal,
           totalAmount,
           codAmount: totalAmount,
+          requiresManualCall: customerNeedsManualCall(customer),
           deliveryAddress: orderData.deliveryAddress,
           deliveryState: orderData.deliveryState,
           deliveryArea: orderData.deliveryArea,
