@@ -1291,6 +1291,61 @@ export class OrderService {
   }
 
   /**
+   * M7-T08: Customer confirms an order directly (via auto-confirm WhatsApp YES reply or public confirm page).
+   * Moves the order to 'confirmed', sets customerResponse='yes', firstContactAt.
+   * Creates NO call row and NO commission entry.
+   * Second YES is ignored (no-op). Reply after cancelled is ignored and logged.
+   */
+  async confirmByCustomer(orderId: number) {
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        id: true,
+        status: true,
+        customerResponse: true,
+        confirmedAt: true,
+        firstContactAt: true,
+        deletedAt: true,
+        tenantId: true,
+      },
+    });
+
+    if (!order || order.deletedAt !== null) {
+      throw new AppError('Order not found', 404);
+    }
+
+    // A reply after the order is cancelled is ignored and logged
+    if (order.status === 'cancelled') {
+      logger.info('Customer confirm reply received for cancelled order - ignored', { orderId });
+      return order;
+    }
+
+    // A second YES is ignored (200, no change)
+    if (order.status === 'confirmed') {
+      if (order.customerResponse !== 'yes') {
+        await prisma.order.update({
+          where: { id: orderId },
+          data: { customerResponse: 'yes' },
+        });
+      }
+      return prisma.order.findUnique({ where: { id: orderId }, include: ORDER_EVENT_INCLUDE });
+    }
+
+    const now = new Date();
+    await transitionOrder(orderId, 'confirmed', { kind: 'system' }, { note: 'Auto-confirmed by customer' });
+
+    await prisma.order.update({
+      where: { id: orderId },
+      data: {
+        customerResponse: 'yes',
+        firstContactAt: order.firstContactAt ?? now,
+      },
+    });
+
+    return prisma.order.findUnique({ where: { id: orderId }, include: ORDER_EVENT_INCLUDE });
+  }
+
+  /**
    * Order search for the `orders_search` tool (M2-T07): filters, newest id first, one extra row read to tell
    * whether a next page exists. Runs in the tenant context of the caller.
    */
