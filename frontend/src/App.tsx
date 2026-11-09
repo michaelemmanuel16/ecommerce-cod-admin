@@ -51,7 +51,11 @@ const PublicCheckout = lazy(() => import('./pages/PublicCheckout').then(m => ({ 
 const PaymentCallback = lazy(() => import('./pages/PaymentCallback').then(m => ({ default: m.PaymentCallback })));
 // Dev-only design-system gallery. The DEV flag is replaced at build time, so production bundles drop the import.
 const UiGallery = import.meta.env.DEV ? lazy(() => import('./pages/dev/UiGallery')) : null;
-const RepApp = lazy(() => import('./pages/rep/RepApp'));
+const RepShell = lazy(() => import('./pages/rep/RepShell'));
+const RepTodayPage = lazy(() => import('./pages/rep/RepTodayPage'));
+const RepQueuePage = lazy(() => import('./pages/rep/RepQueuePage'));
+const RepComingSoon = lazy(() => import('./pages/rep/RepComingSoon'));
+const RepCallPlaceholder = lazy(() => import('./pages/rep/RepCallPlaceholder'));
 const EarningsHistory = lazy(() => import('./pages/EarningsHistory'));
 const AgentMyInventory = lazy(() => import('./pages/AgentMyInventory'));
 const Inventory = lazy(() => import('./pages/Inventory').then(m => ({ default: m.Inventory })));
@@ -96,6 +100,17 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; skipOnboardingCheck?
 const MobileGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, menu, homeRoute } = useAuthStore();
   if (!user || !menu || !canOpenPath('/agent-inventory', menu, user.role, homeRoute)) {
+    return <Navigate to="/" replace />;
+  }
+  return <>{children}</>;
+};
+
+// Rep app gate: sales_rep and manager-up roles may open the rep app (F-750)
+const RepGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useAuthStore();
+  if (!user) return null;
+  const allowed = user.role === 'sales_rep' || isManagerUp(user.role);
+  if (!allowed) {
     return <Navigate to="/" replace />;
   }
   return <>{children}</>;
@@ -281,6 +296,29 @@ function App() {
             } />
           </Route>
 
+          {/* Rep app routes (M7-T14, F-750) */}
+          <Route
+            path="/rep"
+            element={
+              <ProtectedRoute>
+                <RepGate>
+                  <Suspense fallback={<Loading />}>
+                    <RepShell />
+                  </Suspense>
+                </RepGate>
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<Navigate to="/rep/today" replace />} />
+            <Route path="today" element={<Suspense fallback={<Loading />}><RepTodayPage /></Suspense>} />
+            <Route path="queue" element={<Suspense fallback={<Loading />}><RepQueuePage /></Suspense>} />
+            <Route path="orders" element={<Suspense fallback={<Loading />}><RepComingSoon title="My orders" /></Suspense>} />
+            <Route path="earnings" element={<Suspense fallback={<Loading />}><RepComingSoon title="Earnings" /></Suspense>} />
+            <Route path="numbers" element={<Suspense fallback={<Loading />}><RepComingSoon title="My numbers" /></Suspense>} />
+            <Route path="inbox" element={<Suspense fallback={<Loading />}><RepComingSoon title="Inbox" /></Suspense>} />
+            <Route path="call/:orderId" element={<Suspense fallback={<Loading />}><RepCallPlaceholder /></Suspense>} />
+          </Route>
+
           {/* Desktop routes */}
           <Route
             path="/"
@@ -374,22 +412,6 @@ function App() {
             } />
             <Route path="earnings-history" element={
               <Suspense fallback={<Loading />}><EarningsHistoryRoute /></Suspense>
-            } />
-            <Route path="rep" element={<Navigate to="/rep/today" replace />} />
-            <Route path="rep/today" element={
-              <Suspense fallback={<Loading />}><RepApp defaultTab="today" /></Suspense>
-            } />
-            <Route path="rep/queue" element={
-              <Suspense fallback={<Loading />}><RepApp defaultTab="queue" /></Suspense>
-            } />
-            <Route path="rep/orders" element={
-              <Suspense fallback={<Loading />}><RepApp defaultTab="orders" /></Suspense>
-            } />
-            <Route path="rep/earnings" element={
-              <Suspense fallback={<Loading />}><RepApp defaultTab="earnings" /></Suspense>
-            } />
-            <Route path="rep/numbers" element={
-              <Suspense fallback={<Loading />}><RepApp defaultTab="numbers" /></Suspense>
             } />
             </Route>
             <Route path="agent-inventory" element={
