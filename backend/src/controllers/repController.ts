@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../types';
 import { actorOf, handler } from './helpers';
+import { AppError } from '../middleware/errorHandler';
 import * as repService from '../services/repService';
 
 /**
@@ -8,36 +9,43 @@ import * as repService from '../services/repService';
  * Thin controller pattern: parses query, delegates to repService.
  */
 
+function parsePositiveInt(val: unknown, name: string): number | undefined {
+  if (val === undefined || val === null || val === '') return undefined;
+  const s = String(val).trim();
+  if (!/^\d+$/.test(s)) {
+    throw new AppError(`${name} must be a positive whole number`, 400);
+  }
+  const num = Number(s);
+  if (!Number.isSafeInteger(num) || num <= 0) {
+    throw new AppError(`${name} must be a positive whole number`, 400);
+  }
+  return num;
+}
+
 export const getRepOrders = handler(async (req: AuthRequest, res: Response) => {
   const actor = actorOf(req);
-  const repId = req.query.repId ? Number(req.query.repId) : undefined;
-  const page = req.query.page ? Number(req.query.page) : undefined;
-  const limit = req.query.limit ? Number(req.query.limit) : undefined;
+  const repId = parsePositiveInt(req.query.repId, 'repId');
+  const page = parsePositiveInt(req.query.page, 'page');
+  const limit = parsePositiveInt(req.query.limit, 'limit');
   const sortOrder = req.query.sortOrder === 'asc' ? 'asc' : 'desc';
 
   const result = await repService.getOrders(actor, {
     repId,
     q: typeof req.query.q === 'string' ? req.query.q : undefined,
-    search: typeof req.query.search === 'string' ? req.query.search : undefined,
     status: typeof req.query.status === 'string' ? req.query.status : undefined,
     page,
     limit,
-    sortBy: typeof req.query.sortBy === 'string' ? req.query.sortBy : undefined,
     sortOrder,
-    from: typeof req.query.from === 'string' ? req.query.from : undefined,
-    to: typeof req.query.to === 'string' ? req.query.to : undefined,
   });
   res.json(result);
 });
 
 export const getRepNumbers = handler(async (req: AuthRequest, res: Response) => {
   const actor = actorOf(req);
-  const repId = req.query.repId ? Number(req.query.repId) : undefined;
+  const repId = parsePositiveInt(req.query.repId, 'repId');
 
   const result = await repService.getNumbers(actor, {
     repId,
-    from: typeof req.query.from === 'string' ? req.query.from : undefined,
-    to: typeof req.query.to === 'string' ? req.query.to : undefined,
     period: typeof req.query.period === 'string' ? req.query.period : undefined,
   });
   res.json(result);
@@ -45,7 +53,7 @@ export const getRepNumbers = handler(async (req: AuthRequest, res: Response) => 
 
 export const getRepEarnings = handler(async (req: AuthRequest, res: Response) => {
   const actor = actorOf(req);
-  const repId = req.query.repId ? Number(req.query.repId) : undefined;
+  const repId = parsePositiveInt(req.query.repId, 'repId');
 
   const result = await repService.getEarnings(actor, {
     repId,
@@ -56,7 +64,7 @@ export const getRepEarnings = handler(async (req: AuthRequest, res: Response) =>
 
 export const getRepRewardProgress = handler(async (req: AuthRequest, res: Response) => {
   const actor = actorOf(req);
-  const repId = req.query.repId ? Number(req.query.repId) : undefined;
+  const repId = parsePositiveInt(req.query.repId, 'repId');
 
   const result = await repService.getRewardProgress(actor, {
     repId,
@@ -67,9 +75,9 @@ export const getRepRewardProgress = handler(async (req: AuthRequest, res: Respon
 
 export const getRepPayouts = handler(async (req: AuthRequest, res: Response) => {
   const actor = actorOf(req);
-  const repId = req.query.repId ? Number(req.query.repId) : undefined;
-  const page = req.query.page ? Number(req.query.page) : undefined;
-  const limit = req.query.limit ? Number(req.query.limit) : undefined;
+  const repId = parsePositiveInt(req.query.repId, 'repId');
+  const page = parsePositiveInt(req.query.page, 'page');
+  const limit = parsePositiveInt(req.query.limit, 'limit');
 
   const result = await repService.getPayouts(actor, {
     repId,

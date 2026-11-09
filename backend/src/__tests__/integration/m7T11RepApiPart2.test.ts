@@ -2,15 +2,15 @@
  * M7-T11 (COD-65): Rep API part 2 integration tests.
  *
  * Verifies:
- * - /api/rep/orders (my orders, search by id, phone, name; status filter; pagination)
- * - /api/rep/numbers (rank and rates from M1 KPI service repRates only: no second formula; contract test; R3)
- * - /api/rep/earnings (lines per order: base + upsell - paid; returned order shows reversal line; owed below 0 returns overpaid with amount)
- * - /api/rep/reward-progress (M6 tiers via rewardService; target reached shows "Paid after month close")
- * - Pay ledger read (/api/rep/payouts and /api/rep/earnings payout history)
+ * - /api/rep/orders (my orders, search by id, phone, name; real OrderStatus filter; pagination; param validation)
+ * - /api/rep/numbers (rates from teamReport: contract test; YYYY-MM period only; calls-per-day across store-local midnight)
+ * - /api/rep/earnings (one owed rule from payoutService summarize(): contract test; openOrdersNote store currency; reversal line on return)
+ * - /api/rep/reward-progress (M6 tiers via rewardService by roleId; target reached shows "Paid after month close"; no constant payout field)
+ * - /api/rep/payouts (payout history from payoutService, no for field)
  * - "Delivered from confirmed" uses closed confirmed orders (R3)
  * - New rep with no data returns zeros, not errors
  * - Rep sees own rows only (two-rep test with 403 on cross-rep access)
- * - Fixture check: Adwoa earnings = 2,024 + 610 minus payouts in fixture
+ * - Fixture check: Adwoa earnings = 2,024 + 610 minus payouts in fixture (2,034 owed)
  */
 import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import '../mocks/logger.mock';
@@ -21,8 +21,12 @@ import { prismaBase } from '../../utils/prisma';
 import { generateAccessToken } from '../../utils/jwt';
 import { createTenant, deleteTenantRows } from './helpers/twoTenants';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
-import { repRates } from '../../services/kpi/reps';
-import { currentMonth, endOfDay, getStoreTimeZone, monthRange, startOfDay } from '../../services/kpi/dates';
+import { teamReport } from '../../services/teamReportService';
+import payoutService from '../../services/payoutService';
+import * as rewardService from '../../services/rewardService';
+import { getCurrency } from '../../utils/currency';
+import { currentMonth, getStoreTimeZone, localDate, monthRange, parseMonth, shiftYmd, startOfDay } from '../../services/kpi/dates';
+import { runInTenant } from '../../utils/tenantContext';
 import { CallOutcome, CallSource } from '@prisma/client';
 import * as Money from '../../utils/money';
 
@@ -170,7 +174,7 @@ afterAll(async () => {
   await prismaBase.$disconnect();
 });
 
-describe('1. /api/rep/orders (my orders, search by id, phone, name; status filter)', () => {
+describe('1. /api/rep/orders (my orders, search by id, phone, name; real status filter)', () => {
   let order1: any;
   let order2: any;
   let order3: any;
@@ -194,7 +198,7 @@ describe('1. /api/rep/orders (my orders, search by id, phone, name; status filte
       },
     });
 
-    // Order 2: assigned to Rep 1, pending confirmation (waiting to dispatch/pending)
+    // Order 2: assigned to Rep 1, confirmed (open)
     order2 = await prismaBase.order.create({
       data: {
         tenantId,
@@ -225,27 +229,40 @@ describe('1. /api/rep/orders (my orders, search by id, phone, name; status filte
     });
   });
 
-  it('rep1 sees only their own orders (both /api/rep/orders and /api/rep/me/orders)', async () => {
-    const res1 = await request(app).get('/api/rep/orders').set('Authorization', bearer(rep1Token));
-    expect(res1.status).toBe(200);
-    expect(res1.body.orders).toHaveLength(2);
-    const orderIds = res1.body.orders.map((o: any) => o.id);
+  it('rep1 sees only their own orders at /api/rep/orders', async () => {
+    const res = await request(app).get('/api/rep/orders').set('Authorization', bearer(rep1Token));
+    expect(res.status).toBe(200);
+    expect(res.body.orders).toHaveLength(2);
+    const orderIds = res.body.orders.map((o: any) => o.id);
     expect(orderIds).toContain(order1.id);
     expect(orderIds).toContain(order2.id);
     expect(orderIds).not.toContain(order3.id);
+  });
 
-    const resAlias = await request(app).get('/api/rep/me/orders').set('Authorization', bearer(rep1Token));
-    expect(resAlias.status).toBe(200);
-    expect(resAlias.body.orders).toHaveLength(2);
+  it('does not return invented orderNumber (#id) or statusLabel (frontend formats both)', async () => {
+    const res = await request(app).get('/api/rep/orders').set('Authorization', bearer(rep1Token));
+    expect(res.status).toBe(200);
+    const o = res.body.orders[0];
+    expect(o).toHaveProperty('id');
+    expect(o).toHaveProperty('status');
+    expect(o).not.toHaveProperty('orderNumber');
+    expect(o).not.toHaveProperty('statusLabel');
   });
 
   it('searches by order ID (#id or raw id)', async () => {
-    const res = await request(app)
+    const resRaw = await request(app)
       .get(`/api/rep/orders?q=${order1.id}`)
       .set('Authorization', bearer(rep1Token));
-    expect(res.status).toBe(200);
-    expect(res.body.orders).toHaveLength(1);
-    expect(res.body.orders[0].id).toBe(order1.id);
+    expect(resRaw.status).toBe(200);
+    expect(resRaw.body.orders).toHaveLength(1);
+    expect(resRaw.body.orders[0].id).toBe(order1.id);
+
+    const resHash = await request(app)
+      .get(`/api/rep/orders?q=%23${order1.id}`)
+      .set('Authorization', bearer(rep1Token));
+    expect(resHash.status).toBe(200);
+    expect(resHash.body.orders).toHaveLength(1);
+    expect(resHash.body.orders[0].id).toBe(order1.id);
   });
 
   it('searches by customer phone number', async () => {
@@ -266,22 +283,63 @@ describe('1. /api/rep/orders (my orders, search by id, phone, name; status filte
     expect(res.body.orders[0].customer.lastName).toBe('Boateng');
   });
 
-  it('filters by status: waiting_to_dispatch, delivered, and raw status', async () => {
+  it('filters by real OrderStatus (delivered, confirmed, comma list)', async () => {
     const resDelivered = await request(app)
       .get('/api/rep/orders?status=delivered')
       .set('Authorization', bearer(rep1Token));
     expect(resDelivered.status).toBe(200);
     expect(resDelivered.body.orders).toHaveLength(1);
     expect(resDelivered.body.orders[0].id).toBe(order1.id);
-    expect(resDelivered.body.orders[0].statusLabel).toBe('Delivered');
+    expect(resDelivered.body.orders[0].status).toBe('delivered');
 
-    const resDispatch = await request(app)
+    const resConfirmed = await request(app)
+      .get('/api/rep/orders?status=confirmed')
+      .set('Authorization', bearer(rep1Token));
+    expect(resConfirmed.status).toBe(200);
+    expect(resConfirmed.body.orders).toHaveLength(1);
+    expect(resConfirmed.body.orders[0].id).toBe(order2.id);
+    expect(resConfirmed.body.orders[0].status).toBe('confirmed');
+
+    const resBoth = await request(app)
+      .get('/api/rep/orders?status=confirmed,delivered')
+      .set('Authorization', bearer(rep1Token));
+    expect(resBoth.status).toBe(200);
+    expect(resBoth.body.orders).toHaveLength(2);
+  });
+
+  it('bad status filter returns 400', async () => {
+    const resInvalid = await request(app)
+      .get('/api/rep/orders?status=invalid_status')
+      .set('Authorization', bearer(rep1Token));
+    expect(resInvalid.status).toBe(400);
+
+    // Invented group names must be rejected with 400
+    const resWaiting = await request(app)
       .get('/api/rep/orders?status=waiting_to_dispatch')
       .set('Authorization', bearer(rep1Token));
-    expect(resDispatch.status).toBe(200);
-    expect(resDispatch.body.orders).toHaveLength(1);
-    expect(resDispatch.body.orders[0].id).toBe(order2.id);
-    expect(resDispatch.body.orders[0].statusLabel).toBe('Waiting to dispatch');
+    expect(resWaiting.status).toBe(400);
+
+    const resFailed = await request(app)
+      .get('/api/rep/orders?status=failed')
+      .set('Authorization', bearer(rep1Token));
+    expect(resFailed.status).toBe(400);
+  });
+
+  it('validates pagination and repId query params (positive whole numbers return 400 on bad values)', async () => {
+    const resBadPage = await request(app)
+      .get('/api/rep/orders?page=0')
+      .set('Authorization', bearer(rep1Token));
+    expect(resBadPage.status).toBe(400);
+
+    const resBadLimit = await request(app)
+      .get('/api/rep/orders?limit=-1')
+      .set('Authorization', bearer(rep1Token));
+    expect(resBadLimit.status).toBe(400);
+
+    const resBadRepId = await request(app)
+      .get('/api/rep/orders?repId=abc')
+      .set('Authorization', bearer(adminToken));
+    expect(resBadRepId.status).toBe(400);
   });
 
   it('supports pagination', async () => {
@@ -308,7 +366,7 @@ describe('1. /api/rep/orders (my orders, search by id, phone, name; status filte
   });
 });
 
-describe('2. /api/rep/numbers (rank and rates from M1 KPI service only: contract test, R3)', () => {
+describe('2. /api/rep/numbers (rank and rates from teamReport: contract test, R3)', () => {
   beforeAll(async () => {
     // Log calls for rep1
     await prismaBase.call.createMany({
@@ -338,23 +396,39 @@ describe('2. /api/rep/numbers (rank and rates from M1 KPI service only: contract
     });
   });
 
-  it('contract test: rates match repRates (M1 KPI service) strictly with no second formula', async () => {
+  it('contract test: numbers rates equal the rep\'s teamReport row', async () => {
     const zone = getStoreTimeZone(tenantId);
     const range = monthRange(2026, 10, zone);
 
-    const kpiRates = await repRates(tenantId, range.from, range.to);
-    const rep1Kpi = kpiRates.rep(rep1Id);
+    const report = await teamReport(tenantId, range.from, range.to);
+    const rep1Row = report.reps.find((r) => r.repId === rep1Id);
 
     const res = await request(app)
-      .get('/api/rep/numbers?from=2026-10-01&to=2026-10-31')
+      .get('/api/rep/numbers?period=2026-10')
       .set('Authorization', bearer(rep1Token));
     expect(res.status).toBe(200);
 
-    // Contract: rates must match the M1 KPI service output exactly
-    expect(res.body.confirmationRate).toEqual(rep1Kpi.confirmationRate.value);
-    expect(res.body.deliveredFromConfirmedRate).toEqual(rep1Kpi.deliveredFromConfirmedRate.value);
-    expect(res.body.confirmationRateDetail).toEqual(rep1Kpi.confirmationRate.detail);
-    expect(res.body.deliveredFromConfirmedDetail).toEqual(rep1Kpi.deliveredFromConfirmedRate.detail);
+    // Contract: rates must match teamReport row exactly
+    expect(res.body.confirmationRate).toEqual(rep1Row?.confirmationRate.value ?? null);
+    expect(res.body.deliveredFromConfirmedRate).toEqual(rep1Row?.deliveredFromConfirmedRate.value ?? null);
+    expect(res.body.confirmationRateDetail).toEqual(rep1Row?.confirmationRate.detail);
+    expect(res.body.deliveredFromConfirmedDetail).toEqual(rep1Row?.deliveredFromConfirmedRate.detail);
+    expect(res.body.upsellRate).toEqual(rep1Row?.upsellRate ?? 0);
+    expect(res.body.extraValueAdded).toEqual(rep1Row?.extraValue ?? '0.00');
+    expect(res.body.timeToFirstCall).toEqual(rep1Row?.timeToFirstCallMinutes ?? null);
+    expect(res.body.targetHit).toEqual(rep1Row?.targetHit ?? null);
+  });
+
+  it('validates period (400 on bad period)', async () => {
+    const resBad = await request(app)
+      .get('/api/rep/numbers?period=2026-13')
+      .set('Authorization', bearer(rep1Token));
+    expect(resBad.status).toBe(400);
+
+    const resBadStr = await request(app)
+      .get('/api/rep/numbers?period=invalid')
+      .set('Authorization', bearer(rep1Token));
+    expect(resBadStr.status).toBe(400);
   });
 
   it('R3: "Delivered from confirmed" uses closed confirmed orders', async () => {
@@ -384,9 +458,52 @@ describe('2. /api/rep/numbers (rank and rates from M1 KPI service only: contract
     expect(res.body.callOutcomes).toHaveProperty('declined');
     expect(res.body.callsPerDay).toHaveLength(14);
   });
+
+  it('calls-per-day count is right across a store-local midnight', async () => {
+    const zone = getStoreTimeZone(tenantId);
+    const now = new Date();
+    const todayStr = localDate(now, zone);
+    const yesterdayStr = shiftYmd(todayStr, -1);
+    const midnight = startOfDay(todayStr, zone);
+
+    // Call 1: 30 minutes before local midnight (yesterday)
+    await prismaBase.call.create({
+      data: {
+        tenantId,
+        salesRepId: rep2Id,
+        customerId: customer1Id,
+        outcome: CallOutcome.confirmed,
+        source: CallSource.manual,
+        createdAt: new Date(midnight.getTime() - 30 * 60 * 1000),
+      },
+    });
+
+    // Call 2: 30 minutes after local midnight (today)
+    await prismaBase.call.create({
+      data: {
+        tenantId,
+        salesRepId: rep2Id,
+        customerId: customer1Id,
+        outcome: CallOutcome.confirmed,
+        source: CallSource.manual,
+        createdAt: new Date(midnight.getTime() + 30 * 60 * 1000),
+      },
+    });
+
+    const res = await request(app).get('/api/rep/numbers').set('Authorization', bearer(rep2Token));
+    expect(res.status).toBe(200);
+
+    const yesterdayBucket = res.body.callsPerDay.find((d: any) => d.date === yesterdayStr);
+    const todayBucket = res.body.callsPerDay.find((d: any) => d.date === todayStr);
+
+    expect(yesterdayBucket).toBeDefined();
+    expect(todayBucket).toBeDefined();
+    expect(yesterdayBucket.count).toBeGreaterThanOrEqual(1);
+    expect(todayBucket.count).toBeGreaterThanOrEqual(1);
+  });
 });
 
-describe('3. /api/rep/earnings (lines per order: base + upsell - paid; reversal on return; overpaid)', () => {
+describe('3. /api/rep/earnings (lines per order, one owed rule, contract test)', () => {
   let deliveredOrder: any;
   let returnedOrder: any;
 
@@ -453,7 +570,19 @@ describe('3. /api/rep/earnings (lines per order: base + upsell - paid; reversal 
     });
   });
 
-  it('computes commission, upsell reward, earned, paid and owed', async () => {
+  it('contract test: earnings owed equals payoutService.getOwed(rep).owed for the same rep', async () => {
+    const owedFromPayoutService = await runInTenant(tenantId, () => payoutService.getOwed(rep1Id));
+
+    const res = await request(app).get('/api/rep/earnings').set('Authorization', bearer(rep1Token));
+    expect(res.status).toBe(200);
+    expect(res.body.owed).toEqual(Money.toApi(owedFromPayoutService.owed));
+    expect(res.body.commission).toEqual(Money.toApi(owedFromPayoutService.commission));
+    expect(res.body.upsellReward).toEqual(Money.toApi(owedFromPayoutService.upsellReward));
+    expect(res.body.earned).toEqual(Money.toApi(owedFromPayoutService.earned));
+    expect(res.body.paid).toEqual(Money.toApi(owedFromPayoutService.paid));
+  });
+
+  it('computes commission, upsell reward, earned, paid, owed, and per-order lines without net or for', async () => {
     const res = await request(app).get('/api/rep/earnings').set('Authorization', bearer(rep1Token));
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
@@ -466,7 +595,7 @@ describe('3. /api/rep/earnings (lines per order: base + upsell - paid; reversal 
       isOverpaid: false,
     });
 
-    // Lines per order
+    // Lines per order: base, upsell, reversal, no net field
     expect(res.body.lines.length).toBeGreaterThanOrEqual(2);
     const deliveredLine = res.body.lines.find((l: any) => l.orderId === deliveredOrder.id);
     expect(deliveredLine).toMatchObject({
@@ -474,9 +603,10 @@ describe('3. /api/rep/earnings (lines per order: base + upsell - paid; reversal 
       upsell: '20.00',
       earned: '28.00',
       paid: '0.00',
-      net: '28.00',
       isReversal: false,
+      reversal: null,
     });
+    expect(deliveredLine).not.toHaveProperty('net');
 
     // Returned order shows reversal line
     const returnedLine = res.body.lines.find((l: any) => l.orderId === returnedOrder.id);
@@ -484,31 +614,45 @@ describe('3. /api/rep/earnings (lines per order: base + upsell - paid; reversal 
     expect(returnedLine.isReversal).toBe(true);
     expect(returnedLine.status).toBe('returned');
     expect(returnedLine.reversal).toBe('8.00');
+    expect(returnedLine).not.toHaveProperty('net');
   });
 
-  it('owed below 0 returns overpaid with the amount', async () => {
-    // Create advance payout of 100 for rep1 (which exceeds current earned of 28.00)
-    const advPayout = await prismaBase.payout.create({
+  it('openOrdersNote uses store currency and repPay settings (no hard-coded GH₵8)', async () => {
+    const settings = await runInTenant(tenantId, () => rewardService.getRewardSettings());
+    const currency = await runInTenant(tenantId, () => getCurrency());
+    const formattedSign = Money.formatWithSign(settings.repPay.baseCommission, currency);
+
+    const res = await request(app).get('/api/rep/earnings').set('Authorization', bearer(rep1Token));
+    expect(res.status).toBe(200);
+    expect(res.body.openOrdersNote).toContain(formattedSign);
+  });
+
+  it('payment history includes date, amount, status, notes without for field', async () => {
+    const testPayout = await prismaBase.payout.create({
       data: {
         tenantId,
         payeeId: rep1Id,
         kind: 'rep',
-        amount: 100,
+        amount: 15,
         method: 'Mobile Money',
         status: 'completed',
-        notes: 'Advance payment',
+        notes: 'Small advance',
       },
     });
 
     const res = await request(app).get('/api/rep/earnings').set('Authorization', bearer(rep1Token));
     expect(res.status).toBe(200);
-    // Earned: 28, Paid: 100 -> Net: -72
-    expect(res.body.owed).toBe('0.00');
-    expect(res.body.isOverpaid).toBe(true);
-    expect(res.body.overpaid).toBe('72.00');
+    const p = res.body.payouts.find((item: any) => item.id === testPayout.id);
+    expect(p).toBeDefined();
+    expect(p).toMatchObject({
+      amount: '15.00',
+      status: 'completed',
+      notes: 'Small advance',
+    });
+    expect(p).toHaveProperty('date');
+    expect(p).not.toHaveProperty('for');
 
-    // Clean up the advance payout so subsequent tests have expected baseline
-    await prismaBase.payout.delete({ where: { id: advPayout.id } });
+    await prismaBase.payout.delete({ where: { id: testPayout.id } });
   });
 
   it('fixture check: Adwoa earnings = 2,024 + 610 minus payouts in the fixture (2,034 owed)', async () => {
@@ -596,6 +740,7 @@ describe('3. /api/rep/earnings (lines per order: base + upsell - paid; reversal 
       method: 'Bank Transfer',
       notes: 'Paid October commission',
     });
+    expect(res.body.payouts[0]).not.toHaveProperty('for');
   });
 });
 
@@ -629,12 +774,13 @@ describe('4. /api/rep/reward-progress (M6 tiers via rewardService)', () => {
     });
   });
 
-  it('returns M6 tiers for Call rep (tier100: 300, tier120: 500)', async () => {
+  it('returns M6 tiers for rep roleId (tier100: 300, tier120: 500) without constant payout field', async () => {
     const res = await request(app).get('/api/rep/reward-progress').set('Authorization', bearer(rep1Token));
     expect(res.status).toBe(200);
     expect(res.body.tiers).toBeDefined();
     expect(res.body.tiers.tier100).toMatchObject({ amount: '300.00', dayOff: false, payout: true });
     expect(res.body.tiers.tier120).toMatchObject({ amount: '500.00', dayOff: true, payout: true });
+    expect(res.body).not.toHaveProperty('payout');
   });
 
   it('target reached shows "Paid after month close"', async () => {
@@ -665,15 +811,14 @@ describe('4. /api/rep/reward-progress (M6 tiers via rewardService)', () => {
     expect(res.body.note).toBe('Paid after month close');
   });
 
-  it('AI agent shows no payout', async () => {
+  it('AI agent shows message No payout for AI agents', async () => {
     const res = await request(app).get('/api/rep/reward-progress').set('Authorization', bearer(aiRepToken));
     expect(res.status).toBe(200);
-    expect(res.body.payout).toBe(false);
     expect(res.body.message).toBe('No payout for AI agents');
   });
 });
 
-describe('5. Pay ledger read (/api/rep/payouts and /api/rep/pay-ledger)', () => {
+describe('5. Pay ledger read (/api/rep/payouts)', () => {
   beforeAll(async () => {
     await prismaBase.payout.create({
       data: {
@@ -689,7 +834,7 @@ describe('5. Pay ledger read (/api/rep/payouts and /api/rep/pay-ledger)', () => 
     });
   });
 
-  it('reads the rep payout history from M5 payoutService', async () => {
+  it('reads the rep payout history without for field', async () => {
     const res = await request(app).get('/api/rep/payouts').set('Authorization', bearer(rep2Token));
     expect(res.status).toBe(200);
     expect(res.body.payouts).toHaveLength(1);
@@ -699,11 +844,8 @@ describe('5. Pay ledger read (/api/rep/payouts and /api/rep/pay-ledger)', () => 
       reference: `MM-PAY-${SUFFIX}`,
       notes: 'September balance payment',
     });
-
-    // Check alias /api/rep/pay-ledger
-    const resAlias = await request(app).get('/api/rep/pay-ledger').set('Authorization', bearer(rep2Token));
-    expect(resAlias.status).toBe(200);
-    expect(resAlias.body.payouts).toHaveLength(1);
+    expect(res.body.payouts[0]).toHaveProperty('date');
+    expect(res.body.payouts[0]).not.toHaveProperty('for');
   });
 });
 

@@ -6,23 +6,34 @@ import { Requester, isManagerUp } from '../utils/authUtils';
 import { getCurrency } from '../utils/currency';
 import { fullName } from '../utils/nameUtils';
 import * as Money from '../utils/money';
-import { repRates } from './kpi/reps';
-import { timeToFirstCall } from './kpi/timeToFirstCall';
 import { leaderboard } from './leaderboardService';
 import * as rewardService from './rewardService';
-import payoutService from './payoutService';
-import { currentMonth, endOfDay, getStoreTimeZone, localDate, monthRange, parseBound, startOfDay } from './kpi/dates';
+import payoutService, { summarize } from './payoutService';
+import { teamReport } from './teamReportService';
+import {
+  currentMonth,
+  endOfDay,
+  getStoreTimeZone,
+  localDate,
+  monthRange,
+  parseMonth,
+  shiftYmd,
+  startOfDay,
+  weekRange,
+} from './kpi/dates';
 
 /**
  * M7-T11 (COD-65, F-753, F-760, F-761, F-762, F-769): Rep API part 2.
  *
  * Provides:
  * - Orders: rep orders with status filter and search by id, phone, name.
- * - Numbers: rates from M1 KPI service (repRates) only — no second formula (R3 contract), rank, upsell, calls.
- * - Earnings: base + upsell - paid per order line; reversal line on return; overpaid if owed < 0.
- * - Reward progress: M6 cash reward tiers via rewardService; target reached shows "Paid after month close".
- * - Pay ledger: payout history the rep owns.
+ * - Numbers: rates from teamReport; calls bucketed by store-local date; ranks from leaderboard.
+ * - Earnings: summary via payoutService summarize(); base + upsell lines; reversal line on returned/failed.
+ * - Reward progress: M6 cash reward tiers via rewardService by attainment roleId.
+ * - Payouts: payout history the rep owns.
  */
+
+const VALID_ORDER_STATUSES = new Set(Object.values(OrderStatus));
 
 export function resolveTargetRepId(actor: Requester, requestedRepId?: number): number {
   if (!isManagerUp(actor)) {
@@ -34,45 +45,13 @@ export function resolveTargetRepId(actor: Requester, requestedRepId?: number): n
   return requestedRepId ?? actor.id;
 }
 
-export function statusToLabel(status: OrderStatus): string {
-  switch (status) {
-    case 'confirmed':
-    case 'preparing':
-    case 'ready_for_pickup':
-      return 'Waiting to dispatch';
-    case 'out_for_delivery':
-      return 'Out for delivery';
-    case 'delivered':
-    case 'digital_delivered':
-      return 'Delivered';
-    case 'failed_delivery':
-      return 'Failed';
-    case 'returned':
-      return 'Returned';
-    case 'cancelled':
-      return 'Declined';
-    case 'pending_confirmation':
-      return 'Pending confirmation';
-    case 'payment_pending':
-      return 'Payment pending';
-    case 'payment_failed':
-      return 'Payment failed';
-    default:
-      return status;
-  }
-}
-
 export interface RepOrdersQuery {
   repId?: number;
   q?: string;
-  search?: string;
   status?: string;
   page?: number;
   limit?: number;
-  sortBy?: string;
   sortOrder?: 'asc' | 'desc';
-  from?: string;
-  to?: string;
 }
 
 export async function getOrders(actor: Requester, query: RepOrdersQuery = {}) {
@@ -96,24 +75,18 @@ export async function getOrders(actor: Requester, query: RepOrdersQuery = {}) {
   ];
 
   if (query.status) {
-    const s = query.status.toLowerCase().trim();
-    if (s === 'waiting_to_dispatch') {
-      and.push({ status: { in: ['confirmed', 'preparing', 'ready_for_pickup'] } });
-    } else if (s === 'out_for_delivery') {
-      and.push({ status: 'out_for_delivery' });
-    } else if (s === 'delivered') {
-      and.push({ status: { in: ['delivered', 'digital_delivered'] } });
-    } else if (s === 'failed') {
-      and.push({ status: { in: ['failed_delivery', 'returned'] } });
-    } else if (s === 'declined') {
-      and.push({ status: 'cancelled' });
-    } else {
-      const parts = s.split(',').map((p) => p.trim()) as OrderStatus[];
-      and.push({ status: { in: parts } });
+    const rawParts = query.status.split(',').map((p) => p.trim()).filter(Boolean);
+    if (rawParts.length > 0) {
+      for (const part of rawParts) {
+        if (!VALID_ORDER_STATUSES.has(part as OrderStatus)) {
+          throw new AppError(`Invalid status: ${part}`, 400);
+        }
+      }
+      and.push({ status: { in: rawParts as OrderStatus[] } });
     }
   }
 
-  const rawSearch = (query.q ?? query.search)?.trim();
+  const rawSearch = query.q?.trim();
   if (rawSearch) {
     const searchOr: Prisma.OrderWhereInput[] = [];
     const isHashed = rawSearch.startsWith('#');
@@ -129,17 +102,8 @@ export async function getOrders(actor: Requester, query: RepOrdersQuery = {}) {
       { customer: { lastName: { contains: rawSearch, mode: 'insensitive' } } },
       { customer: { phoneNumber: { contains: rawSearch } } },
       { customer: { alternatePhone: { contains: rawSearch } } },
-      { customer: { area: { contains: rawSearch, mode: 'insensitive' } } },
-      { deliveryArea: { contains: rawSearch, mode: 'insensitive' } },
     );
     and.push({ OR: searchOr });
-  }
-
-  if (query.from || query.to) {
-    const dateRange: Prisma.DateTimeFilter = {};
-    if (query.from) dateRange.gte = new Date(query.from);
-    if (query.to) dateRange.lte = new Date(query.to);
-    and.push({ createdAt: dateRange });
   }
 
   const where: Prisma.OrderWhereInput = { AND: and };
@@ -177,10 +141,8 @@ export async function getOrders(actor: Requester, query: RepOrdersQuery = {}) {
 
   const rows = orders.map((o) => ({
     id: o.id,
-    orderNumber: `#${o.id}`,
     createdAt: o.createdAt,
     status: o.status,
-    statusLabel: statusToLabel(o.status),
     totalAmount: Money.toApi(o.totalAmount),
     customer: o.customer ? {
       id: o.customer.id,
@@ -218,109 +180,101 @@ export async function getOrders(actor: Requester, query: RepOrdersQuery = {}) {
   };
 }
 
+export interface RepTargetHit {
+  target: number;
+  actual: number;
+  percent: number | null;
+}
+
 export interface RepNumbersQuery {
   repId?: number;
-  from?: string;
-  to?: string;
   period?: string;
 }
 
-export async function getNumbers(actor: Requester, query: RepNumbersQuery = {}) {
+export interface RepNumbersResult {
+  repId: number;
+  period: string;
+  confirmed: number;
+  confirmationRate: number | null;
+  confirmationRateDetail: Record<string, number>;
+  deliveredFromConfirmedRate: number | null;
+  deliveredFromConfirmedDetail: Record<string, number>;
+  upsellRate: number;
+  extraValueAdded: string;
+  timeToFirstCall: number | null;
+  targetHit: RepTargetHit | null;
+  targetProgress: RepTargetHit | null;
+  ranks: {
+    callRep: { rank: number | null; total: number } | null;
+    upsell: { rank: number | null; total: number } | null;
+  };
+  orderBreakdown: {
+    confirmed: number;
+    delivered: number;
+    failedOrReturned: number;
+    stillOpen: number;
+  };
+  calls: {
+    today: number;
+    thisWeek: number;
+    thisMonth: number;
+    averagePerDay: number;
+  };
+  callOutcomes: Record<string, number>;
+  callsPerDay: { date: string; count: number; isToday: boolean }[];
+}
+
+export async function getNumbers(actor: Requester, query: RepNumbersQuery = {}): Promise<RepNumbersResult> {
   const targetRepId = resolveTargetRepId(actor, query.repId);
   const tenantId = resolveTenantId();
   const zone = getStoreTimeZone(tenantId);
 
-  let fromDate: Date;
-  let toDate: Date;
-  if (query.from && query.to) {
-    fromDate = parseBound(query.from, 'from', zone);
-    toDate = parseBound(query.to, 'to', zone);
-  } else {
-    const period = query.period ?? currentMonth();
-    const [year, month] = period.split('-').map(Number);
-    const range = monthRange(year, month, zone);
-    fromDate = range.from;
-    toDate = range.to;
+  const period = query.period ?? currentMonth(new Date(), zone);
+  const parsed = parseMonth(period);
+  if (!parsed) {
+    throw new AppError('Invalid period, expected YYYY-MM', 400);
   }
+  const { year, month } = parsed;
+  const range = monthRange(year, month, zone);
+  const fromDate = range.from;
+  const toDate = range.to;
 
-  // 1. M1 KPI rates: strictly from repRates (services/kpi/reps.ts) — NO second formula
-  const ratesResult = await repRates(tenantId, fromDate, toDate);
-  const repRatesData = ratesResult.rep(targetRepId);
+  // 1. Reuse teamReport: provides confirmation %, delivered-from-confirmed %, time to first call, upsellRate, extraValue, targetHit
+  const report = await teamReport(tenantId, fromDate, toDate);
+  const repRow = report.reps.find((r) => r.repId === targetRepId);
 
-  const confirmationRate = repRatesData.confirmationRate.value;
-  const confirmationDetail = repRatesData.confirmationRate.detail;
-  const deliveredFromConfirmedRate = repRatesData.deliveredFromConfirmedRate.value;
-  const deliveredDetail = repRatesData.deliveredFromConfirmedRate.detail;
+  // 2. Leaderboard ranks for the period (do not catch errors; let them fail the request)
+  const callRepBoard = await leaderboard(actor, { role: 'call_rep', period });
+  const myCallRepRow = callRepBoard.rows.find((r: any) => r.userId === targetRepId) as any;
+  const callRepRankVal = myCallRepRow && typeof myCallRepRow.rank === 'number' ? myCallRepRow.rank : null;
+  const callRepRank = { rank: callRepRankVal, total: callRepBoard.rows.length };
 
-  // 2. Time to first call
-  const ttfcResult = await timeToFirstCall(tenantId, fromDate, toDate, { repId: targetRepId });
-  const ttfcMinutes = ttfcResult.value;
+  const upsellBoard = await leaderboard(actor, { role: 'upsell', period });
+  const myUpsellRow = upsellBoard.rows.find((r: any) => r.userId === targetRepId) as any;
+  const upsellRankVal = myUpsellRow && typeof myUpsellRow.rank === 'number' ? myUpsellRow.rank : null;
+  const upsellRank = { rank: upsellRankVal, total: upsellBoard.rows.length };
 
-  // 3. Upsell metrics on confirmed orders in range
-  const upsellLines = await prisma.upsellLine.findMany({
-    where: {
-      tenantId,
-      repId: targetRepId,
-      status: 'active',
-      order: {
-        deletedAt: null,
-        confirmedById: targetRepId,
-        createdAt: { gte: fromDate, lt: toDate },
-      },
-    },
-    include: { order: { select: { status: true } } },
-  });
-
-  const deliveredUpsellLines = upsellLines.filter((l) => l.order.status === 'delivered');
-  const extraValueDelivered = Money.sum(deliveredUpsellLines.map((l) => l.extraValue));
-  const confirmedCount = confirmationDetail.confirmed ?? 0;
-  const ordersWithUpsell = new Set(upsellLines.map((l) => l.orderId)).size;
-  const upsellRate = confirmedCount > 0 ? Math.round((ordersWithUpsell / confirmedCount) * 100) : 0;
-
-  // 4. Target progress
-  const attainment = await rewardService.computeAttainment(query.period ?? currentMonth(), { userId: targetRepId });
-  const myAttainment = attainment.results.find((r) => r.userId === targetRepId);
-
-  // 5. Ranks from leaderboard
-  let callRepRank: { rank: number | null; total: number } | null = null;
-  let upsellRank: { rank: number | null; total: number } | null = null;
-  try {
-    const callRepBoard = await leaderboard(actor, { role: 'call_rep', period: query.period ?? 'month' });
-    const myRow = callRepBoard.rows.find((r: any) => r.userId === targetRepId) as any;
-    const rankVal = myRow && typeof myRow.rank === 'number' ? myRow.rank : null;
-    callRepRank = { rank: rankVal, total: callRepBoard.rows.length };
-  } catch {
-    callRepRank = null;
-  }
-  try {
-    const upsellBoard = await leaderboard(actor, { role: 'upsell', period: query.period ?? 'month' });
-    const myRow = upsellBoard.rows.find((r: any) => r.userId === targetRepId) as any;
-    const rankVal = myRow && typeof myRow.rank === 'number' ? myRow.rank : null;
-    upsellRank = { rank: rankVal, total: upsellBoard.rows.length };
-  } catch {
-    upsellRank = null;
-  }
-
-  // 6. Order breakdown ("Where my confirmed orders are")
+  // 3. Order breakdown from the rep's deliveredFromConfirmedRate detail
+  const confirmedCount = repRow?.confirmationRate.detail.confirmed ?? 0;
+  const deliveredDetail = repRow?.deliveredFromConfirmedRate.detail ?? { delivered: 0, failed: 0, returned: 0, closed: 0 };
   const deliveredCount = deliveredDetail.delivered ?? 0;
   const failedCount = deliveredDetail.failed ?? 0;
   const returnedCount = deliveredDetail.returned ?? 0;
   const failedOrReturned = failedCount + returnedCount;
   const stillOpen = Math.max(0, confirmedCount - (deliveredCount + failedOrReturned));
 
-  // 7. My calls: today, this week, this month, avg/day
+  // 4. Calls: today, this week (store time zone), this month, avg/day
   const now = new Date();
   const todayStr = localDate(now, zone);
   const todayStart = startOfDay(todayStr, zone);
   const todayEnd = endOfDay(todayStr, zone);
 
-  const dayOfWeek = (now.getUTCDay() + 6) % 7; // Mon = 0
-  const weekStart = new Date(now.getTime() - dayOfWeek * 24 * 60 * 60 * 1000);
-  weekStart.setUTCHours(0, 0, 0, 0);
+  const week = weekRange(todayStr, zone);
+  const weekStart = week.from;
 
   const [callsToday, callsThisWeek, callsThisMonth, callOutcomeGroups] = await Promise.all([
-    prisma.call.count({ where: { tenantId, salesRepId: targetRepId, createdAt: { gte: todayStart, lte: todayEnd } } }),
-    prisma.call.count({ where: { tenantId, salesRepId: targetRepId, createdAt: { gte: weekStart, lte: toDate } } }),
+    prisma.call.count({ where: { tenantId, salesRepId: targetRepId, createdAt: { gte: todayStart, lt: todayEnd } } }),
+    prisma.call.count({ where: { tenantId, salesRepId: targetRepId, createdAt: { gte: weekStart, lt: week.to } } }),
     prisma.call.count({ where: { tenantId, salesRepId: targetRepId, createdAt: { gte: fromDate, lt: toDate } } }),
     prisma.call.groupBy({
       by: ['outcome'],
@@ -344,36 +298,57 @@ export async function getNumbers(actor: Requester, query: RepNumbersQuery = {}) 
   const daysElapsed = Math.max(1, Math.ceil((now.getTime() - fromDate.getTime()) / (24 * 3600 * 1000)));
   const averageCallsPerDay = callsThisMonth > 0 ? Math.round(callsThisMonth / daysElapsed) : 0;
 
-  // 8. Calls per day (last 14 days)
+  // 5. Calls per day: one query for the 14 days, bucket by store-local date
+  const oldestDateStr = shiftYmd(todayStr, -13);
+  const rangeStart14 = startOfDay(oldestDateStr, zone);
+  const rangeEnd14 = endOfDay(todayStr, zone);
+
+  const calls14Days = await prisma.call.findMany({
+    where: {
+      tenantId,
+      salesRepId: targetRepId,
+      createdAt: { gte: rangeStart14, lt: rangeEnd14 },
+    },
+    select: { createdAt: true },
+  });
+
+  const dailyCounts = new Map<string, number>();
+  for (const call of calls14Days) {
+    const dStr = localDate(call.createdAt, zone);
+    dailyCounts.set(dStr, (dailyCounts.get(dStr) ?? 0) + 1);
+  }
+
   const callsPerDay: { date: string; count: number; isToday: boolean }[] = [];
   for (let i = 13; i >= 0; i--) {
-    const d = new Date(now.getTime() - i * 24 * 3600 * 1000);
-    const dateStr = localDate(d, zone);
-    const dStart = startOfDay(dateStr, zone);
-    const dEnd = endOfDay(dateStr, zone);
-    const count = await prisma.call.count({
-      where: { tenantId, salesRepId: targetRepId, createdAt: { gte: dStart, lte: dEnd } },
+    const dStr = shiftYmd(todayStr, -i);
+    callsPerDay.push({
+      date: dStr,
+      count: dailyCounts.get(dStr) ?? 0,
+      isToday: i === 0,
     });
-    callsPerDay.push({ date: dateStr, count, isToday: i === 0 });
   }
 
   return {
     repId: targetRepId,
-    period: query.period ?? currentMonth(),
-    confirmed: confirmedCount,
-    confirmationRate,
-    confirmationRateDetail: confirmationDetail,
-    deliveredFromConfirmedRate,
-    deliveredFromConfirmedDetail: deliveredDetail,
-    upsellRate,
-    extraValueAdded: Money.toApi(extraValueDelivered),
-    timeToFirstCall: ttfcMinutes,
-    targetProgress: {
-      target: myAttainment?.target ? parseInt(myAttainment.target, 10) : null,
-      actual: myAttainment?.actual ?? deliveredCount,
-      percent: myAttainment?.percent ?? null,
-      tier: myAttainment?.tier ?? 'none',
-    },
+    period,
+    confirmed: repRow?.confirmed ?? 0,
+    confirmationRate: repRow?.confirmationRate.value ?? null,
+    confirmationRateDetail: repRow?.confirmationRate.detail ?? { confirmed: 0, placed: 0, autoConfirmed: 0 },
+    deliveredFromConfirmedRate: repRow?.deliveredFromConfirmedRate.value ?? null,
+    deliveredFromConfirmedDetail: repRow?.deliveredFromConfirmedRate.detail ?? { delivered: 0, failed: 0, returned: 0, closed: 0 },
+    upsellRate: repRow?.upsellRate ?? 0,
+    extraValueAdded: repRow?.extraValue ?? '0.00',
+    timeToFirstCall: repRow?.timeToFirstCallMinutes ?? null,
+    targetHit: repRow?.targetHit ? {
+      target: repRow.targetHit.target,
+      actual: repRow.targetHit.actual,
+      percent: repRow.targetHit.percent,
+    } : null,
+    targetProgress: repRow?.targetHit ? {
+      target: repRow.targetHit.target,
+      actual: repRow.targetHit.actual,
+      percent: repRow.targetHit.percent,
+    } : null,
     ranks: {
       callRep: callRepRank,
       upsell: upsellRank,
@@ -403,12 +378,16 @@ export interface RepEarningsQuery {
 export async function getEarnings(actor: Requester, query: RepEarningsQuery = {}) {
   const targetRepId = resolveTargetRepId(actor, query.repId);
   const tenantId = resolveTenantId();
-  const currency = await getCurrency();
 
-  const rep = await prisma.user.findFirst({
-    where: { id: targetRepId, tenantId },
-    select: { id: true, firstName: true, lastName: true, role: true, kind: true },
-  });
+  const [rep, settings, currency] = await Promise.all([
+    prisma.user.findFirst({
+      where: { id: targetRepId, tenantId },
+      select: { id: true, firstName: true, lastName: true, role: true, kind: true },
+    }),
+    rewardService.getRewardSettings(),
+    getCurrency(),
+  ]);
+
   if (!rep) throw new AppError('Rep not found', 404);
 
   if (rep.kind === 'ai_agent') {
@@ -430,6 +409,7 @@ export async function getEarnings(actor: Requester, query: RepEarningsQuery = {}
     };
   }
 
+  // Same entries as payoutService.getOwed (status: earned or paid) plus void entries for order reversal lines
   const [entries, payouts] = await Promise.all([
     prisma.commissionEntry.findMany({
       where: { tenantId, userId: targetRepId },
@@ -451,25 +431,11 @@ export async function getEarnings(actor: Requester, query: RepEarningsQuery = {}
     }),
   ]);
 
-  let commission = Money.ZERO;
-  let upsellReward = Money.ZERO;
-  let targetReward = Money.ZERO;
-
-  for (const e of entries) {
-    if (e.status === 'earned' || e.status === 'paid') {
-      const amt = Money.parse(e.amount);
-      if (e.kind === 'base') commission = commission.plus(amt);
-      else if (e.kind === 'upsell') upsellReward = upsellReward.plus(amt);
-      else if (e.kind === 'reward') targetReward = targetReward.plus(amt);
-    }
-  }
-  const earned = commission.plus(upsellReward).plus(targetReward);
-  const paid = Money.sum(payouts.map((p) => p.amount));
-
-  const netOwed = earned.minus(paid);
-  const isOverpaid = netOwed.lt(0);
-  const overpaid = isOverpaid ? Money.toApi(netOwed.abs()) : null;
-  const owed = isOverpaid ? '0.00' : Money.toApi(netOwed);
+  // The one owed rule from payoutService: summarize()
+  const summary = summarize(entries);
+  const isOverpaid = summary.owed.lt(0);
+  const overpaid = isOverpaid ? Money.toApi(summary.owed.abs()) : null;
+  const owed = Money.toApi(summary.owed);
 
   const openOrdersCount = await prisma.order.count({
     where: {
@@ -479,7 +445,10 @@ export async function getEarnings(actor: Requester, query: RepEarningsQuery = {}
       status: { in: ['confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery'] },
     },
   });
-  const openOrdersNote = `${openOrdersCount} of your confirmed orders are still open, each adds GH₵8 when delivered.`;
+
+  const baseCommission = settings.repPay?.baseCommission ?? '8.00';
+  const formattedBaseCommission = Money.formatWithSign(baseCommission, currency);
+  const openOrdersNote = `${openOrdersCount} of your confirmed orders are still open, each adds ${formattedBaseCommission} when delivered.`;
 
   // Build lines per order
   const orderEntriesMap = new Map<number, typeof entries>();
@@ -493,52 +462,47 @@ export async function getEarnings(actor: Requester, query: RepEarningsQuery = {}
 
   const lines = [...orderEntriesMap.entries()].map(([orderId, oEntries]) => {
     const o = oEntries[0].order;
-    const isReturned = o?.status === 'returned';
-    const hasVoid = oEntries.some((e) => e.status === 'void');
+    const isOrderReturnedOrFailed = o?.status === 'returned' || o?.status === 'failed_delivery';
 
     const baseAmt = Money.sum(oEntries.filter((e) => e.kind === 'base' && e.status !== 'void').map((e) => e.amount));
     const upsellAmt = Money.sum(oEntries.filter((e) => e.kind === 'upsell' && e.status !== 'void').map((e) => e.amount));
     const paidAmt = Money.sum(oEntries.filter((e) => e.status === 'paid').map((e) => e.amount));
     const voidAmt = Money.sum(oEntries.filter((e) => e.status === 'void').map((e) => e.amount));
 
-    const isReversal = isReturned || hasVoid;
-    const reversalAmt = isReversal ? (voidAmt.gt(0) ? voidAmt : baseAmt.plus(upsellAmt)) : null;
-    const net = baseAmt.plus(upsellAmt).minus(paidAmt);
+    const reversal = isOrderReturnedOrFailed ? Money.toApi(voidAmt) : null;
+    const isReversal = isOrderReturnedOrFailed && voidAmt.gt(0);
 
     return {
       orderId,
-      orderNumber: `#${orderId}`,
       date: o?.createdAt ?? oEntries[0].createdAt,
       customerName: o?.customer ? fullName(o.customer) : null,
-      status: o?.status ?? (isReturned ? 'returned' : 'delivered'),
+      status: o?.status ?? (isOrderReturnedOrFailed ? 'returned' : 'delivered'),
       base: Money.toApi(baseAmt),
       upsell: Money.toApi(upsellAmt),
       earned: Money.toApi(baseAmt.plus(upsellAmt)),
       paid: Money.toApi(paidAmt),
-      reversal: reversalAmt ? Money.toApi(reversalAmt) : null,
+      reversal,
       isReversal,
-      net: Money.toApi(net),
     };
   });
 
   const formattedPayouts = payouts.map((p) => ({
     id: p.id,
-    payoutDate: p.payoutDate,
+    date: p.payoutDate,
     amount: Money.toApi(p.amount),
-    method: p.method,
-    reference: p.reference,
     status: p.status,
     notes: p.notes,
-    for: p.notes ?? `${p.method} payout`,
+    method: p.method,
+    reference: p.reference,
   }));
 
   return {
     currency,
-    commission: Money.toApi(commission),
-    upsellReward: Money.toApi(upsellReward),
-    targetReward: Money.toApi(targetReward),
-    earned: Money.toApi(earned),
-    paid: Money.toApi(paid),
+    commission: Money.toApi(summary.base),
+    upsellReward: Money.toApi(summary.upsell),
+    targetReward: Money.toApi(summary.reward),
+    earned: Money.toApi(summary.earned),
+    paid: Money.toApi(summary.paid),
     owed,
     overpaid,
     isOverpaid,
@@ -578,7 +542,6 @@ export interface RewardProgressResult {
   note: string;
   targetReached: boolean;
   earned: boolean;
-  payout: boolean;
 }
 
 export async function getRewardProgress(actor: Requester, query: RepRewardProgressQuery = {}): Promise<RewardProgressResult> {
@@ -612,12 +575,11 @@ export async function getRewardProgress(actor: Requester, query: RepRewardProgre
       note: 'No payout for AI agents',
       targetReached: false,
       earned: false,
-      payout: false,
     };
   }
 
   const repAttainment = attainmentResult.results.find((r) => r.userId === targetRepId);
-  const repRoleTiers = settings.tiers.find((t) => t.roleName === 'Call rep' || t.roleId === repAttainment?.roleId);
+  const repRoleTiers = repAttainment?.roleId ? settings.tiers.find((t) => t.roleId === repAttainment.roleId) : null;
 
   const target = repAttainment?.target ?? null;
   const actual = repAttainment?.actual ?? 0;
@@ -651,7 +613,6 @@ export async function getRewardProgress(actor: Requester, query: RepRewardProgre
     note: targetReached ? 'Paid after month close' : 'The reward is paid after month close.',
     targetReached,
     earned: repAttainment?.earned ?? false,
-    payout: true,
   };
 }
 
@@ -670,13 +631,12 @@ export async function getPayouts(actor: Requester, query: RepPayoutsQuery = {}) 
   return {
     payouts: result.payouts.map((p) => ({
       id: p.id,
-      payoutDate: p.payoutDate,
+      date: p.payoutDate,
       amount: Money.toApi(p.amount),
-      method: p.method,
-      reference: p.reference,
       status: p.status,
       notes: p.notes,
-      for: p.notes ?? `${p.method} payout`,
+      method: p.method,
+      reference: p.reference,
     })),
     total: result.total,
     page: result.page,
