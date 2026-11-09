@@ -72,7 +72,8 @@ export async function createPartner(requester: Requester, input: CreatePartnerIn
   const lastName = clean(input.lastName);
   if (!firstName) throw new AppError('First name is required', 400);
   const vehicleType = input.vehicleType ? requireVehicleType(input.vehicleType) : undefined;
-  const daysToPay = input.daysToPay ?? DEFAULT_DAYS_TO_PAY;
+  const settings = await adminService.getOperationsSettings();
+  const daysToPay = input.daysToPay ?? settings.defaultDaysToPay ?? DEFAULT_DAYS_TO_PAY;
 
   const tenantId = resolveTenantId();
   const type: PartnerType = partnerTypeOf(input.kind as UserKind);
@@ -189,6 +190,8 @@ export async function updatePartner(requester: Requester, partnerId: number, inp
     ...(input.vehicleId !== undefined && { vehicleId: clean(input.vehicleId ?? '') || null }),
   };
 
+  const defaultDaysToPay = (await adminService.getOperationsSettings()).defaultDaysToPay ?? DEFAULT_DAYS_TO_PAY;
+
   await prisma.$transaction(async (tx) => {
     if (Object.keys(profileData).length > 0) {
       await tx.deliveryPartnerProfile.upsert({
@@ -196,7 +199,7 @@ export async function updatePartner(requester: Requester, partnerId: number, inp
         update: profileData,
         create: {
           tenantId, userId: partnerId,
-          daysToPay: DEFAULT_DAYS_TO_PAY,
+          daysToPay: defaultDaysToPay,
           dataSource: defaultDataSource(before.kind),
           ...profileData,
         },

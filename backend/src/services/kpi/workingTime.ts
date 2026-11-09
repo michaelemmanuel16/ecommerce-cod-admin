@@ -54,12 +54,17 @@ export function parseOperatingHours(value: unknown): OperatingHours {
     days[key as Weekday] = { open: d.open, close: d.close, enabled: d.enabled };
   }
   const out: OperatingHours = { days };
-  for (const key of ['firstCallTargetMinutes', 'queueWaitAlertMinutes', 'defaultDaysToPay', 'lowStockCoverDays'] as const) {
-    const rawVal = input[key] ?? (key === 'lowStockCoverDays' ? input['lowStockDaysOfCover'] : undefined);
-    if (rawVal === undefined) continue;
-    const n = typeof rawVal === 'string' && rawVal.trim() !== '' ? Number(rawVal) : rawVal;
-    if (typeof n !== 'number' || !Number.isFinite(n) || (key === 'defaultDaysToPay' ? n < 0 : n <= 0)) {
-      throw new RangeError(`operatingHours.${key} must be a ${key === 'defaultDaysToPay' ? 'non-negative' : 'positive'} number`);
+  for (const key of ['firstCallTargetMinutes', 'queueWaitAlertMinutes'] as const) {
+    if (input[key] === undefined) continue;
+    const n = input[key];
+    if (typeof n !== 'number' || !Number.isFinite(n) || n <= 0) throw new RangeError(`operatingHours.${key} must be a positive number`);
+    out[key] = n;
+  }
+  for (const key of ['defaultDaysToPay', 'lowStockCoverDays'] as const) {
+    if (input[key] === undefined) continue;
+    const n = input[key];
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 1) {
+      throw new RangeError(`operatingHours.${key} must be a positive whole number`);
     }
     out[key] = n;
   }

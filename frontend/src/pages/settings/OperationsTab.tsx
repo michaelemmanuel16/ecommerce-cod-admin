@@ -213,7 +213,8 @@ export function OperationsTab({ editable = true }: OperationsTabProps) {
           <Input
             label="Default days to pay"
             type="number"
-            min={0}
+            min={1}
+            step={1}
             value={defaultDaysToPay}
             disabled={!editable || loading}
             onChange={(e) => setDefaultDaysToPay(e.target.value)}
@@ -223,6 +224,7 @@ export function OperationsTab({ editable = true }: OperationsTabProps) {
             label="Low stock alert (days of cover)"
             type="number"
             min={1}
+            step={1}
             value={lowStockCoverDays}
             disabled={!editable || loading}
             onChange={(e) => setLowStockCoverDays(e.target.value)}

@@ -124,15 +124,13 @@ describe('M7-T05: Operating hours and time-to-first-call clock unit tests', () =
       expect(parsed.lowStockCoverDays).toBe(14);
     });
 
-    it('supports lowStockDaysOfCover alias', () => {
-      const parsed = parseOperatingHours({
-        days: { monday: weekday },
-        lowStockDaysOfCover: 21,
-      });
-      expect(parsed.lowStockCoverDays).toBe(21);
-    });
-
-    it('rejects negative defaultDaysToPay', () => {
+    it('rejects 0 and negative defaultDaysToPay', () => {
+      expect(() =>
+        parseOperatingHours({
+          days: { monday: weekday },
+          defaultDaysToPay: 0,
+        })
+      ).toThrow(RangeError);
       expect(() =>
         parseOperatingHours({
           days: { monday: weekday },
@@ -141,11 +139,53 @@ describe('M7-T05: Operating hours and time-to-first-call clock unit tests', () =
       ).toThrow(RangeError);
     });
 
-    it('rejects non-positive lowStockCoverDays', () => {
+    it('rejects fractional defaultDaysToPay', () => {
+      expect(() =>
+        parseOperatingHours({
+          days: { monday: weekday },
+          defaultDaysToPay: 2.5,
+        })
+      ).toThrow(RangeError);
+    });
+
+    it('rejects string defaultDaysToPay without coercion', () => {
+      expect(() =>
+        parseOperatingHours({
+          days: { monday: weekday },
+          defaultDaysToPay: '7' as any,
+        })
+      ).toThrow(RangeError);
+    });
+
+    it('rejects 0 and negative lowStockCoverDays', () => {
       expect(() =>
         parseOperatingHours({
           days: { monday: weekday },
           lowStockCoverDays: 0,
+        })
+      ).toThrow(RangeError);
+      expect(() =>
+        parseOperatingHours({
+          days: { monday: weekday },
+          lowStockCoverDays: -1,
+        })
+      ).toThrow(RangeError);
+    });
+
+    it('rejects fractional lowStockCoverDays', () => {
+      expect(() =>
+        parseOperatingHours({
+          days: { monday: weekday },
+          lowStockCoverDays: 2.5,
+        })
+      ).toThrow(RangeError);
+    });
+
+    it('rejects string lowStockCoverDays without coercion', () => {
+      expect(() =>
+        parseOperatingHours({
+          days: { monday: weekday },
+          lowStockCoverDays: '14' as any,
         })
       ).toThrow(RangeError);
     });

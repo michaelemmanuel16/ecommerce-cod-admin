@@ -488,3 +488,29 @@ describe('another tenant', () => {
     expect(res.status).toBe(201);
   });
 });
+
+describe('Operations settings lowStockCoverDays integration', () => {
+  it('low stock: product with no lowStockDays uses lowStockCoverDays from settings', async () => {
+    const setRes = await request(app)
+      .put('/api/admin/settings/operations')
+      .set(bearer(U.owner.token))
+      .send({ lowStockCoverDays: 50 });
+    expect(setRes.status).toBe(200);
+    expect(setRes.body.lowStockCoverDays).toBe(50);
+
+    const prodId = (await send('post', 'owner', '', newProduct({ cogs: 1 }))).body.product.id;
+    await stockUp(tenantId, prodId, 40, { locationId: swift });
+    const order = await makeOrder({ tenantId, customerId: (await makeCustomer(tenantId)).id, status: 'delivered', deliveryDate: new Date() });
+    await line(order.id, prodId, 14); // 1 a day -> 40 days of cover, under settings limit of 50
+
+    const { body } = await get('owner', '?limit=100');
+    expect(row(body, prodId)).toMatchObject({
+      daysOfCover: 40,
+      lowStockDaysEffective: 50,
+      status: 'low_stock',
+    });
+
+    const low = (await get('owner', '/low-stock')).body.products;
+    expect(low.some((p: any) => p.id === prodId)).toBe(true);
+  });
+});

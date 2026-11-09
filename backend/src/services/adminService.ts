@@ -217,19 +217,21 @@ export const adminService = {
       await this.checkAdminPrivilege(requester, 'manager');
     }
     const tenantId = getTenantId();
-    const config = await this.getSystemConfig();
-    const opHours = (config.operatingHours && typeof config.operatingHours === 'object' && !Array.isArray(config.operatingHours))
+    const config = tenantId
+      ? await prisma.systemConfig.findUnique({ where: { tenantId } })
+      : await prisma.systemConfig.findFirst({ where: { tenantId: null } });
+    const opHours = (config?.operatingHours && typeof config.operatingHours === 'object' && !Array.isArray(config.operatingHours))
       ? (config.operatingHours as any)
       : null;
     return {
-      operatingHours: config.operatingHours,
-      autoConfirmEnabled: config.autoConfirmEnabled ?? false,
-      autoConfirmChannel: config.autoConfirmChannel ?? 'whatsapp',
-      timeZone: config.timeZone || getStoreTimeZone(tenantId),
+      operatingHours: config?.operatingHours ?? null,
+      autoConfirmEnabled: config?.autoConfirmEnabled ?? false,
+      autoConfirmChannel: (config?.autoConfirmChannel as 'whatsapp' | 'sms') ?? 'whatsapp',
+      timeZone: config?.timeZone || getStoreTimeZone(tenantId),
       queueWaitAlertMinutes: opHours?.queueWaitAlertMinutes ?? 30,
       firstCallTargetMinutes: opHours?.firstCallTargetMinutes ?? 15,
       defaultDaysToPay: opHours?.defaultDaysToPay ?? 7,
-      lowStockCoverDays: opHours?.lowStockCoverDays ?? opHours?.lowStockDaysOfCover ?? 14,
+      lowStockCoverDays: opHours?.lowStockCoverDays ?? 14,
     };
   },
 
@@ -242,7 +244,6 @@ export const adminService = {
     firstCallTargetMinutes?: number;
     defaultDaysToPay?: number;
     lowStockCoverDays?: number;
-    lowStockDaysOfCover?: number;
   }) {
     await this.checkAdminPrivilege(requester, 'super_admin');
     if (data.autoConfirmChannel !== undefined && data.autoConfirmChannel !== 'whatsapp' && data.autoConfirmChannel !== 'sms') {
@@ -267,9 +268,8 @@ export const adminService = {
       if (data.defaultDaysToPay !== undefined) {
         cloned.defaultDaysToPay = data.defaultDaysToPay;
       }
-      const lowDays = data.lowStockCoverDays ?? data.lowStockDaysOfCover;
-      if (lowDays !== undefined) {
-        cloned.lowStockCoverDays = lowDays;
+      if (data.lowStockCoverDays !== undefined) {
+        cloned.lowStockCoverDays = data.lowStockCoverDays;
       }
       try {
         operatingHours = parseOperatingHours(cloned);
@@ -281,8 +281,7 @@ export const adminService = {
       data.queueWaitAlertMinutes !== undefined ||
       data.firstCallTargetMinutes !== undefined ||
       data.defaultDaysToPay !== undefined ||
-      data.lowStockCoverDays !== undefined ||
-      data.lowStockDaysOfCover !== undefined
+      data.lowStockCoverDays !== undefined
     ) {
       const current = await this.getSystemConfig();
       const currentHours = current.operatingHours && typeof current.operatingHours === 'object' && !Array.isArray(current.operatingHours)
@@ -291,8 +290,7 @@ export const adminService = {
       if (data.queueWaitAlertMinutes !== undefined) (currentHours as any).queueWaitAlertMinutes = data.queueWaitAlertMinutes;
       if (data.firstCallTargetMinutes !== undefined) (currentHours as any).firstCallTargetMinutes = data.firstCallTargetMinutes;
       if (data.defaultDaysToPay !== undefined) (currentHours as any).defaultDaysToPay = data.defaultDaysToPay;
-      const lowDays = data.lowStockCoverDays ?? data.lowStockDaysOfCover;
-      if (lowDays !== undefined) (currentHours as any).lowStockCoverDays = lowDays;
+      if (data.lowStockCoverDays !== undefined) (currentHours as any).lowStockCoverDays = data.lowStockCoverDays;
       try {
         operatingHours = parseOperatingHours(currentHours);
       } catch (error) {
