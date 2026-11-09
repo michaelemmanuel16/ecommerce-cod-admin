@@ -261,7 +261,10 @@ export const createCallValidation: ValidationChain[] = [
   body('startedAt').optional().isISO8601().withMessage('startedAt must be an ISO date'),
   body('source').optional().isIn(['manual', 'auto_confirm', 'tap_to_call']).withMessage('Invalid call source'),
   body('declineReason').optional().isIn(['price_too_high', 'prank_or_mistake', 'changed_mind', 'bought_elsewhere', 'wrong_number', 'other']).withMessage('Invalid decline reason'),
-  body('callbackAt').optional().isISO8601().withMessage('callbackAt must be an ISO date')
+  body('callbackAt').optional().isISO8601().withMessage('callbackAt must be an ISO date'),
+  body('orderChanges').optional().isObject().withMessage('orderChanges must be an object'),
+  body('orderChanges.packageId').optional().isInt().withMessage('packageId must be an integer'),
+  body('orderChanges.addOnIds').optional().isArray().withMessage('addOnIds must be an array')
 ];
 
 export const createAccountValidation: ValidationChain[] = [

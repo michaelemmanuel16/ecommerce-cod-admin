@@ -18,6 +18,14 @@ interface CreateCallData {
   source?: CallSource;
   declineReason?: DeclineReason;
   callbackAt?: Date;
+  orderChanges?: {
+    packageId?: number;
+    addOnIds?: number[];
+    openedAt?: Date | string;
+    expectedStatusVersion?: number;
+    value?: any;
+    extraValue?: any;
+  };
 }
 
 interface CallFilters {
@@ -178,6 +186,21 @@ export class CallService {
       });
     }
 
+    // M7-T04: Upsell changes via call card (server computes extra value, client sends only IDs)
+    let upsellResult: any = null;
+    if (data.orderChanges && data.orderId) {
+      const { upsellService } = await import('./upsellService');
+      upsellResult = await upsellService.applyUpsell({
+        orderId: data.orderId,
+        repId: data.salesRepId,
+        packageId: data.orderChanges.packageId,
+        addOnIds: data.orderChanges.addOnIds,
+        openedAt: data.orderChanges.openedAt,
+        expectedStatusVersion: data.orderChanges.expectedStatusVersion,
+        tenantId: resolveTenantId(salesRep.tenantId),
+      });
+    }
+
     // M7-T03: Order status transitions and side effects
     if (order && data.orderId) {
       const actor: TransitionActor = { kind: 'user', userId: data.salesRepId, role: salesRep.role as any };
@@ -211,6 +234,16 @@ export class CallService {
 
     Object.defineProperty(call, 'nextOrderId', {
       value: nextOrderId,
+      enumerable: false,
+      writable: true,
+    });
+    Object.defineProperty(call, 'upsell', {
+      value: upsellResult,
+      enumerable: false,
+      writable: true,
+    });
+    Object.defineProperty(call, 'warningFlag', {
+      value: upsellResult?.warningFlag ?? false,
       enumerable: false,
       writable: true,
     });
