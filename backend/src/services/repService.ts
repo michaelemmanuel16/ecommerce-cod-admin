@@ -203,7 +203,6 @@ export interface RepNumbersResult {
   extraValueAdded: string;
   timeToFirstCall: number | null;
   targetHit: RepTargetHit | null;
-  targetProgress: RepTargetHit | null;
   ranks: {
     callRep: { rank: number | null; total: number } | null;
     upsell: { rank: number | null; total: number } | null;
@@ -340,11 +339,6 @@ export async function getNumbers(actor: Requester, query: RepNumbersQuery = {}):
     extraValueAdded: repRow?.extraValue ?? '0.00',
     timeToFirstCall: repRow?.timeToFirstCallMinutes ?? null,
     targetHit: repRow?.targetHit ? {
-      target: repRow.targetHit.target,
-      actual: repRow.targetHit.actual,
-      percent: repRow.targetHit.percent,
-    } : null,
-    targetProgress: repRow?.targetHit ? {
       target: repRow.targetHit.target,
       actual: repRow.targetHit.actual,
       percent: repRow.targetHit.percent,
@@ -547,7 +541,7 @@ export interface RewardProgressResult {
 export async function getRewardProgress(actor: Requester, query: RepRewardProgressQuery = {}): Promise<RewardProgressResult> {
   const targetRepId = resolveTargetRepId(actor, query.repId);
   const tenantId = resolveTenantId();
-  const period = query.period ?? currentMonth();
+  const period = query.period ?? currentMonth(new Date(), getStoreTimeZone(tenantId));
 
   const [settings, attainmentResult, currency] = await Promise.all([
     rewardService.getRewardSettings(),
