@@ -1,4 +1,4 @@
-import { OrderStatus, Prisma } from '@prisma/client';
+import { OrderStatus, Prisma, UpsellStatus } from '@prisma/client';
 import prisma from '../utils/prisma';
 import { resolveTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
@@ -6,6 +6,16 @@ import { Requester, isManagerUp } from '../utils/authUtils';
 import { getCurrency } from '../utils/currency';
 import { fullName } from '../utils/nameUtils';
 import * as Money from '../utils/money';
+import {
+  workingMinutesBetween,
+  readOperatingHours,
+  DEFAULT_FIRST_CALL_TARGET_MINUTES,
+  DEFAULT_QUEUE_WAIT_ALERT_MINUTES,
+} from './kpi/workingTime';
+import { timeToFirstCall } from './kpi/timeToFirstCall';
+import { repRates } from './kpi/reps';
+import { upsellService } from './upsellService';
+
 import { leaderboard } from './leaderboardService';
 import * as rewardService from './rewardService';
 import payoutService, { summarize } from './payoutService';
@@ -635,5 +645,484 @@ export async function getPayouts(actor: Requester, query: RepPayoutsQuery = {}) 
     total: result.total,
     page: result.page,
     limit: result.limit,
+  };
+}
+
+
+/**
+ * Shell summary: badge counts for the nav (queue pill, unread inbox, today's confirmed).
+ */
+export async function getShellSummary(tenantId: string, repId: number) {
+  const [queueCount, unreadInbox, confirmedToday] = await Promise.all([
+    prisma.order.count({
+      where: {
+        tenantId,
+        customerRepId: repId,
+        status: 'pending_confirmation',
+        deletedAt: null,
+      },
+    }),
+    prisma.notification.count({
+      where: {
+        tenantId,
+        userId: repId,
+        isRead: false,
+      },
+    }),
+    prisma.call.count({
+      where: {
+        tenantId,
+        salesRepId: repId,
+        outcome: 'confirmed',
+        createdAt: {
+          gte: startOfDay(localDate(new Date(), getStoreTimeZone(tenantId)), getStoreTimeZone(tenantId)),
+        },
+      },
+    }),
+  ]);
+
+  return {
+    queue: queueCount,
+    inbox: unreadInbox,
+    todayConfirmed: confirmedToday,
+  };
+}
+
+/**
+ * Today page: calls done, confirmed, upsell extra, time to first call, target progress from M6 targets.
+ */
+export async function getToday(tenantId: string, repId: number) {
+  const zone = getStoreTimeZone(tenantId);
+  const now = new Date();
+  const todayYmd = localDate(now, zone);
+  const dayStart = startOfDay(todayYmd, zone);
+  const dayEnd = endOfDay(todayYmd, zone);
+
+  const currentMonthStr = currentMonth(now, zone);
+  const { year, month } = parseMonth(currentMonthStr)!;
+  const { from: monthFrom, to: monthTo } = monthRange(year, month, zone);
+
+  const [callsDone, confirmedCalls, upsellLines, ttfcResult, ratesResult, attainmentRows] = await Promise.all([
+    prisma.call.count({
+      where: {
+        tenantId,
+        salesRepId: repId,
+        createdAt: { gte: dayStart, lte: dayEnd },
+      },
+    }),
+    prisma.call.count({
+      where: {
+        tenantId,
+        salesRepId: repId,
+        outcome: 'confirmed',
+        createdAt: { gte: dayStart, lte: dayEnd },
+      },
+    }),
+    prisma.upsellLine.findMany({
+      where: {
+        tenantId,
+        repId,
+        status: { not: UpsellStatus.void },
+        createdAt: { gte: dayStart, lte: dayEnd },
+      },
+      select: { extraValue: true },
+    }),
+    timeToFirstCall(tenantId, monthFrom, monthTo, { repId }),
+    repRates(tenantId, monthFrom, monthTo),
+    rewardService.computeAttainment(currentMonthStr, { userId: repId }),
+  ]);
+
+  const upsellExtra = Money.sum(upsellLines.map((u) => u.extraValue));
+
+  const repAttainment = attainmentRows?.results?.find((r) => r.userId === repId);
+
+  let targetProgress;
+  if (!repAttainment || repAttainment.target === null) {
+    targetProgress = {
+      hasTarget: false,
+      message: 'No target set',
+      target: null,
+      actual: null,
+      percent: null,
+      metric: null,
+      unit: null,
+      tier: 'none',
+    };
+  } else {
+    targetProgress = {
+      hasTarget: true,
+      message: repAttainment.message,
+      target: repAttainment.target,
+      actual: repAttainment.actual,
+      percent: repAttainment.percent,
+      tier: repAttainment.tier,
+      metric: repAttainment.metric,
+      unit: repAttainment.unit,
+      reward: repAttainment.reward,
+      distance: repAttainment.distance,
+    };
+  }
+
+  const rates = ratesResult ? ratesResult.rep(repId) : null;
+
+  return {
+    callsDone,
+    confirmed: confirmedCalls,
+    upsellExtra: Money.toApi(upsellExtra),
+    timeToFirstCall: {
+      medianMinutes: ttfcResult?.value ?? null,
+      operatingHoursSet: ttfcResult?.operatingHoursSet ?? false,
+      targetMinutes: ttfcResult?.targetMinutes ?? null,
+      alertMinutes: ttfcResult?.alertMinutes ?? null,
+    },
+    targetProgress,
+    confirmationRate: rates?.confirmationRate ?? null,
+    deliveredFromConfirmed: rates?.deliveredFromConfirmedRate ?? null,
+  };
+}
+
+const VALID_QUEUE_TABS = new Set(['new', 'call_back', 'said_no', 'not_reachable']);
+
+/**
+ * Queue: orders waiting for rep's call, categorized into tabs:
+ * New, Call back, Said NO, Not reachable.
+ */
+export async function getQueue(
+  tenantId: string,
+  repId: number,
+  options: { tab?: string; q?: string } = {}
+) {
+  if (options.tab !== undefined && options.tab !== null && options.tab !== '') {
+    if (!VALID_QUEUE_TABS.has(options.tab)) {
+      throw new AppError(`Invalid tab: ${options.tab}`, 400, 'INVALID_TAB');
+    }
+  }
+
+  const zone = getStoreTimeZone(tenantId);
+  const now = new Date();
+
+  const config = await prisma.systemConfig.findUnique({
+    where: { tenantId },
+    select: { operatingHours: true },
+  });
+  const hours = readOperatingHours(config?.operatingHours);
+  const targetMinutes = hours?.firstCallTargetMinutes ?? DEFAULT_FIRST_CALL_TARGET_MINUTES;
+  const alertMinutes = hours?.queueWaitAlertMinutes ?? DEFAULT_QUEUE_WAIT_ALERT_MINUTES;
+
+  const orders = await prisma.order.findMany({
+    where: {
+      tenantId,
+      customerRepId: repId,
+      status: 'pending_confirmation',
+      deletedAt: null,
+    },
+    include: {
+      customer: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          phoneNumber: true,
+          alternatePhone: true,
+          area: true,
+          state: true,
+          riskLevel: true,
+          refusedOrders: true,
+          deliveredOrders: true,
+          codBlocked: true,
+          wrongNumber: true,
+        },
+      },
+      orderItems: {
+        include: { product: true },
+      },
+      calls: {
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: 1,
+        select: {
+          outcome: true,
+          callbackAt: true,
+          createdAt: true,
+        },
+      },
+    },
+    orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
+  });
+
+  const queueItems = orders.map((o) => {
+    const latestCall = o.calls[0] ?? null;
+    let tab: 'said_no' | 'call_back' | 'not_reachable' | 'new' = 'new';
+    if (o.saidNo) {
+      tab = 'said_no';
+    } else if (latestCall?.outcome === 'call_back_later' || latestCall?.callbackAt) {
+      tab = 'call_back';
+    } else if (latestCall?.outcome === 'not_reachable') {
+      tab = 'not_reachable';
+    } else {
+      tab = 'new';
+    }
+
+    const waitMinutes = workingMinutesBetween(o.createdAt, now, hours, zone);
+    const waitTimerSeverity: 'normal' | 'gold' | 'coral' =
+      waitMinutes >= alertMinutes ? 'coral' : waitMinutes >= targetMinutes ? 'gold' : 'normal';
+
+    let callbackDue = false;
+    let callbackSeverity: 'normal' | 'gold' | 'coral' | null = null;
+    let callbackAt: Date | null = null;
+
+    if (latestCall?.callbackAt) {
+      callbackAt = latestCall.callbackAt;
+      const cb = new Date(latestCall.callbackAt);
+      const diffMinutes = Math.round((cb.getTime() - now.getTime()) / 60000);
+      callbackDue = cb <= now;
+      if (diffMinutes <= 0) {
+        callbackSeverity = 'coral';
+      } else if (diffMinutes < 30) {
+        callbackSeverity = 'gold';
+      } else {
+        callbackSeverity = 'normal';
+      }
+    }
+
+    const itemsSummary = o.orderItems.map((item) => `${item.quantity}x ${item.product.name}`).join(', ');
+    const customerName = fullName(o.customer);
+    const area = o.deliveryArea || o.customer.area || o.deliveryState || o.customer.state || '';
+
+    return {
+      id: o.id,
+      status: o.status,
+      customer: {
+        id: o.customer.id,
+        name: customerName,
+        phoneNumber: o.customer.phoneNumber,
+        alternatePhone: o.customer.alternatePhone,
+        area,
+        riskLevel: o.customer.riskLevel,
+        refusedOrders: o.customer.refusedOrders,
+        deliveredOrders: o.customer.deliveredOrders,
+        codBlocked: o.customer.codBlocked,
+        wrongNumber: o.customer.wrongNumber,
+      },
+      area,
+      itemsSummary,
+      totalAmount: Money.toApi(o.totalAmount),
+      saidNo: o.saidNo,
+      tab,
+      waitMinutes: Math.round(waitMinutes * 10) / 10,
+      waitTimerSeverity,
+      callbackAt,
+      callbackDue,
+      callbackSeverity,
+      createdAt: o.createdAt,
+      updatedAt: o.updatedAt,
+      priority: o.priority,
+    };
+  });
+
+  const tabCounts = {
+    new: queueItems.filter((i) => i.tab === 'new').length,
+    call_back: queueItems.filter((i) => i.tab === 'call_back').length,
+    said_no: queueItems.filter((i) => i.tab === 'said_no').length,
+    not_reachable: queueItems.filter((i) => i.tab === 'not_reachable').length,
+    total: queueItems.length,
+  };
+
+  let filtered = queueItems;
+  if (options.tab) {
+    filtered = filtered.filter((i) => i.tab === options.tab);
+  }
+
+  if (options.q && options.q.trim()) {
+    const rawSearch = options.q.trim();
+    const qLower = rawSearch.toLowerCase();
+    const cleanId = rawSearch.startsWith('#') ? rawSearch.slice(1).trim() : rawSearch;
+    filtered = filtered.filter((i) => {
+      const matchName = i.customer.name.toLowerCase().includes(qLower);
+      const matchPhone =
+        (i.customer.phoneNumber || '').toLowerCase().includes(qLower) ||
+        (i.customer.alternatePhone || '').toLowerCase().includes(qLower);
+      const matchArea = i.area.toLowerCase().includes(qLower);
+      const matchId = cleanId && /^\d+$/.test(cleanId) ? i.id === Number(cleanId) : false;
+      return matchName || matchPhone || matchArea || matchId;
+    });
+  }
+
+  if (options.tab === 'call_back') {
+    filtered.sort((a, b) => {
+      const timeA = a.callbackAt ? new Date(a.callbackAt).getTime() : 0;
+      const timeB = b.callbackAt ? new Date(b.callbackAt).getTime() : 0;
+      return timeA - timeB;
+    });
+  } else {
+    filtered.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  }
+
+  return {
+    tabs: tabCounts,
+    orders: filtered,
+    total: filtered.length,
+    firstCallTargetMinutes: targetMinutes,
+    queueWaitAlertMinutes: alertMinutes,
+  };
+}
+
+/**
+ * Call card: order, customer with risk fields, items, packages for upsell,
+ * last calls, next queue order id.
+ */
+export async function getCallCard(
+  tenantId: string,
+  orderId: number,
+  requester: Requester
+) {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: {
+      customer: true,
+      orderItems: {
+        include: { product: true },
+      },
+      deliveryAgent: {
+        select: { id: true, firstName: true, lastName: true, phoneNumber: true },
+      },
+      customerRep: {
+        select: { id: true, firstName: true, lastName: true },
+      },
+      calls: {
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: 10,
+        include: {
+          salesRep: {
+            select: { id: true, firstName: true, lastName: true },
+          },
+        },
+      },
+    },
+  });
+
+  if (!order || order.tenantId !== tenantId || order.deletedAt) {
+    throw new AppError('Order not found', 404, 'ORDER_NOT_FOUND');
+  }
+
+  // Row scope check: sales rep sees only their own assigned orders
+  if (!isManagerUp(requester)) {
+    if (order.customerRepId !== requester.id) {
+      throw new AppError("You cannot view another rep's order", 403, 'FORBIDDEN');
+    }
+  }
+
+  const packages = await upsellService.getUpsellOptions(order.id, tenantId);
+
+  const previousOrders = await prisma.order.findMany({
+    where: {
+      tenantId,
+      customerId: order.customerId,
+      id: { not: order.id },
+      deletedAt: null,
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 5,
+    select: {
+      id: true,
+      createdAt: true,
+      totalAmount: true,
+      status: true,
+    },
+  });
+
+  const nextOrder = await prisma.order.findFirst({
+    where: {
+      tenantId,
+      customerRepId: order.customerRepId,
+      status: 'pending_confirmation',
+      id: { not: order.id },
+      deletedAt: null,
+    },
+    orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
+    select: { id: true },
+  });
+
+  return {
+    order: {
+      id: order.id,
+      status: order.status,
+      totalAmount: Money.toApi(order.totalAmount),
+      subtotal: order.subtotal != null ? Money.toApi(order.subtotal) : Money.toApi(order.totalAmount),
+      deliveryFee: order.deliveryFee != null ? Money.toApi(order.deliveryFee) : null,
+      customerRepId: order.customerRepId,
+      deliveryAgentId: order.deliveryAgentId,
+      deliveryAgent: order.deliveryAgent
+        ? {
+            id: order.deliveryAgent.id,
+            name: fullName(order.deliveryAgent),
+            phoneNumber: order.deliveryAgent.phoneNumber,
+          }
+        : null,
+      customerRep: order.customerRep
+        ? {
+            id: order.customerRep.id,
+            name: fullName(order.customerRep),
+          }
+        : null,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+      firstContactAt: order.firstContactAt,
+      saidNo: order.saidNo,
+      customerResponse: order.customerResponse,
+      requiresManualCall: order.requiresManualCall,
+      notes: order.notes,
+      declineReason: order.declineReason,
+      failureReason: order.failureReason,
+      statusVersion: order.statusVersion,
+    },
+    customer: {
+      id: order.customer.id,
+      firstName: order.customer.firstName,
+      lastName: order.customer.lastName,
+      name: fullName(order.customer),
+      phoneNumber: order.customer.phoneNumber,
+      alternatePhone: order.customer.alternatePhone,
+      email: order.customer.email,
+      address: order.deliveryAddress || order.customer.address,
+      area: order.deliveryArea || order.customer.area || order.deliveryState || order.customer.state || '',
+      state: order.deliveryState || order.customer.state || '',
+      riskLevel: order.customer.riskLevel,
+      refusedOrders: order.customer.refusedOrders,
+      deliveredOrders: order.customer.deliveredOrders,
+      codBlocked: order.customer.codBlocked,
+      wrongNumber: order.customer.wrongNumber,
+      previousOrders: previousOrders.map((po) => ({
+        id: po.id,
+        createdAt: po.createdAt,
+        totalAmount: Money.toApi(po.totalAmount),
+        status: po.status,
+      })),
+    },
+    items: order.orderItems.map((item) => ({
+      id: item.id,
+      productId: item.productId,
+      productName: item.product?.name ?? 'Unknown',
+      quantity: item.quantity,
+      unitPrice: Money.toApi(item.unitPrice),
+      totalPrice: Money.toApi(item.totalPrice),
+    })),
+    packages,
+    lastCalls: order.calls.map((c) => ({
+      id: c.id,
+      outcome: c.outcome,
+      duration: c.duration,
+      notes: c.notes,
+      startedAt: c.startedAt,
+      callbackAt: c.callbackAt,
+      declineReason: c.declineReason,
+      createdAt: c.createdAt,
+      salesRep: c.salesRep
+        ? {
+            id: c.salesRep.id,
+            name: fullName(c.salesRep),
+          }
+        : null,
+    })),
+    nextOrderId: nextOrder?.id ?? null,
   };
 }

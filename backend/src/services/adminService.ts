@@ -36,7 +36,11 @@ import { formTenantBySlug } from './tenantLookupService';
 import { clearCheckoutFormConfigCache } from './checkoutFormService';
 import { currencyOfTenant, getCurrency } from '../utils/currency';
 import { changeStoreCurrency } from './fxService';
-import { parseOperatingHours } from './kpi/workingTime';
+import {
+  parseOperatingHours,
+  DEFAULT_FIRST_CALL_TARGET_MINUTES,
+  DEFAULT_QUEUE_WAIT_ALERT_MINUTES,
+} from './kpi/workingTime';
 import { getStoreTimeZone } from './kpi/dates';
 import { normalizeInternationalPhone } from '../utils/phone';
 import { isValidTimeZone } from '../utils/timeZone';
@@ -228,8 +232,8 @@ export const adminService = {
       autoConfirmEnabled: config?.autoConfirmEnabled ?? false,
       autoConfirmChannel: (config?.autoConfirmChannel as 'whatsapp' | 'sms') ?? 'whatsapp',
       timeZone: config?.timeZone || getStoreTimeZone(tenantId),
-      queueWaitAlertMinutes: opHours?.queueWaitAlertMinutes ?? 30,
-      firstCallTargetMinutes: opHours?.firstCallTargetMinutes ?? 15,
+      queueWaitAlertMinutes: opHours?.queueWaitAlertMinutes ?? DEFAULT_QUEUE_WAIT_ALERT_MINUTES,
+      firstCallTargetMinutes: opHours?.firstCallTargetMinutes ?? DEFAULT_FIRST_CALL_TARGET_MINUTES,
       defaultDaysToPay: opHours?.defaultDaysToPay ?? 7,
       lowStockCoverDays: opHours?.lowStockCoverDays ?? 14,
     };

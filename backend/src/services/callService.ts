@@ -18,11 +18,10 @@ interface CreateCallData {
   source?: CallSource;
   declineReason?: DeclineReason;
   callbackAt?: Date;
+  expectedUpdatedAt?: Date | string;
   orderChanges?: {
     packageId?: number;
     addOnIds?: number[];
-    openedAt?: Date | string;
-    expectedStatusVersion?: number;
     value?: any;
     extraValue?: any;
   };
@@ -113,7 +112,7 @@ export class CallService {
     // 1. Confirm on already-confirmed order -> 409
     if (outcome === CallOutcome.confirmed && order) {
       if (order.status === 'confirmed') {
-        throw new AppError('Order is already confirmed', 409, 'ALREADY_CONFIRMED');
+        throw new AppError('Already handled', 409, 'ALREADY_HANDLED');
       }
     }
 
@@ -146,6 +145,26 @@ export class CallService {
 
     // F2: Atomic transaction for call row insert, firstContactAt, upsell apply, order transition, commission entries, wrongNumber update
     const txResult = await prisma.$transaction(async (tx) => {
+      // M7-T10 One-save guard inside the transaction: atomic conditional update.
+      // It applies to a save from the call card (expectedUpdatedAt sent) or on an order that was pending when
+      // the save started. The order drawer can still log a call (no expectedUpdatedAt) on an order in any other status.
+      if (order && (order.status === 'pending_confirmation' || data.expectedUpdatedAt)) {
+        const orderTenantId = order?.tenantId ?? resolveTenantId(customer.tenantId);
+        const guardResult = await tx.order.updateMany({
+          where: {
+            id: data.orderId,
+            tenantId: orderTenantId,
+            status: 'pending_confirmation',
+            ...(data.expectedUpdatedAt ? { updatedAt: new Date(data.expectedUpdatedAt) } : {}),
+          },
+          data: { updatedAt: new Date() },
+        });
+
+        if (guardResult.count === 0) {
+          throw new AppError('Already handled', 409, 'ALREADY_HANDLED');
+        }
+      }
+
       // 1. Create call log row
       const callRow = await tx.call.create({
         data: {
@@ -204,8 +223,6 @@ export class CallService {
           role: salesRep.role,
           packageId: data.orderChanges.packageId,
           addOnIds: data.orderChanges.addOnIds,
-          openedAt: data.orderChanges.openedAt,
-          expectedStatusVersion: data.orderChanges.expectedStatusVersion,
           tenantId: resolveTenantId(salesRep.tenantId),
           tx,
         });

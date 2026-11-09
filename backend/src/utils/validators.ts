@@ -271,7 +271,8 @@ export const createCallValidation: ValidationChain[] = [
   body('callbackAt').optional().isISO8601().withMessage('callbackAt must be an ISO date'),
   body('orderChanges').optional().isObject().withMessage('orderChanges must be an object'),
   body('orderChanges.packageId').optional().isInt().withMessage('packageId must be an integer'),
-  body('orderChanges.addOnIds').optional().isArray().withMessage('addOnIds must be an array')
+  body('orderChanges.addOnIds').optional().isArray().withMessage('addOnIds must be an array'),
+  body('expectedUpdatedAt').optional().isISO8601().withMessage('expectedUpdatedAt must be an ISO date')
 ];
 
 export const createAccountValidation: ValidationChain[] = [

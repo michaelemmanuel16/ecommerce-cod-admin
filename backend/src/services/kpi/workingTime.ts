@@ -15,6 +15,9 @@ import { localDate, shiftYmd, startOfDay } from './dates';
 export const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
 export type Weekday = (typeof WEEKDAYS)[number];
 
+export const DEFAULT_FIRST_CALL_TARGET_MINUTES = 15;
+export const DEFAULT_QUEUE_WAIT_ALERT_MINUTES = 30;
+
 export interface DayHours { open: string; close: string; enabled: boolean }
 export interface OperatingHours {
   days: Partial<Record<Weekday, DayHours>>;

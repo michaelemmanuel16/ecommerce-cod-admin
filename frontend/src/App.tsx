@@ -13,6 +13,7 @@ import { useConfigStore } from './stores/configStore';
 import { isPlatformDomain, platformLoginPath } from './utils/platformDomain';
 import { SaasRoute } from './components/auth/SaasRoute';
 import { NotFound } from './pages/NotFound';
+import { features } from './config/features';
 
 // Eager load authentication pages (critical path)
 import { Login } from './pages/Login';
@@ -50,6 +51,7 @@ const PublicCheckout = lazy(() => import('./pages/PublicCheckout').then(m => ({ 
 const PaymentCallback = lazy(() => import('./pages/PaymentCallback').then(m => ({ default: m.PaymentCallback })));
 // Dev-only design-system gallery. The DEV flag is replaced at build time, so production bundles drop the import.
 const UiGallery = import.meta.env.DEV ? lazy(() => import('./pages/dev/UiGallery')) : null;
+const RepApp = lazy(() => import('./pages/rep/RepApp'));
 const EarningsHistory = lazy(() => import('./pages/EarningsHistory'));
 const AgentMyInventory = lazy(() => import('./pages/AgentMyInventory'));
 const Inventory = lazy(() => import('./pages/Inventory').then(m => ({ default: m.Inventory })));
@@ -128,6 +130,7 @@ const DashboardIndex: React.FC = () => {
   const { user } = useAuthStore();
   if (user?.isPlatformAdmin) return <Navigate to="/platform" replace />;
   if (user && isManagerUp(user.role)) return <Dashboard />;
+  if (user?.role === 'sales_rep' && features.repApp) return <Navigate to="/rep/today" replace />;
   return <DynamicDashboard />;
 };
 
@@ -135,7 +138,16 @@ const DashboardIndex: React.FC = () => {
 const MobileIndex: React.FC = () => {
   const { user } = useAuthStore();
   if (user && isManagerUp(user.role)) return <Navigate to="/" replace />;
+  if (user?.role === 'sales_rep' && features.repApp) return <Navigate to="/rep/today" replace />;
   return <DynamicDashboard />;
+};
+
+const EarningsHistoryRoute: React.FC = () => {
+  const { user } = useAuthStore();
+  if (user?.role === 'sales_rep' && features.repApp) {
+    return <Navigate to="/rep/today" replace />;
+  }
+  return <EarningsHistory />;
 };
 
 function App() {
@@ -361,7 +373,23 @@ function App() {
               <Suspense fallback={<Loading />}><Webhooks /></Suspense>
             } />
             <Route path="earnings-history" element={
-              <Suspense fallback={<Loading />}><EarningsHistory /></Suspense>
+              <Suspense fallback={<Loading />}><EarningsHistoryRoute /></Suspense>
+            } />
+            <Route path="rep" element={<Navigate to="/rep/today" replace />} />
+            <Route path="rep/today" element={
+              <Suspense fallback={<Loading />}><RepApp defaultTab="today" /></Suspense>
+            } />
+            <Route path="rep/queue" element={
+              <Suspense fallback={<Loading />}><RepApp defaultTab="queue" /></Suspense>
+            } />
+            <Route path="rep/orders" element={
+              <Suspense fallback={<Loading />}><RepApp defaultTab="orders" /></Suspense>
+            } />
+            <Route path="rep/earnings" element={
+              <Suspense fallback={<Loading />}><RepApp defaultTab="earnings" /></Suspense>
+            } />
+            <Route path="rep/numbers" element={
+              <Suspense fallback={<Loading />}><RepApp defaultTab="numbers" /></Suspense>
             } />
             </Route>
             <Route path="agent-inventory" element={

@@ -6,6 +6,7 @@ import { refreshTokenIfNeeded } from './whatsappTokenRefreshService';
 import { getTenantId, withoutTenant } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 import { getStoreTimeZone, parseInclusiveBound } from './kpi/dates';
+import { formatOrderNumber } from '../utils/orderNumber';
 
 // WhatsApp Business Cloud API configuration
 const WHATSAPP_API_URL = 'https://graph.facebook.com/v21.0';
@@ -148,23 +149,23 @@ export const ORDER_STATUS_TEMPLATES: Record<string, {
 }> = {
   order_created: {
     templateName: 'order_created',
-    bodyParams: (o) => [o.customerName, `#${o.orderId}`],
+    bodyParams: (o) => [o.customerName, formatOrderNumber(o.orderId)],
   },
   confirmed: {
     templateName: 'order_confirmed',
-    bodyParams: (o) => [o.customerName, `#${o.orderId}`],
+    bodyParams: (o) => [o.customerName, formatOrderNumber(o.orderId)],
   },
   out_for_delivery: {
     templateName: 'order_out_for_delivery',
-    bodyParams: (o) => [o.customerName, `#${o.orderId}, ${o.productName || 'your items'}`],
+    bodyParams: (o) => [o.customerName, `${formatOrderNumber(o.orderId)}, ${o.productName || 'your items'}`],
   },
   delivered: {
     templateName: 'order_delivered',
-    bodyParams: (o) => [o.customerName, `#${o.orderId}, ${o.productName || 'your items'}`],
+    bodyParams: (o) => [o.customerName, `${formatOrderNumber(o.orderId)}, ${o.productName || 'your items'}`],
   },
   failed_delivery: {
     templateName: 'order_delivery_failed',
-    bodyParams: (o) => [o.customerName, `#${o.orderId}`],
+    bodyParams: (o) => [o.customerName, formatOrderNumber(o.orderId)],
   },
 };
 

@@ -19,3 +19,6 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   failed_delivery: 'Failed delivery',
   payment_failed: 'Payment failed',
 };
+
+export const getOrderStatusLabel = (status: OrderStatus): string => ORDER_STATUS_LABELS[status] ?? status;
+

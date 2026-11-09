@@ -1,11 +1,12 @@
 import { Response } from 'express';
 import { AuthRequest } from '../types';
 import { actorOf, handler } from './helpers';
+import { resolveTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
 import * as repService from '../services/repService';
 
 /**
- * Rep controller for M7-T11 (COD-65): rep API part 2.
+ * Rep controller for M7-T10 and M7-T11 (COD-65).
  * Thin controller pattern: parses query, delegates to repService.
  */
 
@@ -22,6 +23,48 @@ function parsePositiveInt(val: unknown, name: string): number | undefined {
   return num;
 }
 
+// M7-T10 Endpoints
+export const getSummary = handler(async (req: AuthRequest, res: Response) => {
+  const actor = actorOf(req);
+  const repId = parsePositiveInt(req.query.repId, 'repId');
+  const targetRepId = repService.resolveTargetRepId(actor, repId);
+  const tenantId = resolveTenantId();
+  const summary = await repService.getShellSummary(tenantId, targetRepId);
+  res.json(summary);
+});
+
+export const getToday = handler(async (req: AuthRequest, res: Response) => {
+  const actor = actorOf(req);
+  const repId = parsePositiveInt(req.query.repId, 'repId');
+  const targetRepId = repService.resolveTargetRepId(actor, repId);
+  const tenantId = resolveTenantId();
+  const today = await repService.getToday(tenantId, targetRepId);
+  res.json(today);
+});
+
+export const getQueue = handler(async (req: AuthRequest, res: Response) => {
+  const actor = actorOf(req);
+  const repId = parsePositiveInt(req.query.repId, 'repId');
+  const targetRepId = repService.resolveTargetRepId(actor, repId);
+  const tenantId = resolveTenantId();
+  const tab = typeof req.query.tab === 'string' ? req.query.tab : undefined;
+  const q = typeof req.query.q === 'string' ? req.query.q : undefined;
+  const queue = await repService.getQueue(tenantId, targetRepId, { tab, q });
+  res.json(queue);
+});
+
+export const getCallCard = handler(async (req: AuthRequest, res: Response) => {
+  const actor = actorOf(req);
+  const tenantId = resolveTenantId();
+  const orderId = parsePositiveInt(req.params.id, 'id');
+  if (!orderId) {
+    throw new AppError('Invalid order ID', 400, 'INVALID_ORDER_ID');
+  }
+  const card = await repService.getCallCard(tenantId, orderId, actor);
+  res.json(card);
+});
+
+// M7-T11 Endpoints
 export const getRepOrders = handler(async (req: AuthRequest, res: Response) => {
   const actor = actorOf(req);
   const repId = parsePositiveInt(req.query.repId, 'repId');

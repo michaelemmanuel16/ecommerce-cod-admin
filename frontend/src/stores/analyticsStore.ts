@@ -13,6 +13,7 @@ import {
 } from '../services/analytics.service';
 import { deliveriesService } from '../services/deliveries.service';
 import { getSocket } from '../services/socket';
+import { formatOrderNumber } from '../utils/orderNumber';
 import toast from 'react-hot-toast';
 
 interface AnalyticsState {
@@ -226,7 +227,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => {
         const data = await deliveriesService.getAgentOrders({ status: 'ready_for_pickup', limit: 5 });
         const readyForPickup: PendingOrder[] = (data.deliveries || []).map(d => ({
           id: d.orderId,
-          orderNumber: `#${String(d.orderId).padStart(6, '0')}`,
+          orderNumber: formatOrderNumber(d.orderId),
           customerName: d.order?.customer ? `${d.order.customer.firstName} ${d.order.customer.lastName}` : 'Unknown',
           customerPhone: d.order?.customer?.phoneNumber || '',
           customerArea: d.order?.deliveryArea || '',
