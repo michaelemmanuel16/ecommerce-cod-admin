@@ -11,6 +11,7 @@ import { earnEntriesForOrder, voidOpenEntriesForOrder } from './commissionServic
 import { getSystemUserId } from './systemUserService';
 import { recordDeliveryAttempt } from './deliveryAttemptHook';
 import { stampDeliveryFee, DeliveryFeeStamp } from './feeRuleService';
+import customerStatsService from './customerStatsService';
 
 /**
  * Order state machine (F-301, F-302). `transitionOrder` is the one function that writes Order.status.
@@ -232,7 +233,7 @@ function invalidTransition(from: OrderStatus, to: OrderStatus): OrderTransitionE
 const COLLECTION_LOCKED = ['verified', 'approved', 'deposited', 'reconciled'] as const;
 
 type SideEffectOrder = {
-  id: number; tenantId?: string | null; deliveryAgentId?: number | null;
+  id: number; customerId: number; tenantId?: string | null; deliveryAgentId?: number | null;
   confirmedAt?: Date | null; confirmedById?: number | null; dispatchedAt?: Date | null;
 };
 
@@ -306,6 +307,12 @@ async function applySideEffects(
       where: { orderId: order.id, status: 'active' },
       data: { status: 'void' },
     });
+  }
+  // M7-T06: Customer refusal counters and stats updated on delivered, failed and returned outcomes, or leaving delivered
+  if (to === 'delivered' || to === 'failed_delivery' || to === 'returned' || from === 'delivered') {
+    if (order.customerId) {
+      await customerStatsService.recompute(order.customerId, tx);
+    }
   }
   return applyGlEffects(tx, order, from, to, actor.userId, historyId, stamp, { postRevenueAlways: options.postRevenueAlways });
 }

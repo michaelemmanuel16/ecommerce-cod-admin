@@ -74,6 +74,13 @@ export const deleteCustomer = async (req: AuthRequest, res: Response): Promise<v
   }
 };
 
+export const overrideCod = async (req: AuthRequest, res: Response): Promise<void> => {
+  const customerId = parseInt(req.params.id, 10);
+  const { allow, note } = req.body;
+  const customer = await customerService.overrideCod(customerId, { allow, note }, req.user!);
+  res.json({ customer });
+};
+
 type ExportCustomer = BatchRow<ReturnType<typeof customerService.exportBatches>>;
 const yesNo = (flag: boolean) => (flag ? 'Yes' : 'No');
 

@@ -30,6 +30,7 @@ import { deliveredRevenue, revenueScope } from './kpi/revenue';
 import { duplicateCandidatesWhere, IMPORT_BLOCKED_STATUSES, isDuplicateOf, isForwardStatus } from './orderImportService';
 import { cleanText, deliveryAddressOf } from '../utils/checkoutLocation';
 import { normalizeOrderRegion } from './regionService';
+import { customerNeedsManualCall } from './refusalRuleService';
 
 
 
@@ -64,6 +65,7 @@ interface CreateOrderData {
   deliveryAgentId?: number;
   /** F-317: "Customer already confirmed on this call". The order moves to confirmed through the machine and a manual `Call` is saved. */
   customerConfirmed?: boolean;
+  requiresManualCall?: boolean;
   requester?: Requester;
 }
 
@@ -516,6 +518,7 @@ export class OrderService {
           discount: data.discount || 0,
           totalAmount: data.totalAmount,
           codAmount: data.totalAmount,
+          requiresManualCall: customerNeedsManualCall(customer) || Boolean(data.requiresManualCall),
           deliveryAddress: deliveryAddressOf(data.deliveryAddress, data.landmark) ?? data.deliveryAddress,
           deliveryState: data.deliveryState,
           deliveryArea: data.deliveryArea,
@@ -779,6 +782,7 @@ export class OrderService {
                 subtotal: orderData.subtotal,
                 totalAmount: orderData.totalAmount,
                 codAmount: orderData.totalAmount,
+                requiresManualCall: customerNeedsManualCall(customer),
                 deliveryAddress: orderData.deliveryAddress,
                 deliveryState: orderData.deliveryState,
                 deliveryArea: orderData.deliveryArea,

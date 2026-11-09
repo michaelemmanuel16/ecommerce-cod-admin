@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { prismaBase } from '../utils/prisma';
+import { prismaBase, TransactionClient } from '../utils/prisma';
 import logger from '../utils/logger';
 import {
   AppEvent, OrderCreatedEvent, OrderDeletedEvent, OrderStatusChangedEvent, onOrderEvent,
@@ -11,11 +11,14 @@ import {
  * second run changes nothing.
  *   totalOrders     all orders that are not deleted
  *   deliveredOrders status delivered
- *   refusedOrders   status failed_delivery or returned with failureReason refused (one order counts once)
+ *   refusedOrders   status failed_delivery or returned with failureReason refused (one order counts once; restarts after codOverrideAt)
  *   deliveredValue  sum of totalAmount of delivered orders
  *   lastOrderAt     newest createdAt among the orders that are not deleted
- * The refusal rule itself (risk level, COD block, override) is M7. It reads the base client (raw SQL by customer id), so it
- * needs no tenant context.
+ * The refusal rule (M7-T06, COD-64):
+ *   1 refusal: no change (riskLevel normal, codBlocked false)
+ *   2 refusals: riskLevel = high
+ *   3 refusals: codBlocked = true
+ *   Owner override resets the refusal count and clears the block.
  */
 
 /** `scope` is a WHERE condition on the customers table `c`; its parameters follow `$1`. */
@@ -24,23 +27,56 @@ function statsSql(action: 'update' | 'count', scope: Prisma.Sql): Prisma.Sql {
     SELECT c.id,
            COUNT(o.id)::int AS total_orders,
            COUNT(o.id) FILTER (WHERE o.status = 'delivered')::int AS delivered_orders,
-           COUNT(o.id) FILTER (WHERE o.status IN ('failed_delivery', 'returned') AND o.failure_reason = 'refused')::int AS refused_orders,
+           COUNT(o.id) FILTER (
+             WHERE o.status IN ('failed_delivery', 'returned')
+               AND o.failure_reason = 'refused'
+               AND (c.cod_override_at IS NULL OR o.created_at > c.cod_override_at)
+           )::int AS refused_orders,
            COALESCE(SUM(o.total_amount) FILTER (WHERE o.status = 'delivered'), 0) AS delivered_value,
            MAX(o.created_at) AS last_order_at
     FROM customers c
     LEFT JOIN orders o ON o.customer_id = c.id AND o.deleted_at IS NULL
     WHERE ${scope}
-    GROUP BY c.id`;
+    GROUP BY c.id, c.cod_override_at`;
   const changed = Prisma.sql`
-    (c.total_orders, c.delivered_orders, c.refused_orders, c.delivered_value, c.last_order_at)
-    IS DISTINCT FROM (s.total_orders, s.delivered_orders, s.refused_orders, s.delivered_value, s.last_order_at)`;
+    (c.total_orders, c.delivered_orders, c.refused_orders, c.delivered_value, c.last_order_at, c.risk_level, c.cod_blocked)
+    IS DISTINCT FROM (
+      s.total_orders,
+      s.delivered_orders,
+      s.refused_orders,
+      s.delivered_value,
+      s.last_order_at,
+      CASE
+        WHEN s.refused_orders >= 2 THEN 'high'::"CustomerRiskLevel"
+        ELSE 'normal'::"CustomerRiskLevel"
+      END,
+      CASE
+        WHEN s.refused_orders >= 3 THEN TRUE
+        WHEN c.cod_override IS TRUE THEN FALSE
+        WHEN c.cod_override_at IS NOT NULL AND c.cod_override IS FALSE THEN TRUE
+        ELSE FALSE
+      END
+    )`;
   if (action === 'count') {
     return Prisma.sql`SELECT COUNT(*)::int AS n FROM customers c JOIN (${fresh}) s ON s.id = c.id WHERE ${changed}`;
   }
   return Prisma.sql`
     UPDATE customers c
-    SET total_orders = s.total_orders, delivered_orders = s.delivered_orders, refused_orders = s.refused_orders,
-        delivered_value = s.delivered_value, last_order_at = s.last_order_at
+    SET total_orders = s.total_orders,
+        delivered_orders = s.delivered_orders,
+        refused_orders = s.refused_orders,
+        delivered_value = s.delivered_value,
+        last_order_at = s.last_order_at,
+        risk_level = CASE
+          WHEN s.refused_orders >= 2 THEN 'high'::"CustomerRiskLevel"
+          ELSE 'normal'::"CustomerRiskLevel"
+        END,
+        cod_blocked = CASE
+          WHEN s.refused_orders >= 3 THEN TRUE
+          WHEN c.cod_override IS TRUE THEN FALSE
+          WHEN c.cod_override_at IS NOT NULL AND c.cod_override IS FALSE THEN TRUE
+          ELSE FALSE
+        END
     FROM (${fresh}) s
     WHERE s.id = c.id AND ${changed}`;
 }
@@ -50,8 +86,9 @@ const tenantScope = (tenantId: string | null) =>
 
 export const customerStatsService = {
   /** Rebuild one customer's stats from their orders. Returns true when a stored value changed. */
-  async recompute(customerId: number): Promise<boolean> {
-    const changed = await prismaBase.$executeRaw(statsSql('update', Prisma.sql`c.id = ${customerId}`));
+  async recompute(customerId: number, db: TransactionClient | typeof prismaBase = prismaBase): Promise<boolean> {
+    const scope = Prisma.sql`c.id = ${customerId}`;
+    const changed = await db.$executeRaw(statsSql('update', scope));
     return changed > 0;
   },
 
