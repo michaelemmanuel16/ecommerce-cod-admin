@@ -117,8 +117,9 @@ export const updateProductValidation: ValidationChain[] = [
 
 export const createOrderValidation: ValidationChain[] = [
   body('customerId').optional(),
-  // F-317: fewer than 9 digits is an error
-  body('customerPhone').optional().custom((v) => String(v).replace(/\D/g, '').length >= 9).withMessage('Phone number needs at least 9 digits'),
+  body('packageId').optional({ nullable: true }).isInt({ min: 1 }),
+  // F-317 / F-355: phone with letters is an error; fewer than 9 digits is too short
+  body('customerPhone').optional().custom(customerPhone('Phone number')),
   body('orderItems').isArray({ min: 1 }),
   body('orderItems.*.productId').notEmpty(),
   body('orderItems.*.quantity').isInt({ min: 1 }),

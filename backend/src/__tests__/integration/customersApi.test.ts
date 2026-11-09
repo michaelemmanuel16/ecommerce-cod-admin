@@ -278,11 +278,11 @@ describe('create and edit (F-355)', () => {
     expect(res.body.customer).toMatchObject({ totalOrders: 0, refusedOrders: 0, smsOptOut: false });
   });
 
-  it('a phone that exists is blocked with the name; letters are an error; required fields', async () => {
+  it('duplicate phone on create returns existing customer with duplicate: true; letters are an error; required fields', async () => {
     const dup = await request(app).post('/api/customers').set(bearer(tokens.owner)).send(body(6));
-    expect(dup.status).toBe(409);
-    expect(dup.body.error ?? dup.body.message).toContain('This number belongs to Abena Owusu');
-    expect(dup.body).toMatchObject({ code: 'PHONE_BELONGS_TO_OTHER_CUSTOMER', customerId: ids.abena });
+    expect(dup.status).toBe(200);
+    expect(dup.body.duplicate).toBe(true);
+    expect(dup.body.customer.id).toBe(ids.abena);
 
     expect((await request(app).post('/api/customers').set(bearer(tokens.owner)).send(body(22, { phoneNumber: '024abc0103' }))).status).toBe(400);
     expect((await request(app).post('/api/customers').set(bearer(tokens.owner)).send({ firstName: 'No', phoneNumber: local(23) })).status).toBe(400);
@@ -314,17 +314,21 @@ describe('create and edit (F-355)', () => {
   });
 
   it('the 409 carries the customer id only when the requester can open that customer', async () => {
-    // Abena is outside rep1's scope: name in the message, no id
+    // Abena is outside rep1's scope: name in the message, no id (409)
     const out = await request(app).post('/api/customers').set(bearer(tokens.rep1)).send(body(6));
     expect(out.status).toBe(409);
     expect(out.body.message).toBe('This number belongs to Abena Owusu');
     expect(out.body.customerId).toBeUndefined();
-    // Kofi is rep1's own customer: id included
+    // Kofi is rep1's own customer: 200 duplicate with record
     const inside = await request(app).post('/api/customers').set(bearer(tokens.rep1)).send(body(1));
-    expect(inside.body).toMatchObject({ message: 'This number belongs to Kofi T', customerId: ids.kofi });
-    // Admin roles always get the id
+    expect(inside.status).toBe(200);
+    expect(inside.body.duplicate).toBe(true);
+    expect(inside.body.customer.id).toBe(ids.kofi);
+    // Manager can open Abena: 200 duplicate with record
     const admin = await request(app).post('/api/customers').set(bearer(tokens.manager)).send(body(6));
-    expect(admin.body.customerId).toBe(ids.abena);
+    expect(admin.status).toBe(200);
+    expect(admin.body.duplicate).toBe(true);
+    expect(admin.body.customer.id).toBe(ids.abena);
     // Same on edit
     const edit = await request(app).put(`/api/customers/${ids.kofi}`).set(bearer(tokens.rep1)).send({ phoneNumber: local(6) });
     expect(edit.status).toBe(409);

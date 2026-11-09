@@ -301,11 +301,53 @@ export class CustomerService {
 
   /**
    * Create new customer. `createdById` is set so a rep sees the customer they added (F-355).
+   * Duplicate phone returns the existing customer (200 with duplicate: true) when the requester can open it,
+   * or 409 PHONE_BELONGS_TO_OTHER_CUSTOMER with name only when they cannot.
    */
   async createCustomer(data: CreateCustomerData, requester?: Requester) {
     const phoneNumber = normalizePhoneForStorage(data.phoneNumber);
     const alternatePhone = normalizePhoneForStorage(data.alternatePhone);
-    const archived = await this.assertPhoneFree(phoneNumber, requester, undefined, data.reactivate === true);
+
+    const existing = await findCustomerByPhoneIncludingArchived(prisma, phoneNumber);
+    if (existing) {
+      if (existing.isActive === false) {
+        if (data.reactivate === true && isAdminRole(requester)) {
+          const fields = {
+            firstName: data.firstName || 'Unknown',
+            lastName: data.lastName || '',
+            email: data.email,
+            phoneNumber,
+            alternatePhone,
+            address: data.address,
+            state: data.state,
+            area: data.area,
+            landmark: data.landmark,
+            notes: data.notes,
+          };
+          const customer = await withSoftDeleted(() => prisma.customer.update({ where: { id: existing.id }, data: { ...fields, isActive: true } }));
+          if (requester) {
+            await this.audit(requester, 'reactivate', customer, { isActive: false }, fields);
+          }
+          return customer;
+        }
+        const err = new AppError(`${fullName(existing)} was deleted and has this number. Restore that customer instead.`, 409, 'CUSTOMER_ARCHIVED');
+        const scope = this.scopeWhere(requester);
+        const canSee = !scope || (await prisma.customer.count({ where: { id: existing.id, AND: [scope] } })) > 0;
+        err.details = canSee ? { customerId: existing.id, customerName: fullName(existing) } : { customerName: fullName(existing) };
+        throw err;
+      }
+
+      const scope = this.scopeWhere(requester);
+      const canSee = !scope || (await prisma.customer.count({ where: { id: existing.id, AND: [scope] } })) > 0;
+      if (!canSee) {
+        const err = new AppError(`This number belongs to ${fullName(existing)}`, 409, 'PHONE_BELONGS_TO_OTHER_CUSTOMER');
+        err.details = { customerName: fullName(existing) };
+        throw err;
+      }
+
+      logger.info('Duplicate customer phone on create, returning existing customer', { customerId: existing.id, phoneNumber: existing.phoneNumber });
+      return Object.assign(existing, { duplicate: true });
+    }
 
     const fields = {
       firstName: data.firstName || 'Unknown',
@@ -319,12 +361,10 @@ export class CustomerService {
       landmark: data.landmark,
       notes: data.notes,
     };
-    const customer = archived
-      ? await withSoftDeleted(() => prisma.customer.update({ where: { id: archived.id }, data: { ...fields, isActive: true } }))
-      : await prisma.customer.create({ data: { ...fields, createdById: requester?.id } });
+    const customer = await prisma.customer.create({ data: { ...fields, createdById: requester?.id } });
 
     if (requester) {
-      await this.audit(requester, archived ? 'reactivate' : 'create', customer, archived ? { isActive: false } : {}, fields);
+      await this.audit(requester, 'create', customer, {}, fields);
     }
     logger.info('Customer created', { customerId: customer.id, phoneNumber: customer.phoneNumber });
     return customer;
@@ -393,7 +433,7 @@ export class CustomerService {
 
     // Role-based filtering
     if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
-      const hasAccess = customer.orders.some(o => o.customerRepId === requester.id || o.deliveryAgentId === requester.id);
+      const hasAccess = customer.createdById === requester.id || customer.orders.some(o => o.customerRepId === requester.id || o.deliveryAgentId === requester.id);
       if (!hasAccess) {
         throw new AppError('You do not have permission to view this customer', 403);
       }
