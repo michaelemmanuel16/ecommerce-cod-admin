@@ -608,3 +608,341 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* M7-T19: My orders, My numbers, Earnings pages */
+.v2 .rep-shell .low {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.v2 .rep-shell .low > .card.sec {
+  margin-top: 0;
+}
+
+.v2 .rep-shell .owed {
+  padding: 18px 20px 6px;
+}
+
+.v2 .rep-shell .owed small {
+  color: var(--ink-3);
+  font-size: 13px;
+  font-weight: 600;
+  display: block;
+}
+
+.v2 .rep-shell .owed .big {
+  font-size: 38px;
+  font-weight: 800;
+  line-height: 1.1;
+  font-family: "Bricolage Grotesque", sans-serif;
+}
+
+.v2 .rep-shell .owed .big.coral {
+  color: var(--coral);
+}
+
+.v2 .rep-shell .lines {
+  padding: 6px 20px 4px;
+}
+
+.v2 .rep-shell .lines .li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+
+.v2 .rep-shell .lines .li:last-child {
+  border-bottom: 0;
+}
+
+.v2 .rep-shell .lines .li span em {
+  display: block;
+  font-style: normal;
+  font-size: 12px;
+  color: var(--ink-3);
+  margin-top: 2px;
+}
+
+.v2 .rep-shell .note1 {
+  margin: 6px 20px 18px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--gold-soft);
+  color: var(--ink);
+  font-size: 13px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.v2 .rep-shell .note1 svg {
+  flex: none;
+  color: var(--gold);
+}
+
+.v2 .rep-shell .pays {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.v2 .rep-shell .pays th {
+  text-align: left;
+  font-size: 12px;
+  color: var(--ink-3);
+  font-weight: 600;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.v2 .rep-shell .pays td {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.v2 .rep-shell .pays tr:last-child td {
+  border-bottom: 0;
+}
+
+.v2 .rep-shell .nums {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  padding: 16px 20px;
+}
+
+.v2 .rep-shell .nums .drv {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.v2 .rep-shell .nums .drv small {
+  display: block;
+  font-size: 12px;
+  color: var(--ink-3);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.v2 .rep-shell .nums .drv b {
+  display: block;
+  font-size: 22px;
+  font-family: "Bricolage Grotesque", sans-serif;
+  color: var(--ink);
+  line-height: 1.1;
+}
+
+.v2 .rep-shell .nums .drv em {
+  display: block;
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--ink-3);
+  margin-top: 4px;
+}
+
+.v2 .rep-shell .ranks {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 0 20px 16px;
+}
+
+.v2 .rep-shell .rk {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 14px;
+  background: var(--card);
+}
+
+.v2 .rep-shell .rk .rank {
+  background: var(--mint-soft);
+  color: #14975f;
+  font-size: 18px;
+  font-weight: 800;
+  font-family: "Bricolage Grotesque", sans-serif;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+[data-theme="dark"] .v2 .rep-shell .rk .rank {
+  color: var(--mint);
+}
+
+.v2 .rep-shell .rk small {
+  display: block;
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.v2 .rep-shell .rk b {
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.v2 .rep-shell .sh {
+  padding: 14px 20px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-3);
+}
+
+.v2 .rep-shell .stack {
+  display: flex;
+  height: 12px;
+  border-radius: 99px;
+  overflow: hidden;
+  gap: 2px;
+  margin: 10px 20px 0;
+  background: var(--hover);
+}
+
+.v2 .rep-shell .stack i {
+  display: block;
+  height: 100%;
+}
+
+.v2 .rep-shell .leg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding: 10px 20px 4px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+.v2 .rep-shell .leg i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.v2 .rep-shell .callrow {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  padding: 14px 20px 0;
+}
+
+.v2 .rep-shell .callrow div {
+  font-size: 12px;
+  color: var(--ink-3);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.v2 .rep-shell .callrow b {
+  display: block;
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 20px;
+  color: var(--ink);
+  line-height: 1.2;
+}
+
+.v2 .rep-shell .bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+  height: 64px;
+  padding: 0 20px;
+  margin-top: 8px;
+}
+
+.v2 .rep-shell .bars i {
+  flex: 1;
+  background: var(--pine-soft);
+  border-radius: 5px 5px 0 0;
+  min-height: 4px;
+  transition: height 0.2s ease;
+}
+
+.v2 .rep-shell .bars i.t {
+  background: var(--pine);
+}
+
+.v2 .rep-shell .filter-bar {
+  display: flex;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  align-items: center;
+}
+
+.v2 .rep-shell .status-select {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--ink);
+  font: 500 13px "Plus Jakarta Sans", sans-serif;
+  padding: 8px 12px;
+  outline: 0;
+  cursor: pointer;
+}
+
+.v2 .rep-shell .pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+@media (max-width: 1100px) {
+  .v2 .rep-shell .low {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .v2 .rep-shell .callpanel.open {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    max-height: 100vh;
+    border-radius: 0;
+    top: 0;
+    background: var(--card);
+    overflow-y: auto;
+  }
+}
+
+@media (max-width: 760px) {
+  .v2 .rep-shell .nums {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .v2 .rep-shell .ranks {
+    grid-template-columns: 1fr;
+  }
+  .v2 .rep-shell .callrow {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .v2 .rep-shell .filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+@media (max-width: 640px) {
+  .v2 .rep-shell .nums {
+    grid-template-columns: 1fr;
+  }
+}

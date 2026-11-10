@@ -256,4 +256,166 @@ export const repService = {
     const response = await apiClient.get(`/api/rep/orders/${orderId}/card`);
     return response.data;
   },
+
+  async getOrders(params?: RepOrdersQuery): Promise<RepOrdersResult> {
+    const res = await apiClient.get<RepOrdersResult>('/api/rep/orders', {
+      params,
+    });
+    return res.data;
+  },
+
+  async getNumbers(repId?: number, period?: string): Promise<RepNumbersResult> {
+    const res = await apiClient.get<RepNumbersResult>('/api/rep/numbers', {
+      params: { repId, period },
+    });
+    return res.data;
+  },
+
+  async getEarnings(repId?: number, month?: string): Promise<RepEarningsResult> {
+    const res = await apiClient.get<RepEarningsResult>('/api/rep/earnings', {
+      params: { repId, month },
+    });
+    return res.data;
+  },
+
+  async getPayouts(params?: { repId?: number; page?: number; limit?: number }): Promise<RepPayoutsResult> {
+    const res = await apiClient.get<RepPayoutsResult>('/api/rep/payouts', {
+      params,
+    });
+    return res.data;
+  },
 };
+
+export interface RepOrderCustomer {
+  id: number;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  alternatePhone?: string | null;
+  address?: string | null;
+  area?: string | null;
+  state?: string | null;
+}
+
+export interface RepOrderItem {
+  productId: number;
+  productName: string;
+  quantity: number;
+  unitPrice: string;
+  totalPrice: string;
+}
+
+export interface RepOrderRow {
+  id: number;
+  createdAt: string;
+  status: OrderStatus;
+  totalAmount: string;
+  customer: RepOrderCustomer | null;
+  customerRep: { id: number; firstName: string; lastName: string } | null;
+  items: RepOrderItem[];
+  upsellExtraValue: string;
+}
+
+export interface RepOrdersResult {
+  orders: RepOrderRow[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+export interface RepOrdersQuery {
+  repId?: number;
+  q?: string;
+  status?: string;
+  page?: number;
+  limit?: number;
+  sortOrder?: 'asc' | 'desc';
+}
+
+export interface RepTargetHit {
+  target: number;
+  actual: number;
+  percent: number | null;
+}
+
+export interface RepNumbersResult {
+  repId: number;
+  period: string;
+  confirmed: number;
+  confirmationRate: number | null;
+  confirmationRateDetail: Record<string, number>;
+  deliveredFromConfirmedRate: number | null;
+  deliveredFromConfirmedDetail: Record<string, number>;
+  upsellRate: number;
+  extraValueAdded: string;
+  timeToFirstCall: number | null;
+  targetHit: RepTargetHit | null;
+  ranks: {
+    callRep: { rank: number | null; total: number } | null;
+    upsell: { rank: number | null; total: number } | null;
+  };
+  orderBreakdown: {
+    confirmed: number;
+    delivered: number;
+    failedOrReturned: number;
+    stillOpen: number;
+  };
+  calls: {
+    today: number;
+    thisWeek: number;
+    thisMonth: number;
+    averagePerDay: number;
+  };
+  callOutcomes: Record<string, number>;
+  callsPerDay: { date: string; count: number; isToday: boolean }[];
+}
+
+export interface RepEarningsLine {
+  orderId: number;
+  date: string;
+  customerName: string | null;
+  status: OrderStatus;
+  base: string;
+  upsell: string;
+  earned: string;
+  paid: string;
+  reversal: string | null;
+  isReversal: boolean;
+}
+
+export interface RepPayout {
+  id: number;
+  date: string;
+  amount: string;
+  status: string;
+  notes: string | null;
+  method: string | null;
+  reference: string | null;
+}
+
+export interface RepEarningsResult {
+  currency: string;
+  commission: string;
+  upsellReward: string;
+  targetReward: string;
+  earned: string;
+  paid: string;
+  owed: string;
+  overpaid: string | null;
+  isOverpaid: boolean;
+  openOrdersCount: number;
+  openOrdersNote: string;
+  message?: string;
+  lines: RepEarningsLine[];
+  payouts: RepPayout[];
+}
+
+export interface RepPayoutsResult {
+  payouts: RepPayout[];
+  total: number;
+  page: number;
+  limit: number;
+}

@@ -30,6 +30,7 @@ import { currentMonth, getStoreTimeZone, localDate, monthRange, parseMonth, shif
 import { runInTenant } from '../../utils/tenantContext';
 import { CallOutcome, CallSource } from '@prisma/client';
 import * as Money from '../../utils/money';
+import { BASE_COMMISSION_AMOUNT } from '../../services/commissionService';
 
 jest.setTimeout(180_000);
 
@@ -618,10 +619,9 @@ describe('3. /api/rep/earnings (lines per order, one owed rule, contract test)',
     expect(returnedLine).not.toHaveProperty('net');
   });
 
-  it('openOrdersNote uses store currency and repPay settings (no hard-coded GH₵8)', async () => {
-    const settings = await runInTenant(tenantId, () => rewardService.getRewardSettings());
+  it('openOrdersNote uses store currency and BASE_COMMISSION_AMOUNT (no hard-coded GH₵8)', async () => {
     const currency = await runInTenant(tenantId, () => getCurrency());
-    const formattedSign = Money.formatWithSign(settings.repPay.baseCommission, currency);
+    const formattedSign = Money.formatWithSign(BASE_COMMISSION_AMOUNT, currency);
 
     const res = await request(app).get('/api/rep/earnings').set('Authorization', bearer(rep1Token));
     expect(res.status).toBe(200);
