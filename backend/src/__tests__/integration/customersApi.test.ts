@@ -76,7 +76,7 @@ beforeAll(async () => {
   await addCustomer('yaw', 'Yaw', 3, { totalOrders: 2, deliveredOrders: 2, deliveredValue: 300, lastOrderAt: day(12) });
   await addCustomer('esi', 'Esi', 4, { totalOrders: 3, deliveredOrders: 2, deliveredValue: 500, refusedOrders: 1, lastOrderAt: day(8), area: 'Kumasi', state: 'Ashanti' });
   await addCustomer('kojo', 'Kojo', 5, { totalOrders: 4, deliveredOrders: 1, deliveredValue: 100, refusedOrders: 2, lastOrderAt: day(3), area: 'Tema' });
-  await addCustomer('abena', 'Abena', 6, { lastName: 'Owusu', totalOrders: 5, refusedOrders: 3, lastOrderAt: day(1), area: 'Tamale', state: 'Northern', email: 'abena@example.com', alternatePhone: '+233200001111' });
+  await addCustomer('abena', 'Abena', 6, { lastName: 'Owusu', totalOrders: 5, refusedOrders: 3, codBlocked: true, lastOrderAt: day(1), area: 'Tamale', state: 'Northern', email: 'abena@example.com', alternatePhone: '+233200001111' });
   await addCustomer('nii', 'Nii', 7, { totalOrders: 1, lastOrderAt: day(2) });
   await addCustomer('efua', 'Efua', 8, { totalOrders: 1, lastOrderAt: day(4) });
   await addCustomer('kwesi', 'Kwesi', 9, { totalOrders: 1, lastOrderAt: day(6) });

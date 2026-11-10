@@ -85,6 +85,8 @@ describe('Settings Operations tab (M7-T21, F-1229)', () => {
     await screen.findByText('Operating hours');
 
     const queueAlert = screen.getByLabelText('Queue wait alert (minutes)');
+    // The inputs stay disabled until the settings load; on a slow runner the heading shows first.
+    await waitFor(() => expect(queueAlert).toBeEnabled());
     await userEvent.clear(queueAlert);
     await userEvent.type(queueAlert, '45');
 

@@ -8,7 +8,7 @@ import { fullName } from '../utils/nameUtils';
 import * as Money from '../utils/money';
 import {
   workingMinutesBetween,
-  readOperatingHours,
+  readOperatingHours, readOperatingSettings,
   DEFAULT_FIRST_CALL_TARGET_MINUTES,
   DEFAULT_QUEUE_WAIT_ALERT_MINUTES,
 } from './kpi/workingTime';
@@ -834,8 +834,9 @@ export async function getQueue(
     select: { operatingHours: true },
   });
   const hours = readOperatingHours(config?.operatingHours);
-  const targetMinutes = hours?.firstCallTargetMinutes ?? DEFAULT_FIRST_CALL_TARGET_MINUTES;
-  const alertMinutes = hours?.queueWaitAlertMinutes ?? DEFAULT_QUEUE_WAIT_ALERT_MINUTES;
+  const settings = readOperatingSettings(config?.operatingHours);
+  const targetMinutes = settings?.firstCallTargetMinutes ?? DEFAULT_FIRST_CALL_TARGET_MINUTES;
+  const alertMinutes = settings?.queueWaitAlertMinutes ?? DEFAULT_QUEUE_WAIT_ALERT_MINUTES;
 
   const orders = await prisma.order.findMany({
     where: {

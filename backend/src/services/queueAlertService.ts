@@ -2,6 +2,7 @@ import prisma from '../utils/prisma';
 import { getStoreTimeZone } from './kpi/dates';
 import {
   readOperatingHours,
+  readOperatingSettings,
   workingMinutesBetween,
   DEFAULT_QUEUE_WAIT_ALERT_MINUTES,
 } from './kpi/workingTime';
@@ -57,7 +58,7 @@ export async function checkQueueWaitAlerts(tenantId: string, now: Date = new Dat
     select: { operatingHours: true, timeZone: true },
   });
   const hours = readOperatingHours(config?.operatingHours);
-  const alertMinutes = hours?.queueWaitAlertMinutes ?? DEFAULT_QUEUE_WAIT_ALERT_MINUTES;
+  const alertMinutes = readOperatingSettings(config?.operatingHours)?.queueWaitAlertMinutes ?? DEFAULT_QUEUE_WAIT_ALERT_MINUTES;
   const zone = config?.timeZone || getStoreTimeZone(tenantId);
 
   // Working minutes never exceed wall-clock minutes, so newer orders cannot be due yet.

@@ -16,7 +16,7 @@ import { runInTenant } from '../../utils/tenantContext';
 import { getStoreTimeZone } from './dates';
 import { medianRounded } from './median';
 import { DIGITAL } from './rates';
-import { readOperatingHours, workingMinutesBetween } from './workingTime';
+import { readOperatingHours, readOperatingSettings, workingMinutesBetween } from './workingTime';
 import { kpiMeta, type KpiResult } from './types';
 
 export interface TimeToFirstCallOptions {
@@ -52,6 +52,7 @@ export async function timeToFirstCall(tenantId: string, from: Date, to: Date, op
     ]);
     const zone = config?.timeZone || getStoreTimeZone(tenantId);
     const hours = readOperatingHours(config?.operatingHours);
+    const settings = readOperatingSettings(config?.operatingHours);
 
     const minutes: number[] = [];
     let autoConfirmed = 0;
@@ -70,8 +71,8 @@ export async function timeToFirstCall(tenantId: string, from: Date, to: Date, op
       ...kpiMeta(from, to),
       detail: { measured: minutes.length, autoConfirmed, noContact, placed: orders.length },
       operatingHoursSet: hours !== null,
-      targetMinutes: hours?.firstCallTargetMinutes ?? null,
-      alertMinutes: hours?.queueWaitAlertMinutes ?? null,
+      targetMinutes: settings?.firstCallTargetMinutes ?? null,
+      alertMinutes: settings?.queueWaitAlertMinutes ?? null,
     };
   });
 }

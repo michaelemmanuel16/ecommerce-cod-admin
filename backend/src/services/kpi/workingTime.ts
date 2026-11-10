@@ -76,15 +76,20 @@ export function parseOperatingHours(value: unknown): OperatingHours {
   return out;
 }
 
-/** Same as parseOperatingHours, but a stored value that is empty or bad reads as "not set" (null). */
-export function readOperatingHours(value: unknown): OperatingHours | null {
+/** The stored value parsed, or null when it is missing or bad. Use it for the settings kept beside the days. */
+export function readOperatingSettings(value: unknown): OperatingHours | null {
   if (value === null || value === undefined) return null;
   try {
-    const hours = parseOperatingHours(value);
-    return Object.values(hours.days).some((d) => d?.enabled) ? hours : null;
+    return parseOperatingHours(value);
   } catch {
     return null;
   }
+}
+
+/** Same as readOperatingSettings, but hours with no open day also read as "not set" (null): every minute counts. */
+export function readOperatingHours(value: unknown): OperatingHours | null {
+  const hours = readOperatingSettings(value);
+  return hours && Object.values(hours.days).some((d) => d?.enabled) ? hours : null;
 }
 
 /** Weekday of a local calendar day 'YYYY-MM-DD'. */

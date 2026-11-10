@@ -192,17 +192,15 @@ describe('write paths store E.164', () => {
     expect(created.phoneNumber).toBe(`+233${p.slice(1)}`);
     expect(created.alternatePhone).toBe(`+233${p.slice(1).replace(/^247/, '248')}`);
 
-    // Duplicate in another format of the same number
-    await expect(
-      inTenant(() => customerService.createCustomer({ firstName: 'Dup', phoneNumber: `233${p.slice(1)}`, address: 'x', state: 'x', area: 'x' } as any))
-    ).rejects.toThrow(/belongs to/);
+    // Duplicate in another format of the same number: the existing customer comes back (M7-T07)
+    const dup = await inTenant(() => customerService.createCustomer({ firstName: 'Dup', phoneNumber: `233${p.slice(1)}`, address: 'x', state: 'x', area: 'x' } as any));
+    expect(dup).toMatchObject({ id: created.id, duplicate: true });
 
     // Old-format customer: creating the same number in E.164 is a duplicate
     const old = num(1).local.replace(/^0245/, '0249');
     await prismaBase.customer.create({ data: { firstName: 'Old', lastName: 'F', phoneNumber: old, address: 'x', state: 'x', area: 'x', tenantId } });
-    await expect(
-      inTenant(() => customerService.createCustomer({ firstName: 'Dup', phoneNumber: `+233${old.slice(1)}`, address: 'x', state: 'x', area: 'x' } as any))
-    ).rejects.toThrow(/belongs to/);
+    const oldDup = await inTenant(() => customerService.createCustomer({ firstName: 'Dup', phoneNumber: `+233${old.slice(1)}`, address: 'x', state: 'x', area: 'x' } as any));
+    expect(oldDup).toMatchObject({ phoneNumber: old, duplicate: true });
 
     // Update normalizes; an old-format customer can be re-saved with its own number
     const oldRow = await customerByPhone(old);
