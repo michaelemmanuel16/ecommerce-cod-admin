@@ -21,6 +21,7 @@ import { getFrontendUrl } from '../utils/url';
 import { AppError } from '../middleware/errorHandler';
 import orderService from '../services/orderService';
 import { customerNeedsManualCall } from '../services/refusalRuleService';
+import { fullName } from '../utils/nameUtils';
 
 // Buyer-selectable payment methods (F-402). `cod` settles on delivery; the two online methods charge through the
 // form's payment provider on the tenant's own account: `online_full` for the whole total, `online_deposit` for a
@@ -771,7 +772,7 @@ export const getConfirmOrder = async (req: Request, res: Response, next: NextFun
       orderNumber: order.id,
       status: order.status,
       customerResponse: order.customerResponse,
-      customerName: customer ? `${customer.firstName} ${customer.lastName}`.trim() : null,
+      customerName: customer ? fullName(customer) : null,
       phoneNumber: customer?.phoneNumber ?? null,
       deliveryAddress: order.deliveryAddress,
       deliveryArea: order.deliveryArea,

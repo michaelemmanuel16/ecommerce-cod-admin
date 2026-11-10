@@ -11,6 +11,8 @@ import { formatOrderNumber } from '../../utils/orderNumber';
 import { getOrderStatusLabel } from '../../utils/orderStatus';
 import { STATUS_TONE } from '../orders/model';
 import type { OrderStatus } from '../../types';
+import { RepPageFrame, RepLoadState } from './RepPageFrame';
+import { parseMoney } from '../../utils/money';
 
 function getTargetRewardSubtext(rewardProgress: RewardProgressResult | null): string {
   if (!rewardProgress?.target) {
@@ -46,21 +48,20 @@ export const RepEarningsPage: React.FC = () => {
     }
   };
 
+  const loadEarnings = async () => {
+    try {
+      const earningsRes = await repService.getEarnings();
+      setEarnings(earningsRes);
+    } catch (err: any) {
+      setError(err?.message || 'Could not load earnings');
+    }
+  };
+
   const loadData = async () => {
     try {
       setLoading(true);
       setError(null);
-      await Promise.allSettled([
-        (async () => {
-          try {
-            const earningsRes = await repService.getEarnings();
-            setEarnings(earningsRes);
-          } catch (err: any) {
-            setError(err?.message || 'Could not load earnings');
-          }
-        })(),
-        loadRewardProgress(),
-      ]);
+      await Promise.all([loadEarnings(), loadRewardProgress()]);
     } finally {
       setLoading(false);
     }
@@ -72,61 +73,32 @@ export const RepEarningsPage: React.FC = () => {
 
   if (loading && !earnings) {
     return (
-      <section className="view on" id="earnings" aria-label="Earnings">
-        <div className="head">
-          <div>
-            <h1>Earnings</h1>
-            <p>What you are owed, what you were paid, and your target reward.</p>
-          </div>
-        </div>
-        <div className="card" style={{ padding: 32, textAlign: 'center' }}>
-          <p>Loading earnings...</p>
-        </div>
-      </section>
+      <RepPageFrame id="earnings" ariaLabel="Earnings" title="Earnings" subtitle="What you are owed, what you were paid, and your target reward.">
+        <RepLoadState loading loadingText="Loading earnings..." />
+      </RepPageFrame>
     );
   }
 
   if (error && !earnings) {
     return (
-      <section className="view on" id="earnings" aria-label="Earnings">
-        <div className="head">
-          <div>
-            <h1>Earnings</h1>
-            <p>What you are owed, what you were paid, and your target reward.</p>
-          </div>
-        </div>
-        <div className="card" style={{ padding: 32, textAlign: 'center' }}>
-          <p style={{ color: 'var(--coral)', fontWeight: 600 }}>{error}</p>
-          <button
-            type="button"
-            className="btn"
-            style={{ marginTop: 12 }}
-            onClick={() => void loadData()}
-          >
-            Try again
-          </button>
-        </div>
-      </section>
+      <RepPageFrame id="earnings" ariaLabel="Earnings" title="Earnings" subtitle="What you are owed, what you were paid, and your target reward.">
+        <RepLoadState error={error} onRetry={() => void loadData()} />
+      </RepPageFrame>
     );
   }
 
-  const currency = earnings?.currency;
-  const isOverpaid = Boolean(earnings?.isOverpaid);
-  const overpaidDisplay = `Overpaid ${formatCurrency(earnings?.overpaid, currency)}`;
-  const owedDisplay = isOverpaid ? overpaidDisplay : formatCurrency(earnings?.owed, currency);
+  if (!earnings) return null;
 
-  const lines = earnings?.lines ?? [];
-  const payouts = earnings?.payouts ?? [];
+  const currency = earnings.currency;
+  const isOverpaid = Boolean(earnings.isOverpaid);
+  const overpaidDisplay = `Overpaid ${formatCurrency(earnings.overpaid, currency)}`;
+  const owedDisplay = isOverpaid ? overpaidDisplay : formatCurrency(earnings.owed, currency);
+
+  const lines = earnings.lines ?? [];
+  const payouts = earnings.payouts ?? [];
 
   return (
-    <section className="view on" id="earnings" aria-label="Earnings">
-      <div className="head">
-        <div>
-          <h1>Earnings</h1>
-          <p>What you are owed, what you were paid, and your target reward.</p>
-        </div>
-      </div>
-
+    <RepPageFrame id="earnings" ariaLabel="Earnings" title="Earnings" subtitle="What you are owed, what you were paid, and your target reward.">
       <div className="low">
         {/* Left Card: You are owed / Overpaid + breakdown + reward */}
         <div className="card" data-testid="earnings-summary-card">
@@ -148,7 +120,7 @@ export const RepEarningsPage: React.FC = () => {
                 Commission
                 <em>Delivered orders commission</em>
               </span>
-              <b className="num">{formatCurrency(earnings?.commission ?? '0.00', currency)}</b>
+              <b className="num">{formatCurrency(earnings.commission, currency)}</b>
             </div>
 
             <div className="li" data-testid="line-upsell">
@@ -156,7 +128,7 @@ export const RepEarningsPage: React.FC = () => {
                 Upsell reward
                 <em>Share of extra value on delivered orders</em>
               </span>
-              <b className="num">{formatCurrency(earnings?.upsellReward ?? '0.00', currency)}</b>
+              <b className="num">{formatCurrency(earnings.upsellReward, currency)}</b>
             </div>
 
             <div className="li" data-testid="line-paid">
@@ -165,7 +137,7 @@ export const RepEarningsPage: React.FC = () => {
                 <em>Payouts made</em>
               </span>
               <b className="num">
-                {Number(earnings?.paid ?? 0) > 0 ? `− ${formatCurrency(earnings?.paid, currency)}` : formatCurrency('0.00', currency)}
+                {parseMoney(earnings.paid) > 0 ? `− ${formatCurrency(earnings.paid, currency)}` : formatCurrency('0.00', currency)}
               </b>
             </div>
 
@@ -185,7 +157,7 @@ export const RepEarningsPage: React.FC = () => {
             </div>
           </div>
 
-          {earnings?.openOrdersNote && (
+          {earnings.openOrdersNote && (
             <div className="note1" data-testid="open-orders-note">
               <Info size={16} />
               <span>{earnings.openOrdersNote}</span>
@@ -244,7 +216,7 @@ export const RepEarningsPage: React.FC = () => {
           >
             <h3 style={{ margin: 0 }}>Payment history</h3>
             <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>
-              {payouts.length} {payouts.length === 1 ? 'payment' : 'payments'} · {formatCurrency(earnings?.paid ?? '0.00', currency)} paid
+              {payouts.length} {payouts.length === 1 ? 'payment' : 'payments'} · {formatCurrency(earnings.paid, currency)} paid
             </span>
           </div>
 
@@ -360,7 +332,7 @@ export const RepEarningsPage: React.FC = () => {
           </table>
         </div>
       </div>
-    </section>
+    </RepPageFrame>
   );
 };
 

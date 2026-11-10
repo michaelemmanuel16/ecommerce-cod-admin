@@ -6,6 +6,7 @@ import { resolveTenantId, runInTenant, withoutTenant } from '../utils/tenantCont
 import { whatsappService } from './whatsappService';
 import { smsService } from './smsService';
 import { AppEvent, onOrderEvent } from '../utils/appEvents';
+import { fullName } from '../utils/nameUtils';
 
 export interface AutoConfirmResult {
   token: string;
@@ -22,8 +23,16 @@ export async function sendAutoConfirmForOrder(orderId: number, tenantId?: string
     prisma.order.findUnique({
       where: { id: orderId },
       include: {
-        customer: true,
-        orderItems: { include: { product: true } },
+        customer: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phoneNumber: true,
+            whatsappOptOut: true,
+            smsOptOut: true,
+          },
+        },
       },
     })
   );
@@ -34,7 +43,7 @@ export async function sendAutoConfirmForOrder(orderId: number, tenantId?: string
   return runInTenant(tId, async () => {
     // Check eligibility:
     // 1. Physical COD order
-    const isCod = order.paymentMethod === 'cod' || (order.codAmount && Number(order.codAmount) > 0);
+    const isCod = order.paymentMethod === 'cod' || (order.codAmount != null && Money.parse(order.codAmount).gt(0));
     if (order.orderType !== 'physical' || !isCod) return null;
 
     // 2. COD-blocked customer needing manual call does not get auto-confirm
@@ -84,7 +93,7 @@ export async function sendAutoConfirmForOrder(orderId: number, tenantId?: string
     });
 
     // Prepare message (COD-64, M7-T08)
-    const customerName = `${order.customer.firstName} ${order.customer.lastName}`.trim();
+    const customerName = fullName(order.customer);
     const total = Money.toApi(Money.parse(order.totalAmount));
     const currency = order.currency ?? 'GHS';
     const message = `Hello ${customerName}, thank you for your order #${order.id} of ${currency} ${total}. Reply YES to confirm it. Reply NO if you want to change or cancel, and our team will call you.`;

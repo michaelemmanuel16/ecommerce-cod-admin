@@ -21,8 +21,10 @@ import { callsService } from '../../services/calls.service';
 import { formatCurrency, formatDate } from '../../utils/format';
 import { normalizePhone } from '../../utils/phone';
 import { PhoneDisplay } from './PhoneDisplay';
-import { orderNumber, shortDate, STATUS_TONE } from '../../pages/orders/model';
-import { ORDER_STATUS_LABELS } from '../../utils/orderStatus';
+import { shortDate, STATUS_TONE } from '../../pages/orders/model';
+import { formatOrderNumber } from '../../utils/orderNumber';
+import { getOrderStatusLabel } from '../../utils/orderStatus';
+import { whatsappUrl } from '../../utils/whatsapp';
 import { toCents } from '../../utils/money';
 import { CallOutcome, type DeclineReason, type OrderStatus } from '../../types';
 import '../../styles/callCard.css';
@@ -341,11 +343,11 @@ export function CallCard({ orderId, onDone, onBack, readOnly = false }: CallCard
           <div>
             <h2>{card.customer.name}</h2>
             <div className="sub" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 3 }}>
-              <span>{orderNumber(card.order.id)}</span>
+              <span>{formatOrderNumber(card.order.id)}</span>
               <span>·</span>
               <span>{card.customer.area || card.customer.state || 'Accra'}</span>
               <Tag tone={STATUS_TONE[card.order.status as OrderStatus] ?? 'warn'}>
-                {ORDER_STATUS_LABELS[card.order.status as OrderStatus] ?? card.order.status}
+                {getOrderStatusLabel(card.order.status)}
               </Tag>
             </div>
           </div>
@@ -366,7 +368,7 @@ export function CallCard({ orderId, onDone, onBack, readOnly = false }: CallCard
 
       {!readOnly && !isPending && (
         <div className="alert-notpending" role="status">
-          Order is {ORDER_STATUS_LABELS[card.order.status as OrderStatus] ?? card.order.status}. Outcome buttons disabled.
+          Order is {getOrderStatusLabel(card.order.status)}. Outcome buttons disabled.
         </div>
       )}
 
@@ -377,7 +379,7 @@ export function CallCard({ orderId, onDone, onBack, readOnly = false }: CallCard
             <a className="pri" href={`tel:${e164}`} aria-label={`Call ${card.customer.name}`}>
               <Phone aria-hidden="true" style={{ width: 15, height: 15 }} /> Call
             </a>
-            <a href={`https://wa.me/${e164.replace(/\D/g, '')}`} aria-label={`WhatsApp ${card.customer.name}`}>
+            <a href={whatsappUrl(e164) ?? '#'} aria-label={`WhatsApp ${card.customer.name}`}>
               <MessageCircle aria-hidden="true" style={{ width: 15, height: 15 }} /> WhatsApp
             </a>
           </>

@@ -38,6 +38,7 @@ import { currencyOfTenant, getCurrency } from '../utils/currency';
 import { changeStoreCurrency } from './fxService';
 import {
   parseOperatingHours,
+  readOperatingHours,
   DEFAULT_FIRST_CALL_TARGET_MINUTES,
   DEFAULT_QUEUE_WAIT_ALERT_MINUTES,
 } from './kpi/workingTime';
@@ -224,9 +225,7 @@ export const adminService = {
     const config = tenantId
       ? await prisma.systemConfig.findUnique({ where: { tenantId } })
       : await prisma.systemConfig.findFirst({ where: { tenantId: null } });
-    const opHours = (config?.operatingHours && typeof config.operatingHours === 'object' && !Array.isArray(config.operatingHours))
-      ? (config.operatingHours as any)
-      : null;
+    const opHours = readOperatingHours(config?.operatingHours);
     return {
       operatingHours: config?.operatingHours ?? null,
       autoConfirmEnabled: config?.autoConfirmEnabled ?? false,

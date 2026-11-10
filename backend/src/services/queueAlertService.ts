@@ -57,15 +57,18 @@ export async function checkQueueWaitAlerts(tenantId: string, now: Date = new Dat
     select: { operatingHours: true, timeZone: true },
   });
   const hours = readOperatingHours(config?.operatingHours);
-  const alertMinutes = (config?.operatingHours as any)?.queueWaitAlertMinutes ?? DEFAULT_QUEUE_WAIT_ALERT_MINUTES;
+  const alertMinutes = hours?.queueWaitAlertMinutes ?? DEFAULT_QUEUE_WAIT_ALERT_MINUTES;
   const zone = config?.timeZone || getStoreTimeZone(tenantId);
 
+  // Working minutes never exceed wall-clock minutes, so newer orders cannot be due yet.
+  const cutoff = new Date(now.getTime() - alertMinutes * 60 * 1000);
   const waitingOrders = await prisma.order.findMany({
     where: {
       tenantId,
       deletedAt: null,
       status: 'pending_confirmation',
       firstContactAt: null,
+      createdAt: { lte: cutoff },
     },
     select: {
       id: true,

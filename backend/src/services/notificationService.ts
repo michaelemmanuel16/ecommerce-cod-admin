@@ -5,6 +5,7 @@ import { emitNotification } from '../sockets';
 import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 import { HUMAN_USERS_WHERE } from './systemUserService';
+import { fullName } from '../utils/nameUtils';
 
 
 export async function createNotification(
@@ -85,7 +86,7 @@ export async function checkAndNotifyLateCallbacks(tenantId?: string): Promise<nu
       tenantId: resolvedTenant,
       deletedAt: null,
       status: { notIn: CLOSED_STATUSES },
-      calls: { some: {} },
+      calls: { some: { callbackAt: { lt: now }, outcome: 'call_back_later' } },
     },
     select: {
       id: true,
@@ -133,7 +134,7 @@ export async function checkAndNotifyLateCallbacks(tenantId?: string): Promise<nu
         order.id,
         String(order.id),
         latestCall.callbackAt,
-        order.customer ? `${order.customer.firstName} ${order.customer.lastName}`.trim() : undefined,
+        order.customer ? fullName(order.customer) || undefined : undefined,
         latestCall.id
       );
       count++;

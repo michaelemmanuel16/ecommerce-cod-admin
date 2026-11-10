@@ -233,7 +233,7 @@ describe('M7-T04: Upsell service rules', () => {
 
     const res = await request(app).get(`/api/orders/${order.id}/upsell-options`).set('Authorization', `Bearer ${adwoaToken}`);
     expect(res.status).toBe(200);
-    expect(res.body.currentPackage).toMatchObject({ id: pkg2Id, name: '2 Sets', price: '449.0000' });
+    expect(res.body.currentPackage).toMatchObject({ id: pkg2Id, name: '2 Sets', price: '449.00' });
   });
 
   it('manual order with no form submission: current package is the order package line', async () => {
@@ -256,7 +256,7 @@ describe('M7-T04: Upsell service rules', () => {
 
     expect(res.status).toBe(200);
     // No name matches, so the one live package with the same quantity and price is the current one.
-    expect(res.body.currentPackage).toMatchObject({ id: pkg2Id, name: '2 × Magic Writing Set', price: '449.0000' });
+    expect(res.body.currentPackage).toMatchObject({ id: pkg2Id, name: '2 × Magic Writing Set', price: '449.00' });
   });
 
   it('manual order whose package line matches no live package by quantity and price: no current package', async () => {
@@ -278,7 +278,7 @@ describe('M7-T04: Upsell service rules', () => {
       .set('Authorization', `Bearer ${adwoaToken}`);
 
     expect(res.status).toBe(200);
-    expect(res.body.currentPackage).toMatchObject({ id: null, price: '400.0000' });
+    expect(res.body.currentPackage).toMatchObject({ id: null, price: '400.00' });
   });
 
   it('server computes extra value from package and add-on prices; client spoofed value is ignored', async () => {

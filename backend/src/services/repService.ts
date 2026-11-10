@@ -443,7 +443,7 @@ export async function getEarnings(actor: Requester, query: RepEarningsQuery = {}
   }
 
   // Same entries as payoutService.getOwed (status: earned or paid) plus void entries for order reversal lines
-  const [entries, payouts] = await Promise.all([
+  const [entries, payouts, openOrdersCount] = await Promise.all([
     prisma.commissionEntry.findMany({
       // Pending entries (confirmed, not yet delivered) are not earnings and get no line.
       where: { tenantId, userId: targetRepId, status: { in: ['earned', 'paid', 'void'] } },
@@ -463,6 +463,14 @@ export async function getEarnings(actor: Requester, query: RepEarningsQuery = {}
       where: { tenantId, payeeId: targetRepId },
       orderBy: [{ payoutDate: 'desc' }, { id: 'desc' }],
     }),
+    prisma.order.count({
+      where: {
+        tenantId,
+        deletedAt: null,
+        confirmedById: targetRepId,
+        status: { in: ['confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery'] },
+      },
+    }),
   ]);
 
   // The one owed rule from payoutService: summarize()
@@ -470,15 +478,6 @@ export async function getEarnings(actor: Requester, query: RepEarningsQuery = {}
   const isOverpaid = summary.owed.lt(0);
   const overpaid = isOverpaid ? Money.toApi(summary.owed.abs()) : null;
   const owed = Money.toApi(summary.owed);
-
-  const openOrdersCount = await prisma.order.count({
-    where: {
-      tenantId,
-      deletedAt: null,
-      confirmedById: targetRepId,
-      status: { in: ['confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery'] },
-    },
-  });
 
   const formattedBaseCommission = Money.formatWithSign(BASE_COMMISSION_AMOUNT, currency);
   const openOrdersNote = `${openOrdersCount} of your confirmed orders are still open, each adds ${formattedBaseCommission} when delivered.`;
@@ -582,16 +581,15 @@ export async function getRewardProgress(actor: Requester, query: RepRewardProgre
   const tenantId = resolveTenantId();
   const period = query.period ?? currentMonth(new Date(), getStoreTimeZone(tenantId));
 
-  const [settings, attainmentResult, currency] = await Promise.all([
+  const [settings, attainmentResult, currency, rep] = await Promise.all([
     rewardService.getRewardSettings(),
     rewardService.computeAttainment(period, { userId: targetRepId }),
     getCurrency(),
+    prisma.user.findFirst({
+      where: { id: targetRepId, tenantId },
+      select: { id: true, kind: true },
+    }),
   ]);
-
-  const rep = await prisma.user.findFirst({
-    where: { id: targetRepId, tenantId },
-    select: { id: true, kind: true },
-  });
 
   if (rep?.kind === 'ai_agent') {
     return {
@@ -864,7 +862,12 @@ export async function getQueue(
         },
       },
       orderItems: {
-        include: { product: true },
+        select: {
+          quantity: true,
+          product: {
+            select: { name: true },
+          },
+        },
       },
       calls: {
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -1041,36 +1044,36 @@ export async function getCallCard(
     }
   }
 
-  const packages = await upsellService.getUpsellOptions(order.id, tenantId);
-
-  const previousOrders = await prisma.order.findMany({
-    where: {
-      tenantId,
-      customerId: order.customerId,
-      id: { not: order.id },
-      deletedAt: null,
-    },
-    orderBy: { createdAt: 'desc' },
-    take: 5,
-    select: {
-      id: true,
-      createdAt: true,
-      totalAmount: true,
-      status: true,
-    },
-  });
-
-  const nextOrder = await prisma.order.findFirst({
-    where: {
-      tenantId,
-      customerRepId: order.customerRepId,
-      status: 'pending_confirmation',
-      id: { not: order.id },
-      deletedAt: null,
-    },
-    orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
-    select: { id: true },
-  });
+  const [packages, previousOrders, nextOrder] = await Promise.all([
+    upsellService.getUpsellOptions(order.id, tenantId),
+    prisma.order.findMany({
+      where: {
+        tenantId,
+        customerId: order.customerId,
+        id: { not: order.id },
+        deletedAt: null,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+      select: {
+        id: true,
+        createdAt: true,
+        totalAmount: true,
+        status: true,
+      },
+    }),
+    prisma.order.findFirst({
+      where: {
+        tenantId,
+        customerRepId: order.customerRepId,
+        status: 'pending_confirmation',
+        id: { not: order.id },
+        deletedAt: null,
+      },
+      orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
+      select: { id: true },
+    }),
+  ]);
 
   return {
     order: {

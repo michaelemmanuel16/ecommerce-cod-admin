@@ -16,6 +16,10 @@ import * as Money from '../utils/money';
 export const BASE_COMMISSION_AMOUNT = Money.fromNumber(8);
 export const UPSELL_COMMISSION_RATE = new Prisma.Decimal('0.10');
 
+export function upsellCommissionFor(extraValue: Money.MoneyInput): Prisma.Decimal {
+  return Money.roundHalfUp(Money.mul(extraValue, UPSELL_COMMISSION_RATE), 2);
+}
+
 /**
  * Creates pending commission entries (base GH₵8 and upsell 10%) on order confirmation by a rep call (F-769, P6).
  * Only human reps (kind === 'person') qualify; auto-confirmed, self-service, no-rep, and AI-agent orders get no entries.
@@ -69,7 +73,7 @@ export async function createCommissionEntriesOnConfirm(
     where: { orderId, kind: 'upsell', status: { not: 'void' } },
   });
   if (extraValueSum.gt(0)) {
-    const upsellAmount = Money.roundHalfUp(Money.mul(extraValueSum, UPSELL_COMMISSION_RATE), 2);
+    const upsellAmount = upsellCommissionFor(extraValueSum);
     if (upsellAmount.gt(0)) {
       if (!upsellEntry) {
         upsellEntry = await tx.commissionEntry.create({

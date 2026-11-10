@@ -8,9 +8,10 @@ import { getSocket } from '../../services/socket';
 import { normalizePhone } from '../../utils/phone';
 import { QueueCallPanel } from './QueueCallPanel';
 import { NewOrderSheet } from '../orders/NewOrderSheet';
-import { formatWaitDuration, formatCallbackTime } from './queueHelpers';
+import { formatWaitDuration, formatCallbackTime, REP_PANEL_BREAKPOINT } from './queueHelpers';
 import { formatCurrency } from '../../utils/format';
 import { personName } from '../../utils/people';
+import { whatsappUrl } from '../../utils/whatsapp';
 
 type QueueTab = 'new' | 'call_back' | 'said_no' | 'not_reachable';
 
@@ -78,9 +79,12 @@ export const RepQueuePage: React.FC = () => {
     }
   }, []);
 
+  const searchQueryRef = useRef(searchQuery);
+  searchQueryRef.current = searchQuery;
+
   // Fetch on tab change
   useEffect(() => {
-    void fetchQueue(activeTab, searchQuery);
+    void fetchQueue(activeTab, searchQueryRef.current);
   }, [activeTab, fetchQueue]);
 
   // Periodic refresh & live ticking timer
@@ -92,13 +96,13 @@ export const RepQueuePage: React.FC = () => {
 
     // Full queue reload every 60 seconds
     const reloadTimer = setInterval(() => {
-      void fetchQueue(activeTab, searchQuery, true);
+      void fetchQueue(activeTab, searchQueryRef.current, true);
     }, 60000);
 
     // Socket events reload
     const socket = getSocket();
     const handleSocket = () => {
-      void fetchQueue(activeTab, searchQuery);
+      void fetchQueue(activeTab, searchQueryRef.current);
     };
 
     if (socket) {
@@ -112,7 +116,7 @@ export const RepQueuePage: React.FC = () => {
         REFETCH_EVENTS.forEach((e) => socket.off(e, handleSocket));
       }
     };
-  }, [activeTab, searchQuery, fetchQueue]);
+  }, [activeTab, fetchQueue]);
 
   // Search input handler with debounce
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -125,7 +129,7 @@ export const RepQueuePage: React.FC = () => {
   };
 
   const handleDone = (nextOrderId: number | null) => {
-    void fetchQueue(activeTab, searchQuery);
+    void fetchQueue(activeTab, searchQueryRef.current);
     if (nextOrderId) {
       setSelectedOrderId(nextOrderId);
     }
@@ -133,7 +137,7 @@ export const RepQueuePage: React.FC = () => {
 
   const handleRowClick = (order: QueueItem) => {
     // Same breakpoint as rep.css, where the side panel hides.
-    if (window.innerWidth <= 1100) {
+    if (window.innerWidth <= REP_PANEL_BREAKPOINT) {
       navigate(`/rep/call/${order.id}`);
     } else {
       setSelectedOrderId(order.id);
@@ -271,8 +275,7 @@ export const RepQueuePage: React.FC = () => {
                 // Phone links
                 const normalized = normalizePhone(order.customer.phoneNumber);
                 const telUrl = normalized ? `tel:${normalized}` : undefined;
-                const cleanDigits = normalized ? normalized.replace(/\D/g, '') : '';
-                const waUrl = cleanDigits ? `https://wa.me/${cleanDigits}` : undefined;
+                const waUrl = whatsappUrl(normalized) ?? undefined;
 
                 return (
                   <div
