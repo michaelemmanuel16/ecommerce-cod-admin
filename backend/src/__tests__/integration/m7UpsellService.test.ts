@@ -385,18 +385,126 @@ describe('M7-T04: Upsell service rules', () => {
     expect(Money.parse(o!.subtotal).toFixed(4)).toBe('249.0000');
   });
 
-  it('rejects a smaller package (400): an upsell never lowers the order', async () => {
-    const order = await prismaBase.order.create({
+  it('downgrade: 2 sets -> 1 set lowers subtotal, totalAmount, codAmount by price diff; package item becomes smaller; no active package line or entry; add-on chosen at same time makes UpsellLine', async () => {
+    // 1. Downgrade with add-on chosen at the same time
+    const orderWithAddon = await prismaBase.order.create({
       data: { customerId, status: 'pending_confirmation', subtotal: 449, totalAmount: 449, codAmount: 449, customerRepId: adwoaId, tenantId } as any,
     });
     await prismaBase.formSubmission.create({
-      data: { formId, orderId: order.id, formData: {}, selectedPackage: { id: pkg2Id, name: '2 Sets', price: 449, quantity: 2 }, totalAmount: 449, tenantId },
+      data: { formId, orderId: orderWithAddon.id, formData: {}, selectedPackage: { id: pkg2Id, name: '2 Sets', price: 449, quantity: 2 }, totalAmount: 449, tenantId },
     });
-    const res = await request(app).post(`/api/orders/${order.id}/upsell`).set('Authorization', `Bearer ${adwoaToken}`)
+    await prismaBase.orderItem.create({
+      data: {
+        orderId: orderWithAddon.id,
+        productId,
+        quantity: 2,
+        unitPrice: 224.5,
+        totalPrice: 449,
+        itemType: 'package',
+        metadata: { packageName: '2 Sets', packageId: pkg2Id },
+      },
+    });
+
+    // 2 sets (449) -> 1 set (249) + addon1 (40)
+    // Diff: 449 - 249 = 200. Order delta: -200 + 40 = -160. Totals: 449 - 160 = 289.
+    const resWithAddon = await request(app).post(`/api/orders/${orderWithAddon.id}/upsell`).set('Authorization', `Bearer ${adwoaToken}`)
+      .send({ packageId: pkg1Id, addOnIds: [addon1Id] });
+    expect(resWithAddon.status).toBe(200);
+
+    const oWithAddon = await prismaBase.order.findUniqueOrThrow({ where: { id: orderWithAddon.id } });
+    expect(Money.parse(oWithAddon.subtotal).toFixed(4)).toBe('289.0000');
+    expect(Money.parse(oWithAddon.totalAmount).toFixed(4)).toBe('289.0000');
+    expect(Money.parse(oWithAddon.codAmount).toFixed(4)).toBe('289.0000');
+
+    const itemsWithAddon = await prismaBase.orderItem.findMany({ where: { orderId: orderWithAddon.id }, orderBy: { id: 'asc' } });
+    expect(itemsWithAddon).toHaveLength(2);
+    const pkgItem = itemsWithAddon.find((i) => i.itemType === 'package')!;
+    expect(pkgItem.quantity).toBe(1);
+    expect(Money.parse(pkgItem.totalPrice).toFixed(4)).toBe('249.0000');
+    expect((pkgItem.metadata as any)?.packageName).toBe('1 Set');
+    expect((pkgItem.metadata as any)?.packageId).toBe(pkg1Id);
+
+    // No active package UpsellLine; add-on chosen at the same time still makes an UpsellLine and counts as extra value
+    const activeLinesWithAddon = await prismaBase.upsellLine.findMany({ where: { orderId: orderWithAddon.id, status: 'active' } });
+    expect(activeLinesWithAddon).toHaveLength(1);
+    expect(activeLinesWithAddon[0].kind).toBe('addon');
+    expect(activeLinesWithAddon[0].sourceId).toBe(addon1Id);
+    expect(Money.parse(activeLinesWithAddon[0].extraValue).toFixed(4)).toBe('40.0000');
+
+    // Confirm orderWithAddon: only add-on upsell commission entry created (10% of 40 = 4.00), no package upsell commission
+    const callRes1 = await request(app)
+      .post('/api/calls')
+      .set('Authorization', `Bearer ${adwoaToken}`)
+      .send({
+        customerId,
+        orderId: orderWithAddon.id,
+        outcome: 'confirmed',
+        notes: 'Confirmed downgrade with addon',
+      });
+    expect(callRes1.status).toBe(201);
+
+    const entriesWithAddon = await prismaBase.commissionEntry.findMany({
+      where: { orderId: orderWithAddon.id, kind: 'upsell', status: { not: 'void' } },
+    });
+    expect(entriesWithAddon).toHaveLength(1);
+    expect(Money.parse(entriesWithAddon[0].amount).toFixed(4)).toBe('4.0000');
+
+    // 2. Pure downgrade with NO add-on: 2 sets -> 1 set
+    const orderPure = await prismaBase.order.create({
+      data: { customerId, status: 'pending_confirmation', subtotal: 449, totalAmount: 449, codAmount: 449, customerRepId: adwoaId, tenantId } as any,
+    });
+    await prismaBase.formSubmission.create({
+      data: { formId, orderId: orderPure.id, formData: {}, selectedPackage: { id: pkg2Id, name: '2 Sets', price: 449, quantity: 2 }, totalAmount: 449, tenantId },
+    });
+    await prismaBase.orderItem.create({
+      data: {
+        orderId: orderPure.id,
+        productId,
+        quantity: 2,
+        unitPrice: 224.5,
+        totalPrice: 449,
+        itemType: 'package',
+        metadata: { packageName: '2 Sets', packageId: pkg2Id },
+      },
+    });
+
+    const resPure = await request(app).post(`/api/orders/${orderPure.id}/upsell`).set('Authorization', `Bearer ${adwoaToken}`)
       .send({ packageId: pkg1Id, addOnIds: [] });
-    expect(res.status).toBe(400);
-    const o = await prismaBase.order.findUnique({ where: { id: order.id } });
-    expect(Money.parse(o!.subtotal).toFixed(4)).toBe('449.0000');
+    expect(resPure.status).toBe(200);
+
+    const oPure = await prismaBase.order.findUniqueOrThrow({ where: { id: orderPure.id } });
+    expect(Money.parse(oPure.subtotal).toFixed(4)).toBe('249.0000');
+    expect(Money.parse(oPure.totalAmount).toFixed(4)).toBe('249.0000');
+    expect(Money.parse(oPure.codAmount).toFixed(4)).toBe('249.0000');
+
+    const pureItems = await prismaBase.orderItem.findMany({ where: { orderId: orderPure.id } });
+    expect(pureItems).toHaveLength(1);
+    expect(pureItems[0].itemType).toBe('package');
+    expect(pureItems[0].quantity).toBe(1);
+    expect(Money.parse(pureItems[0].totalPrice).toFixed(4)).toBe('249.0000');
+    expect((pureItems[0].metadata as any)?.packageName).toBe('1 Set');
+    expect((pureItems[0].metadata as any)?.packageId).toBe(pkg1Id);
+
+    // No active package UpsellLine
+    const pureActiveLines = await prismaBase.upsellLine.findMany({ where: { orderId: orderPure.id, status: 'active' } });
+    expect(pureActiveLines).toHaveLength(0);
+
+    // Confirm pure downgrade order: no upsell commission entry
+    const callRes2 = await request(app)
+      .post('/api/calls')
+      .set('Authorization', `Bearer ${adwoaToken}`)
+      .send({
+        customerId,
+        orderId: orderPure.id,
+        outcome: 'confirmed',
+        notes: 'Confirmed pure downgrade',
+      });
+    expect(callRes2.status).toBe(201);
+
+    const pureUpsellEntries = await prismaBase.commissionEntry.findMany({
+      where: { orderId: orderPure.id, kind: 'upsell', status: { not: 'void' } },
+    });
+    expect(pureUpsellEntries).toHaveLength(0);
   });
 
   it('rejects a package or add-on from another product form (404); the order is unchanged', async () => {

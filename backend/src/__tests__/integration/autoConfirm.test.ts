@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, jest } from '@jest/globals';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, jest } from '@jest/globals';
 import request from 'supertest';
 import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
@@ -9,6 +9,10 @@ import { whatsappService } from '../../services/whatsappService';
 import { smsService } from '../../services/smsService';
 import orderService from '../../services/orderService';
 import { runInTenant } from '../../utils/tenantContext';
+import workflowService from '../../services/workflowService';
+import { workflowQueue, processExecuteWorkflow } from '../../queues/workflowQueue';
+import { fullName } from '../../utils/nameUtils';
+import * as Money from '../../utils/money';
 
 let pair: TwoTenants;
 let tenantId: string;
@@ -26,13 +30,7 @@ afterAll(async () => {
 });
 
 describe('M7-T08: Auto-confirm send and public confirmation API', () => {
-  it('disabled setting sends nothing and creates no ConfirmToken', async () => {
-    // Ensure autoConfirmEnabled is false
-    await prismaBase.systemConfig.update({
-      where: { tenantId },
-      data: { autoConfirmEnabled: false },
-    });
-
+  it('an order created with no send_auto_confirm workflow sends nothing and creates no ConfirmToken', async () => {
     const order = await makeOrder({
       tenantId,
       customerId,
@@ -41,12 +39,12 @@ describe('M7-T08: Auto-confirm send and public confirmation API', () => {
       orderType: 'physical',
     });
 
-    const sendWhatsAppSpy = jest.spyOn(whatsappService, 'sendText').mockResolvedValue({ messageLogId: 1 } as any);
+    const sendWhatsAppSpy = jest.spyOn(whatsappService, 'sendTemplate').mockResolvedValue({ messageLogId: 1 } as any);
     const sendSmsSpy = jest.spyOn(smsService, 'sendSms').mockResolvedValue('msg-id-1' as any);
 
-    const result = await sendAutoConfirmForOrder(order.id, tenantId);
+    // The order.created path: no workflow row, so nothing runs
+    await runInTenant(tenantId, () => workflowService.triggerOrderCreatedWorkflows({ id: order.id }));
 
-    expect(result).toBeNull();
     expect(sendWhatsAppSpy).not.toHaveBeenCalled();
     expect(sendSmsSpy).not.toHaveBeenCalled();
 
@@ -60,10 +58,9 @@ describe('M7-T08: Auto-confirm send and public confirmation API', () => {
     sendSmsSpy.mockRestore();
   });
 
-  it('enabled setting creates ConfirmToken, sets Order.autoConfirmSentAt, and sends exactly once', async () => {
-    await prismaBase.systemConfig.update({
-      where: { tenantId },
-      data: { autoConfirmEnabled: true, autoConfirmChannel: 'whatsapp' },
+  it('creates ConfirmToken, sets Order.autoConfirmSentAt, and sends exactly once with exact template params', async () => {
+    const product = await prismaBase.product.create({
+      data: { name: 'Acne Serum', sku: `AS-${Date.now()}`, price: 100, stockQuantity: 10, category: 'Health', tenantId },
     });
 
     const order = await makeOrder({
@@ -72,10 +69,24 @@ describe('M7-T08: Auto-confirm send and public confirmation API', () => {
       status: 'pending_confirmation',
       paymentMethod: 'cod',
       orderType: 'physical',
+      totalAmount: 100,
     });
 
-    const sendWhatsAppSpy = jest.spyOn(whatsappService, 'sendText').mockResolvedValue({ messageLogId: 2 } as any);
+    await prismaBase.orderItem.create({
+      data: {
+        orderId: order.id,
+        productId: product.id,
+        quantity: 1,
+        unitPrice: 100,
+        totalPrice: 100,
+        itemType: 'package',
+        metadata: { packageName: '1 Bottle' },
+      },
+    });
 
+    const sendWhatsAppSpy = jest.spyOn(whatsappService, 'sendTemplate').mockResolvedValue({ messageLogId: 2 } as any);
+
+    const customer = await prismaBase.customer.findUniqueOrThrow({ where: { id: customerId } });
     const result = await sendAutoConfirmForOrder(order.id, tenantId);
 
     expect(result).not.toBeNull();
@@ -85,12 +96,18 @@ describe('M7-T08: Auto-confirm send and public confirmation API', () => {
       expect.objectContaining({
         orderId: order.id,
         customerId,
-        body: expect.stringMatching(/^Hello .+ thank you for your order #\d+ of [A-Z]{3} \d+\.\d{2}\. Reply YES to confirm it\. Reply NO if you want to change or cancel, and our team will call you\.$/),
+        templateName: 'order_auto_confirm',
+        languageCode: 'en',
+        headerParams: ['Acne Serum'],
+        bodyParams: [
+          fullName(customer),
+          '1 Bottle',
+          String(order.id),
+          Money.formatWithSign(order.totalAmount, order.currency ?? 'GHS'),
+        ],
+        buttonPayloads: ['CONFIRM', 'CHANGE', 'CANCEL'],
       })
     );
-    const sentBody = (sendWhatsAppSpy.mock.calls[0][0] as any).body;
-    expect(sentBody).toContain('Reply YES to confirm it. Reply NO if you want to change or cancel, and our team will call you.');
-    expect(sentBody).not.toContain('/c/');
 
     const updatedOrder = await prismaBase.order.findUniqueOrThrow({ where: { id: order.id } });
     expect(updatedOrder.autoConfirmSentAt).not.toBeNull();
@@ -108,10 +125,12 @@ describe('M7-T08: Auto-confirm send and public confirmation API', () => {
     sendWhatsAppSpy.mockRestore();
   });
 
-  it('WhatsApp failure falls back to SMS', async () => {
-    await prismaBase.systemConfig.update({
-      where: { tenantId },
-      data: { autoConfirmEnabled: true, autoConfirmChannel: 'whatsapp' },
+  it('order with 2 items gives "<label> + 1 more item" in bodyParams', async () => {
+    const product1 = await prismaBase.product.create({
+      data: { name: 'Acne Serum', sku: `AS1-${Date.now()}`, price: 100, stockQuantity: 10, category: 'Health', tenantId },
+    });
+    const product2 = await prismaBase.product.create({
+      data: { name: 'Facial Wash', sku: `FW1-${Date.now()}`, price: 50, stockQuantity: 10, category: 'Health', tenantId },
     });
 
     const order = await makeOrder({
@@ -120,9 +139,135 @@ describe('M7-T08: Auto-confirm send and public confirmation API', () => {
       status: 'pending_confirmation',
       paymentMethod: 'cod',
       orderType: 'physical',
+      totalAmount: 150,
     });
 
-    const sendWhatsAppSpy = jest.spyOn(whatsappService, 'sendText').mockRejectedValue(new Error('WhatsApp connection error'));
+    await prismaBase.orderItem.create({
+      data: {
+        orderId: order.id,
+        productId: product1.id,
+        quantity: 2,
+        unitPrice: 100,
+        totalPrice: 100,
+        itemType: 'package',
+        metadata: { packageName: '2 Sets' },
+      },
+    });
+    await prismaBase.orderItem.create({
+      data: {
+        orderId: order.id,
+        productId: product2.id,
+        quantity: 1,
+        unitPrice: 50,
+        totalPrice: 50,
+        itemType: 'addon',
+      },
+    });
+
+    const sendWhatsAppSpy = jest.spyOn(whatsappService, 'sendTemplate').mockResolvedValue({ messageLogId: 10 } as any);
+
+    const customer = await prismaBase.customer.findUniqueOrThrow({ where: { id: customerId } });
+    await sendAutoConfirmForOrder(order.id, tenantId);
+
+    expect(sendWhatsAppSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        headerParams: ['Acne Serum'],
+        bodyParams: [
+          fullName(customer),
+          '2 Sets + 1 more item',
+          String(order.id),
+          Money.formatWithSign(order.totalAmount, order.currency ?? 'GHS'),
+        ],
+      })
+    );
+
+    sendWhatsAppSpy.mockRestore();
+  });
+
+  it('SMS text starts with <businessName>: when systemConfig.businessName is set', async () => {
+    await prismaBase.systemConfig.update({
+      where: { tenantId },
+      data: {
+        businessName: 'Glow Cosmetics',
+      },
+    });
+
+    try {
+      const product = await prismaBase.product.create({
+        data: { name: 'Glow Cream', sku: `GC-${Date.now()}`, price: 120, stockQuantity: 10, category: 'Health', tenantId },
+      });
+
+      const order = await makeOrder({
+        tenantId,
+        customerId,
+        status: 'pending_confirmation',
+        paymentMethod: 'cod',
+        orderType: 'physical',
+        totalAmount: 120,
+      });
+
+      await prismaBase.orderItem.create({
+        data: {
+          orderId: order.id,
+          productId: product.id,
+          quantity: 1,
+          unitPrice: 120,
+          totalPrice: 120,
+          itemType: 'package',
+        },
+      });
+
+      const sendSmsSpy = jest.spyOn(smsService, 'sendSms').mockResolvedValue('sms-id-exact' as any);
+
+      await sendAutoConfirmForOrder(order.id, tenantId, { channel: 'sms' });
+
+      expect(sendSmsSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          body: expect.stringMatching(/^Glow Cosmetics: Hello /),
+        })
+      );
+
+      sendSmsSpy.mockRestore();
+    } finally {
+      await prismaBase.systemConfig.update({
+        where: { tenantId },
+        data: { businessName: null },
+      });
+    }
+  });
+
+  it('a workflow in another tenant cannot send for this order', async () => {
+    const order = await makeOrder({
+      tenantId,
+      customerId,
+      status: 'pending_confirmation',
+      paymentMethod: 'cod',
+      orderType: 'physical',
+    });
+    const waSpy = jest.spyOn(whatsappService, 'sendTemplate').mockResolvedValue({ messageLogId: 30 } as any);
+    const smsSpy = jest.spyOn(smsService, 'sendSms').mockResolvedValue('x' as any);
+
+    const result = await sendAutoConfirmForOrder(order.id, 'some-other-tenant');
+
+    expect(result).toBeNull();
+    expect(waSpy).not.toHaveBeenCalled();
+    expect(smsSpy).not.toHaveBeenCalled();
+    const after = await prismaBase.order.findUnique({ where: { id: order.id } });
+    expect(after!.autoConfirmSentAt).toBeNull();
+    waSpy.mockRestore();
+    smsSpy.mockRestore();
+  });
+
+  it('WhatsApp failure falls back to SMS', async () => {
+    const order = await makeOrder({
+      tenantId,
+      customerId,
+      status: 'pending_confirmation',
+      paymentMethod: 'cod',
+      orderType: 'physical',
+    });
+
+    const sendWhatsAppSpy = jest.spyOn(whatsappService, 'sendTemplate').mockRejectedValue(new Error('WhatsApp connection error'));
     const sendSmsSpy = jest.spyOn(smsService, 'sendSms').mockResolvedValue('sms-fallback-id' as any);
 
     const result = await sendAutoConfirmForOrder(order.id, tenantId);
@@ -130,9 +275,76 @@ describe('M7-T08: Auto-confirm send and public confirmation API', () => {
     expect(result).not.toBeNull();
     expect(sendWhatsAppSpy).toHaveBeenCalledTimes(1);
     expect(sendSmsSpy).toHaveBeenCalledTimes(1);
+    expect(sendSmsSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.stringMatching(/please confirm order #\d+, .+, GHS \d+\.\d{2} on delivery\. Reply YES to confirm or NO to change or cancel\./),
+      })
+    );
 
     sendWhatsAppSpy.mockRestore();
     sendSmsSpy.mockRestore();
+  });
+
+  describe('send_auto_confirm workflow action (COD-193 M7-R2)', () => {
+    const mkAutoConfirmWorkflow = (channel?: 'sms' | 'whatsapp') =>
+      prismaBase.workflow.create({
+        data: {
+          name: `auto-confirm ${Date.now()}`,
+          triggerType: 'order_created',
+          triggerData: {},
+          actions: [{ type: 'send_auto_confirm', config: channel ? { channel } : {} }],
+          isActive: true,
+          tenantId,
+        },
+      });
+    const mkPending = () =>
+      makeOrder({ tenantId, customerId, status: 'pending_confirmation', paymentMethod: 'cod', orderType: 'physical' });
+    const runCreated = (orderId: number) =>
+      runInTenant(tenantId, () => workflowService.triggerOrderCreatedWorkflows({ id: orderId }));
+
+    beforeEach(() => {
+      // Run the job at once, the way the Bull worker would later
+      jest.spyOn(workflowQueue, 'add').mockImplementation((async (_name: string, data: any) => {
+        await processExecuteWorkflow({ id: 'inline', data } as any);
+      }) as any);
+    });
+    afterEach(async () => {
+      jest.restoreAllMocks();
+      await prismaBase.workflow.deleteMany({ where: { tenantId } });
+    });
+
+    it('order_created workflow sends the template once; a second run is skipped', async () => {
+      await mkAutoConfirmWorkflow();
+      const order = await mkPending();
+      const waSpy = jest.spyOn(whatsappService, 'sendTemplate').mockResolvedValue({ messageLogId: 21 } as any);
+      const smsSpy = jest.spyOn(smsService, 'sendSms').mockResolvedValue('sms-x' as any);
+
+      await runCreated(order.id);
+      expect(waSpy).toHaveBeenCalledTimes(1);
+      expect(waSpy).toHaveBeenCalledWith(expect.objectContaining({ templateName: 'order_auto_confirm', orderId: order.id }));
+      expect(await prismaBase.confirmToken.count({ where: { orderId: order.id } })).toBe(1);
+
+      await runCreated(order.id);
+      expect(waSpy).toHaveBeenCalledTimes(1);
+      expect(smsSpy).not.toHaveBeenCalled();
+      expect(await prismaBase.confirmToken.count({ where: { orderId: order.id } })).toBe(1);
+    });
+
+    it("config channel 'sms' sends the SMS text, not the template", async () => {
+      await mkAutoConfirmWorkflow('sms');
+      const order = await mkPending();
+      const waSpy = jest.spyOn(whatsappService, 'sendTemplate').mockResolvedValue({ messageLogId: 22 } as any);
+      const smsSpy = jest.spyOn(smsService, 'sendSms').mockResolvedValue('sms-y' as any);
+
+      await runCreated(order.id);
+      expect(waSpy).not.toHaveBeenCalled();
+      expect(smsSpy).toHaveBeenCalledTimes(1);
+      expect(smsSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ body: expect.stringMatching(/please confirm order #\d+/) }),
+      );
+      const token = await prismaBase.confirmToken.findFirstOrThrow({ where: { orderId: order.id } });
+      expect(token.channel).toBe('sms');
+    });
   });
 
   it('GET /api/public/confirm/:token returns summary with no private data', async () => {

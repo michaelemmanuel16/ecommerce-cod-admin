@@ -270,8 +270,6 @@ export interface OperatingHoursConfig {
 
 export interface OperationsSettings {
   operatingHours: OperatingHoursConfig | null;
-  autoConfirmEnabled: boolean;
-  autoConfirmChannel: 'whatsapp' | 'sms';
   timeZone: string;
   queueWaitAlertMinutes: number;
   firstCallTargetMinutes: number;
@@ -281,8 +279,6 @@ export interface OperationsSettings {
 
 export interface UpdateOperationsSettingsData {
   operatingHours?: OperatingHoursConfig;
-  autoConfirmEnabled?: boolean;
-  autoConfirmChannel?: 'whatsapp' | 'sms';
   timeZone?: string;
   queueWaitAlertMinutes?: number;
   firstCallTargetMinutes?: number;

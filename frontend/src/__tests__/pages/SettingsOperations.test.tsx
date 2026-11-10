@@ -17,8 +17,6 @@ vi.mock('../../services/admin.service', () => ({
 
 const INITIAL_SETTINGS: OperationsSettings = {
   timeZone: 'Africa/Accra',
-  autoConfirmEnabled: false,
-  autoConfirmChannel: 'whatsapp',
   queueWaitAlertMinutes: 30,
   firstCallTargetMinutes: 15,
   defaultDaysToPay: 7,
@@ -54,7 +52,7 @@ describe('Settings Operations tab (M7-T21, F-1229)', () => {
     getOperationsSettings.mockResolvedValue(INITIAL_SETTINGS);
   });
 
-  it('renders operating hours, queue rules, auto-confirm and public holidays help text', async () => {
+  it('renders operating hours, queue rules and public holidays help text', async () => {
     renderTab();
 
     expect(await screen.findByText('Operating hours')).toBeInTheDocument();
@@ -74,10 +72,6 @@ describe('Settings Operations tab (M7-T21, F-1229)', () => {
     expect(screen.getByLabelText('Time to first call target (minutes)')).toHaveValue(15);
     expect(screen.getByLabelText('Default days to pay')).toHaveValue(7);
     expect(screen.getByLabelText('Low stock alert (days of cover)')).toHaveValue(14);
-
-    // Auto-confirm
-    expect(screen.getByLabelText(/Send auto-confirmation message for new COD orders/i)).not.toBeChecked();
-    expect(screen.getByLabelText('Auto-confirm channel')).toBeDisabled();
   });
 
   it('saves all keys and reloads updated values', async () => {
@@ -102,14 +96,8 @@ describe('Settings Operations tab (M7-T21, F-1229)', () => {
     await userEvent.clear(lowStock);
     await userEvent.type(lowStock, '21');
 
-    // Enable auto-confirm and change channel to SMS
-    const autoConfirmSwitch = screen.getByLabelText(/Send auto-confirmation message for new COD orders/i);
-    await userEvent.click(autoConfirmSwitch);
-    expect(autoConfirmSwitch).toBeChecked();
-
-    const channelSelect = screen.getByLabelText('Auto-confirm channel');
-    expect(channelSelect).not.toBeDisabled();
-    await userEvent.selectOptions(channelSelect, 'sms');
+    // Auto-confirm is sent by a workflow action, not a setting
+    expect(screen.queryByLabelText(/auto-confirm/i)).toBeNull();
 
     // Toggle Sunday open
     const sundaySwitch = screen.getByLabelText('Sunday open');
@@ -121,8 +109,6 @@ describe('Settings Operations tab (M7-T21, F-1229)', () => {
       firstCallTargetMinutes: 20,
       defaultDaysToPay: 10,
       lowStockCoverDays: 21,
-      autoConfirmEnabled: true,
-      autoConfirmChannel: 'sms',
       operatingHours: {
         ...INITIAL_SETTINGS.operatingHours!,
         queueWaitAlertMinutes: 45,
@@ -147,8 +133,6 @@ describe('Settings Operations tab (M7-T21, F-1229)', () => {
           firstCallTargetMinutes: 20,
           defaultDaysToPay: 10,
           lowStockCoverDays: 21,
-          autoConfirmEnabled: true,
-          autoConfirmChannel: 'sms',
           operatingHours: expect.objectContaining({
             queueWaitAlertMinutes: 45,
             firstCallTargetMinutes: 20,
@@ -168,8 +152,6 @@ describe('Settings Operations tab (M7-T21, F-1229)', () => {
       expect(screen.getByLabelText('Time to first call target (minutes)')).toHaveValue(20);
       expect(screen.getByLabelText('Default days to pay')).toHaveValue(10);
       expect(screen.getByLabelText('Low stock alert (days of cover)')).toHaveValue(21);
-      expect(screen.getByLabelText(/Send auto-confirmation message for new COD orders/i)).toBeChecked();
-      expect(screen.getByLabelText('Auto-confirm channel')).toHaveValue('sms');
     });
   });
 

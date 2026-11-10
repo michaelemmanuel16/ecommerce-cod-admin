@@ -5,7 +5,6 @@ import * as Money from '../utils/money';
 import { resolveTenantId, runInTenant, withoutTenant } from '../utils/tenantContext';
 import { whatsappService } from './whatsappService';
 import { smsService } from './smsService';
-import { AppEvent, onOrderEvent } from '../utils/appEvents';
 import { fullName } from '../utils/nameUtils';
 
 export interface AutoConfirmResult {
@@ -14,11 +13,16 @@ export interface AutoConfirmResult {
 }
 
 /**
- * Send auto-confirm message for a COD order if enabled for the tenant.
+ * Send auto-confirm message for a COD order. Called by the `send_auto_confirm` workflow action.
+ * Returns null when the order is not eligible (the executors map that to skipped).
  * Exactly one send per order (guaranteed by atomic autoConfirmSentAt check).
  * No operating hours hold (P4: sends at once).
  */
-export async function sendAutoConfirmForOrder(orderId: number, tenantId?: string | null): Promise<AutoConfirmResult | null> {
+export async function sendAutoConfirmForOrder(
+  orderId: number,
+  tenantId?: string | null,
+  opts: { channel?: 'whatsapp' | 'sms' } = {},
+): Promise<AutoConfirmResult | null> {
   const order = await withoutTenant('auto-confirm-find-order', () =>
     prisma.order.findUnique({
       where: { id: orderId },
@@ -33,11 +37,21 @@ export async function sendAutoConfirmForOrder(orderId: number, tenantId?: string
             smsOptOut: true,
           },
         },
+        orderItems: {
+          select: {
+            id: true,
+            quantity: true,
+            metadata: true,
+            product: { select: { name: true } },
+          },
+        },
       },
     })
   );
 
   if (!order || !order.customer || order.deletedAt !== null) return null;
+  // A workflow runs in one tenant: never send for another tenant's order.
+  if (tenantId && order.tenantId && order.tenantId !== tenantId) return null;
   const tId = resolveTenantId(order.tenantId ?? tenantId);
 
   return runInTenant(tId, async () => {
@@ -55,19 +69,23 @@ export async function sendAutoConfirmForOrder(orderId: number, tenantId?: string
     // 4. Exactly one send per order
     if (order.autoConfirmSentAt !== null) return null;
 
-    // 5. Tenant settings check
-    const config = await prisma.systemConfig.findUnique({
-      where: { tenantId: tId },
-      select: { autoConfirmEnabled: true, autoConfirmChannel: true },
-    });
-
-    if (!config?.autoConfirmEnabled) return null;
+    // 5. Tenant name for the SMS prefix
+    const [config, tenant] = await Promise.all([
+      prisma.systemConfig.findUnique({
+        where: { tenantId: tId },
+        select: { businessName: true },
+      }),
+      prisma.tenant.findUnique({
+        where: { id: tId },
+        select: { name: true },
+      }),
+    ]);
 
     const phone = order.customer.phoneNumber;
     if (!phone) return null;
 
     // Check channel opt-outs
-    const targetChannel = config.autoConfirmChannel ?? 'whatsapp';
+    const targetChannel = opts.channel ?? 'whatsapp';
     if (targetChannel === 'whatsapp' && order.customer.whatsappOptOut) return null;
     if (targetChannel === 'sms' && order.customer.smsOptOut) return null;
 
@@ -92,17 +110,44 @@ export async function sendAutoConfirmForOrder(orderId: number, tenantId?: string
       },
     });
 
-    // Prepare message (COD-64, M7-T08)
+    // Package label and product name (COD-193 M7-R1)
+    const firstItem = order.orderItems[0];
+    const productName = firstItem?.product?.name || 'Product';
+    const firstItemMeta = (firstItem?.metadata ?? {}) as Record<string, any>;
+    const packageName = firstItemMeta.packageName;
+    let packageLabel = packageName
+      ? packageName
+      : `${firstItem?.quantity ?? 1} x ${productName}`;
+    if (order.orderItems.length > 1) {
+      const extraCount = order.orderItems.length - 1;
+      packageLabel += ` + ${extraCount} more item${extraCount > 1 ? 's' : ''}`;
+    }
+
     const customerName = fullName(order.customer);
+    const customerFirstName = order.customer.firstName || 'there';
     const total = Money.toApi(Money.parse(order.totalAmount));
     const currency = order.currency ?? 'GHS';
-    const message = `Hello ${customerName}, thank you for your order #${order.id} of ${currency} ${total}. Reply YES to confirm it. Reply NO if you want to change or cancel, and our team will call you.`;
+    const formattedTotalWithSign = Money.formatWithSign(order.totalAmount, currency);
+
+    // SMS message: plain GSM characters only, no ₵ sign
+    const storeName = config?.businessName?.trim() || tenant?.name?.trim() || null;
+    const storePrefix = storeName ? `${storeName}: ` : '';
+    const smsMessage = `${storePrefix}Hello ${customerFirstName}, please confirm order #${order.id}, ${productName}, ${currency} ${total} on delivery. Reply YES to confirm or NO to change or cancel.`;
 
     if (targetChannel === 'whatsapp') {
       try {
-        await whatsappService.sendText({
+        await whatsappService.sendTemplate({
           to: phone,
-          body: message,
+          templateName: 'order_auto_confirm',
+          languageCode: 'en',
+          headerParams: [productName],
+          bodyParams: [
+            customerName,
+            packageLabel,
+            String(order.id),
+            formattedTotalWithSign,
+          ],
+          buttonPayloads: ['CONFIRM', 'CHANGE', 'CANCEL'],
           orderId: order.id,
           customerId: order.customer.id,
         });
@@ -111,7 +156,7 @@ export async function sendAutoConfirmForOrder(orderId: number, tenantId?: string
         try {
           await smsService.sendSms({
             to: phone,
-            body: message,
+            body: smsMessage,
             orderId: order.id,
             customerId: order.customer.id,
           });
@@ -123,7 +168,7 @@ export async function sendAutoConfirmForOrder(orderId: number, tenantId?: string
       try {
         await smsService.sendSms({
           to: phone,
-          body: message,
+          body: smsMessage,
           orderId: order.id,
           customerId: order.customer.id,
         });
@@ -135,13 +180,3 @@ export async function sendAutoConfirmForOrder(orderId: number, tenantId?: string
     return { token, channel: targetChannel };
   });
 }
-
-// Subscribe to order created events
-onOrderEvent(AppEvent.ORDER_CREATED, async (evt) => {
-  if (evt.imported && !evt.runWorkflows) return;
-  try {
-    await sendAutoConfirmForOrder(evt.orderId, evt.tenantId);
-  } catch (error: any) {
-    logger.error('Failed to process auto-confirm for created order', { orderId: evt.orderId, error: error?.message });
-  }
-});

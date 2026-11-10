@@ -320,7 +320,11 @@ export const RepQueuePage: React.FC = () => {
                         <b>{order.customer.name}</b>
                         {order.saidNo && (
                           <span className="tag bad" data-testid="said-no-flag">
-                            Said NO - call once before cancel
+                            {order.customerResponse === 'change'
+                              ? 'Wants a change - call'
+                              : order.customerResponse === 'cancel'
+                                ? 'Wants to cancel - call once before cancel'
+                                : 'Said NO - call once before cancel'}
                           </span>
                         )}
                       </div>

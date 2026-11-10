@@ -85,6 +85,7 @@ export interface QueueItem {
   itemsSummary: string;
   totalAmount: string;
   saidNo: boolean;
+  customerResponse?: 'yes' | 'no' | 'change' | 'cancel' | null;
   tab: 'new' | 'call_back' | 'said_no' | 'not_reachable';
   waitMinutes: number;
   waitTimerSeverity: 'normal' | 'gold' | 'coral';
@@ -350,6 +351,7 @@ export interface RepNumbersResult {
   deliveredFromConfirmedRate: number | null;
   deliveredFromConfirmedDetail: Record<string, number>;
   upsellRate: number;
+  upsellCount: number;
   extraValueAdded: string;
   timeToFirstCall: number | null;
   targetHit: RepTargetHit | null;
@@ -384,6 +386,9 @@ export interface RepEarningsLine {
   paid: string;
   reversal: string | null;
   isReversal: boolean;
+  /** A return deduction row (COD-193): amount < 0, label "Order #<id> returned". */
+  isDeduction?: boolean;
+  label?: string;
 }
 
 export interface RepPayout {

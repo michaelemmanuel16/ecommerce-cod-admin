@@ -395,6 +395,9 @@ export class WorkflowService {
       case 'send_whatsapp':
         return this.executeSendWhatsApp(action, context);
 
+      case 'send_auto_confirm':
+        return this.executeSendAutoConfirm(action, context);
+
       case 'update_order':
         return this.executeUpdateOrder(action, context);
 
@@ -463,6 +466,18 @@ export class WorkflowService {
     });
 
     return { success: true, messageLogId: result.messageLogId };
+  }
+
+  /**
+   * Execute send auto-confirm action (COD-193 M7-R2): WhatsApp template by default, SMS when config.channel is 'sms'.
+   * An ineligible order is skipped, not an error.
+   */
+  private async executeSendAutoConfirm(action: any, context: any): Promise<any> {
+    const { sendAutoConfirmForOrder } = await import('./autoConfirmService');
+    const channel = action.config?.channel === 'sms' ? 'sms' : 'whatsapp';
+    const result = await sendAutoConfirmForOrder(context.orderId, getTenantId(), { channel });
+    if (!result) return { success: true, skipped: true, reason: 'not_eligible_or_already_sent' };
+    return { success: true, channel: result.channel };
   }
 
   /**
@@ -695,6 +710,7 @@ export class WorkflowService {
       'send_sms',
       'send_email',
       'send_whatsapp',
+      'send_auto_confirm',
       'update_order',
       'assign_agent',
       'assign_user',

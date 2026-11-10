@@ -172,15 +172,19 @@ export const PayoutForm: React.FC<PayoutFormProps> = ({ personId, personName, on
                       <tr><th className="chkcol"><span className="sr-only">Pay</span></th><th>Entry</th><th>Order</th><th>Earned</th><th className="r">Amount</th></tr>
                     </thead>
                     <tbody>
-                      {preview.entries.map((e) => (
-                        <tr key={e.id}>
-                          <td><input type="checkbox" checked={ticked.has(e.id)} onChange={() => toggle(e.id)} aria-label={`Pay ${KIND_LABEL[e.kind]}${e.orderId ? ` of order ${e.orderId}` : ''}`} /></td>
-                          <td>{KIND_LABEL[e.kind]}</td>
-                          <td>{e.orderId ? formatOrderNumber(e.orderId) : '—'}</td>
-                          <td>{e.earnedAt ? formatDate(e.earnedAt, 'd MMM') : '—'}</td>
-                          <td className="r num">{formatCurrency(e.amount)}</td>
-                        </tr>
-                      ))}
+                      {preview.entries.map((e) => {
+                        const isDeduction = Number(e.amount) < 0;
+                        const label = isDeduction ? `Order #${e.orderId} returned` : KIND_LABEL[e.kind];
+                        return (
+                          <tr key={e.id}>
+                            <td><input type="checkbox" checked={ticked.has(e.id)} onChange={() => toggle(e.id)} aria-label={`Pay ${label}${e.orderId ? ` of order ${e.orderId}` : ''}`} /></td>
+                            <td>{label}</td>
+                            <td>{e.orderId ? formatOrderNumber(e.orderId) : '—'}</td>
+                            <td>{e.earnedAt ? formatDate(e.earnedAt, 'd MMM') : '—'}</td>
+                            <td className="r num">{formatCurrency(e.amount)}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

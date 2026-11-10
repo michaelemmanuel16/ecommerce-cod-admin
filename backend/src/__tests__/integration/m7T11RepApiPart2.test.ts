@@ -30,7 +30,7 @@ import { currentMonth, getStoreTimeZone, localDate, monthRange, parseMonth, shif
 import { runInTenant } from '../../utils/tenantContext';
 import { CallOutcome, CallSource } from '@prisma/client';
 import * as Money from '../../utils/money';
-import { BASE_COMMISSION_AMOUNT } from '../../services/commissionService';
+import { REP_PAY_DEFAULTS } from '../../services/rewardService';
 
 jest.setTimeout(180_000);
 
@@ -673,7 +673,7 @@ describe('3. /api/rep/earnings (lines per order, one owed rule, contract test)',
 
   it('openOrdersNote uses store currency and BASE_COMMISSION_AMOUNT (no hard-coded GH₵8)', async () => {
     const currency = await runInTenant(tenantId, () => getCurrency());
-    const formattedSign = Money.formatWithSign(BASE_COMMISSION_AMOUNT, currency);
+    const formattedSign = Money.formatWithSign(Money.parse(REP_PAY_DEFAULTS.baseCommission), currency);
 
     const res = await request(app).get('/api/rep/earnings').set('Authorization', bearer(rep1Token));
     expect(res.status).toBe(200);
@@ -1034,6 +1034,54 @@ describe('8. Security review fixes', () => {
         await prismaBase.role.update({ where: { id: r.id }, data: { permissions: r.permissions ?? undefined } });
       }
       clearPermissionsCache();
+    }
+  });
+});
+
+describe('9. Call card pay setting (COD-193 M7-R1)', () => {
+  it('/api/rep/orders/:id/card returns pay.baseCommission and pay.upsellPercent from stored setting', async () => {
+    await prismaBase.systemConfig.upsert({
+      where: { tenantId },
+      create: {
+        tenantId,
+        features: {
+          rewards: { baseCommission: '5.00', upsellPercent: '12.50' },
+        },
+      },
+      update: {
+        features: {
+          rewards: { baseCommission: '5.00', upsellPercent: '12.50' },
+        },
+      },
+    });
+
+    try {
+      const order = await prismaBase.order.create({
+        data: {
+          tenantId,
+          customerId: customer1Id,
+          customerRepId: rep1Id,
+          status: 'pending_confirmation',
+          subtotal: 150,
+          totalAmount: 150,
+          codAmount: 150,
+        },
+      });
+
+      const res = await request(app)
+        .get(`/api/rep/orders/${order.id}/card`)
+        .set('Authorization', bearer(rep1Token));
+
+      expect(res.status).toBe(200);
+      expect(res.body.pay).toBeDefined();
+      expect(res.body.pay.baseCommission).toBe('5.00');
+      expect(res.body.pay.upsellPercent).toBe(12.5);
+
+    } finally {
+      await prismaBase.systemConfig.update({
+        where: { tenantId },
+        data: { features: {} },
+      });
     }
   });
 });

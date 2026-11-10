@@ -273,6 +273,8 @@ interface SendTemplateOptions {
   templateName: string;
   languageCode?: string;
   bodyParams?: string[];
+  headerParams?: string[];
+  buttonPayloads?: string[];
   orderId?: number;
   customerId?: number;
 }
@@ -335,6 +337,7 @@ function buildMessageBody(templateName: string, bodyParams: string[]): string {
     order_out_for_delivery: `Hi {1}, Your order {2} has been shipped and is on its way to you.`,
     order_delivered: `Hi {1}, your order {2} has been delivered! Visit {3} for your product guide. Thank you for your purchase!`,
     order_delivery_failed: `Hi {1}, we were unable to deliver your order {2}. We'll contact you to reschedule.`,
+    order_auto_confirm: `Hello {1},\n\nThank you for your order.\n\n*Package:* {2}\n*Order number:* #{3}\n*Pay on delivery:* {4}\n\nPlease confirm your order so we can send it out for delivery.`,
   };
 
   let body = templates[templateName] || `Template: ${templateName}`;
@@ -425,7 +428,16 @@ class WhatsAppService {
    * Send a template message via WhatsApp Business Cloud API.
    */
   async sendTemplate(options: SendTemplateOptions): Promise<{ messageLogId: number; providerMessageId?: string }> {
-    const { to, templateName, languageCode = 'en_US', bodyParams = [], orderId, customerId } = options;
+    const {
+      to,
+      templateName,
+      languageCode = 'en_US',
+      bodyParams = [],
+      headerParams = [],
+      buttonPayloads = [],
+      orderId,
+      customerId,
+    } = options;
     const formattedPhone = formatPhoneNumber(to);
     const messageBody = buildMessageBody(templateName, bodyParams);
 
@@ -438,9 +450,33 @@ class WhatsAppService {
         templateName,
         messageBody,
         status: MessageStatus.pending,
-        metadata: { bodyParams, languageCode, to: formattedPhone },
+        metadata: { bodyParams, headerParams, buttonPayloads, languageCode, to: formattedPhone },
       },
     });
+
+    const components: any[] = [];
+    if (headerParams.length > 0) {
+      components.push({
+        type: 'header',
+        parameters: headerParams.map((text) => ({ type: 'text', text })),
+      });
+    }
+    if (bodyParams.length > 0) {
+      components.push({
+        type: 'body',
+        parameters: bodyParams.map((text) => ({ type: 'text', text })),
+      });
+    }
+    if (buttonPayloads.length > 0) {
+      buttonPayloads.forEach((payload, i) => {
+        components.push({
+          type: 'button',
+          sub_type: 'quick_reply',
+          index: String(i),
+          parameters: [{ type: 'payload', payload }],
+        });
+      });
+    }
 
     const payload = {
       messaging_product: 'whatsapp',
@@ -449,12 +485,7 @@ class WhatsAppService {
       template: {
         name: templateName,
         language: { code: languageCode },
-        components: bodyParams.length > 0
-          ? [{
-              type: 'body',
-              parameters: bodyParams.map(text => ({ type: 'text', text })),
-            }]
-          : undefined,
+        components: components.length > 0 ? components : undefined,
       },
     };
 

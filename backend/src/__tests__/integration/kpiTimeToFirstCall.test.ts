@@ -179,8 +179,6 @@ describe('Operations Settings API (GET/PUT /api/admin/settings/operations)', () 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
       operatingHours: expect.any(Object),
-      autoConfirmEnabled: false,
-      autoConfirmChannel: 'whatsapp',
       timeZone: 'Africa/Accra',
       queueWaitAlertMinutes: 30,
       firstCallTargetMinutes: 15,
@@ -197,16 +195,9 @@ describe('Operations Settings API (GET/PUT /api/admin/settings/operations)', () 
     expect(res.status).toBe(400);
   });
 
-  it('PUT /api/admin/settings/operations rejects invalid channel with 400', async () => {
-    const res = await request(app).put('/api/admin/settings/operations').set(auth(superToken)).send({ autoConfirmChannel: 'invalid' });
-    expect(res.status).toBe(400);
-  });
-
-  it('PUT /api/admin/settings/operations updates hours, autoConfirm switch and channel', async () => {
+  it('PUT /api/admin/settings/operations updates hours and thresholds', async () => {
     const payload = {
       operatingHours: HOURS,
-      autoConfirmEnabled: true,
-      autoConfirmChannel: 'sms',
       queueWaitAlertMinutes: 30,
       firstCallTargetMinutes: 15,
       defaultDaysToPay: 9,
@@ -215,8 +206,6 @@ describe('Operations Settings API (GET/PUT /api/admin/settings/operations)', () 
     const res = await request(app).put('/api/admin/settings/operations').set(auth(superToken)).send(payload);
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
-      autoConfirmEnabled: true,
-      autoConfirmChannel: 'sms',
       queueWaitAlertMinutes: 30,
       firstCallTargetMinutes: 15,
       defaultDaysToPay: 9,

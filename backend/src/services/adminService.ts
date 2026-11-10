@@ -228,8 +228,6 @@ export const adminService = {
     const opHours = readOperatingSettings(config?.operatingHours);
     return {
       operatingHours: config?.operatingHours ?? null,
-      autoConfirmEnabled: config?.autoConfirmEnabled ?? false,
-      autoConfirmChannel: (config?.autoConfirmChannel as 'whatsapp' | 'sms') ?? 'whatsapp',
       timeZone: config?.timeZone || getStoreTimeZone(tenantId),
       queueWaitAlertMinutes: opHours?.queueWaitAlertMinutes ?? DEFAULT_QUEUE_WAIT_ALERT_MINUTES,
       firstCallTargetMinutes: opHours?.firstCallTargetMinutes ?? DEFAULT_FIRST_CALL_TARGET_MINUTES,
@@ -240,8 +238,6 @@ export const adminService = {
 
   async updateOperationsSettings(requester: Requester, data: {
     operatingHours?: any;
-    autoConfirmEnabled?: boolean;
-    autoConfirmChannel?: string;
     timeZone?: string;
     queueWaitAlertMinutes?: number;
     firstCallTargetMinutes?: number;
@@ -249,12 +245,6 @@ export const adminService = {
     lowStockCoverDays?: number;
   }) {
     await this.checkAdminPrivilege(requester, 'super_admin');
-    if (data.autoConfirmChannel !== undefined && data.autoConfirmChannel !== 'whatsapp' && data.autoConfirmChannel !== 'sms') {
-      throw new AppError('autoConfirmChannel must be "whatsapp" or "sms"', 400, 'INVALID_CHANNEL');
-    }
-    if (data.autoConfirmEnabled !== undefined && typeof data.autoConfirmEnabled !== 'boolean') {
-      throw new AppError('autoConfirmEnabled must be boolean', 400, 'INVALID_AUTO_CONFIRM_ENABLED');
-    }
 
     let operatingHours = data.operatingHours;
     if (operatingHours !== undefined && operatingHours !== null) {
@@ -304,8 +294,6 @@ export const adminService = {
 
     const payload: any = {};
     if (operatingHours !== undefined) payload.operatingHours = operatingHours;
-    if (data.autoConfirmEnabled !== undefined) payload.autoConfirmEnabled = data.autoConfirmEnabled;
-    if (data.autoConfirmChannel !== undefined) payload.autoConfirmChannel = data.autoConfirmChannel;
     if (data.timeZone !== undefined) payload.timeZone = data.timeZone;
 
     await this.updateSystemConfig(requester, payload);
@@ -323,8 +311,6 @@ export const adminService = {
     taxId?: string;
     currency?: string;
     operatingHours?: any;
-    autoConfirmEnabled?: boolean;
-    autoConfirmChannel?: string;
     smsProvider?: any;
     emailProvider?: any;
     whatsappProvider?: any;

@@ -239,4 +239,70 @@ describe('M7-T19: Rep Numbers page (F-762)', () => {
     expect(kpi).not.toHaveTextContent('target 70%');
     expect(document.body.textContent).not.toContain('target 70%');
   });
+
+  it('formats period "2026-11" as "November 2026" in subtitle (COD-193)', async () => {
+    vi.mocked(repService.getNumbers).mockResolvedValueOnce({
+      ...mockNumbersResult,
+      period: '2026-11',
+    });
+
+    render(
+      <MemoryRouter>
+        <RepNumbersPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(document.body).toHaveTextContent('November 2026');
+    });
+  });
+
+  it('shows "No upsells yet" when rep has 0 upsells this month (COD-193)', async () => {
+    vi.mocked(repService.getNumbers).mockResolvedValueOnce({
+      ...mockNumbersResult,
+      upsellCount: 0,
+      upsellRate: 0,
+      ranks: {
+        callRep: { rank: 2, total: 5 },
+        upsell: { rank: 1, total: 5 },
+      },
+    });
+
+    render(
+      <MemoryRouter>
+        <RepNumbersPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      const upsellRank = screen.getByTestId('rank-upsell');
+      expect(upsellRank).toHaveTextContent('No upsells yet');
+      const callRepRank = screen.getByTestId('rank-call-reps');
+      expect(callRepRank).toHaveTextContent('2nd of 5');
+    });
+  });
+
+  it('shows "Only call rep this month" when total === 1 (COD-193)', async () => {
+    vi.mocked(repService.getNumbers).mockResolvedValueOnce({
+      ...mockNumbersResult,
+      upsellCount: 3,
+      ranks: {
+        callRep: { rank: 1, total: 1 },
+        upsell: { rank: 1, total: 1 },
+      },
+    });
+
+    render(
+      <MemoryRouter>
+        <RepNumbersPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      const callRepRank = screen.getByTestId('rank-call-reps');
+      expect(callRepRank).toHaveTextContent('Only call rep this month');
+      const upsellRank = screen.getByTestId('rank-upsell');
+      expect(upsellRank).toHaveTextContent('Only call rep this month');
+    });
+  });
 });

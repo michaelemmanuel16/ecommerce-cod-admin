@@ -16,11 +16,12 @@ import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import { CallOutcome, CallSource } from '@prisma/client';
 import { callService } from '../../services/callService';
 import {
-  BASE_COMMISSION_AMOUNT,
   createCommissionEntriesOnConfirm,
   earnEntriesForOrder,
   postEntry,
+  voidOpenEntriesForOrder,
 } from '../../services/commissionService';
+import payoutService from '../../services/payoutService';
 import {
   applyCommissionBackfill,
   commissionLedgerCheck,
@@ -431,6 +432,334 @@ describe('M7-T02: Commission entry creation and delivery lifecycle', () => {
     expect(entries[0].status).toBe('pending');
     expect(Number(entries[0].amount)).toBe(8);
     expect(entries[0].userId).toBe(adwoaId);
+  });
+
+  it('rep pay setting: stored features.rewards drives base and upsell percent; no setting defaults to base 8 and 10%', async () => {
+    // 1. With NO setting on tenant -> base 8 and 10%
+    const defaultOrder = await prismaBase.order.create({
+      data: {
+        customerId,
+        status: 'pending_confirmation',
+        subtotal: 300,
+        totalAmount: 300,
+        codAmount: 300,
+        customerRepId: adwoaId,
+        deliveryAgentId: agentId,
+        tenantId,
+      } as any,
+    });
+
+    await prismaBase.upsellLine.create({
+      data: {
+        orderId: defaultOrder.id,
+        repId: adwoaId,
+        kind: 'package',
+        extraValue: 200,
+        status: 'active',
+        tenantId,
+      },
+    });
+
+    await inTenant(() =>
+      callService.createCall({
+        customerId,
+        orderId: defaultOrder.id,
+        salesRepId: adwoaId,
+        outcome: CallOutcome.confirmed,
+        source: CallSource.manual,
+      })
+    );
+
+    const defaultEntries = await prismaBase.commissionEntry.findMany({
+      where: { orderId: defaultOrder.id, status: { not: 'void' } },
+      orderBy: { kind: 'asc' },
+    });
+    expect(defaultEntries).toHaveLength(2);
+    const defBase = defaultEntries.find((e) => e.kind === 'base')!;
+    const defUpsell = defaultEntries.find((e) => e.kind === 'upsell')!;
+    expect(Number(defBase.amount)).toBe(8);
+    expect(Money.parse(defBase.amount).toFixed(4)).toBe('8.0000');
+    expect(Number(defUpsell.amount)).toBe(20); // 10% of 200
+
+    // 2. Store features.rewards = { baseCommission: '5.00', upsellPercent: '12.50' } on systemConfig
+    await prismaBase.systemConfig.upsert({
+      where: { tenantId },
+      create: {
+        tenantId,
+        features: {
+          rewards: { baseCommission: '5.00', upsellPercent: '12.50' },
+        },
+      },
+      update: {
+        features: {
+          rewards: { baseCommission: '5.00', upsellPercent: '12.50' },
+        },
+      },
+    });
+
+    try {
+      const order = await prismaBase.order.create({
+        data: {
+          customerId,
+          status: 'pending_confirmation',
+          subtotal: 300,
+          totalAmount: 300,
+          codAmount: 300,
+          customerRepId: adwoaId,
+          deliveryAgentId: agentId,
+          tenantId,
+        } as any,
+      });
+
+      await prismaBase.upsellLine.create({
+        data: {
+          orderId: order.id,
+          repId: adwoaId,
+          kind: 'package',
+          extraValue: 200,
+          status: 'active',
+          tenantId,
+        },
+      });
+
+      await inTenant(() =>
+        callService.createCall({
+          customerId,
+          orderId: order.id,
+          salesRepId: adwoaId,
+          outcome: CallOutcome.confirmed,
+          source: CallSource.manual,
+        })
+      );
+
+      const entries = await prismaBase.commissionEntry.findMany({
+        where: { orderId: order.id, status: { not: 'void' } },
+        orderBy: { kind: 'asc' },
+      });
+      expect(entries).toHaveLength(2);
+      const base = entries.find((e) => e.kind === 'base')!;
+      const upsell = entries.find((e) => e.kind === 'upsell')!;
+
+      expect(base.status).toBe('pending');
+      expect(Number(base.amount)).toBe(5);
+      expect(Money.parse(base.amount).toFixed(4)).toBe('5.0000');
+      expect(base.userId).toBe(adwoaId);
+
+      expect(upsell.status).toBe('pending');
+      expect(Number(upsell.amount)).toBe(25);
+      expect(Money.parse(upsell.amount).toFixed(4)).toBe('25.0000');
+      expect(upsell.userId).toBe(adwoaId);
+
+      // Verify round half up, 2 dp: extra value 35 -> 12.5% of 35 = 4.375 -> 4.38
+      const roundOrder = await prismaBase.order.create({
+        data: {
+          customerId,
+          status: 'pending_confirmation',
+          subtotal: 100,
+          totalAmount: 100,
+          codAmount: 100,
+          customerRepId: adwoaId,
+          deliveryAgentId: agentId,
+          tenantId,
+        } as any,
+      });
+
+      await prismaBase.upsellLine.create({
+        data: {
+          orderId: roundOrder.id,
+          repId: adwoaId,
+          kind: 'addon',
+          extraValue: 35,
+          status: 'active',
+          tenantId,
+        },
+      });
+
+      await inTenant(() =>
+        callService.createCall({
+          customerId,
+          orderId: roundOrder.id,
+          salesRepId: adwoaId,
+          outcome: CallOutcome.confirmed,
+          source: CallSource.manual,
+        })
+      );
+
+      const roundUpsell = await prismaBase.commissionEntry.findFirst({
+        where: { orderId: roundOrder.id, kind: 'upsell', status: { not: 'void' } },
+      });
+      expect(roundUpsell).not.toBeNull();
+      expect(Number(roundUpsell!.amount)).toBe(4.38);
+    } finally {
+      await prismaBase.systemConfig.update({
+        where: { tenantId },
+        data: { features: {} },
+      });
+    }
+  });
+
+  it('return deduction: paid entries create earned negative deduction, reverses GL, idempotent, nets owed to 0 on next order and rejects zero payout', async () => {
+    // Dedicated rep for isolated owed and payout tracking
+    const deductRepId = (await prismaBase.user.create({
+      data: {
+        email: `deduct-rep-${SUFFIX}@codadmin.test`,
+        password: 'hash',
+        firstName: 'Deduct',
+        lastName: 'Rep',
+        role: 'sales_rep',
+        kind: 'person',
+        tenantId,
+      } as any,
+    })).id;
+
+    // 1. Order confirmed by rep
+    const order = await prismaBase.order.create({
+      data: {
+        customerId,
+        status: 'pending_confirmation',
+        subtotal: 100,
+        totalAmount: 100,
+        codAmount: 100,
+        customerRepId: deductRepId,
+        deliveryAgentId: agentId,
+        tenantId,
+      } as any,
+    });
+
+    await inTenant(() =>
+      callService.createCall({
+        customerId,
+        orderId: order.id,
+        salesRepId: deductRepId,
+        outcome: CallOutcome.confirmed,
+        source: CallSource.manual,
+      })
+    );
+
+    const initialPay = await balance('2020');
+    const initialExp = await balance('5050');
+
+    // 2. Delivered -> entries earned, GL DR 5050 / CR 2020
+    await move(order.id, 'ready_for_pickup');
+    await move(order.id, 'out_for_delivery');
+    await move(order.id, 'delivered');
+
+    expect(await balance('2020')).toBe(initialPay + 8);
+    expect(await balance('5050')).toBe(initialExp + 8);
+
+    const earnedEntries = await prismaBase.commissionEntry.findMany({
+      where: { orderId: order.id, status: 'earned' },
+    });
+    expect(earnedEntries).toHaveLength(1);
+    expect(earnedEntries[0].journalEntryId).not.toBeNull();
+
+    // 3. Payout records them paid
+    await inTenant(() =>
+      payoutService.record(
+        { payeeId: deductRepId, method: 'momo', reference: `ref-deduct-${Date.now()}` },
+        ADMIN.userId!
+      )
+    );
+
+    const paidEntries = await prismaBase.commissionEntry.findMany({
+      where: { orderId: order.id, status: 'paid' },
+    });
+    expect(paidEntries).toHaveLength(1);
+    expect(Number(paidEntries[0].amount)).toBe(8);
+
+    // After payout, liability 2020 was debited by 8, cash 1010 credited by 8
+    expect(await balance('2020')).toBe(initialPay);
+
+    // 4. Order returned => exactly one deduction per (user, kind): status earned, amount -8, note 'Order #<id> returned', journalEntryId set; GL has DR 2020 / CR 5050 for 8
+    await move(order.id, 'returned');
+
+    const deductions = await prismaBase.commissionEntry.findMany({
+      where: { orderId: order.id, amount: { lt: 0 } },
+    });
+    expect(deductions).toHaveLength(1);
+    const deduction = deductions[0];
+    expect(deduction.status).toBe('earned');
+    expect(Number(deduction.amount)).toBe(-8);
+    expect(deduction.userId).toBe(deductRepId);
+    expect(deduction.kind).toBe('base');
+    expect(deduction.note).toBe(`Order #${order.id} returned`);
+    expect(deduction.journalEntryId).not.toBeNull();
+
+    // GL: DR 2020 (reducing liability by 8, so initialPay - 8), CR 5050 (reducing expense by 8, so back to initialExp)
+    expect(await balance('2020')).toBe(initialPay - 8);
+    expect(await balance('5050')).toBe(initialExp);
+
+    const journalCountBefore = await prismaBase.journalEntry.count({
+      where: { tenantId, sourceType: 'commission_accrual' },
+    });
+
+    // 5. Call voidOpenEntriesForOrder a second time (and move to another non-delivered status)
+    await inTenant(() =>
+      prisma.$transaction((tx) =>
+        voidOpenEntriesForOrder(tx, order.id, async () => ADMIN.userId!)
+      )
+    );
+
+    // And also move the order to another non-delivered status (force transition to cancelled)
+    await move(order.id, 'cancelled', { force: true });
+
+    // Still one live deduction, first one is NOT voided, and no extra journal entry is posted
+    const deductionsAfter = await prismaBase.commissionEntry.findMany({
+      where: { orderId: order.id, amount: { lt: 0 } },
+    });
+    expect(deductionsAfter).toHaveLength(1);
+    expect(deductionsAfter[0].id).toBe(deduction.id);
+    expect(deductionsAfter[0].status).toBe('earned');
+
+    const journalCountAfter = await prismaBase.journalEntry.count({
+      where: { tenantId, sourceType: 'commission_accrual' },
+    });
+    expect(journalCountAfter).toBe(journalCountBefore);
+
+    // 6. Owed for the rep is -8
+    const owedBefore = await inTenant(() => payoutService.getOwed(deductRepId));
+    expect(Number(owedBefore.owed)).toBe(-8);
+
+    // 7. Rep then earns +8 on a new delivered order => owed 0
+    const order2 = await prismaBase.order.create({
+      data: {
+        customerId,
+        status: 'pending_confirmation',
+        subtotal: 100,
+        totalAmount: 100,
+        codAmount: 100,
+        customerRepId: deductRepId,
+        deliveryAgentId: agentId,
+        tenantId,
+      } as any,
+    });
+
+    await inTenant(() =>
+      callService.createCall({
+        customerId,
+        orderId: order2.id,
+        salesRepId: deductRepId,
+        outcome: CallOutcome.confirmed,
+        source: CallSource.manual,
+      })
+    );
+
+    await move(order2.id, 'ready_for_pickup');
+    await move(order2.id, 'out_for_delivery');
+    await move(order2.id, 'delivered');
+
+    const owedAfter = await inTenant(() => payoutService.getOwed(deductRepId));
+    expect(Number(owedAfter.owed)).toBe(0);
+
+    // 8. Payout then is rejected
+    await expect(
+      inTenant(() =>
+        payoutService.record(
+          { payeeId: deductRepId, method: 'momo', reference: `ref-zero-${Date.now()}` },
+          ADMIN.userId!
+        )
+      )
+    ).rejects.toThrow();
   });
 
   it('backfill fixture: Adwoa 253 delivered orders -> base 2,024, upsell extra 6,100 -> 610; Nana 13 orders -> 104, extra 300 -> 30', async () => {

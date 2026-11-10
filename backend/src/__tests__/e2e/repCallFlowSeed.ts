@@ -46,17 +46,15 @@ export async function seedRepCallFlow(): Promise<SeedResult> {
 
   await seedTenantDefaults(tenant.id, admin.id);
 
-  // Enable repApp and ensure autoConfirm is OFF so no real SMS/WhatsApp is sent
+  // Enable repApp (no workflows are seeded, so no real SMS/WhatsApp is sent)
   await prismaBase.systemConfig.upsert({
     where: { tenantId: tenant.id },
     update: {
       features: { repApp: true },
-      autoConfirmEnabled: false,
     },
     create: {
       tenantId: tenant.id,
       features: { repApp: true },
-      autoConfirmEnabled: false,
     },
   });
 

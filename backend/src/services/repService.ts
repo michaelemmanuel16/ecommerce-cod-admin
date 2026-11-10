@@ -15,7 +15,6 @@ import {
 import { timeToFirstCall } from './kpi/timeToFirstCall';
 import { repRates } from './kpi/reps';
 import { upsellService } from './upsellService';
-import { BASE_COMMISSION_AMOUNT, UPSELL_COMMISSION_RATE } from './commissionService';
 
 import { leaderboard } from './leaderboardService';
 import * as rewardService from './rewardService';
@@ -215,6 +214,7 @@ export interface RepNumbersResult {
   deliveredFromConfirmedRate: number | null;
   deliveredFromConfirmedDetail: Record<string, number>;
   upsellRate: number;
+  upsellCount: number;
   extraValueAdded: string;
   timeToFirstCall: number | null;
   targetHit: RepTargetHit | null;
@@ -375,6 +375,7 @@ export async function getNumbers(actor: Requester, query: RepNumbersQuery = {}):
     deliveredFromConfirmedRate: ratePercent(deliveredCount, deliveredCount + failedOrReturned),
     deliveredFromConfirmedDetail: { delivered: deliveredCount, failed: failedCount, returned: returnedCount, closed: deliveredCount + failedOrReturned },
     upsellRate: wholeRate(upsoldCount, confirmedCount) ?? 0,
+    upsellCount: upsoldCount,
     extraValueAdded: Money.toApi(extraValue),
     timeToFirstCall: repRow?.timeToFirstCallMinutes ?? null,
     targetHit: repRow?.targetHit ? {
@@ -479,20 +480,24 @@ export async function getEarnings(actor: Requester, query: RepEarningsQuery = {}
   const overpaid = isOverpaid ? Money.toApi(summary.owed.abs()) : null;
   const owed = Money.toApi(summary.owed);
 
-  const formattedBaseCommission = Money.formatWithSign(BASE_COMMISSION_AMOUNT, currency);
+  const repPay = await rewardService.getRepPay(null, tenantId);
+  const formattedBaseCommission = Money.formatWithSign(repPay.base, currency);
   const openOrdersNote = `${openOrdersCount} of your confirmed orders are still open, each adds ${formattedBaseCommission} when delivered.`;
 
-  // Build lines per order
+  // Build lines per order. Deductions (amount < 0) are kept separate as their own rows.
   const orderEntriesMap = new Map<number, typeof entries>();
+  const deductionEntries: typeof entries = [];
   for (const e of entries) {
-    if (e.orderId) {
+    if (Money.parse(e.amount).lt(0)) {
+      deductionEntries.push(e);
+    } else if (e.orderId) {
       const list = orderEntriesMap.get(e.orderId) ?? [];
       list.push(e);
       orderEntriesMap.set(e.orderId, list);
     }
   }
 
-  const lines = [...orderEntriesMap.entries()].map(([orderId, oEntries]) => {
+  const positiveLines = [...orderEntriesMap.entries()].map(([orderId, oEntries]) => {
     const o = oEntries[0].order;
     const isOrderReturnedOrFailed = o?.status === 'returned' || o?.status === 'failed_delivery';
 
@@ -517,6 +522,27 @@ export async function getEarnings(actor: Requester, query: RepEarningsQuery = {}
       isReversal,
     };
   });
+
+  const deductionLines = deductionEntries.map((e) => {
+    const o = e.order;
+    const amt = Money.parse(e.amount);
+    return {
+      orderId: e.orderId,
+      date: e.earnedAt ?? e.createdAt,
+      customerName: o?.customer ? fullName(o.customer) : null,
+      label: `Order #${e.orderId} returned`,
+      status: 'returned',
+      base: e.kind === 'base' ? Money.toApi(amt) : '0.00',
+      upsell: e.kind === 'upsell' ? Money.toApi(amt) : '0.00',
+      earned: Money.toApi(amt),
+      paid: e.status === 'paid' ? Money.toApi(amt) : '0.00',
+      reversal: null,
+      isReversal: false,
+      isDeduction: true,
+    };
+  });
+
+  const lines = [...positiveLines, ...deductionLines].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   const formattedPayouts = payouts.map((p) => ({
     id: p.id,
@@ -941,6 +967,7 @@ export async function getQueue(
       itemsSummary,
       totalAmount: Money.toApi(o.totalAmount),
       saidNo: o.saidNo,
+      customerResponse: o.customerResponse,
       tab,
       waitMinutes: Math.round(waitMinutes * 10) / 10,
       waitTimerSeverity,
@@ -1045,7 +1072,7 @@ export async function getCallCard(
     }
   }
 
-  const [packages, previousOrders, nextOrder] = await Promise.all([
+  const [packages, previousOrders, nextOrder, repPay] = await Promise.all([
     upsellService.getUpsellOptions(order.id, tenantId),
     prisma.order.findMany({
       where: {
@@ -1074,6 +1101,7 @@ export async function getCallCard(
       orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
       select: { id: true },
     }),
+    rewardService.getRepPay(null, tenantId),
   ]);
 
   return {
@@ -1159,8 +1187,8 @@ export async function getCallCard(
     })),
     nextOrderId: nextOrder?.id ?? null,
     pay: {
-      baseCommission: Money.toApi(BASE_COMMISSION_AMOUNT),
-      upsellPercent: UPSELL_COMMISSION_RATE.mul(100).toNumber(),
+      baseCommission: Money.toApi(repPay.base),
+      upsellPercent: repPay.upsellRate.mul(100).toNumber(),
     },
   };
 }

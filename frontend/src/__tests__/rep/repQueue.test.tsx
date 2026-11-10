@@ -234,6 +234,82 @@ describe('M7-T16: Queue page (F-754, F-765)', () => {
         expect(flag).toHaveTextContent('Said NO - call once before cancel');
       });
     });
+
+    it('displays "Wants a change - call" on saidNo orders with customerResponse=change (COD-193)', async () => {
+      vi.mocked(repService.getQueue).mockResolvedValue({
+        tabs: { new: 0, call_back: 0, said_no: 1, not_reachable: 0, total: 1 },
+        orders: [
+          {
+            id: 105,
+            status: 'pending_confirmation',
+            customer: { id: 5, name: 'Ama Osei', phoneNumber: '0245550105', area: 'Accra' },
+            area: 'Accra',
+            itemsSummary: '1x Shoes',
+            totalAmount: '250.00',
+            saidNo: true,
+            customerResponse: 'change',
+            tab: 'said_no',
+            waitMinutes: 5,
+            waitTimerSeverity: 'normal',
+            callbackAt: null,
+            callbackDue: false,
+            callbackSeverity: null,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            priority: 0,
+          },
+        ],
+        total: 1,
+        firstCallTargetMinutes: 15,
+        queueWaitAlertMinutes: 30,
+      });
+
+      renderQueue();
+
+      await waitFor(() => {
+        const flag = screen.getByTestId('said-no-flag');
+        expect(flag).toBeInTheDocument();
+        expect(flag).toHaveTextContent('Wants a change - call');
+      });
+    });
+
+    it('displays "Wants to cancel - call once before cancel" on saidNo orders with customerResponse=cancel (COD-193)', async () => {
+      vi.mocked(repService.getQueue).mockResolvedValue({
+        tabs: { new: 0, call_back: 0, said_no: 1, not_reachable: 0, total: 1 },
+        orders: [
+          {
+            id: 106,
+            status: 'pending_confirmation',
+            customer: { id: 6, name: 'Kofi Mensah', phoneNumber: '0245550106', area: 'Kumasi' },
+            area: 'Kumasi',
+            itemsSummary: '1x Bag',
+            totalAmount: '180.00',
+            saidNo: true,
+            customerResponse: 'cancel',
+            tab: 'said_no',
+            waitMinutes: 8,
+            waitTimerSeverity: 'normal',
+            callbackAt: null,
+            callbackDue: false,
+            callbackSeverity: null,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            priority: 0,
+          },
+        ],
+        total: 1,
+        firstCallTargetMinutes: 15,
+        queueWaitAlertMinutes: 30,
+      });
+
+      renderQueue();
+
+      await waitFor(() => {
+        const flag = screen.getByTestId('said-no-flag');
+        expect(flag).toBeInTheDocument();
+        expect(flag).toHaveTextContent('Wants to cancel - call once before cancel');
+      });
+    });
   });
 
   describe('Late call-back highlight', () => {

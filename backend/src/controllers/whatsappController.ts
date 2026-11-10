@@ -163,21 +163,42 @@ async function processInboundWhatsappMessage(tenantId: string, message: any): Pr
   }
 
   const fromPhone = message.from;
+  let responseKind: 'yes' | 'change' | 'cancel' | 'no' | null = null;
+
+  // Read button payload first (COD-193 M7-R1)
+  let buttonPayload: string | null = null;
+  if (message.type === 'button') {
+    buttonPayload = message.button?.payload || null;
+  } else if (message.type === 'interactive') {
+    buttonPayload = message.interactive?.button_reply?.id || null;
+  }
+
+  if (buttonPayload) {
+    if (buttonPayload === 'CONFIRM') responseKind = 'yes';
+    else if (buttonPayload === 'CHANGE') responseKind = 'change';
+    else if (buttonPayload === 'CANCEL') responseKind = 'cancel';
+  }
+
   let rawText = '';
   if (message.type === 'text') {
     rawText = message.text?.body || '';
   } else if (message.type === 'button') {
-    rawText = message.button?.text || message.button?.payload || '';
+    rawText = message.button?.text || '';
   } else if (message.type === 'interactive') {
-    rawText = message.interactive?.button_reply?.title || message.interactive?.button_reply?.id || '';
+    rawText = message.interactive?.button_reply?.title || '';
   }
 
   const trimmed = rawText.trim();
   // Strip trailing and leading punctuation: "YES.", "Yes!", "NO."
   const cleanText = trimmed.replace(/^[\s.,!?;:"'()]+|[\s.,!?;:"'()]+$/g, '').toLowerCase();
 
-  const isYes = cleanText === 'yes' || cleanText === 'y' || cleanText === 'confirm';
-  const isNo = cleanText === 'no' || cleanText === 'n' || cleanText === 'cancel';
+  if (!responseKind) {
+    if (cleanText === 'yes' || cleanText === 'y' || cleanText === 'confirm') {
+      responseKind = 'yes';
+    } else if (cleanText === 'no' || cleanText === 'n' || cleanText === 'cancel') {
+      responseKind = 'no';
+    }
+  }
 
   // Link to customer by phone
   let customer: any = null;
@@ -228,14 +249,14 @@ async function processInboundWhatsappMessage(tenantId: string, message: any): Pr
         channel: MessageChannel.whatsapp,
         direction: MessageDirection.inbound,
         status: MessageStatus.delivered,
-        messageBody: trimmed || rawText || `[${message.type || 'message'}]`,
+        messageBody: trimmed || buttonPayload || `[${message.type || 'message'}]`,
         providerMessageId: message.id || null,
         metadata: {
           from: fromPhone,
           type: message.type,
           context: message.context ?? null,
           answeredMessageLogId: answeredMessage?.id ?? null,
-          matchedKeyword: isYes ? 'yes' : isNo ? 'no' : null,
+          matchedKeyword: responseKind,
         },
       },
     });
@@ -256,6 +277,7 @@ async function processInboundWhatsappMessage(tenantId: string, message: any): Pr
         id: answeredMessage.orderId,
         deletedAt: null,
       },
+      include: { customer: true },
     });
   } else if (customer) {
     // First: open auto-confirm order
@@ -268,21 +290,79 @@ async function processInboundWhatsappMessage(tenantId: string, message: any): Pr
         customerResponse: null,
         deletedAt: null,
       },
+      include: { customer: true },
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  // Handle keywords
-  // YES and NO act only on an open auto-confirm: status pending_confirmation and autoConfirmSentAt not null.
-  // A YES or NO on any other order is stored only.
-  if (targetOrder && targetOrder.status === 'pending_confirmation' && targetOrder.autoConfirmSentAt !== null) {
-    if (isYes) {
+  // Handle auto-confirm responses
+  // Acts only on an open auto-confirm: status pending_confirmation and autoConfirmSentAt not null.
+  if (targetOrder && targetOrder.status === 'pending_confirmation' && targetOrder.autoConfirmSentAt !== null && responseKind) {
+    const firstName = targetOrder.customer?.firstName || customer?.firstName || 'there';
+
+    if (responseKind === 'yes') {
       await orderService.confirmByCustomer(targetOrder.id);
       await prisma.confirmToken.updateMany({
         where: { orderId: targetOrder.id, usedAt: null },
         data: { usedAt: new Date(), response: 'yes' },
       });
-    } else if (isNo) {
+      try {
+        await whatsappService.sendText({
+          to: fromPhone,
+          body: `Thank you, ${firstName}. Your order #${targetOrder.id} is confirmed. We will send it out for delivery.`,
+          orderId: targetOrder.id,
+          customerId: targetOrder.customer?.id ?? customer?.id,
+        });
+      } catch (err: any) {
+        logger.error('Failed to send confirmation reply WhatsApp message', { error: err.message, orderId: targetOrder.id });
+      }
+    } else if (responseKind === 'change') {
+      await prisma.order.update({
+        where: { id: targetOrder.id },
+        data: {
+          saidNo: true,
+          requiresManualCall: true,
+          customerResponse: 'change',
+        },
+      });
+      await prisma.confirmToken.updateMany({
+        where: { orderId: targetOrder.id, usedAt: null },
+        data: { usedAt: new Date(), response: 'change' },
+      });
+      try {
+        await whatsappService.sendText({
+          to: fromPhone,
+          body: `Thank you, ${firstName}. One of our team will call you soon to make the change.`,
+          orderId: targetOrder.id,
+          customerId: targetOrder.customer?.id ?? customer?.id,
+        });
+      } catch (err: any) {
+        logger.error('Failed to send change reply WhatsApp message', { error: err.message, orderId: targetOrder.id });
+      }
+    } else if (responseKind === 'cancel') {
+      await prisma.order.update({
+        where: { id: targetOrder.id },
+        data: {
+          saidNo: true,
+          requiresManualCall: true,
+          customerResponse: 'cancel',
+        },
+      });
+      await prisma.confirmToken.updateMany({
+        where: { orderId: targetOrder.id, usedAt: null },
+        data: { usedAt: new Date(), response: 'cancel' },
+      });
+      try {
+        await whatsappService.sendText({
+          to: fromPhone,
+          body: `Thank you, ${firstName}. One of our team will call you shortly about your order.`,
+          orderId: targetOrder.id,
+          customerId: targetOrder.customer?.id ?? customer?.id,
+        });
+      } catch (err: any) {
+        logger.error('Failed to send cancel reply WhatsApp message', { error: err.message, orderId: targetOrder.id });
+      }
+    } else if (responseKind === 'no') {
       await prisma.order.update({
         where: { id: targetOrder.id },
         data: {

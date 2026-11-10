@@ -328,4 +328,40 @@ describe('M7-T19: Rep Earnings page (F-761)', () => {
     expect(rewardLine2).toHaveTextContent('GH₵450 at 423 confirmed and delivered (100%)');
     expect(rewardLine2).not.toHaveTextContent('300');
   });
+
+  it('displays deduction row with "Order #<id> returned" and negative amount (COD-193)', async () => {
+    vi.mocked(repService.getEarnings).mockResolvedValueOnce({
+      ...mockEarningsResult,
+      lines: [
+        {
+          orderId: 1042,
+          date: '2026-10-09T10:00:00.000Z',
+          customerName: 'Ama Mensah',
+          status: 'returned',
+          base: '-8.00',
+          upsell: '0.00',
+          earned: '-8.00',
+          paid: '0.00',
+          reversal: null,
+          isReversal: false,
+          isDeduction: true,
+          label: 'Order #1042 returned',
+        } as any,
+      ],
+    });
+
+    render(
+      <MemoryRouter>
+        <RepEarningsPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('order-lines-table')).toBeInTheDocument();
+    });
+
+    const row = screen.getByTestId('order-line-1042');
+    expect(row).toHaveTextContent('Order #1042 returned');
+    expect(row).toHaveTextContent('-GH₵8');
+  });
 });

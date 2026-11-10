@@ -812,8 +812,6 @@ model SystemConfig {
   timeZone              String   @default("Africa/Accra") @map("time_zone")
   taxId                 String?  @map("tax_id")
   operatingHours        Json?    @map("operating_hours")
-  autoConfirmEnabled    Boolean  @default(false) @map("auto_confirm_enabled")
-  autoConfirmChannel    String   @default("whatsapp") @map("auto_confirm_channel")
   smsProvider           Json?    @map("sms_provider")
   emailProvider         Json?    @map("email_provider")
   whatsappProvider      Json?    @map("whatsapp_provider")
@@ -1357,6 +1355,7 @@ enum CustomerResponse {
   yes
   no
   change
+  cancel
 }
 
 enum UpsellKind {

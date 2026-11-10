@@ -297,10 +297,13 @@ export const RepEarningsPage: React.FC = () => {
                 </tr>
               ) : (
                 lines.map((line) => {
-                  const orderNum = formatOrderNumber(line.orderId);
+                  const isDeduction = line.isDeduction === true;
+                  const orderNum = isDeduction
+                    ? (line.label ?? `Order #${line.orderId} returned`)
+                    : formatOrderNumber(line.orderId);
                   const statusLabel = getOrderStatusLabel(line.status);
                   return (
-                    <tr key={line.orderId} data-testid={`order-line-${line.orderId}`}>
+                    <tr key={`${line.orderId}-${isDeduction ? 'deduction' : 'normal'}`} data-testid={`order-line-${line.orderId}`}>
                       <td>
                         <b>{orderNum}</b>
                         {line.isReversal && (

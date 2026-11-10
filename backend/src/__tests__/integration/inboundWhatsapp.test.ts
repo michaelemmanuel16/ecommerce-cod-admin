@@ -1,17 +1,18 @@
-import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, jest } from '@jest/globals';
 import request from 'supertest';
 import crypto from 'crypto';
 import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
 import { makeOrder } from './helpers/kpiOrders';
-import { clearWhatsAppConfigCache } from '../../services/whatsappService';
+import whatsappService, { clearWhatsAppConfigCache } from '../../services/whatsappService';
 
 let pair: TwoTenants;
 let tenantAId: string;
 let tenantBId: string;
 let customerAId: number;
 let customerAPhone: string;
+let customerAFirstName: string;
 
 const phoneIdA = 'wa-phone-t09-a';
 const secretA = 'wa-secret-t09-a';
@@ -69,12 +70,61 @@ function makePayload(
   };
 }
 
+function makeButtonPayload(
+  phoneId: string,
+  messageId: string,
+  fromPhone: string,
+  button: { payload?: string; text?: string },
+  contextId?: string,
+) {
+  const messageObj: any = {
+    from: fromPhone.replace(/^\+/, ''),
+    id: messageId,
+    timestamp: String(Math.floor(Date.now() / 1000)),
+    type: 'button',
+    button,
+  };
+  if (contextId) {
+    messageObj.context = { id: contextId, from: '15550001' };
+  }
+
+  return {
+    object: 'whatsapp_business_account',
+    entry: [
+      {
+        id: 'waba-test',
+        changes: [
+          {
+            field: 'messages',
+            value: {
+              messaging_product: 'whatsapp',
+              metadata: {
+                display_phone_number: '15550001',
+                phone_number_id: phoneId,
+              },
+              contacts: [
+                {
+                  profile: { name: 'Test User' },
+                  wa_id: fromPhone.replace(/^\+/, ''),
+                },
+              ],
+              messages: [messageObj],
+            },
+          },
+        ],
+      },
+    ],
+  };
+}
+
 beforeAll(async () => {
   pair = await createTwoTenants('inbwa');
   tenantAId = pair.a.id;
   tenantBId = pair.b.id;
   customerAId = pair.a.ids.customer;
   customerAPhone = pair.a.phone;
+  const custA = await prismaBase.customer.findUniqueOrThrow({ where: { id: customerAId } });
+  customerAFirstName = custA.firstName;
 
   // Configure WhatsApp provider for Tenant A
   await prismaBase.systemConfig.upsert({
@@ -134,6 +184,15 @@ afterAll(async () => {
 });
 
 describe('M7-T09: Inbound WhatsApp core integration tests', () => {
+  let sendTextSpy: any;
+
+  beforeEach(() => {
+    sendTextSpy = jest.spyOn(whatsappService, 'sendText').mockImplementation(async () => ({ messageLogId: 999 }));
+  });
+
+  afterEach(() => {
+    sendTextSpy?.mockRestore();
+  });
   it('rejects a payload with a bad signature (401) and stores nothing', async () => {
     const raw = JSON.stringify(makePayload(phoneIdA, 'wamid.bad.sig.1', customerAPhone, 'YES'));
     const res = await request(app)
@@ -475,5 +534,188 @@ describe('M7-T09: Inbound WhatsApp core integration tests', () => {
       where: { id: order.id },
     });
     expect(updatedOrder.status).toBe('confirmed');
+  });
+
+  it('button payload CONFIRM confirms open auto-confirm order and sends reply text', async () => {
+    const order = await makeOrder({
+      tenantId: tenantAId,
+      customerId: customerAId,
+      status: 'pending_confirmation',
+      paymentMethod: 'cod',
+      orderType: 'physical',
+    });
+    await prismaBase.order.update({
+      where: { id: order.id },
+      data: { autoConfirmSentAt: new Date() },
+    });
+
+    const msgId = `wamid.btn.confirm.${Date.now()}`;
+    const raw = JSON.stringify(
+      makeButtonPayload(phoneIdA, msgId, customerAPhone, { payload: 'CONFIRM', text: '✓ Confirm order' })
+    );
+
+    const res = await request(app)
+      .post('/api/whatsapp/webhook')
+      .set('Content-Type', 'application/json')
+      .set('x-hub-signature-256', sign(secretA, raw))
+      .send(raw);
+
+    expect(res.status).toBe(200);
+
+    const updated = await prismaBase.order.findUniqueOrThrow({ where: { id: order.id } });
+    expect(updated.status).toBe('confirmed');
+    expect(updated.customerResponse).toBe('yes');
+
+    expect(sendTextSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: `Thank you, ${customerAFirstName}. Your order #${order.id} is confirmed. We will send it out for delivery.`,
+        orderId: order.id,
+      })
+    );
+  });
+
+  it("button payload CHANGE sets saidNo, requiresManualCall, customerResponse 'change' and sends reply text", async () => {
+    const order = await makeOrder({
+      tenantId: tenantAId,
+      customerId: customerAId,
+      status: 'pending_confirmation',
+      paymentMethod: 'cod',
+      orderType: 'physical',
+    });
+    await prismaBase.order.update({
+      where: { id: order.id },
+      data: { autoConfirmSentAt: new Date() },
+    });
+
+    const msgId = `wamid.btn.change.${Date.now()}`;
+    const raw = JSON.stringify(
+      makeButtonPayload(phoneIdA, msgId, customerAPhone, { payload: 'CHANGE', text: 'Change my order' })
+    );
+
+    const res = await request(app)
+      .post('/api/whatsapp/webhook')
+      .set('Content-Type', 'application/json')
+      .set('x-hub-signature-256', sign(secretA, raw))
+      .send(raw);
+
+    expect(res.status).toBe(200);
+
+    const updated = await prismaBase.order.findUniqueOrThrow({ where: { id: order.id } });
+    expect(updated.status).toBe('pending_confirmation');
+    expect(updated.saidNo).toBe(true);
+    expect(updated.requiresManualCall).toBe(true);
+    expect(updated.customerResponse).toBe('change');
+
+    expect(sendTextSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: `Thank you, ${customerAFirstName}. One of our team will call you soon to make the change.`,
+        orderId: order.id,
+      })
+    );
+  });
+
+  it("button payload CANCEL sets customerResponse 'cancel', sends reply text, order status is still pending_confirmation", async () => {
+    const order = await makeOrder({
+      tenantId: tenantAId,
+      customerId: customerAId,
+      status: 'pending_confirmation',
+      paymentMethod: 'cod',
+      orderType: 'physical',
+    });
+    await prismaBase.order.update({
+      where: { id: order.id },
+      data: { autoConfirmSentAt: new Date() },
+    });
+
+    const msgId = `wamid.btn.cancel.${Date.now()}`;
+    const raw = JSON.stringify(
+      makeButtonPayload(phoneIdA, msgId, customerAPhone, { payload: 'CANCEL', text: 'Cancel order' })
+    );
+
+    const res = await request(app)
+      .post('/api/whatsapp/webhook')
+      .set('Content-Type', 'application/json')
+      .set('x-hub-signature-256', sign(secretA, raw))
+      .send(raw);
+
+    expect(res.status).toBe(200);
+
+    const updated = await prismaBase.order.findUniqueOrThrow({ where: { id: order.id } });
+    expect(updated.status).toBe('pending_confirmation');
+    expect(updated.saidNo).toBe(true);
+    expect(updated.requiresManualCall).toBe(true);
+    expect(updated.customerResponse).toBe('cancel');
+
+    expect(sendTextSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: `Thank you, ${customerAFirstName}. One of our team will call you shortly about your order.`,
+        orderId: order.id,
+      })
+    );
+  });
+
+  it('button with no payload does not change order status', async () => {
+    const order = await makeOrder({
+      tenantId: tenantAId,
+      customerId: customerAId,
+      status: 'pending_confirmation',
+      paymentMethod: 'cod',
+      orderType: 'physical',
+    });
+    await prismaBase.order.update({
+      where: { id: order.id },
+      data: { autoConfirmSentAt: new Date() },
+    });
+
+    const msgId = `wamid.btn.nopayload.${Date.now()}`;
+    const raw = JSON.stringify(
+      makeButtonPayload(phoneIdA, msgId, customerAPhone, { text: 'Change my order' })
+    );
+
+    const res = await request(app)
+      .post('/api/whatsapp/webhook')
+      .set('Content-Type', 'application/json')
+      .set('x-hub-signature-256', sign(secretA, raw))
+      .send(raw);
+
+    expect(res.status).toBe(200);
+
+    const check = await prismaBase.order.findUniqueOrThrow({ where: { id: order.id } });
+    expect(check.status).toBe('pending_confirmation');
+    expect(check.customerResponse).toBeNull();
+    expect(check.saidNo).toBe(false);
+  });
+
+  it('a reply send that throws does not undo the order update', async () => {
+    sendTextSpy.mockRejectedValueOnce(new Error('WhatsApp service down'));
+
+    const order = await makeOrder({
+      tenantId: tenantAId,
+      customerId: customerAId,
+      status: 'pending_confirmation',
+      paymentMethod: 'cod',
+      orderType: 'physical',
+    });
+    await prismaBase.order.update({
+      where: { id: order.id },
+      data: { autoConfirmSentAt: new Date() },
+    });
+
+    const msgId = `wamid.btn.throw.${Date.now()}`;
+    const raw = JSON.stringify(
+      makeButtonPayload(phoneIdA, msgId, customerAPhone, { payload: 'CONFIRM', text: '✓ Confirm order' })
+    );
+
+    const res = await request(app)
+      .post('/api/whatsapp/webhook')
+      .set('Content-Type', 'application/json')
+      .set('x-hub-signature-256', sign(secretA, raw))
+      .send(raw);
+
+    expect(res.status).toBe(200);
+
+    const updated = await prismaBase.order.findUniqueOrThrow({ where: { id: order.id } });
+    expect(updated.status).toBe('confirmed');
+    expect(updated.customerResponse).toBe('yes');
   });
 });

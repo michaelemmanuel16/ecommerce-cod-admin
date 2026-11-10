@@ -15,6 +15,7 @@ const TENANT_SCOPED_SEND_ACTIONS = new Set([
   'send_email',
   'send_sms',
   'send_whatsapp',
+  'send_auto_confirm',
   'send_digital_product', // forward-looking: action lands in MAN-80; guard is in place first
 ]);
 
@@ -352,6 +353,15 @@ export async function executeAction(action: any, input: any, conditions?: any): 
       const { sendWhatsAppForOrder } = await import('../services/whatsappService');
       const result = await sendWhatsAppForOrder(action.config.templateKey, input.orderId, action.config.customLink);
       return { sent: true, messageLogId: result.messageLogId };
+    }
+
+    case 'send_auto_confirm': {
+      const { sendAutoConfirmForOrder } = await import('../services/autoConfirmService');
+      const channel = action.config?.channel === 'sms' ? 'sms' : 'whatsapp';
+      const result = await sendAutoConfirmForOrder(input.orderId, getTenantId(), { channel });
+      // Ineligible / already sent is a skip, not a failure
+      if (!result) return { sent: false, skipped: true, reason: 'not_eligible_or_already_sent' };
+      return { sent: true, channel: result.channel };
     }
 
     case 'update_order': {

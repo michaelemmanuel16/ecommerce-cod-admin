@@ -3,7 +3,8 @@ import prisma from '../utils/prisma';
 import { runInTenant } from '../utils/tenantContext';
 import { GL_ACCOUNTS } from '../config/glAccounts';
 import { getSystemUserId } from './systemUserService';
-import { BASE_COMMISSION_AMOUNT, upsellCommissionFor, postEntry } from './commissionService';
+import { upsellCommissionFor, postEntry } from './commissionService';
+import { getRepPay } from './rewardService';
 import logger from '../utils/logger';
 import * as Money from '../utils/money';
 
@@ -45,6 +46,7 @@ export interface BackfillPlan {
 export async function planCommissionBackfill(tenantId: string): Promise<BackfillPlan> {
   return runInTenant(tenantId, async () => {
     const rows: BackfillRow[] = [];
+    const repPay = await getRepPay(prisma, tenantId);
     let after = 0;
     for (;;) {
       const orders = await prisma.order.findMany({
@@ -115,7 +117,7 @@ export async function planCommissionBackfill(tenantId: string): Promise<Backfill
         const hasBase = order.commissionEntries.some((e) => e.kind === 'base');
         if (!hasBase) {
           const journal = booked.get(order.id);
-          const repAmount = rep.commissionAmount != null ? Money.parse(rep.commissionAmount) : BASE_COMMISSION_AMOUNT;
+          const repAmount = rep.commissionAmount != null ? Money.parse(rep.commissionAmount) : repPay.base;
           const amount = journal ? journal.amount : repAmount;
           if (amount.gt(0)) {
             rows.push({
@@ -129,12 +131,12 @@ export async function planCommissionBackfill(tenantId: string): Promise<Backfill
           }
         }
 
-        // 2. Upsell entry (10% of active UpsellLine extra value)
+        // 2. Upsell entry (upsellRate of active UpsellLine extra value)
         const hasUpsell = order.commissionEntries.some((e) => e.kind === 'upsell');
         if (!hasUpsell && order.upsellLines.length > 0) {
           const extraValue = Money.sum(order.upsellLines.map((l) => l.extraValue));
           if (extraValue.gt(0)) {
-            const upsellAmount = upsellCommissionFor(extraValue);
+            const upsellAmount = upsellCommissionFor(extraValue, repPay.upsellRate);
             if (upsellAmount.gt(0)) {
               rows.push({
                 orderId: order.id,

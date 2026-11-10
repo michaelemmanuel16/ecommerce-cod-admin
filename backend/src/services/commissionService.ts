@@ -1,27 +1,26 @@
-import { CommissionEntry, JournalSourceType, Prisma } from '@prisma/client';
+import { CommissionEntry, CommissionKind, JournalSourceType, Prisma } from '@prisma/client';
 import { AppError } from '../middleware/errorHandler';
 import { TransactionClient } from '../utils/prisma';
 import { resolveTenantId } from '../utils/tenantContext';
 import logger from '../utils/logger';
 import { GLAutomationService } from './glAutomationService';
 import * as Money from '../utils/money';
+import { getRepPay } from './rewardService';
 
 /**
  * Commission posting (F-914, M5-T18, M7-T02). A `CommissionEntry` is the pay ledger of a rep.
- * When an order is confirmed by a call rep: base GH₵8 pending, upsell 10% pending (P6).
+ * When an order is confirmed by a call rep: base and upsell entries pending (P6) driven by tenant reward settings.
  * On delivery: pending entries flip to earned and post DR 5050 Sales rep commission, CR 2020 Commissions payable.
- * On return or cancel: void open entries and reverse GL accruals.
+ * On return or cancel: void open entries and reverse GL accruals. Deduct paid entries.
  */
 
-export const BASE_COMMISSION_AMOUNT = Money.fromNumber(8);
-export const UPSELL_COMMISSION_RATE = new Prisma.Decimal('0.10');
-
-export function upsellCommissionFor(extraValue: Money.MoneyInput): Prisma.Decimal {
-  return Money.roundHalfUp(Money.mul(extraValue, UPSELL_COMMISSION_RATE), 2);
+export function upsellCommissionFor(extraValue: Money.MoneyInput, rate: Prisma.Decimal | string | number): Prisma.Decimal {
+  return Money.roundHalfUp(Money.mul(extraValue, rate), 2);
 }
 
 /**
- * Creates pending commission entries (base GH₵8 and upsell 10%) on order confirmation by a rep call (F-769, P6).
+ * Creates pending commission entries on order confirmation by a rep call (F-769, P6, COD-193).
+ * Base amount and upsell percent are driven by the tenant's reward settings.
  * Only human reps (kind === 'person') qualify; auto-confirmed, self-service, no-rep, and AI-agent orders get no entries.
  * Idempotent: if live base/upsell entries already exist for this order, they are not duplicated.
  */
@@ -45,8 +44,9 @@ export async function createCommissionEntriesOnConfirm(
   });
   if (!order) throw new AppError('Order not found', 404);
   const tenantId = resolveTenantId(order.tenantId);
+  const repPay = await getRepPay(tx, tenantId);
 
-  // 1. Base entry: GH₵8 pending
+  // 1. Base entry from tenant setting
   let baseEntry = await tx.commissionEntry.findFirst({
     where: { orderId, kind: 'base', status: { not: 'void' } },
   });
@@ -58,13 +58,13 @@ export async function createCommissionEntriesOnConfirm(
         userId: confirmingRepId,
         kind: 'base',
         status: 'pending',
-        amount: BASE_COMMISSION_AMOUNT,
+        amount: repPay.base,
         note: 'Base commission on call confirmation (M7)',
       },
     });
   }
 
-  // 2. Upsell entry: 10% of active UpsellLine extra value pending
+  // 2. Upsell entry: upsellRate of active UpsellLine extra value pending
   const upsellLines = await tx.upsellLine.findMany({
     where: { orderId, status: 'active' },
   });
@@ -73,7 +73,7 @@ export async function createCommissionEntriesOnConfirm(
     where: { orderId, kind: 'upsell', status: { not: 'void' } },
   });
   if (extraValueSum.gt(0)) {
-    const upsellAmount = upsellCommissionFor(extraValueSum);
+    const upsellAmount = upsellCommissionFor(extraValueSum, repPay.upsellRate);
     if (upsellAmount.gt(0)) {
       if (!upsellEntry) {
         upsellEntry = await tx.commissionEntry.create({
@@ -166,31 +166,118 @@ export async function postEntry(
 
 /**
  * A returned order (or any move out of delivered) voids its open entries: `pending` and `earned` become `void`.
- * Paid entries stay as they are. An entry whose posting this service made is reversed (DR 2020, CR 5050).
- * An entry that points at the delivery journal entry (backfilled from an old order) needs no second reversal: the
- * order's own revenue reversal already takes the commission back. An entry never posted has nothing to reverse.
- * `actorId` is read only when an entry needs a reversal. Returns the number of entries voided.
+ * Paid entries have deductions created (COD-193): for each (userId, kind) with paid amount > 0, an earned entry with
+ * negative amount is created, and own commission accruals reversed (DR 2020, CR 5050).
+ * Idempotent: repeat calls create no second deduction.
+ * Returns the number of entries voided.
  */
 export async function voidOpenEntriesForOrder(tx: TransactionClient, orderId: number, actorId: () => Promise<number>): Promise<number> {
-  // One query takes every lock and returns the rows to work on; a payout that holds one makes this wait, then sees it paid
+  const tenantId = resolveTenantId();
+
+  // 1. Lock and void open entries (pending / earned). A deduction (amount < 0) is never voided here: a repeat call
+  // would void it and post a second one, so the GL would take the commission back twice.
   const open = await tx.$queryRaw<{ id: number; tenantId: string; orderId: number | null; amount: Money.Money; journalEntryId: number | null }[]>`
     SELECT id, tenant_id AS "tenantId", order_id AS "orderId", amount, journal_entry_id AS "journalEntryId"
     FROM commission_entries
-    WHERE order_id = ${orderId} AND tenant_id = ${resolveTenantId()} AND status IN ('pending', 'earned')
+    WHERE order_id = ${orderId} AND tenant_id = ${tenantId} AND status IN ('pending', 'earned') AND amount > 0
     ORDER BY id FOR UPDATE`;
-  if (open.length === 0) return 0;
 
-  const posted = await tx.journalEntry.findMany({
-    where: { id: { in: open.flatMap((e) => (e.journalEntryId ? [e.journalEntryId] : [])) }, sourceType: JournalSourceType.commission_accrual },
-    select: { id: true },
-  });
-  const ownPosting = new Set(posted.map((j) => j.id));
-  for (const entry of open) {
-    if (entry.journalEntryId && ownPosting.has(entry.journalEntryId)) {
-      await GLAutomationService.reverseCommissionAccrual(tx, entry, await actorId());
+  if (open.length > 0) {
+    const posted = await tx.journalEntry.findMany({
+      where: { id: { in: open.flatMap((e) => (e.journalEntryId ? [e.journalEntryId] : [])) }, sourceType: JournalSourceType.commission_accrual },
+      select: { id: true },
+    });
+    const ownPosting = new Set(posted.map((j) => j.id));
+    for (const entry of open) {
+      if (entry.journalEntryId && ownPosting.has(entry.journalEntryId)) {
+        await GLAutomationService.reverseCommissionAccrual(tx, entry, await actorId());
+      }
+    }
+    await tx.commissionEntry.updateMany({ where: { id: { in: open.map((e) => e.id) } }, data: { status: 'void' } });
+    logger.info(`Voided ${open.length} commission entries of order ${orderId}`);
+  }
+
+  // 2. Lock paid entries with amount > 0
+  const paid = await tx.$queryRaw<{
+    id: number;
+    tenantId: string;
+    orderId: number;
+    userId: number;
+    kind: CommissionKind;
+    amount: Money.Money;
+    journalEntryId: number | null;
+  }[]>`
+    SELECT id, tenant_id AS "tenantId", order_id AS "orderId", user_id AS "userId", kind, amount, journal_entry_id AS "journalEntryId"
+    FROM commission_entries
+    WHERE order_id = ${orderId} AND tenant_id = ${tenantId} AND status = 'paid' AND amount > 0
+    ORDER BY id FOR UPDATE`;
+
+  if (paid.length > 0) {
+    // Group paid entries by (userId, kind)
+    const groups = new Map<string, typeof paid>();
+    for (const p of paid) {
+      const key = `${p.userId}:${p.kind}`;
+      const list = groups.get(key) ?? [];
+      list.push(p);
+      groups.set(key, list);
+    }
+
+    const paidJeIds = paid.flatMap((e) => (e.journalEntryId ? [e.journalEntryId] : []));
+    const posted = paidJeIds.length > 0
+      ? await tx.journalEntry.findMany({
+          where: { id: { in: paidJeIds }, sourceType: JournalSourceType.commission_accrual },
+          select: { id: true },
+        })
+      : [];
+    const ownPosting = new Set(posted.map((j) => j.id));
+
+    for (const groupEntries of groups.values()) {
+      const { userId, kind } = groupEntries[0];
+      // Check if deduction already exists: orderId, userId, kind, amount < 0, status <> 'void'
+      const existingDeduction = await tx.commissionEntry.findFirst({
+        where: {
+          tenantId,
+          orderId,
+          userId,
+          kind,
+          amount: { lt: 0 },
+          status: { not: 'void' },
+        },
+      });
+
+      if (!existingDeduction) {
+        const totalPaid = Money.sum(groupEntries.map((e) => e.amount));
+        const deductionAmount = totalPaid.negated();
+
+        let deduction = await tx.commissionEntry.create({
+          data: {
+            tenantId,
+            orderId,
+            userId,
+            kind,
+            status: 'earned',
+            amount: deductionAmount,
+            earnedAt: new Date(),
+            note: `Order #${orderId} returned`,
+          },
+        });
+
+        // GL: only when paid entry's journalEntryId is the service's own commission_accrual posting
+        const hasOwnAccrual = groupEntries.some((e) => e.journalEntryId && ownPosting.has(e.journalEntryId));
+        if (hasOwnAccrual) {
+          const reversalJournal = await GLAutomationService.reverseCommissionAccrual(
+            tx,
+            { id: deduction.id, tenantId, orderId, amount: totalPaid },
+            await actorId()
+          );
+          deduction = await tx.commissionEntry.update({
+            where: { id: deduction.id },
+            data: { journalEntryId: reversalJournal.id },
+          });
+        }
+      }
     }
   }
-  await tx.commissionEntry.updateMany({ where: { id: { in: open.map((e) => e.id) } }, data: { status: 'void' } });
-  logger.info(`Voided ${open.length} commission entries of order ${orderId}`);
+
   return open.length;
 }

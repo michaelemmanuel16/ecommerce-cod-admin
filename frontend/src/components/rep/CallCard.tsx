@@ -179,7 +179,8 @@ export function CallCard({ orderId, onDone, onBack, readOnly = false }: CallCard
 
     const basePkgCents = currentPkg ? toCents(currentPkg.price) : toCents(card.packages.currentPackage.price);
     const selectedPkgCents = selectedPkg ? toCents(selectedPkg.price) : basePkgCents;
-    const pkgDiffCents = Math.max(0, selectedPkgCents - basePkgCents);
+    const pkgDeltaCents = selectedPkgCents - basePkgCents;
+    const pkgUpsellCents = Math.max(0, pkgDeltaCents);
 
     let addonsCents = 0;
     if (card.packages.availableAddons) {
@@ -190,8 +191,8 @@ export function CallCard({ orderId, onDone, onBack, readOnly = false }: CallCard
       }
     }
 
-    const extraTotalCents = pkgDiffCents + addonsCents;
-    const totalCents = baseCents + extraTotalCents;
+    const extraTotalCents = pkgUpsellCents + addonsCents;
+    const totalCents = baseCents + pkgDeltaCents + addonsCents;
     const calculatedRewardCents = Math.round((extraTotalCents * card.pay.upsellPercent) / 100);
 
     return {
@@ -605,15 +606,11 @@ export function CallCard({ orderId, onDone, onBack, readOnly = false }: CallCard
 
                 {card.packages.availablePackages.map((pkg) => {
                   const isSel = selectedPackageId === pkg.id;
-                  // An upsell only adds value: a package cheaper than the current one cannot be picked here.
-                  const isSmaller = toCents(pkg.price) < toCents(card.packages.currentPackage.price);
                   return (
                     <button
                       type="button"
                       key={pkg.id}
                       className={`opt ${isSel ? 'on' : ''}`}
-                      disabled={isSmaller}
-                      title={isSmaller ? 'Smaller than the current package. Edit the order to lower it.' : undefined}
                       onClick={() => {
                         // A second tap undoes the pick and goes back to the order's current package (no change).
                         const currentId = card.packages.currentPackage.id;

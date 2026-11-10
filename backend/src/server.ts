@@ -116,7 +116,6 @@ import './queues/workflowQueue';
 import { registerWorkflowListeners } from './services/workflowService';
 import { registerCustomerStatsListeners } from './services/customerStatsService';
 import { registerDashboardCacheListeners } from './services/dashboardService';
-import './services/autoConfirmService';
 import './queues/emailCampaignQueue';
 
 import { setupAgingCron } from './queues/agingQueue';

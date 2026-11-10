@@ -30,6 +30,7 @@ const getActionIcon = (type: string) => {
     case 'send_sms':
       return <MessageSquare className="w-5 h-5" />;
     case 'send_whatsapp':
+    case 'send_auto_confirm':
       return <Phone className="w-5 h-5" />;
     case 'update_order':
       return <RefreshCw className="w-5 h-5" />;
@@ -48,6 +49,7 @@ const getActionLabel = (type: string) => {
     send_email: 'Send Email',
     send_sms: 'Send SMS',
     send_whatsapp: 'Send WhatsApp',
+    send_auto_confirm: 'Send auto-confirm message',
     update_order: 'Update Order',
     wait: 'Wait',
     http_request: 'HTTP Request',
@@ -74,6 +76,9 @@ const getActionSummary = (action: WorkflowAction): string => {
       const templateKey = action.config.templateKey || 'confirmed';
       const linkSuffix = action.config.customLink ? ` + link` : '';
       return `Template: ${WHATSAPP_TEMPLATE_LABELS[templateKey] || templateKey}${linkSuffix}`;
+
+    case 'send_auto_confirm':
+      return `Channel: ${action.config.channel === 'sms' ? 'SMS' : 'WhatsApp'}`;
 
     case 'update_order':
       const status = action.config.status || 'unspecified';
@@ -113,6 +118,11 @@ const getActionColor = (type: string) => {
       bg: 'bg-emerald-50',
       text: 'text-emerald-900',
       icon: 'text-emerald-600',
+    },
+    send_auto_confirm: {
+      bg: 'bg-teal-50',
+      text: 'text-teal-900',
+      icon: 'text-teal-600',
     },
     update_order: {
       bg: 'bg-orange-50',

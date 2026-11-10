@@ -298,4 +298,42 @@ describe('CallCard Upsell Panel with Live Reward Box (M7-T18, F-759)', () => {
       );
     });
   });
+
+  it('allows picking a smaller package (downgrade), lowers the total, and shows no upsell reward (COD-193)', async () => {
+    // Current package is 2 sets (449)
+    const downgradeCard: CallCardData = {
+      ...MOCK_UPSELL_CARD,
+      order: { ...MOCK_UPSELL_CARD.order, totalAmount: '449.0000', subtotal: '449.0000' },
+      packages: {
+        orderId: 24041,
+        currentPackage: { id: 2, name: '2 copybook sets', price: '449.0000' },
+        availablePackages: [
+          { id: 1, name: '1 copybook set', price: '249.0000' },
+          { id: 2, name: '2 copybook sets', price: '449.0000' },
+          { id: 3, name: '3 copybook sets', price: '629.0000' },
+        ],
+        availableAddons: [],
+      },
+    } as CallCardData;
+    mockGetCallCard.mockResolvedValue(downgradeCard);
+
+    renderCallCard();
+    await screen.findByRole('heading', { name: 'Efua Mensah' });
+    await userEvent.click(screen.getByRole('button', { name: 'Confirmed' }));
+
+    // 1 set button should NOT be disabled
+    const smallPkgBtn = screen.getByRole('button', { name: /1 copybook set/ });
+    expect(smallPkgBtn).not.toBeDisabled();
+
+    // Click smaller package
+    await userEvent.click(smallPkgBtn);
+
+    // Live total is lowered from 449 to 249
+    expect(screen.getByTestId('cc-val')).toHaveTextContent('GH₵249');
+    expect(screen.getByTestId('cash-to-collect')).toHaveTextContent('GH₵249');
+
+    // No upsell reward text shown
+    const earnbox = screen.getByTestId('earnbox');
+    expect(earnbox).toHaveTextContent('No extra value added. You still earn GH₵8 if it is delivered.');
+  });
 });

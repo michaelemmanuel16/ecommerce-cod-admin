@@ -9,6 +9,15 @@ function ordinal(n: number): string {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
+function formatPeriodMonth(period?: string | null): string {
+  if (!period) return '';
+  const m = /^(\d{4})-(\d{2})$/.exec(period.trim());
+  if (!m) return period;
+  const y = Number(m[1]);
+  const month = Number(m[2]);
+  return new Date(Date.UTC(y, month - 1, 1)).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+}
+
 export const RepNumbersPage: React.FC = () => {
   const [data, setData] = useState<RepNumbersResult | null>(null);
   const [loading, setLoading] = useState(true);
@@ -89,7 +98,7 @@ export const RepNumbersPage: React.FC = () => {
       id="numbers"
       ariaLabel="My numbers"
       title="My numbers"
-      subtitle={`${data?.period ? `${data.period} · ` : ''}How your calls and orders are doing.`}
+      subtitle={`${data?.period ? `${formatPeriodMonth(data.period)} · ` : ''}How your calls and orders are doing.`}
     >
       <div className="card">
         {/* KPI Grid */}
@@ -153,7 +162,9 @@ export const RepNumbersPage: React.FC = () => {
               <small>Rank in call reps</small>
               <b>
                 {callRepRank?.rank
-                  ? `${ordinal(callRepRank.rank)} of ${callRepRank.total}`
+                  ? callRepRank.total === 1
+                    ? 'Only call rep this month'
+                    : `${ordinal(callRepRank.rank)} of ${callRepRank.total}`
                   : '—'}
               </b>
             </div>
@@ -166,9 +177,13 @@ export const RepNumbersPage: React.FC = () => {
             <div>
               <small>Rank in Upsell</small>
               <b>
-                {upsellRank?.rank
-                  ? `${ordinal(upsellRank.rank)} of ${upsellRank.total}`
-                  : '—'}
+                {data?.upsellCount === 0
+                  ? 'No upsells yet'
+                  : upsellRank?.rank
+                    ? upsellRank.total === 1
+                      ? 'Only call rep this month'
+                      : `${ordinal(upsellRank.rank)} of ${upsellRank.total}`
+                    : '—'}
               </b>
             </div>
           </div>

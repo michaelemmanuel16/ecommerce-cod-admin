@@ -6,6 +6,7 @@ import { Prisma, UpsellKind, UpsellStatus } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import logger from '../utils/logger';
 import { upsellCommissionFor } from './commissionService';
+import { getRepPay } from './rewardService';
 
 export interface ApplyUpsellInput {
   orderId: number;
@@ -396,12 +397,10 @@ export class UpsellService {
       }
 
       const pkgPrice = Money.parse(selectedPackageRecord.price);
-      if (pkgPrice.lt(baselinePackagePrice)) {
-        // An upsell only adds value. Lowering an order is an order edit, not an upsell.
-        throw new AppError('A smaller package lowers the order. Edit the order to do that.', 400, 'PACKAGE_DOWNGRADE');
-      }
       if (pkgPrice.gt(baselinePackagePrice)) {
         packageExtraValue = Money.sub(pkgPrice, baselinePackagePrice);
+      } else {
+        packageExtraValue = Money.ZERO;
       }
     }
 
@@ -433,10 +432,10 @@ export class UpsellService {
       }
     }
 
-    // F5 item 5: UPSELL_COMMISSION_RATE
+    const repPay = await getRepPay(tx, resolvedTid);
     const addonsExtraValue = Money.sum(validAddons.map((a) => a.price));
     const totalExtraValue = Money.add(packageExtraValue, addonsExtraValue);
-    const estimatedReward = upsellCommissionFor(totalExtraValue);
+    const estimatedReward = upsellCommissionFor(totalExtraValue, repPay.upsellRate);
 
     // Void previous active upsell lines (last save wins)
     if (currentActiveUpsells.length > 0) {
@@ -478,12 +477,14 @@ export class UpsellService {
       createdLines.push(addonLine);
     }
 
-    await this.syncOrderLines(tx, orderId, packageExtraValue.gt(0) ? selectedPackageRecord : null, validAddons);
+    await this.syncOrderLines(tx, orderId, selectedPackageRecord, validAddons);
 
-    // Update order totals
-    const newSubtotal = Money.add(baselineSubtotal, totalExtraValue);
-    const newTotalAmount = Money.add(baselineTotalAmount, totalExtraValue);
-    const newCodAmount = Money.add(baselineCodAmount, totalExtraValue);
+    // Update order totals: package difference (upgrade or downgrade) + addons
+    const packageDiff = selectedPackageRecord ? Money.sub(Money.parse(selectedPackageRecord.price), baselinePackagePrice) : Money.ZERO;
+    const orderDelta = Money.add(packageDiff, addonsExtraValue);
+    const newSubtotal = Money.add(baselineSubtotal, orderDelta);
+    const newTotalAmount = Money.add(baselineTotalAmount, orderDelta);
+    const newCodAmount = Money.add(baselineCodAmount, orderDelta);
 
     const updatedOrder = await tx.order.update({
       where: { id: orderId },
@@ -504,7 +505,7 @@ export class UpsellService {
           where: { orderId, kind: 'upsell', status: { not: 'void' } },
         });
         if (totalExtraValue.gt(0)) {
-          const upsellAmount = upsellCommissionFor(totalExtraValue);
+          const upsellAmount = upsellCommissionFor(totalExtraValue, repPay.upsellRate);
           if (upsellAmount.gt(0)) {
             if (liveUpsellEntry) {
               if (liveUpsellEntry.status === 'pending' && !Money.parse(liveUpsellEntry.amount).equals(upsellAmount)) {

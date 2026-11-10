@@ -35,6 +35,7 @@ import { callService } from '../../services/callService';
 import { transitionOrder, TransitionActor } from '../../services/orderStateMachine';
 import payoutService from '../../services/payoutService';
 import orderService from '../../services/orderService';
+import { sendAutoConfirmForOrder } from '../../services/autoConfirmService';
 import { timeToFirstCall } from '../../services/kpi/timeToFirstCall';
 import { createNotification } from '../../services/notificationService';
 import { registerCustomerStatsListeners } from '../../services/customerStatsService';
@@ -811,14 +812,10 @@ describe('COD-69, M7-T22: Milestone Integration Tests', () => {
         where: { tenantId: tenant },
         create: {
           tenantId: tenant,
-          autoConfirmEnabled: true,
-          autoConfirmChannel: 'whatsapp',
           timeZone: 'UTC',
           operatingHours: opHoursData,
         },
         update: {
-          autoConfirmEnabled: true,
-          autoConfirmChannel: 'whatsapp',
           timeZone: 'UTC',
           operatingHours: opHoursData,
         },
@@ -849,7 +846,7 @@ describe('COD-69, M7-T22: Milestone Integration Tests', () => {
       });
       await stockUp(tenant, product.id, 100);
 
-      mockSendText.mockClear();
+      mockSendTemplate.mockClear();
 
       // Create COD order using orderService at night (no operating hours hold)
       const order = await runInTenant(tenant, () =>
@@ -864,20 +861,17 @@ describe('COD-69, M7-T22: Milestone Integration Tests', () => {
         })
       );
 
-      // Wait for async ORDER_CREATED listener to execute auto-confirm send
-      for (let i = 0; i < 50; i++) {
-        if (mockSendText.mock.calls.length > 0) break;
-        await new Promise((r) => setTimeout(r, 50));
-      }
+      // The send_auto_confirm workflow action calls this at once; there is no operating-hours hold
+      await runInTenant(tenant, () => sendAutoConfirmForOrder(order.id, tenant));
 
       // Verify provider stub was called once at create time
-      expect(mockSendText).toHaveBeenCalledTimes(1);
-      expect(mockSendText).toHaveBeenCalledWith(
+      expect(mockSendTemplate).toHaveBeenCalledTimes(1);
+      expect(mockSendTemplate).toHaveBeenCalledWith(
         expect.objectContaining({
           to: customer.phoneNumber,
           orderId: order.id,
           customerId: customer.id,
-          body: expect.stringContaining('Reply YES to confirm it'),
+          templateName: 'order_auto_confirm',
         })
       );
 

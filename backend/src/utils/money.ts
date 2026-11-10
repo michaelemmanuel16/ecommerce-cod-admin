@@ -130,10 +130,13 @@ export function percent(a: MoneyInput, b: MoneyInput): number {
  * `symbol` replaces the "GHS " prefix ("GH₵"); `wholeIfZero` drops the decimals of a whole amount ("GH₵2,034").
  */
 export function format(a: MoneyInput, currency: string, opts: { symbol?: string; wholeIfZero?: boolean } = {}): string {
-  const [whole, decimals] = toApi(a).split('.');
+  const isNegative = lt(a, 0);
+  const abs = isNegative ? orZero(a).abs() : orZero(a);
+  const [whole, decimals] = toApi(abs).split('.');
   const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   const prefix = opts.symbol ?? `${currency} `;
-  return opts.wholeIfZero && /^0+$/.test(decimals) ? `${prefix}${grouped}` : `${prefix}${grouped}.${decimals}`;
+  const sign = isNegative ? '-' : '';
+  return opts.wholeIfZero && /^0+$/.test(decimals) ? `${sign}${prefix}${grouped}` : `${sign}${prefix}${grouped}.${decimals}`;
 }
 
 /** The sign shown for a store currency in text ("GH₵2,034"); a currency not listed shows its code. */
