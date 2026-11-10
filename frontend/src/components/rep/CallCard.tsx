@@ -18,7 +18,9 @@ import { Button, Skeleton, Tag, useToast } from '../ui-v2';
 import { CustomerModal } from '../../pages/customers/CustomerModal';
 import { repService, type CallCardData } from '../../services/rep.service';
 import { callsService } from '../../services/calls.service';
-import { formatCurrency, formatDate, formatPhoneLocal } from '../../utils/format';
+import { formatCurrency, formatDate } from '../../utils/format';
+import { normalizePhone } from '../../utils/phone';
+import { PhoneDisplay } from './PhoneDisplay';
 import { orderNumber, shortDate, STATUS_TONE } from '../../pages/orders/model';
 import { ORDER_STATUS_LABELS } from '../../utils/orderStatus';
 import { toCents } from '../../utils/money';
@@ -315,8 +317,8 @@ export function CallCard({ orderId, onDone, onBack }: CallCardProps) {
     );
   }
 
-  const tel = card.customer.phoneNumber.replace(/\s+/g, '');
-  const waDigits = card.customer.phoneNumber.replace(/\D/g, '');
+  // Links use the normalised number; an invalid number gets no link (F-751).
+  const e164 = normalizePhone(card.customer.phoneNumber);
   const redeliveryCtx =
     card.order.status === 'failed_delivery' || card.order.failureReason
       ? card.lastCalls.find((c) => c.notes)?.notes || card.order.notes || 'Delivery failed on previous attempt.'
@@ -365,12 +367,25 @@ export function CallCard({ orderId, onDone, onBack }: CallCardProps) {
 
       {/* Action buttons */}
       <div className="acts">
-        <a className="pri" href={`tel:${tel}`} aria-label={`Call ${card.customer.name}`}>
-          <Phone aria-hidden="true" style={{ width: 15, height: 15 }} /> Call
-        </a>
-        <a href={`https://wa.me/${waDigits}`} aria-label={`WhatsApp ${card.customer.name}`}>
-          <MessageCircle aria-hidden="true" style={{ width: 15, height: 15 }} /> WhatsApp
-        </a>
+        {e164 ? (
+          <>
+            <a className="pri" href={`tel:${e164}`} aria-label={`Call ${card.customer.name}`}>
+              <Phone aria-hidden="true" style={{ width: 15, height: 15 }} /> Call
+            </a>
+            <a href={`https://wa.me/${e164.replace(/\D/g, '')}`} aria-label={`WhatsApp ${card.customer.name}`}>
+              <MessageCircle aria-hidden="true" style={{ width: 15, height: 15 }} /> WhatsApp
+            </a>
+          </>
+        ) : (
+          <>
+            <button type="button" className="pri" disabled title="Check number">
+              <Phone aria-hidden="true" style={{ width: 15, height: 15 }} /> Call
+            </button>
+            <button type="button" disabled title="Check number">
+              <MessageCircle aria-hidden="true" style={{ width: 15, height: 15 }} /> WhatsApp
+            </button>
+          </>
+        )}
         <button type="button" disabled title="Team notes arrive with Inbox">
           <MessagesSquare aria-hidden="true" style={{ width: 15, height: 15 }} /> Team notes
         </button>
@@ -396,8 +411,10 @@ export function CallCard({ orderId, onDone, onBack }: CallCardProps) {
         <dl className="kv">
           <dt>Phone</dt>
           <dd>
-            {formatPhoneLocal(card.customer.phoneNumber)}
-            {card.customer.alternatePhone ? ` · alt ${formatPhoneLocal(card.customer.alternatePhone)}` : ''}
+            <PhoneDisplay phone={card.customer.phoneNumber} showActions={false} />
+            {card.customer.alternatePhone && (
+              <PhoneDisplay phone={card.customer.alternatePhone} label="alt" showActions={false} />
+            )}
           </dd>
           {card.customer.email && (
             <>

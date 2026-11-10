@@ -133,10 +133,26 @@ describe('CallCard (M7-T17)', () => {
     expect(screen.getAllByText(/Tema/).length).toBeGreaterThan(0);
     expect(screen.getByTestId('cc-val')).toHaveTextContent('GH₵249');
     expect(screen.getByTestId('cash-to-collect')).toHaveTextContent('GH₵249');
-    expect(screen.getByText('024 508 3317')).toBeInTheDocument();
+    expect(screen.getByTestId('phone-number')).toHaveTextContent('+233245083317'); // as typed (F-751)
     expect(screen.getByText('Community 18, House 22, Tema')).toBeInTheDocument();
     expect(screen.queryByText('First order from this customer.')).toBeNull(); // Has 1 previous order
     expect(screen.getByText('Phone rang, no answer')).toBeInTheDocument();
+  });
+
+  it('links Call and WhatsApp to the normalised number, and disables them for a bad number (F-751)', async () => {
+    mockGetCallCard.mockResolvedValue({ ...MOCK_CARD, customer: { ...MOCK_CARD.customer, phoneNumber: '024 508 3317' } });
+    const { unmount } = renderCallCard();
+    expect(await screen.findByRole('link', { name: 'Call Efua Mensah' })).toHaveAttribute('href', 'tel:+233245083317');
+    expect(screen.getByRole('link', { name: 'WhatsApp Efua Mensah' })).toHaveAttribute('href', 'https://wa.me/233245083317');
+    expect(screen.getByTestId('phone-number')).toHaveTextContent('024 508 3317');
+    unmount();
+
+    mockGetCallCard.mockResolvedValue({ ...MOCK_CARD, customer: { ...MOCK_CARD.customer, phoneNumber: '12345' } });
+    renderCallCard();
+    expect(await screen.findByRole('button', { name: /^Call$/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^WhatsApp$/ })).toBeDisabled();
+    expect(screen.queryByRole('link', { name: /WhatsApp/ })).toBeNull();
+    expect(screen.getByTestId('check-number-tag')).toBeInTheDocument();
   });
 
   it('updates save button text per outcome', async () => {

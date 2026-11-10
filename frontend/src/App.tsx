@@ -55,7 +55,7 @@ const RepShell = lazy(() => import('./pages/rep/RepShell'));
 const RepTodayPage = lazy(() => import('./pages/rep/RepTodayPage'));
 const RepQueuePage = lazy(() => import('./pages/rep/RepQueuePage'));
 const RepComingSoon = lazy(() => import('./pages/rep/RepComingSoon'));
-const RepCallPlaceholder = lazy(() => import('./pages/rep/RepCallPlaceholder'));
+const RepCallPage = lazy(() => import('./pages/rep/RepCallPage'));
 const EarningsHistory = lazy(() => import('./pages/EarningsHistory'));
 const AgentMyInventory = lazy(() => import('./pages/AgentMyInventory'));
 const Inventory = lazy(() => import('./pages/Inventory').then(m => ({ default: m.Inventory })));
@@ -319,7 +319,7 @@ function App() {
             <Route path="earnings" element={<Suspense fallback={<Loading />}><RepComingSoon title="Earnings" /></Suspense>} />
             <Route path="numbers" element={<Suspense fallback={<Loading />}><RepComingSoon title="My numbers" /></Suspense>} />
             <Route path="inbox" element={<Suspense fallback={<Loading />}><RepComingSoon title="Inbox" /></Suspense>} />
-            <Route path="call/:orderId" element={<Suspense fallback={<Loading />}><RepCallPlaceholder /></Suspense>} />
+            <Route path="call/:orderId" element={<Suspense fallback={<Loading />}><RepCallPage /></Suspense>} />
           </Route>
 
           {/* Desktop routes */}

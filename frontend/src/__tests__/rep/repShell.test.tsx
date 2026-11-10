@@ -6,11 +6,18 @@ import { RepShell } from '../../pages/rep/RepShell';
 import { RepGate } from '../../App';
 import { PhoneDisplay } from '../../components/rep/PhoneDisplay';
 import { RepComingSoon } from '../../pages/rep/RepComingSoon';
-import { RepCallPlaceholder } from '../../pages/rep/RepCallPlaceholder';
 import { QueueCallPanel } from '../../pages/rep/QueueCallPanel';
 import { useAuthStore } from '../../stores/authStore';
 import { repService } from '../../services/rep.service';
 import { features } from '../../config/features';
+
+vi.mock('../../components/rep/CallCard', () => ({
+  CallCard: ({ orderId, onDone }: { orderId: number; onDone: (next: number | null) => void }) => (
+    <button type="button" data-testid="call-card-stub" onClick={() => onDone(99)}>
+      card {orderId}
+    </button>
+  ),
+}));
 
 vi.mock('../../services/rep.service', () => ({
   repService: {
@@ -292,23 +299,12 @@ describe('M7-T14: Rep shell and navigation (F-750, F-751)', () => {
       expect(el).toHaveTextContent('Coming in this release');
     });
 
-    it('RepCallPlaceholder shows order id and back link', () => {
-      render(
-        <MemoryRouter initialEntries={['/rep/call/24041']}>
-          <RepCallPlaceholder />
-        </MemoryRouter>
-      );
-      expect(screen.getByTestId('back-to-queue')).toHaveAttribute('href', '/rep/queue');
-    });
-
-    it('QueueCallPanel shows order id and "Open call card" link', () => {
-      render(
-        <MemoryRouter>
-          <QueueCallPanel orderId={24041} onDone={vi.fn()} />
-        </MemoryRouter>
-      );
-      expect(screen.getByTestId('panel-order-id')).toHaveTextContent('24041');
-      expect(screen.getByTestId('open-call-card-link')).toHaveAttribute('href', '/rep/call/24041');
+    it('QueueCallPanel renders the call card for the selected order and passes onDone', async () => {
+      const onDone = vi.fn();
+      render(<QueueCallPanel orderId={24041} onDone={onDone} />);
+      expect(screen.getByTestId('call-card-stub')).toHaveTextContent('card 24041');
+      await userEvent.click(screen.getByTestId('call-card-stub'));
+      expect(onDone).toHaveBeenCalledWith(99);
     });
   });
 });
