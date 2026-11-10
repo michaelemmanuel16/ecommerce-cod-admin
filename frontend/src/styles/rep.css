@@ -912,7 +912,7 @@
   .v2 .rep-shell .low {
     grid-template-columns: minmax(0, 1fr);
   }
-  .v2 .rep-shell .callpanel.open {
+  .v2 .rep-shell #opanel.callpanel.open {
     display: block;
     position: fixed;
     inset: 0;

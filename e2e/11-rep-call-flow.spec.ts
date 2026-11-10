@@ -82,7 +82,11 @@ async function runRepCallFlow(page: Page, request: APIRequestContext, seed: Seed
   expect(earnings).toMatchObject({ commission: '8.00', upsellReward: '20.00', earned: '28.00', owed: '28.00' });
 
   await page.goto('/rep/earnings');
-  await expect(page.getByRole('heading', { name: 'Earnings' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Earnings', exact: true })).toBeVisible();
+  await expect(page.getByTestId('line-commission')).toContainText(/GH₵\s?8(?:\.00)?(?!\d)/);
+  await expect(page.getByTestId('line-upsell')).toContainText(/GH₵\s?20(?:\.00)?(?!\d)/);
+  await expect(page.getByTestId('owed-now-amount')).toHaveText(/GH₵\s?28(?:\.00)?(?!\d)/);
+  await expect(page.getByTestId(`order-line-${seed.order1Id}`)).toContainText(/GH₵\s?28(?:\.00)?(?!\d)/);
 }
 
 const VIEWPORTS = [

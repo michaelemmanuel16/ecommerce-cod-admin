@@ -132,7 +132,8 @@ export const RepQueuePage: React.FC = () => {
   };
 
   const handleRowClick = (order: QueueItem) => {
-    if (window.innerWidth <= 760) {
+    // Same breakpoint as rep.css, where the side panel hides.
+    if (window.innerWidth <= 1100) {
       navigate(`/rep/call/${order.id}`);
     } else {
       setSelectedOrderId(order.id);
