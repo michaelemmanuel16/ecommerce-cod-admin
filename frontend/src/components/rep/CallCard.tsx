@@ -29,8 +29,9 @@ import '../../styles/callCard.css';
 
 export interface CallCardProps {
   orderId: number;
-  onDone: (nextOrderId: number | null) => void;
+  onDone?: (nextOrderId: number | null) => void;
   onBack?: () => void;
+  readOnly?: boolean;
 }
 
 type OutcomeId = 'confirmed' | 'not_reachable' | 'call_back_later' | 'declined' | 'wrong_number';
@@ -73,7 +74,7 @@ function computeChipDate(chip: (typeof CB_TIME_CHIPS)[number], baseTime: number)
   return d;
 }
 
-export function CallCard({ orderId, onDone, onBack }: CallCardProps) {
+export function CallCard({ orderId, onDone, onBack, readOnly = false }: CallCardProps) {
   const say = useToast();
   const [card, setCard] = useState<CallCardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -271,7 +272,7 @@ export function CallCard({ orderId, onDone, onBack }: CallCardProps) {
         say('Call saved: wrong number');
       }
 
-      onDone(res.nextOrderId ?? null);
+      onDone?.(res.nextOrderId ?? null);
     } catch (err) {
       const status = axios.isAxiosError(err) ? err.response?.status : (err as any)?.response?.status;
       if (status === 409) {
@@ -325,11 +326,17 @@ export function CallCard({ orderId, onDone, onBack }: CallCardProps) {
       : null;
 
   return (
-    <div className="call-card" data-testid="call-card">
+    <div className="call-card" data-testid={readOnly ? 'call-card-read-only' : 'call-card'}>
       <div className="cc-top">
         <div className="cc-head">
           {onBack && (
-            <button type="button" className="backm" onClick={onBack} aria-label="Back to queue">
+            <button
+              type="button"
+              className="backm"
+              onClick={onBack}
+              aria-label={readOnly ? 'Back to orders' : 'Back to queue'}
+              data-testid="call-card-back"
+            >
               <ArrowLeft aria-hidden="true" style={{ width: 18, height: 18 }} />
             </button>
           )}
@@ -359,7 +366,7 @@ export function CallCard({ orderId, onDone, onBack }: CallCardProps) {
         </div>
       )}
 
-      {!isPending && (
+      {!readOnly && !isPending && (
         <div className="alert-notpending" role="status">
           Order is {ORDER_STATUS_LABELS[card.order.status as OrderStatus] ?? card.order.status}. Outcome buttons disabled.
         </div>
@@ -404,9 +411,11 @@ export function CallCard({ orderId, onDone, onBack }: CallCardProps) {
       <div className="blk">
         <div className="blk-header">
           <h4>Customer</h4>
-          <Button size="mini" onClick={() => setEditingCustomer(true)}>
-            <Pencil aria-hidden="true" style={{ width: 12, height: 12 }} /> Edit
-          </Button>
+          {!readOnly && (
+            <Button size="mini" onClick={() => setEditingCustomer(true)}>
+              <Pencil aria-hidden="true" style={{ width: 12, height: 12 }} /> Edit
+            </Button>
+          )}
         </div>
         <dl className="kv">
           <dt>Phone</dt>
@@ -520,7 +529,16 @@ export function CallCard({ orderId, onDone, onBack }: CallCardProps) {
         )}
       </div>
 
-      {/* How did the call go? */}
+      {readOnly && card.order.notes && (
+        <div className="blk" data-testid="read-order-note">
+          <h4>Order note</h4>
+          <p className="sub" style={{ margin: '4px 0 0', color: 'var(--ink)' }}>{card.order.notes}</p>
+        </div>
+      )}
+
+      {!readOnly && (
+        <>
+          {/* How did the call go? */}
       <div className="blk">
         <h4>How did the call go?</h4>
         <div className="outs" role="group" aria-label="Call outcomes">
@@ -773,6 +791,8 @@ export function CallCard({ orderId, onDone, onBack }: CallCardProps) {
           <span>{outcome ? OUTCOME_LABELS[outcome] : 'Pick an outcome'}</span>
         </button>
       </div>
+        </>
+      )}
 
       {/* Customer Modal for edit */}
       <CustomerModal

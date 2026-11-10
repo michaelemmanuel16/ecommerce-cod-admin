@@ -55,6 +55,9 @@ const RepShell = lazy(() => import('./pages/rep/RepShell'));
 const RepTodayPage = lazy(() => import('./pages/rep/RepTodayPage'));
 const RepQueuePage = lazy(() => import('./pages/rep/RepQueuePage'));
 const RepComingSoon = lazy(() => import('./pages/rep/RepComingSoon'));
+const RepOrdersPage = lazy(() => import('./pages/rep/RepOrdersPage'));
+const RepEarningsPage = lazy(() => import('./pages/rep/RepEarningsPage'));
+const RepNumbersPage = lazy(() => import('./pages/rep/RepNumbersPage'));
 const RepCallPage = lazy(() => import('./pages/rep/RepCallPage'));
 const EarningsHistory = lazy(() => import('./pages/EarningsHistory'));
 const AgentMyInventory = lazy(() => import('./pages/AgentMyInventory'));
@@ -315,9 +318,9 @@ function App() {
             <Route index element={<Navigate to="/rep/today" replace />} />
             <Route path="today" element={<Suspense fallback={<Loading />}><RepTodayPage /></Suspense>} />
             <Route path="queue" element={<Suspense fallback={<Loading />}><RepQueuePage /></Suspense>} />
-            <Route path="orders" element={<Suspense fallback={<Loading />}><RepComingSoon title="My orders" /></Suspense>} />
-            <Route path="earnings" element={<Suspense fallback={<Loading />}><RepComingSoon title="Earnings" /></Suspense>} />
-            <Route path="numbers" element={<Suspense fallback={<Loading />}><RepComingSoon title="My numbers" /></Suspense>} />
+            <Route path="orders" element={<Suspense fallback={<Loading />}><RepOrdersPage /></Suspense>} />
+            <Route path="earnings" element={<Suspense fallback={<Loading />}><RepEarningsPage /></Suspense>} />
+            <Route path="numbers" element={<Suspense fallback={<Loading />}><RepNumbersPage /></Suspense>} />
             <Route path="inbox" element={<Suspense fallback={<Loading />}><RepComingSoon title="Inbox" /></Suspense>} />
             <Route path="call/:orderId" element={<Suspense fallback={<Loading />}><RepCallPage /></Suspense>} />
           </Route>
