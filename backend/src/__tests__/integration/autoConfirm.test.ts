@@ -97,7 +97,7 @@ describe('M7-T08: Auto-confirm send and public confirmation API', () => {
         orderId: order.id,
         customerId,
         templateName: 'order_auto_confirm',
-        languageCode: 'en',
+        languageCode: 'en_US',
         headerParams: ['Acne Serum'],
         bodyParams: [
           fullName(customer),
@@ -254,6 +254,26 @@ describe('M7-T08: Auto-confirm send and public confirmation API', () => {
     expect(smsSpy).not.toHaveBeenCalled();
     const after = await prismaBase.order.findUnique({ where: { id: order.id } });
     expect(after!.autoConfirmSentAt).toBeNull();
+    waSpy.mockRestore();
+    smsSpy.mockRestore();
+  });
+
+  it('when WhatsApp and SMS both fail, the send throws and the order can be tried again', async () => {
+    const order = await makeOrder({
+      tenantId,
+      customerId,
+      status: 'pending_confirmation',
+      paymentMethod: 'cod',
+      orderType: 'physical',
+    });
+    const waSpy = jest.spyOn(whatsappService, 'sendTemplate').mockRejectedValue(new Error('WhatsApp down'));
+    const smsSpy = jest.spyOn(smsService, 'sendSms').mockRejectedValue(new Error('SMS down'));
+
+    await expect(sendAutoConfirmForOrder(order.id, tenantId)).rejects.toThrow(/could not be sent/);
+
+    const after = await prismaBase.order.findUnique({ where: { id: order.id } });
+    expect(after!.autoConfirmSentAt).toBeNull();
+    expect(await prismaBase.confirmToken.count({ where: { orderId: order.id } })).toBe(0);
     waSpy.mockRestore();
     smsSpy.mockRestore();
   });

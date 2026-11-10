@@ -134,12 +134,13 @@ export async function sendAutoConfirmForOrder(
     const storePrefix = storeName ? `${storeName}: ` : '';
     const smsMessage = `${storePrefix}Hello ${customerFirstName}, please confirm order #${order.id}, ${productName}, ${currency} ${total} on delivery. Reply YES to confirm or NO to change or cancel.`;
 
+    let sent = true;
     if (targetChannel === 'whatsapp') {
       try {
         await whatsappService.sendTemplate({
           to: phone,
           templateName: 'order_auto_confirm',
-          languageCode: 'en',
+          languageCode: 'en_US', // must match the approved template's language on Meta
           headerParams: [productName],
           bodyParams: [
             customerName,
@@ -162,6 +163,7 @@ export async function sendAutoConfirmForOrder(
           });
         } catch (smsErr: any) {
           logger.error('Auto-confirm SMS fallback also failed', { orderId: order.id, error: smsErr.message });
+          sent = false;
         }
       }
     } else {
@@ -174,7 +176,15 @@ export async function sendAutoConfirmForOrder(
         });
       } catch (err: any) {
         logger.error('Auto-confirm SMS send failed', { orderId: order.id, error: err.message });
+        sent = false;
       }
+    }
+
+    if (!sent) {
+      // Nothing reached the customer: release the one-send claim so a later run can try again.
+      await prisma.confirmToken.deleteMany({ where: { orderId: order.id, token } });
+      await prisma.order.update({ where: { id: order.id }, data: { autoConfirmSentAt: null } });
+      throw new Error(`Auto-confirm message could not be sent for order ${order.id}`);
     }
 
     return { token, channel: targetChannel };
