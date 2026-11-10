@@ -478,7 +478,7 @@ describe('COD-69, M7-T22: Milestone Integration Tests', () => {
         paid: '0.00',
         owed: '134.00',
       });
-    }, 60000);
+    }, 180000); // 266 orders through the real call and delivery services
   });
 
   // =========================================================================
