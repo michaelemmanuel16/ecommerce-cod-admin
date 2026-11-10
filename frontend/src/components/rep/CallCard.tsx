@@ -612,7 +612,12 @@ export function CallCard({ orderId, onDone, onBack, readOnly = false }: CallCard
                       className={`opt ${isSel ? 'on' : ''}`}
                       disabled={isSmaller}
                       title={isSmaller ? 'Smaller than the current package. Edit the order to lower it.' : undefined}
-                      onClick={() => setSelectedPackageId(pkg.id)}
+                      onClick={() => {
+                        // A second tap undoes the pick and goes back to the order's current package (no change).
+                        const currentId = card.packages.currentPackage.id;
+                        const startId = currentId != null && card.packages.availablePackages.some((p) => p.id === currentId) ? currentId : null;
+                        setSelectedPackageId(isSel ? startId : pkg.id);
+                      }}
                     >
                       <span className="rd">
                         {isSel && <CheckCircle2 aria-hidden="true" style={{ width: 14, height: 14 }} />}

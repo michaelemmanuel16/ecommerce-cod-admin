@@ -290,6 +290,31 @@ describe('CallCard (M7-T17)', () => {
     expect(mockGetCallCard).toHaveBeenCalledTimes(2);
   });
 
+  it('a second tap on the picked package undoes the pick (no package change is sent)', async () => {
+    // Real old orders: the current package matches no form package (id null).
+    mockGetCallCard.mockResolvedValue({
+      ...MOCK_CARD,
+      packages: { ...MOCK_CARD.packages, currentPackage: { id: null, name: '1 × Copybook', price: '249.0000' } },
+    });
+    mockCreateCall.mockResolvedValueOnce({ call: { id: 51 }, nextOrderId: null, upsell: null });
+    renderCallCard();
+    await screen.findByRole('heading', { name: 'Efua Mensah' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Confirmed' }));
+    const pkg = screen.getByRole('button', { name: /3 copybook sets/ });
+    await userEvent.click(pkg);
+    expect(pkg).toHaveClass('on');
+    await userEvent.click(pkg);
+    expect(pkg).not.toHaveClass('on');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Save as confirmed' }));
+    await waitFor(() => {
+      expect(mockCreateCall).toHaveBeenCalledWith(
+        expect.objectContaining({ orderChanges: { packageId: null, addOnIds: [] } }),
+      );
+    });
+  });
+
   it('saves successfully and triggers onDone with nextOrderId', async () => {
     mockCreateCall.mockResolvedValueOnce({
       call: { id: 50 },
