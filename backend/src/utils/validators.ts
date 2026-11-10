@@ -270,7 +270,7 @@ export const createCallValidation: ValidationChain[] = [
   body('declineReason').optional().isIn(['price_too_high', 'prank_or_mistake', 'changed_mind', 'bought_elsewhere', 'wrong_number', 'other']).withMessage('Invalid decline reason'),
   body('callbackAt').optional().isISO8601().withMessage('callbackAt must be an ISO date'),
   body('orderChanges').optional().isObject().withMessage('orderChanges must be an object'),
-  body('orderChanges.packageId').optional().isInt().withMessage('packageId must be an integer'),
+  body('orderChanges.packageId').optional({ nullable: true }).isInt({ min: 1 }).withMessage('packageId must be an integer'),
   body('orderChanges.addOnIds').optional().isArray().withMessage('addOnIds must be an array'),
   body('expectedUpdatedAt').optional().isISO8601().withMessage('expectedUpdatedAt must be an ISO date')
 ];

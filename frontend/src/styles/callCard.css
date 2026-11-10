@@ -322,6 +322,11 @@
   background: var(--hover);
 }
 
+.opt:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .opt .rd {
   flex: none;
   width: 18px;

@@ -109,13 +109,11 @@ export function CallCard({ orderId, onDone, onBack, readOnly = false }: CallCard
         if (!quiet) setConflictError(null);
         setStartedAt(new Date());
 
-        // Initialize upsell selection from current package
-        if (data.packages?.currentPackage?.id != null) {
-          setSelectedPackageId(data.packages.currentPackage.id);
-        } else if (data.packages?.availablePackages?.length) {
-          const defaultPkg = data.packages.availablePackages.find((p) => p.isDefault) ?? data.packages.availablePackages[0];
-          setSelectedPackageId(defaultPkg?.id ?? null);
-        }
+        // Start on the order's current package. With no matching package, nothing is picked (no change).
+        const current = data.packages?.currentPackage?.id;
+        setSelectedPackageId(
+          current != null && data.packages.availablePackages.some((p) => p.id === current) ? current : null,
+        );
       } catch (err) {
         if (axios.isAxiosError(err) && err.response?.status === 404) {
           setError('Order not found');
@@ -139,6 +137,7 @@ export function CallCard({ orderId, onDone, onBack, readOnly = false }: CallCard
     setDeclineNote('');
     setCallNote('');
     setCallLength('');
+    setSelectedPackageId(null);
     setSelectedAddonIds(new Set());
     void loadCard(false);
   }, [loadCard]);
@@ -234,7 +233,8 @@ export function CallCard({ orderId, onDone, onBack, readOnly = false }: CallCard
       const orderChanges =
         outcome === 'confirmed'
           ? {
-              packageId: selectedPackageId,
+              // Send a package only when the rep picked a different one; null means no package change.
+              packageId: selectedPackageId !== card.packages?.currentPackage?.id ? selectedPackageId : null,
               addOnIds: Array.from(selectedAddonIds),
             }
           : undefined;
@@ -606,11 +606,15 @@ export function CallCard({ orderId, onDone, onBack, readOnly = false }: CallCard
 
                 {card.packages.availablePackages.map((pkg) => {
                   const isSel = selectedPackageId === pkg.id;
+                  // An upsell only adds value: a package cheaper than the current one cannot be picked here.
+                  const isSmaller = toCents(pkg.price) < toCents(card.packages.currentPackage.price);
                   return (
                     <button
                       type="button"
                       key={pkg.id}
                       className={`opt ${isSel ? 'on' : ''}`}
+                      disabled={isSmaller}
+                      title={isSmaller ? 'Smaller than the current package. Edit the order to lower it.' : undefined}
                       onClick={() => setSelectedPackageId(pkg.id)}
                     >
                       <span className="rd">
@@ -661,7 +665,11 @@ export function CallCard({ orderId, onDone, onBack, readOnly = false }: CallCard
                 </div>
               </div>
             ) : (
-              <div className="hint">No package changes available for this order.</div>
+              <div className="hint">
+                {card.packages.currentPackage.name
+                  ? `Current package: ${card.packages.currentPackage.name}, ${formatCurrency(card.packages.currentPackage.price)}. No other packages are set up for this product.`
+                  : 'No package changes available for this order.'}
+              </div>
             )}
           </div>
         )}
@@ -746,7 +754,7 @@ export function CallCard({ orderId, onDone, onBack, readOnly = false }: CallCard
         {outcome === 'wrong_number' && (
           <div style={{ marginTop: 12 }}>
             <div className="hint">
-              Marks this number as wrong. Put the correct number in the note if the customer gave one.
+              Cancels this order and marks the number as wrong. If the customer gives the right number, use Edit above to fix the phone instead.
             </div>
           </div>
         )}

@@ -419,7 +419,8 @@ export async function getEarnings(actor: Requester, query: RepEarningsQuery = {}
   // Same entries as payoutService.getOwed (status: earned or paid) plus void entries for order reversal lines
   const [entries, payouts] = await Promise.all([
     prisma.commissionEntry.findMany({
-      where: { tenantId, userId: targetRepId },
+      // Pending entries (confirmed, not yet delivered) are not earnings and get no line.
+      where: { tenantId, userId: targetRepId, status: { in: ['earned', 'paid', 'void'] } },
       include: {
         order: {
           select: {

@@ -2,7 +2,7 @@ import prisma, { TransactionClient } from '../utils/prisma';
 import { getTenantId, resolveTenantId, runInTenant } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
 import * as Money from '../utils/money';
-import { UpsellKind, UpsellStatus } from '@prisma/client';
+import { Prisma, UpsellKind, UpsellStatus } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import logger from '../utils/logger';
 import { UPSELL_COMMISSION_RATE } from './commissionService';
@@ -135,6 +135,17 @@ export class UpsellService {
       }
     }
 
+    // No checkout submission (e.g. a manual order): the package is the order's package line.
+    if (currentPackageName == null) {
+      const line = order.orderItems.find((i) => i.itemType === 'package');
+      if (line) {
+        const meta = (line.metadata ?? {}) as { packageName?: string; packageId?: number };
+        currentPackageId = currentPackageId ?? meta.packageId ?? null;
+        currentPackageName = meta.packageName ?? `${line.quantity} × ${line.product?.name ?? 'Product'}`;
+        currentPackagePrice = Money.parse(line.totalPrice);
+      }
+    }
+
     // Collect productIds for this order
     const productIds: number[] = [];
     for (const item of order.orderItems) {
@@ -195,6 +206,14 @@ export class UpsellService {
           extraValueFromBase: extraFromBase.toFixed(4),
         });
       }
+    }
+
+    // A form edit re-creates its packages with new ids, so an older order can point to an id that
+    // no longer exists. Match the current package to the live package with the same name.
+    if (currentPackageName != null && !availablePackages.some((p) => p.id === currentPackageId)) {
+      const wanted = currentPackageName.trim().toLowerCase();
+      const live = availablePackages.find((p) => p.name.trim().toLowerCase() === wanted);
+      if (live) currentPackageId = live.id;
     }
 
     // Addons
@@ -356,13 +375,17 @@ export class UpsellService {
       }
 
       const pkgPrice = Money.parse(selectedPackageRecord.price);
+      if (pkgPrice.lt(baselinePackagePrice)) {
+        // An upsell only adds value. Lowering an order is an order edit, not an upsell.
+        throw new AppError('A smaller package lowers the order. Edit the order to do that.', 400, 'PACKAGE_DOWNGRADE');
+      }
       if (pkgPrice.gt(baselinePackagePrice)) {
         packageExtraValue = Money.sub(pkgPrice, baselinePackagePrice);
       }
     }
 
     // Addons validation
-    const validAddons: { id: number; price: Decimal }[] = [];
+    const validAddons: { id: number; price: Decimal; name: string; productId: number | null; items: Prisma.JsonValue }[] = [];
     if (addOnIds && addOnIds.length > 0) {
       for (const addonId of addOnIds) {
         const addon = await tx.formUpsell.findUnique({
@@ -380,6 +403,9 @@ export class UpsellService {
         validAddons.push({
           id: addon.id,
           price: Money.parse(addon.price),
+          name: addon.name,
+          productId: addon.productId,
+          items: addon.items ?? null,
         });
       }
     }
@@ -428,6 +454,8 @@ export class UpsellService {
       });
       createdLines.push(addonLine);
     }
+
+    await this.syncOrderLines(tx, orderId, packageExtraValue.gt(0) ? selectedPackageRecord : null, validAddons);
 
     // Update order totals
     const newSubtotal = Money.add(baselineSubtotal, totalExtraValue);
@@ -514,6 +542,81 @@ export class UpsellService {
         codAmount: Money.parse(updatedOrder.codAmount ?? updatedOrder.totalAmount).toFixed(4),
       },
     };
+  }
+
+  /**
+   * Keep the order lines in step with the new totals, so the warehouse packs what the courier collects for.
+   * The chosen package rewrites the package line; each add-on becomes its own line. A new save first puts back
+   * what the last rep save changed (last save wins). Stock reserves from these lines (stockService RESERVING).
+   */
+  private async syncOrderLines(
+    tx: TransactionClient,
+    orderId: number,
+    pkg: { id: number; name: string; price: Prisma.Decimal; quantity: number; discountType: string; discountValue: Prisma.Decimal; originalPrice: Prisma.Decimal | null; form?: { productId: number } | null } | null,
+    addons: { id: number; price: Decimal; name: string; productId: number | null; items: Prisma.JsonValue }[],
+  ): Promise<void> {
+    const before = await tx.orderItem.findMany({ where: { orderId }, orderBy: { id: 'asc' } });
+    for (const item of before) {
+      const meta = (item.metadata ?? {}) as Record<string, any>;
+      if (meta.repUpsellAddon) {
+        await tx.orderItem.delete({ where: { id: item.id } });
+      } else if (meta.repUpsellOriginal) {
+        const o = meta.repUpsellOriginal;
+        await tx.orderItem.update({
+          where: { id: item.id },
+          data: { productId: o.productId, quantity: o.quantity, unitPrice: o.unitPrice, totalPrice: o.totalPrice, metadata: o.metadata ?? Prisma.JsonNull },
+        });
+      }
+    }
+    if (!pkg && addons.length === 0) return;
+
+    const lines = await tx.orderItem.findMany({ where: { orderId }, orderBy: { id: 'asc' } });
+    const productId = pkg?.form?.productId ?? lines.find((l) => l.itemType === 'package')?.productId ?? lines[0]?.productId;
+    if (productId == null) return;
+
+    if (pkg) {
+      const price = Money.parse(pkg.price);
+      const data = {
+        productId,
+        quantity: pkg.quantity,
+        unitPrice: Money.roundHalfUp(price.div(pkg.quantity), 4),
+        totalPrice: price,
+      };
+      const pkgMeta = {
+        packageName: pkg.name,
+        packageId: pkg.id,
+        discountType: pkg.discountType,
+        discountValue: Money.parse(pkg.discountValue).toNumber(),
+        originalPrice: pkg.originalPrice != null ? Money.parse(pkg.originalPrice).toNumber() : null,
+      };
+      const line = lines.find((l) => l.itemType === 'package') ?? lines.find((l) => l.productId === productId);
+      if (line) {
+        const repUpsellOriginal = {
+          productId: line.productId,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice.toString(),
+          totalPrice: line.totalPrice.toString(),
+          metadata: line.metadata,
+        };
+        await tx.orderItem.update({ where: { id: line.id }, data: { ...data, metadata: { ...pkgMeta, repUpsellOriginal } } });
+      } else {
+        await tx.orderItem.create({ data: { orderId, ...data, itemType: 'package', metadata: { ...pkgMeta, repUpsellAddon: true } } });
+      }
+    }
+
+    for (const a of addons) {
+      await tx.orderItem.create({
+        data: {
+          orderId,
+          productId: a.productId ?? productId,
+          quantity: 1,
+          unitPrice: a.price,
+          totalPrice: a.price,
+          itemType: 'upsell',
+          metadata: { upsellName: a.name, upsellId: a.id, items: a.items ?? null, repUpsellAddon: true } as Prisma.InputJsonValue,
+        },
+      });
+    }
   }
 }
 

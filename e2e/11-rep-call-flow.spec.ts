@@ -62,6 +62,14 @@ async function runRepCallFlow(page: Page, request: APIRequestContext, seed: Seed
   if (phone) await expect(page).toHaveURL(`/rep/call/${seed.order2Id}`);
   await expect(card.getByText(`#${seed.order2Id}`)).toBeVisible();
 
+  // 5b. Plain confirm on order 2: the rep keeps the current package, so the card sends no package change
+  await page.getByRole('button', { name: 'Confirmed' }).click();
+  const plainSave = page.getByRole('button', { name: 'Save as confirmed' });
+  await expect(plainSave).toBeEnabled();
+  await plainSave.click();
+  await expect(page.getByText(/You earn GH₵8(?:\.00)? if delivered/i)).toBeVisible();
+  await expect(page.getByText('Failed to save call')).toHaveCount(0);
+
   // 6. Admin delivers order 1 through the API
   const adminToken = await login(request, seed.adminEmail, seed.password);
   for (const status of ['out_for_delivery', 'delivered']) {

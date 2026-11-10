@@ -143,6 +143,34 @@ describe('M7-T03: Call outcome service rules', () => {
     expect(res2.status).toBe(409);
   });
 
+  it('confirmed with no package picked (packageId null) saves and confirms the order', async () => {
+    const order = await prismaBase.order.create({
+      data: {
+        customerId,
+        status: 'pending_confirmation',
+        subtotal: 150,
+        totalAmount: 150,
+        codAmount: 150,
+        customerRepId: rep1Id,
+        tenantId,
+      } as any,
+    });
+
+    const res = await request(app)
+      .post('/api/calls')
+      .set('Authorization', `Bearer ${rep1Token}`)
+      .send({
+        customerId,
+        orderId: order.id,
+        outcome: 'confirmed',
+        orderChanges: { packageId: null, addOnIds: [] },
+      });
+
+    expect(res.status).toBe(201);
+    const updated = await prismaBase.order.findUnique({ where: { id: order.id } });
+    expect(updated!.status).toBe('confirmed');
+  });
+
   it('declined requires a reason and cancels the order', async () => {
     const order = await prismaBase.order.create({
       data: {

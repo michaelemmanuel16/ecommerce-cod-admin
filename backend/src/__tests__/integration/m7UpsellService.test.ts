@@ -223,6 +223,41 @@ describe('M7-T04: Upsell service rules', () => {
     expect(offeredAddonIds).toContain(addon2Id);
   });
 
+  it('order whose form packages were re-created: current package matches the live package by name', async () => {
+    const order = await prismaBase.order.create({
+      data: { customerId, status: 'pending_confirmation', subtotal: 449, totalAmount: 449, codAmount: 449, customerRepId: adwoaId, tenantId } as any,
+    });
+    await prismaBase.formSubmission.create({
+      data: { formId, orderId: order.id, formData: {}, selectedPackage: { id: 999999, name: '2 Sets', price: 449, quantity: 2 }, totalAmount: 449, tenantId },
+    });
+
+    const res = await request(app).get(`/api/orders/${order.id}/upsell-options`).set('Authorization', `Bearer ${adwoaToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.currentPackage).toMatchObject({ id: pkg2Id, name: '2 Sets', price: '449.0000' });
+  });
+
+  it('manual order with no form submission: current package is the order package line', async () => {
+    const order = await prismaBase.order.create({
+      data: {
+        customerId,
+        status: 'pending_confirmation',
+        subtotal: 449,
+        totalAmount: 449,
+        codAmount: 449,
+        customerRepId: adwoaId,
+        tenantId,
+        orderItems: { create: [{ productId, quantity: 2, unitPrice: 249, totalPrice: 449, itemType: 'package' }] },
+      } as any,
+    });
+
+    const res = await request(app)
+      .get(`/api/orders/${order.id}/upsell-options`)
+      .set('Authorization', `Bearer ${adwoaToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.currentPackage).toMatchObject({ id: null, name: '2 × Magic Writing Set', price: '449.0000' });
+  });
+
   it('server computes extra value from package and add-on prices; client spoofed value is ignored', async () => {
     const order = await prismaBase.order.create({
       data: {
@@ -287,6 +322,58 @@ describe('M7-T04: Upsell service rules', () => {
     expect(pkgLine).toBeDefined();
     expect(Money.parse(pkgLine!.extraValue).toFixed(4)).toBe('200.0000');
     expect(pkgLine!.repId).toBe(adwoaId);
+  });
+
+  it('upsell rewrites the order lines to match the new total; a re-save with no change puts them back', async () => {
+    const order = await prismaBase.order.create({
+      data: {
+        customerId, status: 'pending_confirmation', subtotal: 249, totalAmount: 249, codAmount: 249, customerRepId: adwoaId, tenantId,
+        orderItems: { create: [{ productId, quantity: 1, unitPrice: 249, totalPrice: 249, itemType: 'package', metadata: { packageName: '1 Set', packageId: pkg1Id } }] },
+      } as any,
+    });
+    await prismaBase.formSubmission.create({
+      data: { formId, orderId: order.id, formData: {}, selectedPackage: { id: pkg1Id, name: '1 Set', price: 249, quantity: 1 }, totalAmount: 249, tenantId },
+    });
+
+    const up = await request(app).post(`/api/orders/${order.id}/upsell`).set('Authorization', `Bearer ${adwoaToken}`)
+      .send({ packageId: pkg2Id, addOnIds: [addon1Id] });
+    expect(up.status).toBe(200);
+
+    let items = await prismaBase.orderItem.findMany({ where: { orderId: order.id }, orderBy: { id: 'asc' } });
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({ itemType: 'package', quantity: 2 });
+    expect(Money.parse(items[0].totalPrice).toFixed(4)).toBe('449.0000');
+    expect((items[0].metadata as any).packageName).toBe('2 Sets');
+    expect(items[1]).toMatchObject({ itemType: 'upsell', quantity: 1 });
+    expect(Money.parse(items[1].totalPrice).toFixed(4)).toBe('40.0000');
+    let o = await prismaBase.order.findUnique({ where: { id: order.id } });
+    expect(Money.sum(items.map((i) => i.totalPrice)).toFixed(4)).toBe(Money.parse(o!.subtotal).toFixed(4));
+
+    // Re-save with no change: last save wins, so the order goes back to 1 Set at GH₵249
+    const back = await request(app).post(`/api/orders/${order.id}/upsell`).set('Authorization', `Bearer ${adwoaToken}`)
+      .send({ packageId: null, addOnIds: [] });
+    expect(back.status).toBe(200);
+    items = await prismaBase.orderItem.findMany({ where: { orderId: order.id } });
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ itemType: 'package', quantity: 1 });
+    expect(Money.parse(items[0].totalPrice).toFixed(4)).toBe('249.0000');
+    expect(items[0].metadata).toEqual({ packageName: '1 Set', packageId: pkg1Id });
+    o = await prismaBase.order.findUnique({ where: { id: order.id } });
+    expect(Money.parse(o!.subtotal).toFixed(4)).toBe('249.0000');
+  });
+
+  it('rejects a smaller package (400): an upsell never lowers the order', async () => {
+    const order = await prismaBase.order.create({
+      data: { customerId, status: 'pending_confirmation', subtotal: 449, totalAmount: 449, codAmount: 449, customerRepId: adwoaId, tenantId } as any,
+    });
+    await prismaBase.formSubmission.create({
+      data: { formId, orderId: order.id, formData: {}, selectedPackage: { id: pkg2Id, name: '2 Sets', price: 449, quantity: 2 }, totalAmount: 449, tenantId },
+    });
+    const res = await request(app).post(`/api/orders/${order.id}/upsell`).set('Authorization', `Bearer ${adwoaToken}`)
+      .send({ packageId: pkg1Id, addOnIds: [] });
+    expect(res.status).toBe(400);
+    const o = await prismaBase.order.findUnique({ where: { id: order.id } });
+    expect(Money.parse(o!.subtotal).toFixed(4)).toBe('449.0000');
   });
 
   it('rejects an archived package when requested', async () => {

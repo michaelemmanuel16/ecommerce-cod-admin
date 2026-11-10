@@ -241,4 +241,61 @@ describe('CallCard Upsell Panel with Live Reward Box (M7-T18, F-759)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save as confirmed' }));
     expect(await screen.findByText('GH₵10 plus GH₵10 if delivered')).toBeInTheDocument();
   });
+  it('plain confirm on the current package sends packageId null (no package change)', async () => {
+    mockCreateCall.mockResolvedValueOnce({ call: { id: 52 }, nextOrderId: null, upsell: null });
+    renderCallCard();
+    await screen.findByRole('heading', { name: 'Efua Mensah' });
+    await userEvent.click(screen.getByRole('button', { name: 'Confirmed' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save as confirmed' }));
+    await waitFor(() => {
+      expect(mockCreateCall).toHaveBeenCalledWith(expect.objectContaining({ orderChanges: { packageId: null, addOnIds: [] } }));
+    });
+  });
+
+  it('order with no current package: the default package is not picked for the rep', async () => {
+    mockGetCallCard.mockResolvedValueOnce({
+      ...MOCK_UPSELL_CARD,
+      packages: { ...MOCK_UPSELL_CARD.packages, currentPackage: { id: null, name: '1 × Copybook', price: '249.0000' } },
+    });
+    mockCreateCall.mockResolvedValueOnce({ call: { id: 53 }, nextOrderId: null, upsell: null });
+    renderCallCard();
+    await screen.findByRole('heading', { name: 'Efua Mensah' });
+    await userEvent.click(screen.getByRole('button', { name: 'Confirmed' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save as confirmed' }));
+    await waitFor(() => {
+      expect(mockCreateCall).toHaveBeenCalledWith(expect.objectContaining({ orderChanges: { packageId: null, addOnIds: [] } }));
+    });
+  });
+
+  it('a package picked on one order is not sent for the next order that has no packages', async () => {
+    const manualCard: CallCardData = {
+      ...MOCK_UPSELL_CARD,
+      order: { ...MOCK_UPSELL_CARD.order, id: 24042 },
+      packages: { orderId: 24042, currentPackage: { id: null, name: null, price: '249.0000' }, availablePackages: [], availableAddons: [] },
+    } as CallCardData;
+    mockGetCallCard.mockImplementation((id: number) => Promise.resolve(id === 24042 ? manualCard : MOCK_UPSELL_CARD));
+    mockCreateCall.mockResolvedValue({ call: { id: 51 }, nextOrderId: null, upsell: null });
+
+    const { rerender } = renderCallCard();
+    await screen.findByRole('heading', { name: 'Efua Mensah' });
+    await userEvent.click(screen.getByRole('button', { name: 'Confirmed' }));
+    await userEvent.click(screen.getByRole('button', { name: /2 copybook sets/ }));
+
+    // The card moves to the next order before saving (same component, new orderId)
+    rerender(
+      <ToastProvider>
+        <CallCard orderId={24042} onDone={vi.fn()} />
+      </ToastProvider>,
+    );
+    await screen.findByText('#24042');
+    await userEvent.click(screen.getByRole('button', { name: 'Confirmed' }));
+    await screen.findByText('No package changes available for this order.');
+    await userEvent.click(screen.getByRole('button', { name: 'Save as confirmed' }));
+
+    await waitFor(() => {
+      expect(mockCreateCall).toHaveBeenCalledWith(
+        expect.objectContaining({ orderId: 24042, orderChanges: { packageId: null, addOnIds: [] } }),
+      );
+    });
+  });
 });

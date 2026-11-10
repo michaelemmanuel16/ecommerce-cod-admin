@@ -619,6 +619,23 @@ describe('3. /api/rep/earnings (lines per order, one owed rule, contract test)',
     expect(returnedLine).not.toHaveProperty('net');
   });
 
+  it('a confirmed order (pending commission, not delivered) gets no earnings line and adds nothing', async () => {
+    const confirmedOrder = await prismaBase.order.create({
+      data: { tenantId, customerId: customer1Id, customerRepId: rep1Id, confirmedById: rep1Id, status: 'confirmed', subtotal: 249, totalAmount: 249 },
+    });
+    await prismaBase.commissionEntry.create({
+      data: { tenantId, orderId: confirmedOrder.id, userId: rep1Id, kind: 'base', status: 'pending', amount: 8 },
+    });
+
+    const res = await request(app).get('/api/rep/earnings').set('Authorization', bearer(rep1Token));
+    expect(res.status).toBe(200);
+    expect(res.body.lines.find((l: any) => l.orderId === confirmedOrder.id)).toBeUndefined();
+    expect(res.body.earned).toBe('28.00');
+
+    await prismaBase.commissionEntry.deleteMany({ where: { orderId: confirmedOrder.id } });
+    await prismaBase.order.delete({ where: { id: confirmedOrder.id } });
+  });
+
   it('openOrdersNote uses store currency and BASE_COMMISSION_AMOUNT (no hard-coded GH₵8)', async () => {
     const currency = await runInTenant(tenantId, () => getCurrency());
     const formattedSign = Money.formatWithSign(BASE_COMMISSION_AMOUNT, currency);
