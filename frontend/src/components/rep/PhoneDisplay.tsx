@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Phone, MessageCircle, Copy, Check } from 'lucide-react';
 import { normalizePhone } from '../../utils/phone';
+import { whatsappUrl } from '../../utils/whatsapp';
 
 export interface PhoneDisplayProps {
   phone: string | null | undefined;
@@ -32,8 +33,7 @@ export const PhoneDisplay: React.FC<PhoneDisplayProps> = ({
     }
   };
 
-  const cleanDigits = normalized ? normalized.replace(/\D/g, '') : '';
-  const waUrl = cleanDigits ? `https://wa.me/${cleanDigits}` : null;
+  const waUrl = whatsappUrl(normalized);
 
   return (
     <div

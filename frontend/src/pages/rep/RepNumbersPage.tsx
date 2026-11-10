@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { repService, type RepNumbersResult } from '../../services/rep.service';
 import { formatCurrency } from '../../utils/format';
+import { RepPageFrame, RepLoadState } from './RepPageFrame';
 
 function ordinal(n: number): string {
   const s = ['th', 'st', 'nd', 'rd'];
@@ -32,41 +33,17 @@ export const RepNumbersPage: React.FC = () => {
 
   if (loading && !data) {
     return (
-      <section className="view on" id="numbers" aria-label="My numbers">
-        <div className="head">
-          <div>
-            <h1>My numbers</h1>
-            <p>How your calls and orders are doing.</p>
-          </div>
-        </div>
-        <div className="card" style={{ padding: 32, textAlign: 'center' }}>
-          <p>Loading numbers...</p>
-        </div>
-      </section>
+      <RepPageFrame id="numbers" ariaLabel="My numbers" title="My numbers" subtitle="How your calls and orders are doing.">
+        <RepLoadState loading loadingText="Loading numbers..." />
+      </RepPageFrame>
     );
   }
 
   if (error && !data) {
     return (
-      <section className="view on" id="numbers" aria-label="My numbers">
-        <div className="head">
-          <div>
-            <h1>My numbers</h1>
-            <p>How your calls and orders are doing.</p>
-          </div>
-        </div>
-        <div className="card" style={{ padding: 32, textAlign: 'center' }}>
-          <p style={{ color: 'var(--coral)', fontWeight: 600 }}>{error}</p>
-          <button
-            type="button"
-            className="btn"
-            style={{ marginTop: 12 }}
-            onClick={() => void loadNumbers()}
-          >
-            Try again
-          </button>
-        </div>
-      </section>
+      <RepPageFrame id="numbers" ariaLabel="My numbers" title="My numbers" subtitle="How your calls and orders are doing.">
+        <RepLoadState error={error} onRetry={() => void loadNumbers()} />
+      </RepPageFrame>
     );
   }
 
@@ -108,14 +85,12 @@ export const RepNumbersPage: React.FC = () => {
   const maxDayCount = Math.max(1, ...callsPerDay.map((c) => c.count));
 
   return (
-    <section className="view on" id="numbers" aria-label="My numbers">
-      <div className="head">
-        <div>
-          <h1>My numbers</h1>
-          <p>{data?.period ? `${data.period} · ` : ''}How your calls and orders are doing.</p>
-        </div>
-      </div>
-
+    <RepPageFrame
+      id="numbers"
+      ariaLabel="My numbers"
+      title="My numbers"
+      subtitle={`${data?.period ? `${data.period} · ` : ''}How your calls and orders are doing.`}
+    >
       <div className="card">
         {/* KPI Grid */}
         <div className="nums" data-testid="numbers-kpi-grid">
@@ -305,7 +280,7 @@ export const RepNumbersPage: React.FC = () => {
           Today is still counting.
         </p>
       </div>
-    </section>
+    </RepPageFrame>
   );
 };
 

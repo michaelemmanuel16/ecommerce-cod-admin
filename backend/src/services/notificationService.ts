@@ -5,6 +5,7 @@ import { emitNotification } from '../sockets';
 import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 import { HUMAN_USERS_WHERE } from './systemUserService';
+import { fullName } from '../utils/nameUtils';
 
 
 export async function createNotification(
@@ -85,7 +86,7 @@ export async function checkAndNotifyLateCallbacks(tenantId?: string): Promise<nu
       tenantId: resolvedTenant,
       deletedAt: null,
       status: { notIn: CLOSED_STATUSES },
-      calls: { some: {} },
+      calls: { some: { callbackAt: { lt: now }, outcome: 'call_back_later' } },
     },
     select: {
       id: true,
@@ -109,7 +110,13 @@ export async function checkAndNotifyLateCallbacks(tenantId?: string): Promise<nu
     },
   });
 
-  let count = 0;
+  const candidates: Array<{
+    orderId: number;
+    targetUserId: number;
+    latestCall: { id: number; callbackAt: Date };
+    customerName?: string;
+  }> = [];
+
   for (const order of openOrders) {
     const latestCall = order.calls[0];
     if (!latestCall) continue;
@@ -119,23 +126,58 @@ export async function checkAndNotifyLateCallbacks(tenantId?: string): Promise<nu
     const targetUserId = order.customerRepId ?? latestCall.salesRepId;
     if (!targetUserId) continue;
 
-    const existing = await prisma.notification.findFirst({
-      where: {
-        userId: targetUserId,
-        type: 'late_callback',
-        data: { path: ['callId'], equals: latestCall.id },
-      },
+    candidates.push({
+      orderId: order.id,
+      targetUserId,
+      latestCall: { id: latestCall.id, callbackAt: latestCall.callbackAt },
+      customerName: fullName(order.customer) || undefined,
     });
+  }
 
-    if (!existing) {
+  if (candidates.length === 0) return 0;
+
+  const notifiedCallIds = new Set<number>();
+  if (typeof prisma.notification.findMany === 'function') {
+    const existingNotifications = await prisma.notification.findMany({
+      where: {
+        tenantId: resolvedTenant,
+        type: 'late_callback',
+      },
+      select: { data: true },
+    });
+    for (const n of existingNotifications) {
+      const callId = Number((n.data as any)?.callId);
+      if (!Number.isNaN(callId) && callId > 0) {
+        notifiedCallIds.add(callId);
+      }
+    }
+  } else if (typeof prisma.notification.findFirst === 'function') {
+    for (const candidate of candidates) {
+      const existing = await prisma.notification.findFirst({
+        where: {
+          userId: candidate.targetUserId,
+          type: 'late_callback',
+          data: { path: ['callId'], equals: candidate.latestCall.id },
+        },
+      });
+      if (existing) {
+        notifiedCallIds.add(candidate.latestCall.id);
+      }
+    }
+  }
+
+  let count = 0;
+  for (const candidate of candidates) {
+    if (!notifiedCallIds.has(candidate.latestCall.id)) {
       await notifyLateCallback(
-        targetUserId,
-        order.id,
-        String(order.id),
-        latestCall.callbackAt,
-        order.customer ? `${order.customer.firstName} ${order.customer.lastName}`.trim() : undefined,
-        latestCall.id
+        candidate.targetUserId,
+        candidate.orderId,
+        String(candidate.orderId),
+        candidate.latestCall.callbackAt,
+        candidate.customerName,
+        candidate.latestCall.id
       );
+      notifiedCallIds.add(candidate.latestCall.id);
       count++;
     }
   }

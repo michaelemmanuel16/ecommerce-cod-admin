@@ -16,6 +16,8 @@ import { CustomerModal } from './customers/CustomerModal';
 import { AVATAR_TONES, initials } from '../utils/people';
 import { customerName, lastOrderDate } from './customers/model';
 import { orderNumber, shortDate, STATUS_TONE } from './orders/model';
+import { normalizePhone } from '../utils/phone';
+import { whatsappUrl } from '../utils/whatsapp';
 
 type TabId = 'orders' | 'messages' | 'calls' | 'notes';
 const TABS: Array<{ id: TabId; label: string }> = [
@@ -128,7 +130,8 @@ export function CustomerDetails() {
 
   const name = customerName(customer);
   const deleted = customer.isActive === false;
-  const digits = customer.phoneNumber.replace(/\D/g, '');
+  const normalizedPhone = normalizePhone(customer.phoneNumber);
+  const waUrl = whatsappUrl(normalizedPhone);
   const orderCount = customer.totalOrders;
   const optOut = (off: boolean) => (off ? <Tag tone="warn">Opted out</Tag> : <Tag tone="ok">Receives</Tag>);
 
@@ -155,11 +158,11 @@ export function CustomerDetails() {
           </div>
         </div>
         <div className="hact">
-          <a className="btn" href={`tel:+${digits}`}>
+          <a className="btn" href={`tel:${normalizedPhone ?? customer.phoneNumber}`}>
             <Phone />
             Call
           </a>
-          <a className="btn" href={`https://wa.me/${digits}`}>
+          <a className="btn" href={waUrl ?? '#'}>
             <MessageCircle />
             WhatsApp
           </a>

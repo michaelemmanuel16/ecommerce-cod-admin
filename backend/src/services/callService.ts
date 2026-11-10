@@ -6,6 +6,7 @@ import logger from '../utils/logger';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitCallLogged } from '../sockets/index';
 import { transitionOrder, TransitionActor } from './orderStateMachine';
+import { fullName } from '../utils/nameUtils';
 
 interface CreateCallData {
   customerId: number;
@@ -553,7 +554,7 @@ export class CallService {
 
         return {
           repId: rep.id,
-          repName: `${rep.firstName} ${rep.lastName}`,
+          repName: fullName(rep),
           totalCalls,
           todayCalls,
           weekCalls,

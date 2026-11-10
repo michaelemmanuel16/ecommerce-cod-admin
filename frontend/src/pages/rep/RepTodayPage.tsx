@@ -4,6 +4,16 @@ import { repService, type TodayStats, type RewardProgressResult, type RewardTier
 import { useAuthStore } from '../../stores/authStore';
 import { useConfigStore } from '../../stores/configStore';
 import { formatCurrency } from '../../utils/format';
+import { RepPageFrame, RepLoadState } from './RepPageFrame';
+
+const DAY_MONTH_FORMATTER = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'short',
+});
+
+const MONTH_FORMATTER = new Intl.DateTimeFormat('en-GB', {
+  month: 'long',
+});
 
 export const RepTodayPage: React.FC = () => {
   const user = useAuthStore((s) => s.user);
@@ -38,18 +48,12 @@ export const RepTodayPage: React.FC = () => {
   }, [fetchData]);
 
   // Today's date for display (e.g. 17 Oct)
-  const todayLabel = new Intl.DateTimeFormat('en-GB', {
-    day: 'numeric',
-    month: 'short',
-  }).format(new Date());
-
-  const monthName = new Intl.DateTimeFormat('en-GB', {
-    month: 'long',
-  }).format(new Date());
+  const todayLabel = DAY_MONTH_FORMATTER.format(new Date());
+  const monthName = MONTH_FORMATTER.format(new Date());
 
   const confirmedCount = todayData?.confirmed ?? 0;
   const callsDoneCount = todayData?.callsDone ?? 0;
-  const upsellVal = todayData?.upsellExtra ? formatCurrency(todayData.upsellExtra, activeCurrency) : formatCurrency(0, activeCurrency);
+  const upsellVal = formatCurrency(todayData?.upsellExtra ?? 0, activeCurrency);
 
   const hasTarget = Boolean(todayData?.targetProgress?.hasTarget && rewardData?.target);
   const targetReached = Boolean(rewardData?.targetReached);
@@ -67,37 +71,31 @@ export const RepTodayPage: React.FC = () => {
 
   if (error && !loading) {
     return (
-      <div className="rep-today-view" data-testid="rep-today-page">
-        <div className="head">
-          <div>
-            <h1>Hi, {user?.firstName || 'there'}</h1>
-            <p>{todayLabel} · Your confirmations and your pay, in one place.</p>
-          </div>
-        </div>
-        <div className="card" style={{ padding: 24, textAlign: 'center', marginTop: 16 }} data-testid="today-error-state">
-          <p style={{ color: 'var(--ink-2)', marginBottom: 12 }}>{error}</p>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => void fetchData()}
-            data-testid="today-retry-btn"
-          >
-            Try again
-          </button>
-        </div>
-      </div>
+      <RepPageFrame
+        className="rep-today-view"
+        testId="rep-today-page"
+        title={`Hi, ${user?.firstName || 'there'}`}
+        subtitle={`${todayLabel} · Your confirmations and your pay, in one place.`}
+      >
+        <RepLoadState
+          error={error}
+          onRetry={() => void fetchData()}
+          errorTestId="today-error-state"
+          retryTestId="today-retry-btn"
+          cardStyle={{ padding: 24, textAlign: 'center', marginTop: 16 }}
+          errorStyle={{ color: 'var(--ink-2)', marginBottom: 12 }}
+        />
+      </RepPageFrame>
     );
   }
 
   return (
-    <div className="rep-today-view" data-testid="rep-today-page">
-      <div className="head">
-        <div>
-          <h1>Hi, {user?.firstName || 'there'}</h1>
-          <p>{todayLabel} · Your confirmations and your pay, in one place.</p>
-        </div>
-      </div>
-
+    <RepPageFrame
+      className="rep-today-view"
+      testId="rep-today-page"
+      title={`Hi, ${user?.firstName || 'there'}`}
+      subtitle={`${todayLabel} · Your confirmations and your pay, in one place.`}
+    >
       <div className="today">
         {/* Hero: Confirmed today */}
         <div className="hero" data-testid="confirmed-hero">
@@ -242,7 +240,7 @@ export const RepTodayPage: React.FC = () => {
           </div>
         </div>
       </div>
-    </div>
+    </RepPageFrame>
   );
 };
 

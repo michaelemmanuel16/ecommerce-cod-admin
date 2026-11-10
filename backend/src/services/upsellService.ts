@@ -5,7 +5,7 @@ import * as Money from '../utils/money';
 import { UpsellKind, UpsellStatus } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import logger from '../utils/logger';
-import { UPSELL_COMMISSION_RATE } from './commissionService';
+import { upsellCommissionFor } from './commissionService';
 
 export interface ApplyUpsellInput {
   orderId: number;
@@ -188,11 +188,11 @@ export class UpsellService {
         availablePackages.push({
           id: pkg.id,
           name: pkg.name,
-          price: pkgPrice.toFixed(4),
+          price: Money.toApi(pkgPrice),
           quantity: pkg.quantity,
           isPopular: pkg.isPopular,
           isDefault: pkg.isDefault,
-          extraValueFromBase: extraFromBase.toFixed(4),
+          extraValueFromBase: Money.toApi(extraFromBase),
         });
       }
     }
@@ -213,7 +213,7 @@ export class UpsellService {
         availableAddons.push({
           id: addon.id,
           name: addon.name,
-          price: Money.parse(addon.price).toFixed(4),
+          price: Money.toApi(addon.price),
           productId: addon.productId,
           isActive: addon.isActive,
         });
@@ -225,7 +225,7 @@ export class UpsellService {
       currentPackage: {
         id: currentPackageId,
         name: currentPackageName,
-        price: currentPackagePrice.toFixed(4),
+        price: Money.toApi(currentPackagePrice),
       },
       availablePackages,
       availableAddons,
@@ -364,11 +364,13 @@ export class UpsellService {
     // Addons validation
     const validAddons: { id: number; price: Decimal }[] = [];
     if (addOnIds && addOnIds.length > 0) {
+      const foundAddons = await tx.formUpsell.findMany({
+        where: { id: { in: addOnIds } },
+        include: { product: true },
+      });
+      const addonMap = new Map(foundAddons.map((a) => [a.id, a]));
       for (const addonId of addOnIds) {
-        const addon = await tx.formUpsell.findUnique({
-          where: { id: addonId },
-          include: { product: true },
-        });
+        const addon = addonMap.get(addonId);
 
         if (!addon) {
           throw new AppError(`Add-on ${addonId} not found`, 404);
@@ -387,7 +389,7 @@ export class UpsellService {
     // F5 item 5: UPSELL_COMMISSION_RATE
     const addonsExtraValue = Money.sum(validAddons.map((a) => a.price));
     const totalExtraValue = Money.add(packageExtraValue, addonsExtraValue);
-    const estimatedReward = Money.roundHalfUp(Money.mul(totalExtraValue, UPSELL_COMMISSION_RATE), 2);
+    const estimatedReward = upsellCommissionFor(totalExtraValue);
 
     // Void previous active upsell lines (last save wins)
     if (currentActiveUpsells.length > 0) {
@@ -453,7 +455,7 @@ export class UpsellService {
           where: { orderId, kind: 'upsell', status: { not: 'void' } },
         });
         if (totalExtraValue.gt(0)) {
-          const upsellAmount = Money.roundHalfUp(Money.mul(totalExtraValue, UPSELL_COMMISSION_RATE), 2);
+          const upsellAmount = upsellCommissionFor(totalExtraValue);
           if (upsellAmount.gt(0)) {
             if (liveUpsellEntry) {
               if (liveUpsellEntry.status === 'pending' && !Money.parse(liveUpsellEntry.amount).equals(upsellAmount)) {
@@ -496,22 +498,22 @@ export class UpsellService {
     return {
       orderId,
       repId,
-      extraValue: totalExtraValue.toFixed(4),
-      estimatedReward: estimatedReward.toFixed(2),
+      extraValue: Money.toApi(totalExtraValue),
+      estimatedReward: Money.toApi(estimatedReward),
       lines: createdLines.map((l) => ({
         id: l.id,
         kind: l.kind,
         sourceId: l.sourceId,
-        extraValue: Money.parse(l.extraValue).toFixed(4),
+        extraValue: Money.toApi(l.extraValue),
         status: l.status,
       })),
       warningFlag,
       warning,
       order: {
         id: updatedOrder.id,
-        subtotal: Money.parse(updatedOrder.subtotal).toFixed(4),
-        totalAmount: Money.parse(updatedOrder.totalAmount).toFixed(4),
-        codAmount: Money.parse(updatedOrder.codAmount ?? updatedOrder.totalAmount).toFixed(4),
+        subtotal: Money.toApi(updatedOrder.subtotal),
+        totalAmount: Money.toApi(updatedOrder.totalAmount),
+        codAmount: Money.toApi(updatedOrder.codAmount ?? updatedOrder.totalAmount),
       },
     };
   }

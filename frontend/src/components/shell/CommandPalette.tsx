@@ -8,6 +8,7 @@ import { searchService, type SearchResults } from '../../services/search.service
 import { formatCurrency, formatPhoneLocal } from '../../utils/format';
 import { formatOrderNumber } from '../../utils/orderNumber';
 import { ORDER_STATUS_LABELS, getOrderStatusLabel } from '../../utils/orderStatus';
+import { personName } from '../../utils/people';
 import { useLayer } from '../ui-v2/useLayer';
 import { useToast } from '../ui-v2';
 import {
@@ -176,7 +177,7 @@ function Panel({ pages, menu, actions, onClose }: PanelProps) {
         rows: results.orders.map((o) => ({
           id: `order-${o.id}`,
           icon: ShoppingBag,
-          label: `${formatOrderNumber(o.id)}${o.customer ? ` · ${o.customer.firstName} ${o.customer.lastName}`.trimEnd() : ''}`,
+          label: `${formatOrderNumber(o.id)}${o.customer ? ` · ${personName(o.customer)}` : ''}`,
           hint: `${formatCurrency(o.totalAmount)} · ${getOrderStatusLabel(o.status as any)}`,
           run: go(`/orders/${o.id}`),
         })),
@@ -185,7 +186,7 @@ function Panel({ pages, menu, actions, onClose }: PanelProps) {
         rows: results.customers.map((c) => ({
           id: `customer-${c.id}`,
           icon: User,
-          label: `${c.firstName} ${c.lastName}`.trim(),
+          label: personName(c),
           hint: formatPhoneLocal(c.phoneNumber),
           run: go(`/customers/${c.id}`),
         })),

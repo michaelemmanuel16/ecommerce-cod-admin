@@ -10,6 +10,9 @@ import { personName } from '../../utils/people';
 import { CallCard } from '../../components/rep/CallCard';
 import { STATUS_TONE } from '../orders/model';
 import type { OrderStatus } from '../../types';
+import { RepPageFrame } from './RepPageFrame';
+import { REP_PANEL_BREAKPOINT } from './queueHelpers';
+import { whatsappUrl } from '../../utils/whatsapp';
 
 const STATUS_FILTER_OPTIONS = [
   { value: 'all', label: 'All statuses' },
@@ -47,7 +50,7 @@ export const RepOrdersPage: React.FC = () => {
       if (data.orders.length > 0) {
         setSelectedOrderId((prev) => {
           if (prev && data.orders.some((o) => o.id === prev)) return prev;
-          if (window.innerWidth > 1100) return data.orders[0].id;
+          if (window.innerWidth > REP_PANEL_BREAKPOINT) return data.orders[0].id;
           return null;
         });
       } else {
@@ -83,14 +86,12 @@ export const RepOrdersPage: React.FC = () => {
   const pagination = ordersData?.pagination;
 
   return (
-    <section className="view on" id="orders" aria-label="My orders">
-      <div className="head">
-        <div>
-          <h1>My orders</h1>
-          <p>Every order assigned to you, with its status.</p>
-        </div>
-      </div>
-
+    <RepPageFrame
+      id="orders"
+      ariaLabel="My orders"
+      title="My orders"
+      subtitle="Every order assigned to you, with its status."
+    >
       <div className="work">
         <div className="card" id="ocard">
           <div className="filter-bar">
@@ -157,8 +158,7 @@ export const RepOrdersPage: React.FC = () => {
                 const phone = o.customer?.phone;
                 const normalized = phone ? normalizePhone(phone) : null;
                 const telUrl = normalized ? `tel:${normalized}` : undefined;
-                const cleanDigits = normalized ? normalized.replace(/\D/g, '') : '';
-                const waUrl = cleanDigits ? `https://wa.me/${cleanDigits}` : undefined;
+                const waUrl = whatsappUrl(normalized) ?? undefined;
 
                 return (
                   <div
@@ -277,7 +277,7 @@ export const RepOrdersPage: React.FC = () => {
           )}
         </div>
       </div>
-    </section>
+    </RepPageFrame>
   );
 };
 

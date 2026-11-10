@@ -1,3 +1,5 @@
+export const REP_PANEL_BREAKPOINT = 1100;
+
 export function formatWaitDuration(minutes: number): string {
   const m = Math.max(0, Math.floor(minutes));
   if (m < 1) return '< 1m';

@@ -3,7 +3,7 @@ import prisma from '../utils/prisma';
 import { runInTenant } from '../utils/tenantContext';
 import { GL_ACCOUNTS } from '../config/glAccounts';
 import { getSystemUserId } from './systemUserService';
-import { BASE_COMMISSION_AMOUNT, UPSELL_COMMISSION_RATE, postEntry } from './commissionService';
+import { BASE_COMMISSION_AMOUNT, upsellCommissionFor, postEntry } from './commissionService';
 import logger from '../utils/logger';
 import * as Money from '../utils/money';
 
@@ -134,7 +134,7 @@ export async function planCommissionBackfill(tenantId: string): Promise<Backfill
         if (!hasUpsell && order.upsellLines.length > 0) {
           const extraValue = Money.sum(order.upsellLines.map((l) => l.extraValue));
           if (extraValue.gt(0)) {
-            const upsellAmount = Money.roundHalfUp(Money.mul(extraValue, UPSELL_COMMISSION_RATE), 2);
+            const upsellAmount = upsellCommissionFor(extraValue);
             if (upsellAmount.gt(0)) {
               rows.push({
                 orderId: order.id,
