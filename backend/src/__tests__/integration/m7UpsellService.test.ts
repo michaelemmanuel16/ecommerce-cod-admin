@@ -399,6 +399,37 @@ describe('M7-T04: Upsell service rules', () => {
     expect(Money.parse(o!.subtotal).toFixed(4)).toBe('449.0000');
   });
 
+  it('rejects a package or add-on from another product form (404); the order is unchanged', async () => {
+    const other = await prismaBase.product.create({
+      data: { name: 'Other Cream', sku: `OC-${SUFFIX}`, category: 'Health', price: 900, cogs: 100, stockQuantity: 50, tenantId },
+    });
+    const otherForm = await prismaBase.checkoutForm.create({
+      data: { name: 'Other Form', slug: `other-${SUFFIX}`, productId: other.id, fields: {}, styling: {}, regions: {}, tenantId },
+    });
+    const otherPkg = await prismaBase.formPackage.create({
+      data: { formId: otherForm.id, name: 'Big Pack', price: 2000, quantity: 5, sortOrder: 1 },
+    });
+    const otherAddon = await prismaBase.formUpsell.create({
+      data: { formId: otherForm.id, name: 'Other Add-on', price: 300, isActive: true, sortOrder: 1 },
+    });
+    const order = await prismaBase.order.create({
+      data: { customerId, status: 'pending_confirmation', subtotal: 249, totalAmount: 249, codAmount: 249, customerRepId: adwoaId, tenantId } as any,
+    });
+    await prismaBase.formSubmission.create({
+      data: { formId, orderId: order.id, formData: {}, selectedPackage: { id: pkg1Id, name: '1 Set', price: 249, quantity: 1 }, totalAmount: 249, tenantId },
+    });
+
+    const pkgRes = await request(app).post(`/api/orders/${order.id}/upsell`).set('Authorization', `Bearer ${adwoaToken}`)
+      .send({ packageId: otherPkg.id, addOnIds: [] });
+    expect(pkgRes.status).toBe(404);
+    const addonRes = await request(app).post(`/api/orders/${order.id}/upsell`).set('Authorization', `Bearer ${adwoaToken}`)
+      .send({ addOnIds: [otherAddon.id] });
+    expect(addonRes.status).toBe(404);
+
+    const o = await prismaBase.order.findUnique({ where: { id: order.id } });
+    expect(Money.parse(o!.totalAmount).toFixed(2)).toBe('249.00');
+  });
+
   it('rejects an archived package when requested', async () => {
     const order = await prismaBase.order.create({
       data: {
@@ -411,6 +442,9 @@ describe('M7-T04: Upsell service rules', () => {
         deliveryAgentId: agentId,
         tenantId,
       } as any,
+    });
+    await prismaBase.formSubmission.create({
+      data: { formId, orderId: order.id, formData: {}, selectedPackage: { id: pkg1Id, name: '1 Set', price: 249, quantity: 1 }, totalAmount: 249, tenantId },
     });
 
     const res = await request(app)

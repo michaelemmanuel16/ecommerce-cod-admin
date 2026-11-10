@@ -366,12 +366,21 @@ export class UpsellService {
       }
     }
 
+    // The products whose forms may supply packages and add-ons: the same set getUpsellOptions offers.
+    const orderProductIds = [
+      ...new Set([
+        ...order.orderItems.map((i) => i.productId),
+        ...order.formSubmissions.map((sub) => sub.form?.productId),
+      ].filter((id): id is number => id != null)),
+    ];
+
     // F5 item 4: Package validation
     let packageExtraValue = new Decimal(0);
     let selectedPackageRecord: any = null;
     if (packageId != null) {
-      selectedPackageRecord = await tx.formPackage.findUnique({
-        where: { id: packageId },
+      // Only a package on one of this order's product forms, in this store (cso: ids come from the client).
+      selectedPackageRecord = await tx.formPackage.findFirst({
+        where: { id: packageId, form: { tenantId: resolvedTid, productId: { in: orderProductIds } } },
         include: { form: { include: { product: true } } },
       });
 
@@ -400,7 +409,7 @@ export class UpsellService {
     const validAddons: { id: number; price: Decimal; name: string; productId: number | null; items: Prisma.JsonValue }[] = [];
     if (addOnIds && addOnIds.length > 0) {
       const foundAddons = await tx.formUpsell.findMany({
-        where: { id: { in: addOnIds } },
+        where: { id: { in: addOnIds }, form: { tenantId: resolvedTid, productId: { in: orderProductIds } } },
         include: { product: true },
       });
       const addonMap = new Map(foundAddons.map((a) => [a.id, a]));
