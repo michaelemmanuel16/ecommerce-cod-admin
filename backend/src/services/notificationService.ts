@@ -110,13 +110,7 @@ export async function checkAndNotifyLateCallbacks(tenantId?: string): Promise<nu
     },
   });
 
-  const candidates: Array<{
-    orderId: number;
-    targetUserId: number;
-    latestCall: { id: number; callbackAt: Date };
-    customerName?: string;
-  }> = [];
-
+  let count = 0;
   for (const order of openOrders) {
     const latestCall = order.calls[0];
     if (!latestCall) continue;
@@ -126,58 +120,23 @@ export async function checkAndNotifyLateCallbacks(tenantId?: string): Promise<nu
     const targetUserId = order.customerRepId ?? latestCall.salesRepId;
     if (!targetUserId) continue;
 
-    candidates.push({
-      orderId: order.id,
-      targetUserId,
-      latestCall: { id: latestCall.id, callbackAt: latestCall.callbackAt },
-      customerName: fullName(order.customer) || undefined,
-    });
-  }
-
-  if (candidates.length === 0) return 0;
-
-  const notifiedCallIds = new Set<number>();
-  if (typeof prisma.notification.findMany === 'function') {
-    const existingNotifications = await prisma.notification.findMany({
+    const existing = await prisma.notification.findFirst({
       where: {
-        tenantId: resolvedTenant,
+        userId: targetUserId,
         type: 'late_callback',
+        data: { path: ['callId'], equals: latestCall.id },
       },
-      select: { data: true },
     });
-    for (const n of existingNotifications) {
-      const callId = Number((n.data as any)?.callId);
-      if (!Number.isNaN(callId) && callId > 0) {
-        notifiedCallIds.add(callId);
-      }
-    }
-  } else if (typeof prisma.notification.findFirst === 'function') {
-    for (const candidate of candidates) {
-      const existing = await prisma.notification.findFirst({
-        where: {
-          userId: candidate.targetUserId,
-          type: 'late_callback',
-          data: { path: ['callId'], equals: candidate.latestCall.id },
-        },
-      });
-      if (existing) {
-        notifiedCallIds.add(candidate.latestCall.id);
-      }
-    }
-  }
 
-  let count = 0;
-  for (const candidate of candidates) {
-    if (!notifiedCallIds.has(candidate.latestCall.id)) {
+    if (!existing) {
       await notifyLateCallback(
-        candidate.targetUserId,
-        candidate.orderId,
-        String(candidate.orderId),
-        candidate.latestCall.callbackAt,
-        candidate.customerName,
-        candidate.latestCall.id
+        targetUserId,
+        order.id,
+        String(order.id),
+        latestCall.callbackAt,
+        order.customer ? fullName(order.customer) || undefined : undefined,
+        latestCall.id
       );
-      notifiedCallIds.add(candidate.latestCall.id);
       count++;
     }
   }

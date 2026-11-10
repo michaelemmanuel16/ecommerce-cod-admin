@@ -60,6 +60,7 @@ export async function checkQueueWaitAlerts(tenantId: string, now: Date = new Dat
   const alertMinutes = hours?.queueWaitAlertMinutes ?? DEFAULT_QUEUE_WAIT_ALERT_MINUTES;
   const zone = config?.timeZone || getStoreTimeZone(tenantId);
 
+  // Working minutes never exceed wall-clock minutes, so newer orders cannot be due yet.
   const cutoff = new Date(now.getTime() - alertMinutes * 60 * 1000);
   const waitingOrders = await prisma.order.findMany({
     where: {
@@ -76,69 +77,20 @@ export async function checkQueueWaitAlerts(tenantId: string, now: Date = new Dat
     },
   });
 
-  const candidates: Array<{ id: number; waitMinutes: number }> = [];
+  const alertedOrderIds: number[] = [];
   for (const order of waitingOrders) {
     const minutes = workingMinutesBetween(order.createdAt, now, hours, zone);
     if (minutes >= alertMinutes) {
-      candidates.push({ id: order.id, waitMinutes: minutes });
-    }
-  }
-
-  if (candidates.length === 0) return [];
-
-  const recipients = await findQueueAlertRecipients(tenantId);
-
-  const notifiedOrderIds = new Set<number>();
-  if (typeof prisma.notification.findMany === 'function') {
-    const existingNotifications = await prisma.notification.findMany({
-      where: {
-        tenantId,
-        type: 'queue_wait_alert',
-      },
-      select: { data: true },
-    });
-    for (const n of existingNotifications) {
-      const orderId = Number((n.data as any)?.orderId);
-      if (!Number.isNaN(orderId)) {
-        notifiedOrderIds.add(orderId);
-      }
-    }
-  } else if (typeof prisma.notification.findFirst === 'function') {
-    for (const c of candidates) {
-      const existing = await prisma.notification.findFirst({
-        where: {
-          tenantId,
-          type: 'queue_wait_alert',
-          data: { path: ['orderId'], equals: c.id },
-        },
-        select: { id: true },
+      const notified = await notifyQueueWaitAlert({
+        id: order.id,
+        tenantId: order.tenantId ?? tenantId,
+        waitMinutes: minutes,
+        alertMinutes,
       });
-      if (existing) {
-        notifiedOrderIds.add(c.id);
+      if (notified) {
+        alertedOrderIds.push(order.id);
       }
     }
-  }
-
-  const alertedOrderIds: number[] = [];
-  for (const c of candidates) {
-    if (notifiedOrderIds.has(c.id)) continue;
-
-    const rounded = Math.round(c.waitMinutes);
-    const orderRef = formatOrderNumber(c.id);
-    const title = 'Queue wait alert';
-    const message = `Order ${orderRef} has been waiting ${rounded} min in the call queue (limit: ${alertMinutes} min)`;
-    const data = {
-      orderId: c.id,
-      orderNumber: String(c.id),
-      waitMinutes: rounded,
-      alertMinutes,
-    };
-
-    for (const recipient of recipients) {
-      await createNotification(recipient.id.toString(), 'queue_wait_alert', title, message, data);
-    }
-    notifiedOrderIds.add(c.id);
-    alertedOrderIds.push(c.id);
   }
   return alertedOrderIds;
 }
