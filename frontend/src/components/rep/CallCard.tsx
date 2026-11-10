@@ -22,7 +22,7 @@ import { formatCurrency, formatPhoneLocal } from '../../utils/format';
 import { orderNumber, shortDate, STATUS_TONE } from '../../pages/orders/model';
 import { ORDER_STATUS_LABELS } from '../../utils/orderStatus';
 import { toCents } from '../../utils/money';
-import type { DeclineReason, OrderStatus } from '../../types';
+import { CallOutcome, type DeclineReason, type OrderStatus } from '../../types';
 import '../../styles/callCard.css';
 
 export interface CallCardProps {
@@ -190,7 +190,7 @@ export function CallCard({ orderId, onDone, onBack }: CallCardProps) {
 
     const extraTotalCents = pkgDiffCents + addonsCents;
     const totalCents = baseCents + extraTotalCents;
-    const calculatedRewardCents = Math.round(extraTotalCents * 0.1);
+    const calculatedRewardCents = Math.round((extraTotalCents * card.pay.upsellPercent) / 100);
 
     return {
       liveTotal: totalCents / 100,
@@ -239,7 +239,7 @@ export function CallCard({ orderId, onDone, onBack }: CallCardProps) {
       const res = await callsService.createCall({
         customerId: card.customer.id,
         orderId: card.order.id,
-        outcome,
+        outcome: outcome as CallOutcome,
         duration: callLength ? parseInt(callLength, 10) : undefined,
         notes: fullNotes || undefined,
         startedAt: startedAt.toISOString(),
@@ -251,21 +251,22 @@ export function CallCard({ orderId, onDone, onBack }: CallCardProps) {
 
       // Toast feedback
       if (outcome === 'confirmed') {
+        const baseMoney = formatCurrency(card.pay.baseCommission);
         const extraReward = res.upsell?.estimatedReward;
-        const rewardNum = typeof extraReward === 'string' ? parseFloat(extraReward) : typeof extraReward === 'number' ? extraReward : 0;
-        if (rewardNum > 0) {
-          say(`GH₵8 plus ${formatCurrency(rewardNum, 'GHS')} if delivered`);
+        const hasExtra = extraReward != null && toCents(extraReward) > 0;
+        if (hasExtra) {
+          say(`${baseMoney} plus ${formatCurrency(extraReward)} if delivered`);
         } else {
-          say('You earn GH₵8 if delivered');
+          say(`You earn ${baseMoney} if delivered`);
         }
       } else if (outcome === 'not_reachable') {
-        say('Save, not reachable');
+        say('Call saved: not reachable');
       } else if (outcome === 'call_back_later') {
-        say('Save call back');
+        say(`Call back set for ${cbChip || customCbTime}`);
       } else if (outcome === 'declined') {
-        say('Save as declined');
+        say('Call saved: declined');
       } else if (outcome === 'wrong_number') {
-        say('Save, wrong number');
+        say('Call saved: wrong number');
       }
 
       onDone(res.nextOrderId ?? null);
@@ -344,7 +345,7 @@ export function CallCard({ orderId, onDone, onBack }: CallCardProps) {
           <div className="cc-val">
             <small>Order value</small>
             <div className="num" data-testid="cc-val">
-              {formatCurrency(liveTotal, 'GHS')}
+              {formatCurrency(liveTotal)}
             </div>
           </div>
         </div>
@@ -436,19 +437,19 @@ export function CallCard({ orderId, onDone, onBack }: CallCardProps) {
               <span>
                 {item.quantity} × {item.productName}
               </span>
-              <b className="num">{formatCurrency(item.totalPrice, 'GHS')}</b>
+              <b className="num">{formatCurrency(item.totalPrice)}</b>
             </div>
           ))}
           {extraValueCents > 0 && (
             <div className="li" style={{ color: 'var(--pine)' }}>
               <span>Upsell changes</span>
-              <b className="num">+ {formatCurrency(extraValueCents / 100, 'GHS')}</b>
+              <b className="num">+ {formatCurrency(extraValueCents / 100)}</b>
             </div>
           )}
           <div className="li tot">
             <b>Cash to collect</b>
             <b className="num" data-testid="cash-to-collect">
-              {formatCurrency(liveTotal, 'GHS')}
+              {formatCurrency(liveTotal)}
             </b>
           </div>
         </div>
@@ -461,7 +462,7 @@ export function CallCard({ orderId, onDone, onBack }: CallCardProps) {
           card.customer.previousOrders.map((po) => (
             <div className="li" key={po.id}>
               <span>
-                {shortDate(po.createdAt)} · {formatCurrency(po.totalAmount, 'GHS')}
+                {shortDate(po.createdAt)} · {formatCurrency(po.totalAmount)}
               </span>
               <Tag tone={po.status === 'delivered' ? 'ok' : 'bad'}>
                 {po.status === 'delivered' ? 'Delivered' : 'Failed'}
@@ -581,7 +582,7 @@ export function CallCard({ orderId, onDone, onBack }: CallCardProps) {
                         {isSel && <CheckCircle2 aria-hidden="true" style={{ width: 14, height: 14 }} />}
                       </span>
                       <span>{pkg.name}</span>
-                      <span className="pr">{formatCurrency(pkg.price, 'GHS')}</span>
+                      <span className="pr">{formatCurrency(pkg.price)}</span>
                     </button>
                   );
                 })}
@@ -609,7 +610,7 @@ export function CallCard({ orderId, onDone, onBack }: CallCardProps) {
                             {isSel && <CheckCircle2 aria-hidden="true" style={{ width: 14, height: 14 }} />}
                           </span>
                           <span>{addon.name}</span>
-                          <span className="pr">+ {formatCurrency(addon.price, 'GHS')}</span>
+                          <span className="pr">+ {formatCurrency(addon.price)}</span>
                         </button>
                       );
                     })}
@@ -619,8 +620,8 @@ export function CallCard({ orderId, onDone, onBack }: CallCardProps) {
                 <div className={`earnbox ${extraValueCents > 0 ? '' : 'none'}`} data-testid="earnbox">
                   <span>
                     {extraValueCents > 0
-                      ? `You earn ${formatCurrency(rewardCents / 100, 'GHS')} extra if this order is delivered (10% of ${formatCurrency(extraValueCents / 100, 'GHS')})`
-                      : 'No extra value added. You still earn GH₵8 if it is delivered.'}
+                      ? `You earn ${formatCurrency(rewardCents / 100)} extra if this order is delivered (${card.pay.upsellPercent}% of ${formatCurrency(extraValueCents / 100)})`
+                      : `No extra value added. You still earn ${formatCurrency(card.pay.baseCommission)} if it is delivered.`}
                   </span>
                 </div>
               </div>

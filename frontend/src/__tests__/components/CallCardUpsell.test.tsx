@@ -87,6 +87,10 @@ const MOCK_UPSELL_CARD: CallCardData = {
   },
   lastCalls: [],
   nextOrderId: 24043,
+  pay: {
+    baseCommission: '8.00',
+    upsellPercent: 10,
+  },
 };
 
 function renderCallCard(props: { orderId?: number; onDone?: (nextId: number | null) => void } = {}) {
@@ -201,5 +205,40 @@ describe('CallCard Upsell Panel with Live Reward Box (M7-T18, F-759)', () => {
     // Verify toast with server response value
     expect(await screen.findByText(/GH₵8 plus GH₵24 if delivered/)).toBeInTheDocument();
     expect(onDone).toHaveBeenCalledWith(24043);
+  });
+
+  it('uses server pay settings for live box and toast (baseCommission 10.00, upsellPercent 5)', async () => {
+    mockGetCallCard.mockResolvedValueOnce({
+      ...MOCK_UPSELL_CARD,
+      pay: {
+        baseCommission: '10.00',
+        upsellPercent: 5,
+      },
+    });
+    mockCreateCall.mockResolvedValueOnce({
+      call: { id: 50 },
+      nextOrderId: null,
+      upsell: {
+        estimatedReward: '10.00',
+        extraValue: '200.00',
+      },
+    });
+
+    renderCallCard();
+    await screen.findByRole('heading', { name: 'Efua Mensah' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Confirmed' }));
+
+    // Before changes: live box shows 10.00 base commission
+    const earnbox = screen.getByTestId('earnbox');
+    expect(earnbox).toHaveTextContent('No extra value added. You still earn GH₵10 if it is delivered.');
+
+    // Select 2 copybook sets (+200, 5% of 200 = 10)
+    await userEvent.click(screen.getByRole('button', { name: /2 copybook sets/ }));
+    expect(earnbox).toHaveTextContent('You earn GH₵10 extra if this order is delivered (5% of GH₵200)');
+
+    // Save and check toast shows 10.00 base + 5% reward (GH₵10 plus GH₵10 if delivered)
+    await userEvent.click(screen.getByRole('button', { name: 'Save as confirmed' }));
+    expect(await screen.findByText('GH₵10 plus GH₵10 if delivered')).toBeInTheDocument();
   });
 });

@@ -4,7 +4,7 @@ import { Call, CallOutcome, CallStats } from '../types';
 export interface CreateCallData {
   customerId: number;
   orderId?: number;
-  outcome: CallOutcome | string;
+  outcome: CallOutcome;
   duration?: number;
   notes?: string;
   startedAt?: string;

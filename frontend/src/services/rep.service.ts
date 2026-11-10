@@ -100,6 +100,11 @@ export interface CallCardCallHistory {
   salesRep: { id: number; name: string } | null;
 }
 
+export interface CallCardPay {
+  baseCommission: string;
+  upsellPercent: number;
+}
+
 export interface CallCardData {
   order: CallCardOrder;
   customer: CallCardCustomer;
@@ -107,6 +112,7 @@ export interface CallCardData {
   packages: CallCardPackages;
   lastCalls: CallCardCallHistory[];
   nextOrderId: number | null;
+  pay: CallCardPay;
 }
 
 export const repService = {

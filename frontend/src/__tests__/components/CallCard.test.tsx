@@ -100,6 +100,10 @@ const MOCK_CARD: CallCardData = {
     },
   ],
   nextOrderId: 24043,
+  pay: {
+    baseCommission: '8.00',
+    upsellPercent: 10,
+  },
 };
 
 function renderCallCard(props: { orderId?: number; onDone?: (nextId: number | null) => void } = {}) {
@@ -267,6 +271,46 @@ describe('CallCard (M7-T17)', () => {
       );
       expect(onDone).toHaveBeenCalledWith(24043);
     });
+    expect(await screen.findByText('You earn GH₵8 if delivered')).toBeInTheDocument();
+  });
+
+  it('shows distinct toasts for not reachable, call back, declined, wrong number without repeating button text', async () => {
+    // 1. Not reachable
+    mockCreateCall.mockResolvedValueOnce({ call: { id: 51 }, nextOrderId: null });
+    const t1 = renderCallCard();
+    await screen.findByRole('heading', { name: 'Efua Mensah' });
+    await userEvent.click(screen.getByRole('button', { name: 'Not reachable' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save, not reachable' }));
+    expect(await screen.findByText('Call saved: not reachable')).toBeInTheDocument();
+    t1.unmount();
+
+    // 2. Call back later with chip
+    mockCreateCall.mockResolvedValueOnce({ call: { id: 52 }, nextOrderId: null });
+    const t2 = renderCallCard();
+    await screen.findByRole('heading', { name: 'Efua Mensah' });
+    await userEvent.click(screen.getByRole('button', { name: 'Call back later' }));
+    await userEvent.click(screen.getByRole('button', { name: 'In 30 min' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save call back' }));
+    expect(await screen.findByText('Call back set for In 30 min')).toBeInTheDocument();
+    t2.unmount();
+
+    // 3. Declined with reason
+    mockCreateCall.mockResolvedValueOnce({ call: { id: 53 }, nextOrderId: null });
+    const t3 = renderCallCard();
+    await screen.findByRole('heading', { name: 'Efua Mensah' });
+    await userEvent.click(screen.getByRole('button', { name: 'Declined' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Price too high' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save as declined' }));
+    expect(await screen.findByText('Call saved: declined')).toBeInTheDocument();
+    t3.unmount();
+
+    // 4. Wrong number
+    mockCreateCall.mockResolvedValueOnce({ call: { id: 54 }, nextOrderId: null });
+    const t4 = renderCallCard();
+    await screen.findByRole('heading', { name: 'Efua Mensah' });
+    await userEvent.click(screen.getByRole('button', { name: 'Wrong number' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save, wrong number' }));
+    expect(await screen.findByText('Call saved: wrong number')).toBeInTheDocument();
   });
 
   it('allows rep to edit customer from call card via CustomerModal', async () => {
