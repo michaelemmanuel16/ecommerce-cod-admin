@@ -22,6 +22,7 @@ import * as rewardService from './rewardService';
 import { hasPermission } from './permissionService';
 import payoutService, { summarize } from './payoutService';
 import { teamReport } from './teamReportService';
+import { CONFIRMED, ratePercent, wholeRate } from './kpi/rates';
 import {
   currentMonth,
   endOfDay,
@@ -39,7 +40,8 @@ import {
  *
  * Provides:
  * - Orders: rep orders with status filter and search by id, phone, name.
- * - Numbers: rates from teamReport; calls bucketed by store-local date; ranks from leaderboard.
+ * - Numbers: confirmed, rates, upsell and the breakdown count orders the rep finished this month (by action date);
+ *   time to first call and target from teamReport; calls by store-local date; ranks from leaderboard.
  * - Earnings: summary via payoutService summarize(); base + upsell lines; reversal line on returned/failed.
  * - Reward progress: M6 cash reward tiers via rewardService by attainment roleId.
  * - Payouts: payout history the rep owns.
@@ -266,14 +268,38 @@ export async function getNumbers(actor: Requester, query: RepNumbersQuery = {}):
   const upsellRankVal = myUpsellRow && typeof myUpsellRow.rank === 'number' ? myUpsellRow.rank : null;
   const upsellRank = { rank: upsellRankVal, total: upsellBoard.rows.length };
 
-  // 3. Order breakdown from the rep's deliveredFromConfirmedRate detail
-  const confirmedCount = repRow?.confirmationRate.detail.confirmed ?? 0;
-  const deliveredDetail = repRow?.deliveredFromConfirmedRate.detail ?? { delivered: 0, failed: 0, returned: 0, closed: 0 };
-  const deliveredCount = deliveredDetail.delivered ?? 0;
-  const failedCount = deliveredDetail.failed ?? 0;
-  const returnedCount = deliveredDetail.returned ?? 0;
+  // 3. Orders the rep FINISHED this month (owner 2026-11-10), counted by the date of the rep's action, not the date the
+  //    order was placed (the team report keeps its placed-in-range rule).
+  //    finished  = orders the rep confirmed this month (Order.confirmedAt) + orders the rep declined or marked wrong
+  //                number this month (the rep's Call rows), each order once.
+  //    confirmed = of the orders the rep confirmed this month, those still in a confirmed status (an order cancelled
+  //                after the confirm counts as finished, not confirmed; same rule as kpi/rates CONFIRMED).
+  //    Delivery success, upsell rate, extra value and the breakdown read the same confirmed orders.
+  const [confirmedByRep, declinedCalls] = await Promise.all([
+    prisma.order.findMany({
+      where: { tenantId, deletedAt: null, confirmedById: targetRepId, confirmedAt: { gte: fromDate, lt: toDate } },
+      select: { id: true, status: true, upsellLines: { where: { status: 'active', repId: targetRepId }, select: { extraValue: true } } },
+    }),
+    prisma.call.findMany({
+      where: { tenantId, salesRepId: targetRepId, outcome: { in: ['declined', 'wrong_number'] }, createdAt: { gte: fromDate, lt: toDate }, orderId: { not: null } },
+      select: { orderId: true },
+      distinct: ['orderId'],
+    }),
+  ]);
+  const finishedIds = new Set<number>(confirmedByRep.map((o) => o.id));
+  for (const c of declinedCalls) if (c.orderId !== null) finishedIds.add(c.orderId);
+  const confirmedOrders = confirmedByRep.filter((o) => CONFIRMED.includes(o.status));
+  const confirmedCount = confirmedOrders.length;
+  const countStatus = (st: OrderStatus) => confirmedOrders.filter((o) => o.status === st).length;
+  const deliveredCount = countStatus('delivered');
+  const failedCount = countStatus('failed_delivery');
+  const returnedCount = countStatus('returned');
   const failedOrReturned = failedCount + returnedCount;
   const stillOpen = Math.max(0, confirmedCount - (deliveredCount + failedOrReturned));
+  const upsoldCount = confirmedOrders.filter((o) => o.upsellLines.length > 0).length;
+  const extraValue = Money.sum(
+    confirmedOrders.filter((o) => o.status === 'delivered').flatMap((o) => o.upsellLines.map((l) => l.extraValue)),
+  );
 
   // 4. Calls: today, this week (store time zone), this month, avg/day
   const now = new Date();
@@ -343,13 +369,13 @@ export async function getNumbers(actor: Requester, query: RepNumbersQuery = {}):
   return {
     repId: targetRepId,
     period,
-    confirmed: repRow?.confirmed ?? 0,
-    confirmationRate: repRow?.confirmationRate.value ?? null,
-    confirmationRateDetail: repRow?.confirmationRate.detail ?? { confirmed: 0, placed: 0, autoConfirmed: 0 },
-    deliveredFromConfirmedRate: repRow?.deliveredFromConfirmedRate.value ?? null,
-    deliveredFromConfirmedDetail: repRow?.deliveredFromConfirmedRate.detail ?? { delivered: 0, failed: 0, returned: 0, closed: 0 },
-    upsellRate: repRow?.upsellRate ?? 0,
-    extraValueAdded: repRow?.extraValue ?? '0.00',
+    confirmed: confirmedCount,
+    confirmationRate: ratePercent(confirmedCount, finishedIds.size),
+    confirmationRateDetail: { confirmed: confirmedCount, finished: finishedIds.size },
+    deliveredFromConfirmedRate: ratePercent(deliveredCount, deliveredCount + failedOrReturned),
+    deliveredFromConfirmedDetail: { delivered: deliveredCount, failed: failedCount, returned: returnedCount, closed: deliveredCount + failedOrReturned },
+    upsellRate: wholeRate(upsoldCount, confirmedCount) ?? 0,
+    extraValueAdded: Money.toApi(extraValue),
     timeToFirstCall: repRow?.timeToFirstCallMinutes ?? null,
     targetHit: repRow?.targetHit ? {
       target: repRow.targetHit.target,

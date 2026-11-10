@@ -223,7 +223,7 @@ describe('M7-T19: Rep Numbers page (F-762)', () => {
     expect(screen.getByTestId('calls-row')).toHaveTextContent('0');
   });
 
-  it('confirmation rate shows "Confirmed ÷ assigned" and no "target 70%"', async () => {
+  it('confirmation rate shows "Confirmed ÷ finished this month" and no "target 70%"', async () => {
     render(
       <MemoryRouter>
         <RepNumbersPage />
@@ -235,7 +235,7 @@ describe('M7-T19: Rep Numbers page (F-762)', () => {
     });
 
     const kpi = screen.getByTestId('kpi-confirmation-rate');
-    expect(kpi).toHaveTextContent('Confirmed ÷ assigned');
+    expect(kpi).toHaveTextContent('Confirmed ÷ finished this month');
     expect(kpi).not.toHaveTextContent('target 70%');
     expect(document.body.textContent).not.toContain('target 70%');
   });

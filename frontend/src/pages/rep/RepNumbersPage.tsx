@@ -134,7 +134,7 @@ export const RepNumbersPage: React.FC = () => {
             <b className="num">
               {confirmationRate !== null && confirmationRate !== undefined ? `${confirmationRate}%` : '—'}
             </b>
-            <em>Confirmed ÷ assigned</em>
+            <em>Confirmed ÷ finished this month</em>
           </div>
 
           <div className="drv" data-testid="kpi-delivery-success">
@@ -150,7 +150,7 @@ export const RepNumbersPage: React.FC = () => {
             <b className="num">
               {upsellRate !== null && upsellRate !== undefined ? `${upsellRate}%` : '—'}
             </b>
-            <em>of your orders</em>
+            <em>of your confirmed orders</em>
           </div>
 
           <div className="drv" data-testid="kpi-extra-value">

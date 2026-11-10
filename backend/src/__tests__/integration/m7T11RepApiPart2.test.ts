@@ -3,7 +3,7 @@
  *
  * Verifies:
  * - /api/rep/orders (my orders, search by id, phone, name; real OrderStatus filter; pagination; param validation)
- * - /api/rep/numbers (rates from teamReport: contract test; YYYY-MM period only; calls-per-day across store-local midnight)
+ * - /api/rep/numbers (orders the rep finished in the month, by action date; YYYY-MM period only; calls-per-day across store-local midnight)
  * - /api/rep/earnings (one owed rule from payoutService summarize(): contract test; openOrdersNote store currency; reversal line on return)
  * - /api/rep/reward-progress (M6 tiers via rewardService by roleId; target reached shows "Paid after month close"; no constant payout field)
  * - /api/rep/payouts (payout history from payoutService, no for field)
@@ -398,25 +398,60 @@ describe('2. /api/rep/numbers (rank and rates from teamReport: contract test, R3
     });
   });
 
-  it('contract test: numbers rates equal the rep\'s teamReport row', async () => {
+  it('numbers count orders the rep FINISHED in the month, by the date of the rep\'s action (owner 2026-11-10)', async () => {
+    const rep = await prismaBase.user.create({
+      data: { email: `finisher-${SUFFIX}@t11.test`, password: 'x', firstName: 'Fin', lastName: 'Isher', role: 'sales_rep', kind: 'person', tenantId },
+    });
+    const token = generateAccessToken({ id: rep.id, email: rep.email, role: 'sales_rep', tenantId });
+    const mk = (createdAt: string, status: any, confirmedAt: string | null) => prismaBase.order.create({
+      data: {
+        tenantId, customerId: customer1Id, customerRepId: rep.id, status,
+        createdAt: new Date(createdAt),
+        confirmedById: confirmedAt ? rep.id : null,
+        confirmedAt: confirmedAt ? new Date(confirmedAt) : null,
+        subtotal: 249, totalAmount: 249, deliveryArea: 'Tema',
+      },
+    });
+    // A: placed in September, confirmed in October, delivered, with a GH₵200 upsell -> counts in October
+    const a = await mk('2026-09-20T10:00:00Z', 'delivered', '2026-10-05T10:00:00Z');
+    await prismaBase.upsellLine.create({ data: { tenantId, orderId: a.id, repId: rep.id, kind: 'package', extraValue: 200 } });
+    // B: confirmed in October, still open
+    await mk('2026-10-03T10:00:00Z', 'confirmed', '2026-10-04T10:00:00Z');
+    // C: placed in October, confirmed in November -> not in October
+    await mk('2026-10-10T10:00:00Z', 'confirmed', '2026-11-02T10:00:00Z');
+    // D: confirmed in October, cancelled later -> finished, not confirmed
+    await mk('2026-10-06T10:00:00Z', 'cancelled', '2026-10-07T10:00:00Z');
+    // E and F: declined and wrong number calls in October on older orders -> finished
+    const e = await mk('2026-08-01T10:00:00Z', 'cancelled', null);
+    const f = await mk('2026-10-01T10:00:00Z', 'cancelled', null);
+    await prismaBase.call.createMany({
+      data: [
+        { tenantId, salesRepId: rep.id, customerId: customer1Id, orderId: e.id, outcome: CallOutcome.declined, source: CallSource.manual, createdAt: new Date('2026-10-08T10:00:00Z') },
+        { tenantId, salesRepId: rep.id, customerId: customer1Id, orderId: f.id, outcome: CallOutcome.wrong_number, source: CallSource.manual, createdAt: new Date('2026-10-09T10:00:00Z') },
+      ],
+    });
+
+    const res = await request(app).get('/api/rep/numbers?period=2026-10').set('Authorization', bearer(token));
+    expect(res.status).toBe(200);
+    expect(res.body.confirmed).toBe(2);
+    expect(res.body.confirmationRateDetail).toEqual({ confirmed: 2, finished: 5 });
+    expect(res.body.confirmationRate).toBe(40);
+    expect(res.body.deliveredFromConfirmedRate).toBe(100);
+    expect(res.body.upsellRate).toBe(50);
+    expect(res.body.extraValueAdded).toBe('200.00');
+    expect(res.body.orderBreakdown).toEqual({ confirmed: 2, delivered: 1, failedOrReturned: 0, stillOpen: 1 });
+
+    const nov = await request(app).get('/api/rep/numbers?period=2026-11').set('Authorization', bearer(token));
+    expect(nov.body.confirmed).toBe(1);
+  });
+
+  it('time to first call and target still come from the rep\'s teamReport row', async () => {
     const zone = getStoreTimeZone(tenantId);
     const range = monthRange(2026, 10, zone);
-
     const report = await teamReport(tenantId, range.from, range.to);
     const rep1Row = report.reps.find((r) => r.repId === rep1Id);
-
-    const res = await request(app)
-      .get('/api/rep/numbers?period=2026-10')
-      .set('Authorization', bearer(rep1Token));
+    const res = await request(app).get('/api/rep/numbers?period=2026-10').set('Authorization', bearer(rep1Token));
     expect(res.status).toBe(200);
-
-    // Contract: rates must match teamReport row exactly
-    expect(res.body.confirmationRate).toEqual(rep1Row?.confirmationRate.value ?? null);
-    expect(res.body.deliveredFromConfirmedRate).toEqual(rep1Row?.deliveredFromConfirmedRate.value ?? null);
-    expect(res.body.confirmationRateDetail).toEqual(rep1Row?.confirmationRate.detail);
-    expect(res.body.deliveredFromConfirmedDetail).toEqual(rep1Row?.deliveredFromConfirmedRate.detail);
-    expect(res.body.upsellRate).toEqual(rep1Row?.upsellRate ?? 0);
-    expect(res.body.extraValueAdded).toEqual(rep1Row?.extraValue ?? '0.00');
     expect(res.body.timeToFirstCall).toEqual(rep1Row?.timeToFirstCallMinutes ?? null);
     expect(res.body.targetHit).toEqual(rep1Row?.targetHit ?? null);
   });
