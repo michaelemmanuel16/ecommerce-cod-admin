@@ -12,20 +12,22 @@ export const RepTodayPage: React.FC = () => {
   const [todayData, setTodayData] = useState<TodayStats | null>(null);
   const [rewardData, setRewardData] = useState<RewardProgressResult | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const activeCurrency = rewardData?.currency || storeCurrency || 'GHS';
+  const activeCurrency = (rewardData?.currency === 'GH₵' ? 'GHS' : rewardData?.currency) || storeCurrency || 'GHS';
 
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
+      setError(null);
       const [todayRes, rewardRes] = await Promise.all([
         repService.getToday(),
-        repService.getRewardProgress().catch(() => null),
+        repService.getRewardProgress(),
       ]);
       setTodayData(todayRes);
       setRewardData(rewardRes);
-    } catch {
-      // keep fallback
+    } catch (err: any) {
+      setError(err?.message || 'Could not load today data');
     } finally {
       setLoading(false);
     }
@@ -54,13 +56,40 @@ export const RepTodayPage: React.FC = () => {
 
   const tier100 = rewardData?.tiers?.tier100;
   const tier120 = rewardData?.tiers?.tier120;
-  const tier100Label = tier100?.bonusAmount ? `${rewardData?.currency ?? 'GH₵'}${tier100.bonusAmount}` : 'GH₵300';
-  const tier100Desc = tier100?.description || `${tier100Label} bonus`;
-  const tier120Desc = tier120?.description || `${rewardData?.currency ?? 'GH₵'}500 + paid day off`;
+  const tier100Amount = tier100?.bonusAmount ?? (tier100 as any)?.amount;
+  const tier100Label = tier100Amount ? formatCurrency(tier100Amount, activeCurrency) : '';
+  const tier100Desc = tier100?.description || (tier100Label ? `${tier100Label} bonus` : '');
+  const tier120Amount = tier120?.bonusAmount ?? (tier120 as any)?.amount;
+  const tier120Bonus = tier120Amount ? formatCurrency(tier120Amount, activeCurrency) : '';
+  const tier120Desc = tier120?.description || (tier120Bonus ? `${tier120Bonus} + paid day off` : '');
 
   const confRate = todayData?.confirmationRate;
   const delivRate = todayData?.deliveredFromConfirmed;
   const ttfcMinutes = todayData?.timeToFirstCall?.medianMinutes;
+
+  if (error && !loading) {
+    return (
+      <div className="rep-today-view" data-testid="rep-today-page">
+        <div className="head">
+          <div>
+            <h1>Hi, {user?.firstName || 'there'}</h1>
+            <p>{todayLabel} · Your confirmations and your pay, in one place.</p>
+          </div>
+        </div>
+        <div className="card" style={{ padding: 24, textAlign: 'center', marginTop: 16 }} data-testid="today-error-state">
+          <p style={{ color: 'var(--ink-2)', marginBottom: 12 }}>{error}</p>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => void fetchData()}
+            data-testid="today-retry-btn"
+          >
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="rep-today-view" data-testid="rep-today-page">
@@ -97,12 +126,12 @@ export const RepTodayPage: React.FC = () => {
               </span>
             ) : (
               <span
-                className={clsx('tag', targetReached ? 'ok' : 'ok')}
+                className="tag ok"
                 data-testid="reward-tag"
               >
                 {targetReached
                   ? 'Paid after month close'
-                  : rewardData?.message || `${rewardData?.distance ?? 0} more to ${tier100Label}`}
+                  : rewardData?.message || (tier100Label ? `${rewardData?.distance ?? 0} more to ${tier100Label}` : `${rewardData?.distance ?? 0} more`)}
               </span>
             )}
           </div>
@@ -152,28 +181,30 @@ export const RepTodayPage: React.FC = () => {
                 />
               </div>
 
-              <div className="tier">
-                <div
-                  className={clsx(
-                    rewardData?.tier === '100' ? 'got' : !targetReached ? 'next' : ''
-                  )}
-                  data-testid="tier-100"
-                >
-                  <b>100%</b>
-                  <span>{tier100Desc}</span>
-                  <br />
-                  <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>
-                    {targetReached ? 'Reached' : `${rewardData?.distance ?? 0} more`}
-                  </span>
+              {rewardData?.tiers && (
+                <div className="tier" data-testid="reward-tiers-row">
+                  <div
+                    className={clsx(
+                      rewardData.tier === '100' ? 'got' : !targetReached ? 'next' : ''
+                    )}
+                    data-testid="tier-100"
+                  >
+                    <b>100%</b>
+                    <span>{tier100Desc}</span>
+                    <br />
+                    <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+                      {targetReached ? 'Reached' : `${rewardData.distance ?? 0} more`}
+                    </span>
+                  </div>
+                  <div
+                    className={clsx(rewardData.tier === '120' ? 'got' : rewardData.tier === '100' ? 'next' : '')}
+                    data-testid="tier-120"
+                  >
+                    <b>120%</b>
+                    <span>{tier120Desc}</span>
+                  </div>
                 </div>
-                <div
-                  className={clsx(rewardData?.tier === '120' ? 'got' : rewardData?.tier === '100' ? 'next' : '')}
-                  data-testid="tier-120"
-                >
-                  <b>120%</b>
-                  <span>{tier120Desc}</span>
-                </div>
-              </div>
+              )}
 
               <p style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 12 }} data-testid="reward-note">
                 {targetReached ? 'Paid after month close' : rewardData?.note || 'The reward is paid after month close.'}
@@ -190,7 +221,7 @@ export const RepTodayPage: React.FC = () => {
           <div className="v" data-testid="confirmation-rate-value">
             {typeof confRate === 'number' ? `${confRate}%` : '—'}
           </div>
-          <div className="s">Confirmed ÷ assigned · target 70%</div>
+          <div className="s">Confirmed ÷ assigned</div>
         </div>
 
         <div className="card tk" data-testid="tile-delivered-rate">
@@ -213,8 +244,6 @@ export const RepTodayPage: React.FC = () => {
           </div>
         </div>
       </div>
-
-      <div className="ins2" id="insights" />
     </div>
   );
 };

@@ -6,6 +6,7 @@ import { RepQueuePage } from '../../pages/rep/RepQueuePage';
 import { formatWaitDuration, formatCallbackTime } from '../../pages/rep/queueHelpers';
 import { repService } from '../../services/rep.service';
 import { useAuthStore } from '../../stores/authStore';
+import { useConfigStore } from '../../stores/configStore';
 import { ToastProvider } from '../../components/ui-v2';
 
 vi.mock('../../services/rep.service', () => ({
@@ -47,6 +48,7 @@ function renderQueue() {
 describe('M7-T16: Queue page (F-754, F-765)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useConfigStore.setState({ currency: 'GHS' });
     useAuthStore.setState({
       user: mockUser,
       isAuthenticated: true,
@@ -319,6 +321,84 @@ describe('M7-T16: Queue page (F-754, F-765)', () => {
 
       expect(formatCallbackTime(in25Min, now)).toEqual({ text: 'In 25m', overdue: false });
       expect(formatCallbackTime(overdue15Min, now)).toEqual({ text: 'Overdue 15m', overdue: true });
+    });
+  });
+
+  describe('Queue error handling (item 6)', () => {
+    it('shows error line with "Try again" in the list, not "Queue is clear" when load fails', async () => {
+      vi.mocked(repService.getQueue).mockRejectedValue(new Error('Network error'));
+
+      renderQueue();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('queue-error-line')).toBeInTheDocument();
+      });
+
+      expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+      expect(screen.queryByTestId('queue-empty')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Queue is clear/)).not.toBeInTheDocument();
+    });
+
+    it('retries queue fetch when "Try again" is clicked', async () => {
+      const user = userEvent.setup();
+      vi.mocked(repService.getQueue).mockRejectedValueOnce(new Error('Network error'));
+
+      renderQueue();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('queue-error-line')).toBeInTheDocument();
+      });
+
+      vi.mocked(repService.getQueue).mockResolvedValue({
+        tabs: { new: 0, call_back: 0, said_no: 0, not_reachable: 0, total: 0 },
+        orders: [],
+        total: 0,
+      });
+
+      await user.click(screen.getByRole('button', { name: 'Try again' }));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('queue-empty')).toBeInTheDocument();
+      });
+      expect(screen.queryByTestId('queue-error-line')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Queue money formatting (item 8)', () => {
+    it('formats order totalAmount with formatCurrency instead of literal GH₵ string', async () => {
+      vi.mocked(repService.getQueue).mockResolvedValue({
+        tabs: { new: 1, call_back: 0, said_no: 0, not_reachable: 0, total: 1 },
+        orders: [
+          {
+            id: 201,
+            status: 'pending_confirmation',
+            customer: { id: 10, name: 'Kojo Antwi', phoneNumber: '0245550110', area: 'Osu' },
+            area: 'Osu',
+            itemsSummary: '3x Shirts',
+            totalAmount: '450.00',
+            saidNo: false,
+            tab: 'new',
+            waitMinutes: 5,
+            waitTimerSeverity: 'normal',
+            callbackAt: null,
+            callbackDue: false,
+            callbackSeverity: null,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            priority: 0,
+          },
+        ],
+        total: 1,
+      });
+
+      renderQueue();
+
+      await waitFor(() => {
+        const item = screen.getByTestId('queue-item-201');
+        expect(item).toBeInTheDocument();
+        // formatCurrency for 450.00 formats as GH₵450
+        expect(item).toHaveTextContent('3x Shirts · GH₵450');
+      });
     });
   });
 });

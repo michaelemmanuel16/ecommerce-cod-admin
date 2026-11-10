@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { RepTodayPage } from '../../pages/rep/RepTodayPage';
 import { repService } from '../../services/rep.service';
@@ -280,6 +281,140 @@ describe('M7-T15: Today page and reward card (F-752, F-753)', () => {
       // Reward card shows No target set and hides bar
       expect(screen.getByTestId('no-target-tag')).toHaveTextContent('No target set');
       expect(screen.queryByTestId('reward-progress-bar')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Tiers null handling (item 4)', () => {
+    it('shows no tier row and no fixed amount when tiers is null', async () => {
+      vi.mocked(repService.getToday).mockResolvedValue({
+        callsDone: 20,
+        confirmed: 10,
+        upsellExtra: '100.00',
+        timeToFirstCall: { medianMinutes: 10, operatingHoursSet: true, targetMinutes: 15, alertMinutes: 30 },
+        targetProgress: {
+          hasTarget: true,
+          message: '170 more',
+          target: 400,
+          actual: 230,
+          percent: 57.5,
+          tier: 'none',
+        },
+        confirmationRate: 75,
+        deliveredFromConfirmed: 60,
+      });
+
+      vi.mocked(repService.getRewardProgress).mockResolvedValue({
+        period: '2026-10',
+        currency: 'GHS',
+        target: 400,
+        actual: 230,
+        percent: 57.5,
+        tier: 'none',
+        tiers: null,
+        reward: null,
+        distance: 170,
+        message: '170 more',
+        note: 'The reward is paid after month close.',
+        targetReached: false,
+        earned: false,
+      });
+
+      render(
+        <MemoryRouter>
+          <RepTodayPage />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('b-conf')).toHaveTextContent('230');
+      });
+
+      // When tiers is null, tier row must NOT be shown
+      expect(screen.queryByTestId('reward-tiers-row')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('tier-100')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('tier-120')).not.toBeInTheDocument();
+
+      // No fixed amounts (300 or 500) shown
+      expect(screen.queryByText(/GH₵300/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/GH₵500/)).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Error handling (item 6)', () => {
+    it('shows error state with "Try again" button, not "No target set" or zeros when load fails', async () => {
+      vi.mocked(repService.getToday).mockRejectedValue(new Error('Network error'));
+      vi.mocked(repService.getRewardProgress).mockRejectedValue(new Error('Network error'));
+
+      render(
+        <MemoryRouter>
+          <RepTodayPage />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('today-error-state')).toBeInTheDocument();
+      });
+
+      expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+      expect(screen.queryByTestId('no-target-tag')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('confirmed-hero')).not.toBeInTheDocument();
+    });
+
+    it('recovers when "Try again" is clicked after a failure', async () => {
+      const user = userEvent.setup();
+      vi.mocked(repService.getToday).mockRejectedValueOnce(new Error('Network error'));
+      vi.mocked(repService.getRewardProgress).mockRejectedValueOnce(new Error('Network error'));
+
+      render(
+        <MemoryRouter>
+          <RepTodayPage />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('today-error-state')).toBeInTheDocument();
+      });
+
+      // Now mock successful response
+      vi.mocked(repService.getToday).mockResolvedValue({
+        callsDone: 15,
+        confirmed: 8,
+        upsellExtra: '0.00',
+        timeToFirstCall: { medianMinutes: 12, operatingHoursSet: true, targetMinutes: 15, alertMinutes: 30 },
+        targetProgress: {
+          hasTarget: false,
+          message: 'No target set',
+          target: null,
+          actual: null,
+          percent: null,
+          tier: 'none',
+        },
+        confirmationRate: 60,
+        deliveredFromConfirmed: null,
+      });
+
+      vi.mocked(repService.getRewardProgress).mockResolvedValue({
+        period: '2026-10',
+        currency: 'GHS',
+        target: null,
+        actual: 0,
+        percent: null,
+        tier: 'none',
+        tiers: null,
+        reward: null,
+        distance: null,
+        message: 'No target set',
+        note: 'The reward is paid after month close.',
+        targetReached: false,
+        earned: false,
+      });
+
+      await user.click(screen.getByRole('button', { name: 'Try again' }));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('b-today')).toHaveTextContent('8');
+      });
+      expect(screen.queryByTestId('today-error-state')).not.toBeInTheDocument();
     });
   });
 });

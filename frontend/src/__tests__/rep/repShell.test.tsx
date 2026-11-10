@@ -1,14 +1,16 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { RepShell } from '../../pages/rep/RepShell';
+import { RepGate } from '../../App';
 import { PhoneDisplay } from '../../components/rep/PhoneDisplay';
 import { RepComingSoon } from '../../pages/rep/RepComingSoon';
 import { RepCallPlaceholder } from '../../pages/rep/RepCallPlaceholder';
 import { QueueCallPanel } from '../../pages/rep/QueueCallPanel';
 import { useAuthStore } from '../../stores/authStore';
 import { repService } from '../../services/rep.service';
+import { features } from '../../config/features';
 
 vi.mock('../../services/rep.service', () => ({
   repService: {
@@ -39,6 +41,7 @@ const mockManager = {
 describe('M7-T14: Rep shell and navigation (F-750, F-751)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    features.repApp = true;
     vi.mocked(repService.getSummary).mockResolvedValue({
       queue: 9,
       inbox: 3,
@@ -51,6 +54,74 @@ describe('M7-T14: Rep shell and navigation (F-750, F-751)', () => {
       menu: ['orders', 'customers'],
       homeRoute: '/',
       roles: [{ id: 4, name: 'Call rep' }],
+    });
+  });
+
+  describe('RepGate feature flag gate (item 1)', () => {
+    it('redirects /rep/today to / when features.repApp is off and does not render rep shell', () => {
+      features.repApp = false;
+      render(
+        <MemoryRouter initialEntries={['/rep/today']}>
+          <Routes>
+            <Route path="/" element={<div data-testid="home-page">Home</div>} />
+            <Route
+              path="/rep/*"
+              element={
+                <RepGate>
+                  <RepShell />
+                </RepGate>
+              }
+            />
+          </Routes>
+        </MemoryRouter>
+      );
+
+      expect(screen.queryByTestId('rep-desktop-rail')).not.toBeInTheDocument();
+      expect(screen.getByTestId('home-page')).toBeInTheDocument();
+    });
+
+    it('redirects manager from /rep/today to / when features.repApp is off', () => {
+      features.repApp = false;
+      useAuthStore.setState({ user: mockManager });
+      render(
+        <MemoryRouter initialEntries={['/rep/today']}>
+          <Routes>
+            <Route path="/" element={<div data-testid="home-page">Home</div>} />
+            <Route
+              path="/rep/*"
+              element={
+                <RepGate>
+                  <RepShell />
+                </RepGate>
+              }
+            />
+          </Routes>
+        </MemoryRouter>
+      );
+
+      expect(screen.queryByTestId('rep-desktop-rail')).not.toBeInTheDocument();
+      expect(screen.getByTestId('home-page')).toBeInTheDocument();
+    });
+
+    it('renders rep shell when features.repApp is on and user is sales_rep', () => {
+      features.repApp = true;
+      render(
+        <MemoryRouter initialEntries={['/rep/today']}>
+          <Routes>
+            <Route path="/" element={<div data-testid="home-page">Home</div>} />
+            <Route
+              path="/rep/*"
+              element={
+                <RepGate>
+                  <RepShell />
+                </RepGate>
+              }
+            />
+          </Routes>
+        </MemoryRouter>
+      );
+
+      expect(screen.getByTestId('rep-desktop-rail')).toBeInTheDocument();
     });
   });
 
@@ -150,11 +221,11 @@ describe('M7-T14: Rep shell and navigation (F-750, F-751)', () => {
   });
 
   describe('Basic phone support (F-751) and "Check number" tag', () => {
-    it('normalizes valid Ghana phone number, shows local format, and provides tel link without warning tag', () => {
+    it('shows raw phone number as typed, normalizes for tel and whatsapp links, and provides no warning tag for valid number', () => {
       render(<PhoneDisplay phone="0245550103" />);
 
       const numberSpan = screen.getByTestId('phone-number');
-      expect(numberSpan).toHaveTextContent('024 555 0103');
+      expect(numberSpan).toHaveTextContent('0245550103');
 
       // Valid number should have tap-to-call link
       const callLink = screen.getByTestId('tel-call-link');
@@ -168,11 +239,11 @@ describe('M7-T14: Rep shell and navigation (F-750, F-751)', () => {
       expect(screen.queryByTestId('check-number-tag')).not.toBeInTheDocument();
     });
 
-    it('normalizes already-international phone number correctly', () => {
+    it('shows already-international phone number as typed and normalizes links', () => {
       render(<PhoneDisplay phone="+233245550103" />);
 
       const numberSpan = screen.getByTestId('phone-number');
-      expect(numberSpan).toHaveTextContent('024 555 0103');
+      expect(numberSpan).toHaveTextContent('+233245550103');
 
       const callLink = screen.getByTestId('tel-call-link');
       expect(callLink).toHaveAttribute('href', 'tel:+233245550103');

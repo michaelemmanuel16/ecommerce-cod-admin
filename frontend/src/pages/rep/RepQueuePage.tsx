@@ -9,6 +9,8 @@ import { normalizePhone } from '../../utils/phone';
 import { QueueCallPanel } from './QueueCallPanel';
 import { NewOrderSheet } from '../orders/NewOrderSheet';
 import { formatWaitDuration, formatCallbackTime } from './queueHelpers';
+import { formatCurrency } from '../../utils/format';
+import { personName } from '../../utils/people';
 
 type QueueTab = 'new' | 'call_back' | 'said_no' | 'not_reachable';
 
@@ -28,6 +30,8 @@ export const RepQueuePage: React.FC = () => {
   const [queueData, setQueueData] = useState<QueueResult | null>(null);
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
 
   // Time tracking for live ticker
@@ -35,12 +39,19 @@ export const RepQueuePage: React.FC = () => {
   const [now, setNow] = useState<number>(Date.now());
 
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const queueDataRef = useRef(queueData);
+  queueDataRef.current = queueData;
 
-  const fetchQueue = useCallback(async (tab: QueueTab, q?: string) => {
+  const fetchQueue = useCallback(async (tab: QueueTab, q?: string, isBackground = false) => {
     try {
-      setLoading(true);
+      if (!isBackground) {
+        setLoading(true);
+        setError(null);
+      }
       const data = await repService.getQueue(tab, q);
       setQueueData(data);
+      setRefreshError(false);
+      setError(null);
       const timestamp = Date.now();
       setFetchTime(timestamp);
       setNow(timestamp);
@@ -54,10 +65,16 @@ export const RepQueuePage: React.FC = () => {
       } else {
         setSelectedOrderId(null);
       }
-    } catch {
-      // keep existing
+    } catch (err: any) {
+      if (isBackground && queueDataRef.current) {
+        setRefreshError(true);
+      } else {
+        setError(err?.message || 'Could not load queue');
+      }
     } finally {
-      setLoading(false);
+      if (!isBackground) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -75,7 +92,7 @@ export const RepQueuePage: React.FC = () => {
 
     // Full queue reload every 60 seconds
     const reloadTimer = setInterval(() => {
-      void fetchQueue(activeTab, searchQuery);
+      void fetchQueue(activeTab, searchQuery, true);
     }, 60000);
 
     // Socket events reload
@@ -124,8 +141,8 @@ export const RepQueuePage: React.FC = () => {
 
   const orders = queueData?.orders ?? [];
   const tabs = queueData?.tabs ?? { new: 0, call_back: 0, said_no: 0, not_reachable: 0, total: 0 };
-  const targetMin = queueData?.firstCallTargetMinutes ?? 15;
-  const alertMin = queueData?.queueWaitAlertMinutes ?? 30;
+  const targetMin = queueData?.firstCallTargetMinutes;
+  const alertMin = queueData?.queueWaitAlertMinutes;
 
   // Header summary calculation
   const totalWaiting = tabs.total;
@@ -145,7 +162,7 @@ export const RepQueuePage: React.FC = () => {
     { key: 'not_reachable', label: 'Not reachable', count: tabs.not_reachable },
   ];
 
-  const fullName = user ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() : 'Call Rep';
+  const fullName = user ? personName(user) : 'Call Rep';
 
   return (
     <div className="rep-queue-view" data-testid="rep-queue-page">
@@ -155,6 +172,11 @@ export const RepQueuePage: React.FC = () => {
           <h1>Queue</h1>
           <p data-testid="queue-summary">
             Orders waiting for your call. {totalWaiting} waiting{oldestText}
+            {refreshError && (
+              <span className="tag warn mini" data-testid="queue-refresh-error" style={{ marginLeft: 8, fontSize: 11 }}>
+                Could not refresh
+              </span>
+            )}
           </p>
         </div>
         <button
@@ -206,7 +228,19 @@ export const RepQueuePage: React.FC = () => {
 
           {/* Queue Order List */}
           <div className="qlist" data-testid="queue-list">
-            {orders.length === 0 ? (
+            {error ? (
+              <div className="empty" data-testid="queue-error-line">
+                <p style={{ color: 'var(--ink-2)', marginBottom: 8 }}>{error}</p>
+                <button
+                  type="button"
+                  className="btn mini"
+                  onClick={() => void fetchQueue(activeTab, searchQuery)}
+                  data-testid="queue-retry-btn"
+                >
+                  Try again
+                </button>
+              </div>
+            ) : orders.length === 0 ? (
               <div className="empty" data-testid="queue-empty">
                 <p>
                   {totalWaiting === 0
@@ -222,9 +256,9 @@ export const RepQueuePage: React.FC = () => {
 
                 // Color severity bands: normal < targetMin <= gold < alertMin <= coral
                 let severityClass = '';
-                if (currentWait >= alertMin) {
+                if (alertMin !== undefined && currentWait >= alertMin) {
                   severityClass = 'coral';
-                } else if (currentWait >= targetMin) {
+                } else if (targetMin !== undefined && currentWait >= targetMin) {
                   severityClass = 'gold';
                 }
 
@@ -288,7 +322,7 @@ export const RepQueuePage: React.FC = () => {
                       </div>
                       <small>
                         {order.area ? `${order.area} · ` : ''}
-                        {order.itemsSummary} · GH₵{order.totalAmount}
+                        {order.itemsSummary} · {formatCurrency(order.totalAmount)}
                       </small>
                     </div>
 

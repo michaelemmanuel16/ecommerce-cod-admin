@@ -105,10 +105,13 @@ const MobileGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return <>{children}</>;
 };
 
-// Rep app gate: sales_rep and manager-up roles may open the rep app (F-750)
-const RepGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+// Rep app gate: sales_rep and manager-up roles may open the rep app when features.repApp is on (F-750)
+export const RepGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuthStore();
   if (!user) return null;
+  if (!features.repApp) {
+    return <Navigate to="/" replace />;
+  }
   const allowed = user.role === 'sales_rep' || isManagerUp(user.role);
   if (!allowed) {
     return <Navigate to="/" replace />;

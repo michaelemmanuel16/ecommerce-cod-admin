@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Phone, MessageCircle, Copy, Check } from 'lucide-react';
 import { normalizePhone } from '../../utils/phone';
-import { formatPhoneLocal } from '../../utils/format';
 
 export interface PhoneDisplayProps {
   phone: string | null | undefined;
@@ -20,7 +19,7 @@ export const PhoneDisplay: React.FC<PhoneDisplayProps> = ({
   const raw = phone ?? '';
   const normalized = normalizePhone(raw);
   const isValid = Boolean(normalized);
-  const displayValue = isValid && normalized ? formatPhoneLocal(normalized) : raw;
+  const displayValue = raw;
 
   const handleCopy = async () => {
     if (!raw) return;

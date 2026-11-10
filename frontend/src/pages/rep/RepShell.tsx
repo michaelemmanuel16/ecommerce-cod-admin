@@ -19,6 +19,7 @@ import { useTheme } from '../../hooks/useTheme';
 import { UserMenu } from '../../components/shell/UserMenu';
 import { ToastProvider } from '../../components/ui-v2';
 import { useRepSummary } from './useRepSummary';
+import { personName } from '../../utils/people';
 
 export const RepShell: React.FC = () => {
   const user = useAuthStore((s) => s.user);
@@ -27,7 +28,7 @@ export const RepShell: React.FC = () => {
   const location = useLocation();
 
   const isManager = user ? isManagerUp(user.role) : false;
-  const fullName = user ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() : '';
+  const fullName = user ? personName(user) : '';
 
   const navItems = [
     { to: '/rep/today', label: 'Today', icon: LayoutGrid, count: null },
