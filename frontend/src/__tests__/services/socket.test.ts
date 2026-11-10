@@ -79,7 +79,7 @@ describe('order:status_changed toast', () => {
   it('names the order by its id and says it once for a move made elsewhere', () => {
     handlers['order:status_changed']({ orderId: 21515, newStatus: 'confirmed' });
     expect(toast.success).toHaveBeenCalledTimes(1);
-    expect(toast.success).toHaveBeenCalledWith('Order #21515 status changed to confirmed');
+    expect(toast.success).toHaveBeenCalledWith('Order #21515 status changed to Confirmed');
   });
 
   it('stays silent for a move this tab made itself', () => {
