@@ -15,6 +15,7 @@ import {
 import { timeToFirstCall } from './kpi/timeToFirstCall';
 import { repRates } from './kpi/reps';
 import { upsellService } from './upsellService';
+import { BASE_COMMISSION_AMOUNT, UPSELL_COMMISSION_RATE } from './commissionService';
 
 import { leaderboard } from './leaderboardService';
 import * as rewardService from './rewardService';
@@ -1128,5 +1129,9 @@ export async function getCallCard(
         : null,
     })),
     nextOrderId: nextOrder?.id ?? null,
+    pay: {
+      baseCommission: Money.toApi(BASE_COMMISSION_AMOUNT),
+      upsellPercent: UPSELL_COMMISSION_RATE.mul(100).toNumber(),
+    },
   };
 }

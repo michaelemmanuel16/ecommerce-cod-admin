@@ -7,6 +7,36 @@ export interface CreateCallData {
   outcome: CallOutcome;
   duration?: number;
   notes?: string;
+  startedAt?: string;
+  source?: string;
+  declineReason?: string;
+  callbackAt?: string;
+  expectedUpdatedAt?: string;
+  orderChanges?: {
+    packageId?: number | null;
+    addOnIds?: number[];
+  };
+}
+
+export interface CreateCallResult {
+  call: Call;
+  nextOrderId?: number | null;
+  upsell?: {
+    orderId: number;
+    repId: number;
+    extraValue: string | number;
+    estimatedReward: string | number;
+    lines?: Array<{
+      id: number;
+      kind: string;
+      sourceId: number | null;
+      extraValue: string | number;
+      status: string;
+    }>;
+    warningFlag?: boolean;
+    warning?: string;
+  } | null;
+  warningFlag?: boolean;
 }
 
 export interface CallFilters {
@@ -21,9 +51,9 @@ export interface CallFilters {
 }
 
 export const callsService = {
-  async createCall(data: CreateCallData): Promise<Call> {
+  async createCall(data: CreateCallData): Promise<CreateCallResult> {
     const response = await apiClient.post('/api/calls', data);
-    return response.data.call;
+    return response.data;
   },
 
   async getCalls(filters?: CallFilters): Promise<{ calls: Call[]; pagination: any }> {

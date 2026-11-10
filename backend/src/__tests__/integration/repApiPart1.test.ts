@@ -385,6 +385,8 @@ describe('M7-T10 Rep API part 1: summary, Today, queue, call card, one-save guar
       expect(res.body.lastCalls.length).toBeGreaterThanOrEqual(1);
       expect(res.body.lastCalls[0].outcome).toBe('not_reachable');
       expect(res.body.nextOrderId).toBe(order2.id);
+      expect(res.body.pay.baseCommission).toBe('8.00');
+      expect(res.body.pay.upsellPercent).toBe(10);
 
       // Rep 2 trying to open Rep 1's call card gets 403 Forbidden
       const resForbidden = await request(app).get(`/api/rep/orders/${order1.id}/card`).set(auth(rep2Token));

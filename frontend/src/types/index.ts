@@ -244,6 +244,10 @@ export interface FilterOptions {
 
 export enum CallOutcome {
   CONFIRMED = 'confirmed',
+  NOT_REACHABLE = 'not_reachable',
+  CALL_BACK_LATER = 'call_back_later',
+  DECLINED = 'declined',
+  WRONG_NUMBER = 'wrong_number',
   RESCHEDULED = 'rescheduled',
   NO_ANSWER = 'no_answer',
   CANCELLED = 'cancelled',

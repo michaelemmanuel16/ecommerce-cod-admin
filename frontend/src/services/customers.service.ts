@@ -85,6 +85,12 @@ export const customersService = {
     await apiClient.delete(`/api/customers/${id}`);
   },
 
+  /** Override COD status (F-357, M7-T06, M7-T20). */
+  async overrideCod(customerId: number, data: { allow: boolean; note: string }): Promise<any> {
+    const response = await apiClient.post(`/api/customers/${customerId}/cod-override`, data);
+    return response.data;
+  },
+
   /** The v2 customers list (F-350 to F-353). Rows keep the API names; `skipCache` is for refetches after a change. */
   async listCustomers(params: CustomerListParams, skipCache = false): Promise<{ rows: CustomerRow[]; pagination: PaginationMeta }> {
     const response = await apiClient.get('/api/customers', { params, skipCache });

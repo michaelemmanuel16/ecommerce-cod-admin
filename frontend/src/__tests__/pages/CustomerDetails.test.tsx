@@ -11,12 +11,14 @@ import { DETAIL } from '../fixtures/customersList';
 const getCustomerDetail = vi.fn();
 const deleteCustomer = vi.fn();
 const updateCustomer = vi.fn();
+const overrideCod = vi.fn();
 vi.mock('../../services/locations.service', () => ({ locationsService: { getTowns: () => Promise.resolve(['Kumasi', 'Obuasi']) } }));
 vi.mock('../../services/customers.service', () => ({
   customersService: {
     getCustomerDetail: (...a: unknown[]) => getCustomerDetail(...a),
     deleteCustomer: (...a: unknown[]) => deleteCustomer(...a),
     updateCustomer: (...a: unknown[]) => updateCustomer(...a),
+    overrideCod: (...a: unknown[]) => overrideCod(...a),
   },
 }));
 
@@ -43,7 +45,7 @@ function renderPage(url = '/customers/1') {
 const ALL = { customers: ['view', 'create', 'update', 'delete', 'export'], orders: ['view', 'create'] };
 
 beforeEach(() => {
-  [getCustomerDetail, deleteCustomer, updateCustomer].forEach((m) => m.mockReset());
+  [getCustomerDetail, deleteCustomer, updateCustomer, overrideCod].forEach((m) => m.mockReset());
   getCustomerDetail.mockResolvedValue(DETAIL);
   useConfigStore.setState({ currency: 'GHS', loaded: true });
   useAuthStore.setState({ user: { id: 1, role: 'admin', firstName: 'Manny', lastName: 'A' } as never, permissions: ALL });
@@ -194,5 +196,54 @@ describe('Customer detail: actions (F-355, F-356)', () => {
     await screen.findByRole('heading', { name: 'Abena Owusu' });
     expect(screen.getByRole('button', { name: /Edit/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Delete/ })).toBeNull();
+  });
+});
+
+describe('Risk badge and COD override (M7-T20, F-357, F-766)', () => {
+  it('shows High risk badge at 2 refusals', async () => {
+    getCustomerDetail.mockResolvedValue({ ...DETAIL, refusedOrders: 2, risk: 'high' });
+    renderPage();
+    expect(await screen.findByText('High risk')).toBeInTheDocument();
+  });
+
+  it('shows COD off banner when blocked at 3 refusals', async () => {
+    getCustomerDetail.mockResolvedValue({ ...DETAIL, refusedOrders: 3, risk: 'high', codBlocked: true });
+    renderPage();
+    expect(await screen.findByTestId('cod-off-banner')).toBeInTheDocument();
+    expect(screen.getByText(/Cash on delivery is off/)).toBeInTheDocument();
+    expect(screen.getByText('COD off')).toBeInTheDocument();
+  });
+
+  it('override form is hidden for a rep', async () => {
+    useAuthStore.setState({ user: { id: 9, role: 'sales_rep' } as never, permissions: { customers: ['view', 'create', 'update'] } });
+    renderPage();
+    await screen.findByRole('heading', { name: 'Abena Owusu' });
+    expect(screen.queryByRole('form', { name: 'COD override form' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'COD override' })).toBeNull();
+  });
+
+  it('note is required for override form, and submitting calls overrideCod and reloads', async () => {
+    overrideCod.mockResolvedValue({ success: true });
+    renderPage();
+    await screen.findByRole('heading', { name: 'Abena Owusu' });
+
+    const form = screen.getByRole('form', { name: 'COD override form' });
+    expect(form).toBeInTheDocument();
+
+    const saveBtn = screen.getByRole('button', { name: 'Save override' });
+    expect(saveBtn).toBeDisabled();
+
+    const noteInput = screen.getByLabelText(/Reason note/i);
+    await userEvent.type(noteInput, 'Customer verified delivery address via phone');
+    expect(saveBtn).toBeEnabled();
+
+    await userEvent.click(saveBtn);
+    await waitFor(() => {
+      expect(overrideCod).toHaveBeenCalledWith(1, {
+        allow: true,
+        note: 'Customer verified delivery address via phone',
+      });
+    });
+    expect(await screen.findByText('COD status updated')).toBeInTheDocument();
   });
 });
