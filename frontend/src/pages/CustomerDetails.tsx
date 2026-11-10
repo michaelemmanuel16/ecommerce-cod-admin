@@ -5,6 +5,7 @@ import { ArrowLeft, MessageCircle, Pencil, Phone, ShoppingBag, Trash2 } from 'lu
 import { useV2Page } from '../components/shell/useV2Page';
 import { Button, Card, ConfirmDialog, EmptyState, Skeleton, Table, Tabs, Tag, Tile, useToast, type Column } from '../components/ui-v2';
 import { usePermissions } from '../hooks/usePermissions';
+import { useAuthStore } from '../stores/authStore';
 import { customersService, type CustomerDetail } from '../services/customers.service';
 import { apiErrorMessage } from '../utils/apiError';
 import { formatCurrency, formatPhoneLocal } from '../utils/format';
@@ -54,6 +55,11 @@ export function CustomerDetails() {
   const [tab, setTab] = useState<TabId>('orders');
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const user = useAuthStore((s) => s.user);
+  const canOverride = Boolean(user && ['super_admin', 'admin', 'manager'].includes(user.role));
+  const [overrideAllow, setOverrideAllow] = useState(true);
+  const [overrideNote, setOverrideNote] = useState('');
+  const [overriding, setOverriding] = useState(false);
 
   const load = useCallback(
     async (quiet: boolean) => {
@@ -82,6 +88,24 @@ export function CustomerDetails() {
     } catch (e) {
       // 409: an order is out for delivery. The API's sentence says what to do.
       say(apiErrorMessage(e, 'The customer could not be deleted.'));
+    }
+  };
+
+  const handleCodOverride = async () => {
+    if (!customer || !overrideNote.trim() || overriding) return;
+    setOverriding(true);
+    try {
+      await customersService.overrideCod(customer.id, {
+        allow: overrideAllow,
+        note: overrideNote.trim(),
+      });
+      say('COD status updated');
+      setOverrideNote('');
+      await load(true);
+    } catch (e) {
+      say(apiErrorMessage(e, 'Failed to override COD status'));
+    } finally {
+      setOverriding(false);
     }
   };
 
@@ -120,7 +144,10 @@ export function CustomerDetails() {
           <div className={`a big ${AVATAR_TONES[customer.id % AVATAR_TONES.length]}`} aria-hidden="true">{initials(name)}</div>
           <div>
             <h1>{name}</h1>
-            <RiskTags row={customer}>{customer.codBlocked && <Tag tone="bad">COD off</Tag>}</RiskTags>
+            <RiskTags row={customer}>
+              {customer.refusedOrders >= 2 && <Tag tone="bad">High risk</Tag>}
+              {customer.codBlocked && <Tag tone="bad">COD off</Tag>}
+            </RiskTags>
             <small>
               {formatPhoneLocal(customer.phoneNumber)}
               {customer.area ? ` · ${customer.area}` : ''}
@@ -164,10 +191,79 @@ export function CustomerDetails() {
         </div>
       )}
       {customer.codBlocked && (
-        <div className="bar bad" role="status">
-          <b>Cash on delivery is off</b>
+        <div className="bar bad" role="status" data-testid="cod-off-banner">
+          <b>Cash on delivery is off (COD off)</b>
           <span>Refused {customer.refusedOrders} deliveries. New orders go to a manual call.</span>
         </div>
+      )}
+
+      {canOverride && (
+        <Card title="COD override" className="sec" style={{ marginTop: 16 }}>
+          <form
+            aria-label="COD override form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleCodOverride();
+            }}
+            style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+          >
+            <p style={{ margin: 0, fontSize: 13.5, color: 'var(--ink-2)' }}>
+              Reset the refusal count to 0 and allow or block Cash on Delivery for this customer.
+            </p>
+            <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 14 }}>
+                <input
+                  type="radio"
+                  name="codAction"
+                  value="allow"
+                  checked={overrideAllow}
+                  onChange={() => setOverrideAllow(true)}
+                />
+                Allow COD
+              </label>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 14 }}>
+                <input
+                  type="radio"
+                  name="codAction"
+                  value="block"
+                  checked={!overrideAllow}
+                  onChange={() => setOverrideAllow(false)}
+                />
+                Block COD
+              </label>
+            </div>
+            <div className="fld">
+              <label htmlFor="override-note" style={{ display: 'block', fontWeight: 600, fontSize: 13, marginBottom: 4 }}>
+                Reason note <span style={{ color: 'var(--coral)' }}>*</span>
+              </label>
+              <input
+                id="override-note"
+                placeholder="Reason note (required)"
+                value={overrideNote}
+                onChange={(e) => setOverrideNote(e.target.value)}
+                required
+                style={{
+                  width: '100%',
+                  maxWidth: 480,
+                  padding: '8px 12px',
+                  border: '1px solid var(--line)',
+                  borderRadius: 10,
+                  background: 'var(--card)',
+                  color: 'var(--ink)',
+                }}
+              />
+            </div>
+            <div>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={!overrideNote.trim() || overriding}
+              >
+                {overriding ? 'Saving...' : 'Save override'}
+              </Button>
+            </div>
+          </form>
+        </Card>
       )}
 
       <div className="grid kpis">

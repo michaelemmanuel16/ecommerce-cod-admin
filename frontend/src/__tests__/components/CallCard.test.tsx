@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CallCard } from '../../components/rep/CallCard';
 import { ToastProvider } from '../../components/ui-v2';
@@ -267,5 +267,21 @@ describe('CallCard (M7-T17)', () => {
       );
       expect(onDone).toHaveBeenCalledWith(24043);
     });
+  });
+
+  it('allows rep to edit customer from call card via CustomerModal', async () => {
+    renderCallCard();
+    await screen.findByRole('heading', { name: 'Efua Mensah' });
+
+    // Click Edit button in Customer block
+    const editBtn = screen.getByRole('button', { name: /Edit/ });
+    expect(editBtn).toBeInTheDocument();
+    await userEvent.click(editBtn);
+
+    // Modal opens
+    const modal = await screen.findByRole('dialog', { name: 'Edit customer' });
+    expect(modal).toBeInTheDocument();
+    // Reps have no delete button in the customer edit modal
+    expect(within(modal).queryByRole('button', { name: /Delete/ })).toBeNull();
   });
 });
