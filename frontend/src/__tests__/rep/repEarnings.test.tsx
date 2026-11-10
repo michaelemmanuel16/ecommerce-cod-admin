@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { RepEarningsPage } from '../../pages/rep/RepEarningsPage';
 import {
@@ -121,6 +121,8 @@ describe('M7-T19: Rep Earnings page (F-761)', () => {
 
     expect(screen.getByTestId('line-commission')).toHaveTextContent('GH₵2,024');
     expect(screen.getByTestId('line-upsell')).toHaveTextContent('GH₵610');
+    expect(screen.getByTestId('line-upsell')).toHaveTextContent('Share of extra value on delivered orders');
+    expect(screen.getByTestId('line-upsell')).not.toHaveTextContent('10%');
     expect(screen.getByTestId('line-paid')).toHaveTextContent('− GH₵600');
     expect(screen.getByTestId('owed-now-amount')).toHaveTextContent('GH₵2,034');
 
@@ -249,5 +251,81 @@ describe('M7-T19: Rep Earnings page (F-761)', () => {
     expect(screen.getByText('No target set')).toBeInTheDocument();
     expect(screen.getByText('No order earnings yet.')).toBeInTheDocument();
     expect(screen.getByText('No payment history yet.')).toBeInTheDocument();
+  });
+
+  it('when reward progress fails, earnings still show, reward line shows error and "Try again"', async () => {
+    vi.mocked(repService.getEarnings).mockResolvedValueOnce(mockEarningsResult);
+    vi.mocked(repService.getRewardProgress).mockRejectedValueOnce(new Error('Network error'));
+
+    render(
+      <MemoryRouter>
+        <RepEarningsPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('earnings-main-amount')).toHaveTextContent('GH₵2,034');
+    });
+
+    // Earnings data still shows
+    expect(screen.getByTestId('line-commission')).toHaveTextContent('GH₵2,024');
+
+    // Reward line shows error and "Try again"
+    const rewardLine = screen.getByTestId('reward-progress-line');
+    expect(rewardLine).toHaveTextContent('Could not load target reward');
+    expect(within(rewardLine).getByRole('button', { name: /try again/i })).toBeInTheDocument();
+
+    // Does NOT show "No target set"
+    expect(screen.queryByText('No target set')).not.toBeInTheDocument();
+  });
+
+  it('when tiers is null, shows no amount; when tier100.amount is 450.00, shows formatted 450', async () => {
+    vi.mocked(repService.getRewardProgress).mockResolvedValueOnce({
+      ...mockRewardProgress,
+      target: '423',
+      tiers: null,
+    });
+
+    const { unmount } = render(
+      <MemoryRouter>
+        <RepEarningsPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('reward-progress-line')).toBeInTheDocument();
+    });
+
+    // tiers: null shows "Target: 423 confirmed and delivered" and no currency amount
+    const rewardLine1 = screen.getByTestId('reward-progress-line');
+    expect(rewardLine1).toHaveTextContent('Target: 423 confirmed and delivered');
+    expect(rewardLine1).not.toHaveTextContent('300');
+    expect(rewardLine1).not.toHaveTextContent('GH₵');
+
+    unmount();
+
+    // Now test tier100.amount: '450.00'
+    vi.mocked(repService.getRewardProgress).mockResolvedValueOnce({
+      ...mockRewardProgress,
+      target: '423',
+      tiers: {
+        tier100: { amount: '450.00', dayOff: false, payout: true },
+        tier120: null,
+      },
+    });
+
+    render(
+      <MemoryRouter>
+        <RepEarningsPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('reward-progress-line')).toBeInTheDocument();
+    });
+
+    const rewardLine2 = screen.getByTestId('reward-progress-line');
+    expect(rewardLine2).toHaveTextContent('GH₵450 at 423 confirmed and delivered (100%)');
+    expect(rewardLine2).not.toHaveTextContent('300');
   });
 });

@@ -4,8 +4,9 @@ import clsx from 'clsx';
 import { repService, type RepOrderRow, type RepOrdersResult } from '../../services/rep.service';
 import { formatOrderNumber } from '../../utils/orderNumber';
 import { getOrderStatusLabel } from '../../utils/orderStatus';
-import { formatCurrency } from '../../utils/format';
+import { formatCurrency, formatDate } from '../../utils/format';
 import { normalizePhone } from '../../utils/phone';
+import { personName } from '../../utils/people';
 import { CallCard } from '../../components/rep/CallCard';
 import { STATUS_TONE } from '../orders/model';
 import type { OrderStatus } from '../../types';
@@ -16,7 +17,7 @@ const STATUS_FILTER_OPTIONS = [
   { value: 'out_for_delivery', label: 'Out for delivery' },
   { value: 'delivered', label: 'Delivered' },
   { value: 'failed_delivery,returned', label: 'Failed or returned' },
-  { value: 'cancelled', label: 'Declined' },
+  { value: 'cancelled', label: getOrderStatusLabel('cancelled') },
 ];
 
 export const RepOrdersPage: React.FC = () => {
@@ -98,7 +99,7 @@ export const RepOrdersPage: React.FC = () => {
               <input
                 id="oq"
                 type="text"
-                placeholder="Name, phone, area or order #"
+                placeholder="Name, phone or order #"
                 aria-label="Search my orders"
                 value={searchQuery}
                 onChange={handleSearchChange}
@@ -145,9 +146,7 @@ export const RepOrdersPage: React.FC = () => {
               </div>
             ) : (
               orders.map((o) => {
-                const customerName = o.customer
-                  ? `${o.customer.firstName || ''} ${o.customer.lastName || ''}`.trim() || 'Customer'
-                  : 'Customer';
+                const customerName = o.customer ? personName(o.customer) || 'Customer' : 'Customer';
                 const statusLabel = getOrderStatusLabel(o.status);
                 const orderNum = formatOrderNumber(o.id);
                 const area = o.customer?.area || o.customer?.state || '';
@@ -178,7 +177,7 @@ export const RepOrdersPage: React.FC = () => {
                   >
                     <div className="wt">
                       <small>{orderNum}</small>
-                      <b style={{ fontSize: 12.5 }}>{statusLabel.split(' ')[0]}</b>
+                      <b style={{ fontSize: 12.5 }}>{formatDate(o.createdAt, 'd MMM')}</b>
                     </div>
 
                     <div className="qm">

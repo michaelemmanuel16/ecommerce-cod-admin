@@ -7,6 +7,7 @@ import { repService, type RepOrdersResult } from '../../services/rep.service';
 import { useAuthStore } from '../../stores/authStore';
 import { useConfigStore } from '../../stores/configStore';
 import { ToastProvider } from '../../components/ui-v2';
+import { getOrderStatusLabel } from '../../utils/orderStatus';
 
 vi.mock('../../services/rep.service', () => ({
   repService: {
@@ -280,5 +281,38 @@ describe('M7-T19: My orders page (F-760)', () => {
 
     expect(screen.getByText('Nothing here')).toBeInTheDocument();
     expect(screen.getByText('You have no assigned orders yet.')).toBeInTheDocument();
+  });
+
+  it('cancelled filter option uses the shared getOrderStatusLabel("cancelled") label', async () => {
+    renderOrders();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('orders-status-filter')).toBeInTheDocument();
+    });
+
+    const statusSelect = screen.getByTestId('orders-status-filter') as HTMLSelectElement;
+    const cancelledOption = statusSelect.querySelector('option[value="cancelled"]');
+    expect(cancelledOption).toBeInTheDocument();
+    expect(cancelledOption?.textContent).toBe(getOrderStatusLabel('cancelled'));
+    expect(cancelledOption?.textContent).toBe('Cancelled');
+    expect(cancelledOption?.textContent).not.toBe('Declined');
+  });
+
+  it('search input has placeholder "Name, phone or order #" and left column shows date not status prefix', async () => {
+    renderOrders();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('order-row-1042')).toBeInTheDocument();
+    });
+
+    const searchInput = screen.getByLabelText('Search my orders');
+    expect(searchInput).toHaveAttribute('placeholder', 'Name, phone or order #');
+
+    // Left column wt block shows order number and formatted date ('d MMM'), not status prefix
+    const row1042 = screen.getByTestId('order-row-1042');
+    const wt1042 = row1042.querySelector('.wt');
+    expect(wt1042).toHaveTextContent('#1042');
+    expect(wt1042).toHaveTextContent('15 Oct');
+    expect(wt1042).not.toHaveTextContent('Delivered');
   });
 });

@@ -134,7 +134,7 @@ export const RepNumbersPage: React.FC = () => {
             <b className="num">
               {confirmationRate !== null && confirmationRate !== undefined ? `${confirmationRate}%` : '—'}
             </b>
-            <em>target 70%</em>
+            <em>Confirmed ÷ assigned</em>
           </div>
 
           <div className="drv" data-testid="kpi-delivery-success">

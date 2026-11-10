@@ -12,24 +12,55 @@ import { getOrderStatusLabel } from '../../utils/orderStatus';
 import { STATUS_TONE } from '../orders/model';
 import type { OrderStatus } from '../../types';
 
+function getTargetRewardSubtext(rewardProgress: RewardProgressResult | null): string {
+  if (!rewardProgress?.target) {
+    return 'No target set';
+  }
+  const tier100Amount = rewardProgress.tiers?.tier100?.amount;
+  if (!rewardProgress.tiers || !tier100Amount) {
+    return `Target: ${rewardProgress.target} confirmed and delivered`;
+  }
+  const formattedAmount = formatCurrency(tier100Amount, rewardProgress.currency);
+  return `${formattedAmount} at ${rewardProgress.target} confirmed and delivered (100%)`;
+}
+
 export const RepEarningsPage: React.FC = () => {
   const [earnings, setEarnings] = useState<RepEarningsResult | null>(null);
   const [rewardProgress, setRewardProgress] = useState<RewardProgressResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [rewardLoading, setRewardLoading] = useState(false);
+  const [rewardError, setRewardError] = useState<string | null>(null);
+
+  const loadRewardProgress = async () => {
+    try {
+      setRewardLoading(true);
+      setRewardError(null);
+      const res = await repService.getRewardProgress();
+      setRewardProgress(res);
+    } catch {
+      setRewardError('Could not load target reward');
+      setRewardProgress(null);
+    } finally {
+      setRewardLoading(false);
+    }
+  };
 
   const loadData = async () => {
     try {
       setLoading(true);
       setError(null);
-      const [earningsRes, rewardRes] = await Promise.all([
-        repService.getEarnings(),
-        repService.getRewardProgress().catch(() => null),
+      await Promise.allSettled([
+        (async () => {
+          try {
+            const earningsRes = await repService.getEarnings();
+            setEarnings(earningsRes);
+          } catch (err: any) {
+            setError(err?.message || 'Could not load earnings');
+          }
+        })(),
+        loadRewardProgress(),
       ]);
-      setEarnings(earningsRes);
-      setRewardProgress(rewardRes);
-    } catch (err: any) {
-      setError(err?.message || 'Could not load earnings');
     } finally {
       setLoading(false);
     }
@@ -79,13 +110,10 @@ export const RepEarningsPage: React.FC = () => {
     );
   }
 
-  const currency = earnings?.currency || 'GHS';
-  const isOverpaid = Boolean(earnings?.isOverpaid || (earnings?.owed && Number(earnings.owed) < 0));
-  const overpaidAmount = earnings?.overpaid || (earnings?.owed ? String(Math.abs(Number(earnings.owed))) : '0.00');
-  const owedAmount = earnings?.owed ?? '0.00';
-
-  const overpaidDisplay = `Overpaid ${formatCurrency(overpaidAmount, currency)}`;
-  const owedDisplay = isOverpaid ? overpaidDisplay : formatCurrency(owedAmount, currency);
+  const currency = earnings?.currency;
+  const isOverpaid = Boolean(earnings?.isOverpaid);
+  const overpaidDisplay = `Overpaid ${formatCurrency(earnings?.overpaid, currency)}`;
+  const owedDisplay = isOverpaid ? overpaidDisplay : formatCurrency(earnings?.owed, currency);
 
   const lines = earnings?.lines ?? [];
   const payouts = earnings?.payouts ?? [];
@@ -126,7 +154,7 @@ export const RepEarningsPage: React.FC = () => {
             <div className="li" data-testid="line-upsell">
               <span>
                 Upsell reward
-                <em>10% of extra value on delivered orders</em>
+                <em>Share of extra value on delivered orders</em>
               </span>
               <b className="num">{formatCurrency(earnings?.upsellReward ?? '0.00', currency)}</b>
             </div>
@@ -166,22 +194,38 @@ export const RepEarningsPage: React.FC = () => {
 
           <div className="lines" style={{ paddingTop: 0 }}>
             <div className="li" data-testid="reward-progress-line">
-              <span>
-                Target reward
-                <em>
-                  {rewardProgress?.target
-                    ? `GH₵${rewardProgress.reward?.amount || '300'} at ${rewardProgress.target} confirmed and delivered (100%)`
-                    : 'No target set'}
-                </em>
-              </span>
-              {rewardProgress?.targetReached ? (
-                <span className="tag ok" data-testid="reward-target-reached">
-                  Paid after month close
-                </span>
+              {rewardError ? (
+                <>
+                  <span>
+                    Target reward
+                    <em style={{ color: 'var(--coral)' }}>Could not load target reward</em>
+                  </span>
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{ padding: '4px 10px', fontSize: 12 }}
+                    onClick={() => void loadRewardProgress()}
+                    disabled={rewardLoading}
+                  >
+                    Try again
+                  </button>
+                </>
               ) : (
-                <span className="tag n" data-testid="reward-target-progress">
-                  {rewardProgress?.actual ?? 0} of {rewardProgress?.target ?? '—'}
-                </span>
+                <>
+                  <span>
+                    Target reward
+                    <em>{getTargetRewardSubtext(rewardProgress)}</em>
+                  </span>
+                  {rewardProgress?.targetReached ? (
+                    <span className="tag ok" data-testid="reward-target-reached">
+                      Paid after month close
+                    </span>
+                  ) : (
+                    <span className="tag n" data-testid="reward-target-progress">
+                      {rewardProgress?.actual ?? 0} of {rewardProgress?.target ?? '—'}
+                    </span>
+                  )}
+                </>
               )}
             </div>
           </div>

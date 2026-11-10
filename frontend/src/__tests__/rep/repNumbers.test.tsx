@@ -222,4 +222,21 @@ describe('M7-T19: Rep Numbers page (F-762)', () => {
     expect(screen.getByTestId('orders-stack-legend')).toHaveTextContent('Delivered 0');
     expect(screen.getByTestId('calls-row')).toHaveTextContent('0');
   });
+
+  it('confirmation rate shows "Confirmed ÷ assigned" and no "target 70%"', async () => {
+    render(
+      <MemoryRouter>
+        <RepNumbersPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('kpi-confirmation-rate')).toBeInTheDocument();
+    });
+
+    const kpi = screen.getByTestId('kpi-confirmation-rate');
+    expect(kpi).toHaveTextContent('Confirmed ÷ assigned');
+    expect(kpi).not.toHaveTextContent('target 70%');
+    expect(document.body.textContent).not.toContain('target 70%');
+  });
 });

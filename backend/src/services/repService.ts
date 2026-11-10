@@ -387,12 +387,11 @@ export async function getEarnings(actor: Requester, query: RepEarningsQuery = {}
   await assertCanSeeMoneyOf(actor, targetRepId);
   const tenantId = resolveTenantId();
 
-  const [rep, settings, currency] = await Promise.all([
+  const [rep, currency] = await Promise.all([
     prisma.user.findFirst({
       where: { id: targetRepId, tenantId },
       select: { id: true, firstName: true, lastName: true, role: true, kind: true },
     }),
-    rewardService.getRewardSettings(),
     getCurrency(),
   ]);
 
@@ -454,8 +453,7 @@ export async function getEarnings(actor: Requester, query: RepEarningsQuery = {}
     },
   });
 
-  const baseCommission = settings.repPay?.baseCommission ?? '8.00';
-  const formattedBaseCommission = Money.formatWithSign(baseCommission, currency);
+  const formattedBaseCommission = Money.formatWithSign(BASE_COMMISSION_AMOUNT, currency);
   const openOrdersNote = `${openOrdersCount} of your confirmed orders are still open, each adds ${formattedBaseCommission} when delivered.`;
 
   // Build lines per order
