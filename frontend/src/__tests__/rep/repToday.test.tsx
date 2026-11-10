@@ -50,7 +50,7 @@ describe('M7-T15: Today page and reward card (F-752, F-753)', () => {
         targetProgress: {
           hasTarget: true,
           message: '170 more to GH₵300',
-          target: 423,
+          target: '423',
           actual: 253,
           percent: 59.8,
           tier: 'none',
@@ -63,25 +63,17 @@ describe('M7-T15: Today page and reward card (F-752, F-753)', () => {
 
       vi.mocked(repService.getRewardProgress).mockResolvedValue({
         period: '2026-10',
-        currency: 'GH₵',
-        target: 423,
+        currency: 'GHS',
+        target: '423',
         actual: 253,
         percent: 59.8,
         tier: 'none',
         tiers: {
-          tier100: {
-            thresholdPercent: 100,
-            bonusAmount: '300',
-            description: 'GH₵300 bonus',
-          },
-          tier120: {
-            thresholdPercent: 120,
-            bonusAmount: '500',
-            description: 'GH₵500 + paid day off',
-          },
+          tier100: { amount: '300.00', dayOff: false, payout: true },
+          tier120: { amount: '500.00', dayOff: true, payout: true },
         },
-        reward: 'GH₵300 bonus',
-        distance: 170,
+        reward: null,
+        distance: { next: '100', amount: 170, unit: 'confirmed orders', message: '170 more confirmed orders that get delivered to reach 100% (GH₵300)' },
         message: '170 more to GH₵300',
         note: 'The reward is paid after month close.',
         targetReached: false,
@@ -113,7 +105,9 @@ describe('M7-T15: Today page and reward card (F-752, F-753)', () => {
       expect(screen.getByTestId('reward-progress-fill')).toHaveStyle({ width: '59.8%' });
 
       // Tiers from API
-      expect(screen.getByTestId('tier-100')).toHaveTextContent('GH₵300 bonus');
+      expect(screen.getByTestId('tier-100')).toHaveTextContent('GH₵300');
+      expect(screen.getByTestId('tier-100')).toHaveTextContent('170 more confirmed orders');
+      expect(screen.getByTestId('tier-100')).not.toHaveTextContent('[object Object]');
       expect(screen.getByTestId('tier-120')).toHaveTextContent('GH₵500 + paid day off');
 
       // No 80% tier mentioned
@@ -129,7 +123,7 @@ describe('M7-T15: Today page and reward card (F-752, F-753)', () => {
         targetProgress: {
           hasTarget: true,
           message: 'You reached 100%. Paid after month close.',
-          target: 423,
+          target: '423',
           actual: 430,
           percent: 101.6,
           tier: '100',
@@ -140,17 +134,17 @@ describe('M7-T15: Today page and reward card (F-752, F-753)', () => {
 
       vi.mocked(repService.getRewardProgress).mockResolvedValue({
         period: '2026-10',
-        currency: 'GH₵',
-        target: 423,
+        currency: 'GHS',
+        target: '423',
         actual: 430,
         percent: 101.6,
         tier: '100',
         tiers: {
-          tier100: { thresholdPercent: 100, bonusAmount: '300', description: 'GH₵300 bonus' },
-          tier120: { thresholdPercent: 120, bonusAmount: '500', description: 'GH₵500 + paid day off' },
+          tier100: { amount: '300.00', dayOff: false, payout: true },
+          tier120: { amount: '500.00', dayOff: true, payout: true },
         },
-        reward: 'GH₵300 bonus',
-        distance: 0,
+        reward: { amount: '300.00', dayOff: false },
+        distance: { next: '120', amount: 85, unit: 'confirmed orders', message: '85 more confirmed orders that get delivered to reach 120%' },
         message: 'You reached 100%. Paid after month close.',
         note: 'Paid after month close',
         targetReached: true,
@@ -191,7 +185,7 @@ describe('M7-T15: Today page and reward card (F-752, F-753)', () => {
 
       vi.mocked(repService.getRewardProgress).mockResolvedValue({
         period: '2026-10',
-        currency: 'GH₵',
+        currency: 'GHS',
         target: null,
         actual: 0,
         percent: null,
@@ -247,7 +241,7 @@ describe('M7-T15: Today page and reward card (F-752, F-753)', () => {
 
       vi.mocked(repService.getRewardProgress).mockResolvedValue({
         period: '2026-10',
-        currency: 'GH₵',
+        currency: 'GHS',
         target: null,
         actual: 0,
         percent: null,
@@ -294,7 +288,7 @@ describe('M7-T15: Today page and reward card (F-752, F-753)', () => {
         targetProgress: {
           hasTarget: true,
           message: '170 more',
-          target: 400,
+          target: '400',
           actual: 230,
           percent: 57.5,
           tier: 'none',
@@ -306,13 +300,13 @@ describe('M7-T15: Today page and reward card (F-752, F-753)', () => {
       vi.mocked(repService.getRewardProgress).mockResolvedValue({
         period: '2026-10',
         currency: 'GHS',
-        target: 400,
+        target: '400',
         actual: 230,
         percent: 57.5,
         tier: 'none',
         tiers: null,
         reward: null,
-        distance: 170,
+        distance: { next: '100', amount: 170, unit: 'confirmed orders', message: '170 more confirmed orders that get delivered to reach 100%' },
         message: '170 more',
         note: 'The reward is paid after month close.',
         targetReached: false,

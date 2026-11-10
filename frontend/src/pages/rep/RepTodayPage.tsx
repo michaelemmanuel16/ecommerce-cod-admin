@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import clsx from 'clsx';
-import { repService, type TodayStats, type RewardProgressResult } from '../../services/rep.service';
+import { repService, type TodayStats, type RewardProgressResult, type RewardTierConfig } from '../../services/rep.service';
 import { useAuthStore } from '../../stores/authStore';
 import { useConfigStore } from '../../stores/configStore';
 import { formatCurrency } from '../../utils/format';
@@ -14,7 +14,7 @@ export const RepTodayPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const activeCurrency = (rewardData?.currency === 'GH₵' ? 'GHS' : rewardData?.currency) || storeCurrency || 'GHS';
+  const activeCurrency = rewardData?.currency || storeCurrency;
 
   const fetchData = useCallback(async () => {
     try {
@@ -54,14 +54,12 @@ export const RepTodayPage: React.FC = () => {
   const hasTarget = Boolean(todayData?.targetProgress?.hasTarget && rewardData?.target);
   const targetReached = Boolean(rewardData?.targetReached);
 
-  const tier100 = rewardData?.tiers?.tier100;
-  const tier120 = rewardData?.tiers?.tier120;
-  const tier100Amount = tier100?.bonusAmount ?? (tier100 as any)?.amount;
-  const tier100Label = tier100Amount ? formatCurrency(tier100Amount, activeCurrency) : '';
-  const tier100Desc = tier100?.description || (tier100Label ? `${tier100Label} bonus` : '');
-  const tier120Amount = tier120?.bonusAmount ?? (tier120 as any)?.amount;
-  const tier120Bonus = tier120Amount ? formatCurrency(tier120Amount, activeCurrency) : '';
-  const tier120Desc = tier120?.description || (tier120Bonus ? `${tier120Bonus} + paid day off` : '');
+  // A tier the owner has not set shows "Not set"; no amount is invented (F-1231).
+  const tierText = (t: RewardTierConfig | null | undefined) =>
+    t ? `${formatCurrency(t.amount, activeCurrency)}${t.dayOff ? ' + paid day off' : ''}` : 'Not set';
+  const tier100Desc = tierText(rewardData?.tiers?.tier100);
+  const tier120Desc = tierText(rewardData?.tiers?.tier120);
+  const distanceText = rewardData?.distance?.message ?? '';
 
   const confRate = todayData?.confirmationRate;
   const delivRate = todayData?.deliveredFromConfirmed;
@@ -131,7 +129,7 @@ export const RepTodayPage: React.FC = () => {
               >
                 {targetReached
                   ? 'Paid after month close'
-                  : rewardData?.message || (tier100Label ? `${rewardData?.distance ?? 0} more to ${tier100Label}` : `${rewardData?.distance ?? 0} more`)}
+                  : rewardData?.message}
               </span>
             )}
           </div>
@@ -193,7 +191,7 @@ export const RepTodayPage: React.FC = () => {
                     <span>{tier100Desc}</span>
                     <br />
                     <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>
-                      {targetReached ? 'Reached' : `${rewardData.distance ?? 0} more`}
+                      {targetReached ? 'Reached' : distanceText}
                     </span>
                   </div>
                   <div

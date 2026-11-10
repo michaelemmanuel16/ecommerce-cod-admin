@@ -32,25 +32,33 @@ export interface TodayStats {
   deliveredFromConfirmed: number | null;
 }
 
+/** One reward tier as the server sends it (rewardService tierView). */
 export interface RewardTierConfig {
-  thresholdPercent: number;
-  bonusAmount: string;
-  description: string;
+  amount: string;
+  dayOff: boolean;
+  payout: boolean;
+}
+
+export interface RewardDistance {
+  next: '100' | '120';
+  amount: number | null;
+  unit: string;
+  message: string;
 }
 
 export interface RewardProgressResult {
   period: string;
   currency: string;
-  target: number | null;
+  target: string | null;
   actual: number;
   percent: number | null;
-  tier: string;
+  tier: 'none' | '100' | '120';
   tiers: {
-    tier100: RewardTierConfig;
-    tier120: RewardTierConfig;
+    tier100: RewardTierConfig | null;
+    tier120: RewardTierConfig | null;
   } | null;
-  reward: string | null;
-  distance: number | null;
+  reward: { amount: string; dayOff: boolean } | null;
+  distance: RewardDistance | null;
   message: string;
   note: string;
   targetReached: boolean;
