@@ -291,7 +291,7 @@ describe('CallCard (M7-T17)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Call back later' }));
     await userEvent.click(screen.getByRole('button', { name: 'In 30 min' }));
     await userEvent.click(screen.getByRole('button', { name: 'Save call back' }));
-    expect(await screen.findByText('Call back set for In 30 min')).toBeInTheDocument();
+    expect(await screen.findByText(/^Call back set for \d{2}:\d{2}$/)).toBeInTheDocument();
     t2.unmount();
 
     // 3. Declined with reason

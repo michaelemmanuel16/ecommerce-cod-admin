@@ -18,7 +18,7 @@ import { Button, Skeleton, Tag, useToast } from '../ui-v2';
 import { CustomerModal } from '../../pages/customers/CustomerModal';
 import { repService, type CallCardData } from '../../services/rep.service';
 import { callsService } from '../../services/calls.service';
-import { formatCurrency, formatPhoneLocal } from '../../utils/format';
+import { formatCurrency, formatDate, formatPhoneLocal } from '../../utils/format';
 import { orderNumber, shortDate, STATUS_TONE } from '../../pages/orders/model';
 import { ORDER_STATUS_LABELS } from '../../utils/orderStatus';
 import { toCents } from '../../utils/money';
@@ -262,7 +262,7 @@ export function CallCard({ orderId, onDone, onBack }: CallCardProps) {
       } else if (outcome === 'not_reachable') {
         say('Call saved: not reachable');
       } else if (outcome === 'call_back_later') {
-        say(`Call back set for ${cbChip || customCbTime}`);
+        say(callbackDate ? `Call back set for ${formatDate(callbackDate, 'HH:mm')}` : 'Call back set');
       } else if (outcome === 'declined') {
         say('Call saved: declined');
       } else if (outcome === 'wrong_number') {
