@@ -290,6 +290,16 @@ describe('CallCard (M7-T17)', () => {
     expect(mockGetCallCard).toHaveBeenCalledTimes(2);
   });
 
+  it('marks the current package as picked and labelled "current"', async () => {
+    renderCallCard();
+    await screen.findByRole('heading', { name: 'Efua Mensah' });
+    await userEvent.click(screen.getByRole('button', { name: 'Confirmed' }));
+    const current = screen.getByRole('button', { name: /1 copybook set · current/ });
+    expect(current).toHaveClass('on');
+    await userEvent.click(current); // tapping the current package keeps it picked
+    expect(current).toHaveClass('on');
+  });
+
   it('a second tap on the picked package undoes the pick (no package change is sent)', async () => {
     // Real old orders: the current package matches no form package (id null).
     mockGetCallCard.mockResolvedValue({

@@ -255,7 +255,30 @@ describe('M7-T04: Upsell service rules', () => {
       .set('Authorization', `Bearer ${adwoaToken}`);
 
     expect(res.status).toBe(200);
-    expect(res.body.currentPackage).toMatchObject({ id: null, name: '2 × Magic Writing Set', price: '449.0000' });
+    // No name matches, so the one live package with the same quantity and price is the current one.
+    expect(res.body.currentPackage).toMatchObject({ id: pkg2Id, name: '2 × Magic Writing Set', price: '449.0000' });
+  });
+
+  it('manual order whose package line matches no live package by quantity and price: no current package', async () => {
+    const order = await prismaBase.order.create({
+      data: {
+        customerId,
+        status: 'pending_confirmation',
+        subtotal: 400,
+        totalAmount: 400,
+        codAmount: 400,
+        customerRepId: adwoaId,
+        tenantId,
+        orderItems: { create: [{ productId, quantity: 2, unitPrice: 200, totalPrice: 400, itemType: 'package' }] },
+      } as any,
+    });
+
+    const res = await request(app)
+      .get(`/api/orders/${order.id}/upsell-options`)
+      .set('Authorization', `Bearer ${adwoaToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.currentPackage).toMatchObject({ id: null, price: '400.0000' });
   });
 
   it('server computes extra value from package and add-on prices; client spoofed value is ignored', async () => {

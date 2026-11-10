@@ -216,6 +216,18 @@ export class UpsellService {
       if (live) currentPackageId = live.id;
     }
 
+    // Older orders store the package as "2 × Product", so no name matches. Then match the one live
+    // package with the same quantity and price as the order's package line.
+    if (!availablePackages.some((p) => p.id === currentPackageId)) {
+      const line = order.orderItems.find((i) => i.itemType === 'package');
+      if (line) {
+        const same = availablePackages.filter(
+          (p) => p.quantity === line.quantity && Money.compare(p.price, currentPackagePrice) === 0,
+        );
+        if (same.length === 1) currentPackageId = same[0].id;
+      }
+    }
+
     // Addons
     const availableAddons: UpsellOptionAddon[] = [];
     const seenAddonIds = new Set<number>();

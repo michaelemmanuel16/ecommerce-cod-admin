@@ -622,7 +622,10 @@ export function CallCard({ orderId, onDone, onBack, readOnly = false }: CallCard
                       <span className="rd">
                         {isSel && <CheckCircle2 aria-hidden="true" style={{ width: 14, height: 14 }} />}
                       </span>
-                      <span>{pkg.name}</span>
+                      <span>
+                        {pkg.name}
+                        {pkg.id === card.packages.currentPackage.id && <span className="sub"> · current</span>}
+                      </span>
                       <span className="pr">{formatCurrency(pkg.price)}</span>
                     </button>
                   );
