@@ -4,6 +4,7 @@ import clsx from 'clsx';
 import { Plus, Search, Phone, MessageCircle } from 'lucide-react';
 import { repService, type QueueResult, type QueueItem } from '../../services/rep.service';
 import { useAuthStore } from '../../stores/authStore';
+import { getSocket } from '../../services/socket';
 import { normalizePhone } from '../../utils/phone';
 import { QueueCallPanel } from './QueueCallPanel';
 import { NewOrderSheet } from '../orders/NewOrderSheet';
@@ -78,7 +79,7 @@ export const RepQueuePage: React.FC = () => {
     }, 60000);
 
     // Socket events reload
-    const socket = useAuthStore.getState().socket;
+    const socket = getSocket();
     const handleSocket = () => {
       void fetchQueue(activeTab, searchQuery);
     };
@@ -340,7 +341,7 @@ export const RepQueuePage: React.FC = () => {
             void fetchQueue(activeTab, searchQuery);
           }}
           canAssign={false}
-          reps={[{ value: user.id, label: fullName }]}
+          reps={[{ id: user.id, name: fullName }]}
           agents={[]}
         />
       )}

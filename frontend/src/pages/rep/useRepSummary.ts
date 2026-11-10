@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { repService, type ShellSummary } from '../../services/rep.service';
-import { useAuthStore } from '../../stores/authStore';
+import { getSocket } from '../../services/socket';
 
 const REFETCH_EVENTS = [
   'order:created',
@@ -38,7 +38,7 @@ export function useRepSummary() {
     }, 60000);
 
     // Socket events
-    const socket = useAuthStore.getState().socket;
+    const socket = getSocket();
     if (socket) {
       REFETCH_EVENTS.forEach((event) => {
         socket.on(event, fetchSummary);
