@@ -435,8 +435,7 @@ export function CallCard({ orderId, onDone, onBack, readOnly = false }: CallCard
           <dd>Cash on delivery · unpaid</dd>
           <dt>Assigned</dt>
           <dd>
-            Call rep {card.order.customerRep?.name ?? 'Adwoa Darko'}
-            {card.order.deliveryAgent ? ` · Delivery ${card.order.deliveryAgent.name}` : ' · Delivery agent not set yet'}
+            Call rep: {card.order.customerRep?.name ?? 'not set'} · Delivery: {card.order.deliveryAgent?.name ?? 'not set yet'}
           </dd>
           {(card.customer.refusedOrders > 0 || card.customer.riskLevel === 'high' || card.customer.codBlocked || card.customer.wrongNumber) && (
             <>

@@ -207,6 +207,12 @@ describe('CallCard (M7-T17)', () => {
     expect(saveBtn).toBeEnabled();
   });
 
+  it('Assigned row reads "Call rep: <name> · Delivery: <name>"', async () => {
+    renderCallCard();
+    await screen.findByRole('heading', { name: 'Efua Mensah' });
+    expect(screen.getByText('Call rep: Adwoa Darko · Delivery: not set yet')).toBeInTheDocument();
+  });
+
   it('blocks past call-back time', async () => {
     renderCallCard();
     await screen.findByRole('heading', { name: 'Efua Mensah' });
