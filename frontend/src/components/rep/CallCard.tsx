@@ -154,11 +154,9 @@ export function CallCard({ orderId, onDone, onBack, readOnly = false }: CallCard
     if (cbChip) {
       targetDate = computeChipDate(cbChip, now);
     } else if (customCbTime) {
-      const [h, m] = customCbTime.split(':').map(Number);
-      if (!Number.isNaN(h) && !Number.isNaN(m)) {
-        targetDate = new Date();
-        targetDate.setHours(h, m, 0, 0);
-      }
+      // datetime-local value "YYYY-MM-DDTHH:mm", read as the rep's local time
+      const picked = new Date(customCbTime);
+      if (!Number.isNaN(picked.getTime())) targetDate = picked;
     }
 
     if (!targetDate) return { callbackDate: null, isPastCallback: false };
@@ -265,7 +263,7 @@ export function CallCard({ orderId, onDone, onBack, readOnly = false }: CallCard
       } else if (outcome === 'not_reachable') {
         say('Call saved: not reachable');
       } else if (outcome === 'call_back_later') {
-        say(callbackDate ? `Call back set for ${formatDate(callbackDate, 'HH:mm')}` : 'Call back set');
+        say(callbackDate ? `Call back set for ${formatDate(callbackDate, callbackDate.toDateString() === new Date().toDateString() ? 'HH:mm' : 'EEE d MMM, HH:mm')}` : 'Call back set');
       } else if (outcome === 'declined') {
         say('Call saved: declined');
       } else if (outcome === 'wrong_number') {
@@ -700,11 +698,11 @@ export function CallCard({ orderId, onDone, onBack, readOnly = false }: CallCard
                 ))}
               </div>
             </div>
-            <div className="fld" style={{ marginTop: 10, maxWidth: 200 }}>
-              <label htmlFor="custom-cb-time">Or pick a time</label>
+            <div className="fld" style={{ marginTop: 10, maxWidth: 260 }}>
+              <label htmlFor="custom-cb-time">Or pick a date and time</label>
               <input
                 id="custom-cb-time"
-                type="time"
+                type="datetime-local"
                 value={customCbTime}
                 onChange={(e) => {
                   setCustomCbTime(e.target.value);

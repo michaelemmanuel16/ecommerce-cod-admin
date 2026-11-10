@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CallCard } from '../../components/rep/CallCard';
 import { ToastProvider } from '../../components/ui-v2';
@@ -214,14 +214,34 @@ describe('CallCard (M7-T17)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Call back later' }));
     const saveBtn = screen.getByRole('button', { name: 'Save call back' });
 
-    // Pick custom time in the past (00:01 today)
-    const timeInput = screen.getByLabelText(/Or pick a time/i);
-    await userEvent.type(timeInput, '00:01');
+    // Pick a date and time in the past
+    const timeInput = screen.getByLabelText(/Or pick a date and time/i);
+    fireEvent.change(timeInput, { target: { value: '2020-01-01T09:00' } });
 
     await waitFor(() => {
       expect(screen.getByText('Call-back time cannot be in the past')).toBeInTheDocument();
       expect(saveBtn).toBeDisabled();
     });
+  });
+
+  it('call back on another day: sends that date and the toast shows the day', async () => {
+    mockCreateCall.mockResolvedValueOnce({ call: { id: 60 }, nextOrderId: null });
+    renderCallCard();
+    await screen.findByRole('heading', { name: 'Efua Mensah' });
+    await userEvent.click(screen.getByRole('button', { name: 'Call back later' }));
+
+    const d = new Date();
+    d.setDate(d.getDate() + 3);
+    const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    fireEvent.change(screen.getByLabelText(/Or pick a date and time/i), { target: { value: `${ymd}T09:30` } });
+    await userEvent.click(screen.getByRole('button', { name: 'Save call back' }));
+
+    await waitFor(() => {
+      expect(mockCreateCall).toHaveBeenCalledWith(
+        expect.objectContaining({ callbackAt: new Date(`${ymd}T09:30`).toISOString() }),
+      );
+    });
+    expect(await screen.findByText(/^Call back set for \w{3} \d{1,2} \w{3}, 09:30$/)).toBeInTheDocument();
   });
 
   it('disables outcome buttons when order is cancelled or confirmed', async () => {
