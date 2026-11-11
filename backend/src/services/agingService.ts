@@ -284,7 +284,7 @@ export class AgingService {
     const body = `Hello ${partner.firstName}, you still hold ${Money.format(mine.total.amount, currency)} from ${orders}.${late} Please send the payment and reply with the reference. Thank you.`;
     const result = await whatsappService.sendText({ to: partner.phoneNumber, body });
     if (!result.sent) logger.warn('Partner reminder not sent: WhatsApp is not set up', { agentId });
-    return { sent: Boolean(result.providerMessageId), unpaidOrders: mine.total.orders, overdueOrders: mine.overdue.orders };
+    return { sent: result.sent, unpaidOrders: mine.total.orders, overdueOrders: mine.overdue.orders };
   }
 
   /** Partners with orders past their days to pay (the daily notification job). */

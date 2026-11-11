@@ -59,7 +59,7 @@ async function deliver(channel: InviteChannel, person: Invitee, inviter: string,
     const text = (url: string) => `Hi ${person.firstName}, ${inviter} invited you to join their team. Set your password here (works once, ${INVITE_TTL_DAYS} days): ${url}`;
     const message = { to: person.phoneNumber!, body: text(link), logBody: text(REDACTED) };
     const result = channel === 'sms' ? await smsService.sendSms(message) : await whatsappService.sendText(message);
-    return result.providerMessageId ? { channel, sent: true } : { channel, sent: false, reason: `${CHANNEL_LABEL[channel]} is not set up` };
+    return result.sent ? { channel, sent: true } : { channel, sent: false, reason: `${CHANNEL_LABEL[channel]} is not set up` };
   } catch (error) {
     logger.warn('Invite link not delivered', { channel, error: error instanceof Error ? error.message : String(error) });
     return { channel, sent: false, reason: error instanceof Error ? error.message : 'Send failed' };
