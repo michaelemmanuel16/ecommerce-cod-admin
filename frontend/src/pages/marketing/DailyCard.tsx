@@ -41,6 +41,9 @@ export function DailyTip({ active, payload, today }: TipProps) {
   );
 }
 
+/** Orders a day as the box shows it: one decimal under 10, so 3 orders in 11 days reads 0.3, not 0. */
+const perDay = (n: number): number => (n < 10 ? Math.round(n * 10) / 10 : Math.round(n));
+
 const todayYmd = (): string => new Date().toISOString().slice(0, 10);
 
 /** Daily spend vs orders (marketing.html "Daily spend vs orders"): spend bars on the left axis, orders line on the right. */
@@ -74,7 +77,7 @@ export function DailyCard({ daily, today = todayYmd() }: { daily: Daily; today?:
       <div className="dailybox">
         {daily.best && <div className="drv"><small>Best day</small><b>{shortDay(daily.best.date)}</b><em>{money(daily.best.costPerOrder)} per order</em></div>}
         {daily.worst && <div className="drv"><small>Worst day</small><b>{shortDay(daily.worst.date)}</b><em>{money(daily.worst.costPerOrder)} per order</em></div>}
-        <div className="drv"><small>Average a day</small><b>{money(daily.average.spend)}</b><em>{plural(Math.round(daily.average.ordersPerDay), 'order')}</em></div>
+        <div className="drv"><small>Average a day</small><b>{money(daily.average.spend)}</b><em>{plural(perDay(daily.average.ordersPerDay), 'order')}</em></div>
       </div>
     </Card>
   );

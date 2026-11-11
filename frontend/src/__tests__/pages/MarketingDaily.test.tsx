@@ -60,6 +60,11 @@ describe('DailyCard', () => {
     expect(screen.getByText('Average a day').parentElement).toHaveTextContent('87 orders');
   });
 
+  it('shows a small orders-a-day average with one decimal, not 0', () => {
+    render(<DailyCard daily={daily({ average: { ...daily().average, ordersPerDay: 0.27 } })} today="2026-10-17" />);
+    expect(screen.getByText('Average a day').parentElement).toHaveTextContent('0.3 orders');
+  });
+
   it('hides the best and worst boxes when there is no day with spend and orders', () => {
     render(<DailyCard daily={daily({ best: null, worst: null })} today="2026-10-17" />);
     expect(screen.queryByText('Best day')).not.toBeInTheDocument();
