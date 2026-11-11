@@ -21,7 +21,7 @@ import { resolveTenantId } from '../../utils/tenantContext';
 import { CONFIRMED, DIGITAL } from '../kpi/rates';
 import { getStoreTimeZone, shiftYmd, startOfDay, utcDateOfYmd } from '../kpi/dates';
 import { campaignKey, listCampaigns, resolveProducts } from './campaignMappingService';
-import { accountContext, dayRates, maxCpaRaw, maxCpaView, moneyView, rateKey, type MaxCpa, type MoneyView } from './marketingKpiService';
+import { accountContext, dayRates, effectiveContext, maxCpaRaw, maxCpaView, moneyView, rateKey, spendInRange, type MaxCpa, type MoneyView } from './marketingKpiService';
 
 /** A campaign at or under this percent of max CPA is Winning. */
 export const WINNING_PERCENT_OF_MAX_CPA = 85;
@@ -142,7 +142,9 @@ function view(store: Money.Money, original: Money.Money, currency: string, store
 /** The campaign rows and totals, with the max CPA of each mapped product and the account context they were built with. */
 async function campaignData(input: { from: string; to: string }) {
   const store = await getCurrency();
-  const [list, days, ctx] = await Promise.all([listCampaigns(input), spendDaysOf(input), accountContext(input.to)]);
+  const [list, days, spotCtx, spent] = await Promise.all([listCampaigns(input), spendDaysOf(input), accountContext(input.to), spendInRange(input, store)]);
+  // The rate the range really used (account total / store total), the same one the tiles show.
+  const ctx = effectiveContext(spotCtx, spent);
   const rates = await dayRates(days, store);
 
   // Per campaign: Meta counts, spend in the store currency (each day at its own rate), the latest Meta status
@@ -253,7 +255,9 @@ export async function products(input: { from: string; to: string }): Promise<{ p
       ordersPlaced: f.ordersPlaced, confirmed: f.confirmed, delivered: f.delivered,
       yieldPct: max.yieldPct,
       maxCpa: max,
-      costPerPlaced: f.ordersPlaced > 0 ? moneyView(Money.div(storeSpend, f.ordersPlaced), ctx) : null,
+      costPerPlaced: f.ordersPlaced > 0
+        ? moneyView(Money.div(storeSpend, f.ordersPlaced), ctx, spend.account !== null ? { account: Money.div(spend.account, f.ordersPlaced) } : {})
+        : null,
       lowData: max.closedOrders < LOW_DATA_CLOSED_ORDERS,
     };
   }));

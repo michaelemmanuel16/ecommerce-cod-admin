@@ -60,7 +60,7 @@ export const metaAdsService = {
   },
 
   async refresh(id: number): Promise<MetaRefreshResult> {
-    const response = await apiClient.post(`/api/meta-ads/accounts/${id}/refresh`);
+    const response = await apiClient.post(`/api/meta-ads/accounts/${id}/refresh`, undefined, { quiet: true }); // the card shows the error inline
     return response.data;
   },
 };

@@ -5,7 +5,7 @@ import type { MoneyView, Summary } from '../../services/marketing.service';
 import { formatRateUsed } from '../../utils/format';
 import { parseMoney } from '../../utils/money';
 import { changeRow, type Good } from '../reports/delta';
-import { count, plural, rangeLabel } from '../reports/format';
+import { count, plural, rangeLabel, wholePercent } from '../reports/format';
 import { money, moneyNumber } from './format';
 
 /** The change against the previous period: a tag with the arrow and the earlier figure. `good` says which way is good news. */
@@ -22,7 +22,7 @@ const moneyChange = (cur: MoneyView | null | undefined, prev: MoneyView | null |
 export function Tiles({ s }: { s: Summary }) {
   const p = s.previous;
   const max = s.maxCpa;
-  const rate = max.maxCpa?.rate ?? s.projectedCostPerDelivered.value?.rate ?? null;
+  const rate = s.spend.rate;
   const accountSpend = s.spend.account !== null && s.spend.accountCurrency;
   const yieldNow = max.yieldPct;
   const yieldPrev = p.maxCpa.yieldPct;
@@ -40,7 +40,7 @@ export function Tiles({ s }: { s: Summary }) {
       />
       <Tile
         icon={<Target />} tone="mint" value={max.maxCpa ? money(max.maxCpa) : '-'} label="Max CPA"
-        footer={<span>{max.message ?? (yieldNow !== null ? `At ${Math.round(yieldNow)}% yield` : '')}</span>}
+        footer={<span>{max.message ?? (yieldNow !== null ? `At ${wholePercent(yieldNow)} yield` : '')}</span>}
         delta={moneyChange(max.maxCpa, p.maxCpa.maxCpa, 'up')}
       />
       <Tile
@@ -54,9 +54,9 @@ export function Tiles({ s }: { s: Summary }) {
         delta={moneyChange(s.actualCostPerDelivered.value, p.actualCostPerDelivered.value, 'down')}
       />
       <Tile
-        icon={<Wallet />} tone="violet" value={yieldNow !== null ? `${Math.round(yieldNow)}%` : '-'} label="Order-to-cash yield"
+        icon={<Wallet />} tone="violet" value={yieldNow !== null ? wholePercent(yieldNow) : '-'} label="Order-to-cash yield"
         footer={<><span>{max.message && yieldNow === null ? max.message : 'Of placed orders'}</span><Tag tone="n">{count(max.closedOrders)} closed</Tag></>}
-        delta={change(yieldNow, yieldPrev, yieldPrev !== null ? `${Math.round(yieldPrev)}%` : '', 'up', ' pts')}
+        delta={change(yieldNow, yieldPrev, yieldPrev !== null ? wholePercent(yieldPrev) : '', 'up', ' pts')}
       />
     </div>
   );
