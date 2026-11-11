@@ -4,21 +4,15 @@ import { Tag, Tile } from '../../components/ui-v2';
 import type { MoneyView, Summary } from '../../services/marketing.service';
 import { formatRateUsed } from '../../utils/format';
 import { parseMoney } from '../../utils/money';
-import { rangeLabel } from '../reports/format';
+import { changeRow, type Good } from '../reports/delta';
+import { count, plural, rangeLabel } from '../reports/format';
 import { money, moneyNumber } from './format';
-
-type Good = 'up' | 'down' | null;
 
 /** The change against the previous period: a tag with the arrow and the earlier figure. `good` says which way is good news. */
 function change(current: number | null, previous: number | null, previousText: string, good: Good, unit: '%' | ' pts' = '%'): ReactNode {
-  if (previous === null || current === null) return <><Tag tone="n">No data</Tag>in the previous period</>;
+  if (previous === null || current === null) return changeRow(true, null, unit, good, previousText);
   const diff = unit === '%' ? (previous === 0 ? null : ((current - previous) / Math.abs(previous)) * 100) : current - previous;
-  if (diff === null) return <><Tag tone="n">No data</Tag>in the previous period</>;
-  const whole = Math.round(diff);
-  if (whole === 0) return <><Tag tone="n">Same</Tag>vs {previousText}</>;
-  const up = whole > 0;
-  const tone = good === null ? 'n' : up === (good === 'up') ? 'ok' : 'bad';
-  return <><Tag tone={tone}>{up ? '▲' : '▼'} {Math.abs(whole)}{unit}</Tag>vs {previousText}</>;
+  return changeRow(true, diff, unit, good, previousText);
 }
 
 const moneyChange = (cur: MoneyView | null | undefined, prev: MoneyView | null | undefined, good: Good) =>
@@ -42,7 +36,7 @@ export function Tiles({ s }: { s: Summary }) {
           <span>{accountSpend ? <>About {money({ ...s.spend, account: null, accountCurrency: null })}{rate !== null && s.spend.accountCurrency ? ` (${formatRateUsed(s.spend.accountCurrency, parseMoney(rate))})` : ''}</> : 'In the store currency'}</span>
           <Tag tone="n">{rangeLabel(s.from, s.to)}</Tag>
         </>}
-        delta={<>{waiting > 0 && <span className="mktwait">{waiting} {waiting === 1 ? 'day waits' : 'days wait'} for an FX rate</span>}{moneyChange(s.spend, p.spend, null)}</>}
+        delta={<>{waiting > 0 && <span className="mktwait">{plural(waiting, 'day')} {waiting === 1 ? 'waits' : 'wait'} for an FX rate</span>}{moneyChange(s.spend, p.spend, null)}</>}
       />
       <Tile
         icon={<Target />} tone="mint" value={max.maxCpa ? money(max.maxCpa) : '-'} label="Max CPA"
@@ -50,18 +44,18 @@ export function Tiles({ s }: { s: Summary }) {
         delta={moneyChange(max.maxCpa, p.maxCpa.maxCpa, 'up')}
       />
       <Tile
-        icon={<Truck />} tone="coral" value={money(s.projectedCostPerDelivered.value)} label="Projected cost per delivered"
+        icon={<Truck />} tone="coral" value={money(s.projectedCostPerDelivered.value)} label="Projected cost per delivered order"
         footer={<span>{s.projectedCostPerDelivered.message ?? (s.projectedCostPerDelivered.value ? 'Spend over placed orders at the yield' : 'No orders placed yet')}</span>}
         delta={moneyChange(s.projectedCostPerDelivered.value, p.projectedCostPerDelivered.value, 'down')}
       />
       <Tile
         icon={<Truck />} tone="gold" value={money(s.actualCostPerDelivered.value)} label={s.actualCostPerDelivered.label}
-        footer={<span>{s.actualCostPerDelivered.value ? `${s.delivered.toLocaleString('en-US')} delivered` : 'No delivered orders yet'}</span>}
+        footer={<span>{s.actualCostPerDelivered.value ? `${count(s.delivered)} delivered` : 'No delivered orders yet'}</span>}
         delta={moneyChange(s.actualCostPerDelivered.value, p.actualCostPerDelivered.value, 'down')}
       />
       <Tile
         icon={<Wallet />} tone="violet" value={yieldNow !== null ? `${Math.round(yieldNow)}%` : '-'} label="Order-to-cash yield"
-        footer={<><span>{max.message && yieldNow === null ? max.message : 'Of placed orders'}</span><Tag tone="n">{max.closedOrders} closed</Tag></>}
+        footer={<><span>{max.message && yieldNow === null ? max.message : 'Of placed orders'}</span><Tag tone="n">{count(max.closedOrders)} closed</Tag></>}
         delta={change(yieldNow, yieldPrev, yieldPrev !== null ? `${Math.round(yieldPrev)}%` : '', 'up', ' pts')}
       />
     </div>

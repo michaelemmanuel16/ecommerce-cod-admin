@@ -1,7 +1,17 @@
 import * as winston from 'winston';
 import * as path from 'path';
+import { redactSecrets } from './safeError';
 
 const logDir = path.join(process.cwd(), 'logs');
+
+/** Removes tokens from the message, the stack and every string value of the meta (`error` included). */
+export const redactFormat = winston.format((info) => {
+  for (const key of Object.keys(info)) {
+    const value = info[key];
+    if (typeof value === 'string') info[key] = redactSecrets(value);
+  }
+  return info;
+});
 
 const logger = winston.createLogger({
   level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
@@ -9,6 +19,7 @@ const logger = winston.createLogger({
     winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
     winston.format.errors({ stack: true }),
     winston.format.splat(),
+    redactFormat(),
     winston.format.json()
   ),
   defaultMeta: { service: 'ecommerce-cod-api' },

@@ -21,7 +21,7 @@ import { resolveTenantId } from '../../utils/tenantContext';
 import { CONFIRMED, DIGITAL } from '../kpi/rates';
 import { getStoreTimeZone, shiftYmd, startOfDay, utcDateOfYmd } from '../kpi/dates';
 import { campaignKey, listCampaigns, resolveProducts } from './campaignMappingService';
-import { accountContext, dayRateLookup, maxCpa, maxCpaRaw, maxCpaView, moneyView, type MaxCpa, type MoneyView } from './marketingKpiService';
+import { accountContext, dayRates, maxCpaRaw, maxCpaView, moneyView, rateKey, type MaxCpa, type MoneyView } from './marketingKpiService';
 
 /** A campaign at or under this percent of max CPA is Winning. */
 export const WINNING_PERCENT_OF_MAX_CPA = 85;
@@ -139,20 +139,19 @@ function view(store: Money.Money, original: Money.Money, currency: string, store
   return { store: Money.toApi(store), account: same ? null : Money.toApi(original), accountCurrency: same ? null : currency, rate: null, rateDate: null };
 }
 
-export async function campaigns(input: { from: string; to: string }): Promise<{ campaigns: CampaignPerformanceRow[]; totals: CampaignTotals }> {
-  const tenantId = resolveTenantId();
+/** The campaign rows and totals, with the max CPA of each mapped product and the account context they were built with. */
+async function campaignData(input: { from: string; to: string }) {
   const store = await getCurrency();
   const [list, days, ctx] = await Promise.all([listCampaigns(input), spendDaysOf(input), accountContext(input.to)]);
-  const rateFor = dayRateLookup(tenantId, store);
+  const rates = await dayRates(days, store);
 
   // Per campaign: Meta counts, spend in the store currency (each day at its own rate), the latest Meta status
   type Acc = { storeSpend: Money.Money; impressions: number; linkClicks: number; landingPageViews: number; checkoutsStarted: number; purchases: number; metaStatus: string | null };
   const acc = new Map<string, Acc>();
-  await Promise.all(days.map(async (d) => { await rateFor(d.currency, d.date.toISOString().slice(0, 10)); }));
   for (const d of days) { // newest first
     const key = campaignKey(d.adAccountId, d.campaignId);
     const a = acc.get(key) ?? { storeSpend: Money.ZERO, impressions: 0, linkClicks: 0, landingPageViews: 0, checkoutsStarted: 0, purchases: 0, metaStatus: null };
-    const rate = await rateFor(d.currency, d.date.toISOString().slice(0, 10));
+    const rate = rates.get(rateKey(d.currency, d.date));
     if (rate) a.storeSpend = Money.add(a.storeSpend, Money.mul(d.spend, rate));
     a.impressions += d.impressions; a.linkClicks += d.linkClicks; a.landingPageViews += d.landingPageViews;
     a.checkoutsStarted += d.checkoutsStarted; a.purchases += d.purchases;
@@ -188,17 +187,20 @@ export async function campaigns(input: { from: string; to: string }): Promise<{ 
   const originals = new Set(list.map((c) => c.currency));
   const oneCurrency = originals.size === 1 ? [...originals][0] : store;
   const originalSum = Money.sum(list.map((c) => c.spend));
-  return {
-    campaigns: rows,
-    totals: {
-      spend: view(storeSpend, originalSum, oneCurrency, store),
-      impressions: total((a) => a.impressions), linkClicks: total((a) => a.linkClicks), landingPageViews: total((a) => a.landingPageViews),
-      checkoutsStarted: total((a) => a.checkoutsStarted), purchases,
-      cpa: purchases > 0 ? view(Money.div(storeSpend, purchases), Money.div(originalSum, purchases), oneCurrency, store) : null,
-      projectedDelivered: Money.sum(rows.map((r) => r.projectedDelivered ?? 0)).toNumber(),
-      projectedDeliveredLabel: META_PURCHASES_LABEL,
-    },
+  const totals: CampaignTotals = {
+    spend: view(storeSpend, originalSum, oneCurrency, store),
+    impressions: total((a) => a.impressions), linkClicks: total((a) => a.linkClicks), landingPageViews: total((a) => a.landingPageViews),
+    checkoutsStarted: total((a) => a.checkoutsStarted), purchases,
+    cpa: purchases > 0 ? view(Money.div(storeSpend, purchases), Money.div(originalSum, purchases), oneCurrency, store) : null,
+    projectedDelivered: Money.sum(rows.map((r) => r.projectedDelivered ?? 0)).toNumber(),
+    projectedDeliveredLabel: META_PURCHASES_LABEL,
   };
+  return { rows, totals, maxByProduct, ctx };
+}
+
+export async function campaigns(input: { from: string; to: string }): Promise<{ campaigns: CampaignPerformanceRow[]; totals: CampaignTotals }> {
+  const { rows, totals } = await campaignData(input);
+  return { campaigns: rows, totals };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -221,9 +223,9 @@ export interface ProductPerformanceRow {
   lowData: boolean;
 }
 
-/** One row per product that has a mapped campaign in the range. Reuses campaigns(), funnel() and maxCpa(); no new math. */
+/** One row per product that has a mapped campaign in the range. Reuses campaignData(), funnel() and maxCpaView(); no new math. */
 export async function products(input: { from: string; to: string }): Promise<{ products: ProductPerformanceRow[] }> {
-  const { campaigns: rows } = await campaigns(input);
+  const { rows, maxByProduct, ctx } = await campaignData(input);
   const byProduct = new Map<number, { product: NonNullable<CampaignPerformanceRow['product']>; rows: CampaignPerformanceRow[] }>();
   for (const r of rows) {
     if (!r.product) continue;
@@ -231,9 +233,9 @@ export async function products(input: { from: string; to: string }): Promise<{ p
     entry.rows.push(r);
     byProduct.set(r.product.id, entry);
   }
-  const ctx = await accountContext(input.to);
   const out = await Promise.all([...byProduct.values()].map(async ({ product, rows: rs }) => {
-    const [f, max] = await Promise.all([funnel({ ...input, productId: product.id }), maxCpa({ to: input.to, productId: product.id })]);
+    const f = await funnel({ ...input, productId: product.id });
+    const max = maxCpaView(maxByProduct.get(product.id)!, ctx);
     const storeSpend = Money.sum(rs.map((r) => r.spend.store));
     // The account figure shows only when every campaign has one in the same currency
     const currencies = new Set(rs.map((r) => r.spend.accountCurrency));

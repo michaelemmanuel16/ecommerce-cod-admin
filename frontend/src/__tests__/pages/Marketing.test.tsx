@@ -65,7 +65,7 @@ describe('Marketing page', () => {
     const max = screen.getByText('Max CPA', { selector: '.kpi .l' }).closest('.kpi') as HTMLElement;
     expect(within(max).getByText('₦7,040')).toBeInTheDocument();
     expect(within(max).getByText('At 34% yield')).toBeInTheDocument();
-    expect(screen.getByText('Projected cost per delivered').closest('.kpi')).toHaveTextContent('₦17,360');
+    expect(screen.getByText('Projected cost per delivered order').closest('.kpi')).toHaveTextContent('₦17,360');
     expect(screen.getByText('Actual, delivered in range').closest('.kpi')).toHaveTextContent('₦22,686');
     expect(screen.getByText('Order-to-cash yield').closest('.kpi')).toHaveTextContent('34%');
   });
@@ -75,7 +75,7 @@ describe('Marketing page', () => {
     const spend = (await screen.findByText('Ad spend')).closest('.kpi') as HTMLElement;
     expect(within(spend).getByText(/▲ 22%/)).toBeInTheDocument(); // 8.53M vs 7M
     expect(within(spend).getByText(/vs ₦7,000,000/)).toBeInTheDocument();
-    const projected = screen.getByText('Projected cost per delivered').closest('.kpi') as HTMLElement;
+    const projected = screen.getByText('Projected cost per delivered order').closest('.kpi') as HTMLElement;
     expect(within(projected).getByText(/▼ 13%/)).toBeInTheDocument();
     const yieldTile = screen.getByText('Order-to-cash yield').closest('.kpi') as HTMLElement;
     expect(within(yieldTile).getByText(/▲ 4 pts/)).toBeInTheDocument();
@@ -89,7 +89,7 @@ describe('Marketing page', () => {
     }));
     renderPage();
     expect(await screen.findByText('No room for ads at this price')).toBeInTheDocument();
-    expect(screen.getByText('Projected cost per delivered').closest('.kpi')).toHaveTextContent('Not enough closed orders');
+    expect(screen.getByText('Projected cost per delivered order').closest('.kpi')).toHaveTextContent('Not enough closed orders');
     expect(screen.getByText('2 days wait for an FX rate')).toBeInTheDocument();
   });
 

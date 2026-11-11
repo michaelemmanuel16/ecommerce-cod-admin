@@ -2,9 +2,10 @@
 import type { Amount, MoneyView } from '../../services/marketing.service';
 import { formatCurrency, getStoreCurrency } from '../../utils/format';
 import { parseMoney } from '../../utils/money';
+import { wholeMoney } from '../dashboard/format';
 
 /** The one place the page formats an amount: naira is a whole number (no kobo), any other currency keeps its own decimals. */
-export const amount = (v: Amount, currency: string): string => formatCurrency(currency === 'NGN' ? Math.round(parseMoney(v)) : v, currency);
+export const amount = (v: Amount, currency: string): string => (currency === 'NGN' ? wholeMoney(v, currency) : formatCurrency(v, currency));
 
 /** The ad account figure first when there is one (₦), else the store figure. A missing figure is a dash. */
 export const money = (v: MoneyView | null | undefined): string => {
