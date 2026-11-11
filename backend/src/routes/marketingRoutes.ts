@@ -4,6 +4,7 @@ import { authenticate, requireResourcePermission } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate } from '../middleware/validation';
 import * as ctrl from '../controllers/marketingMappingController';
+import * as kpi from '../controllers/marketingKpiController';
 
 const router = Router();
 
@@ -39,5 +40,8 @@ router.put(
 );
 router.get('/campaigns', canView, ctrl.getCampaigns);
 router.get('/campaigns/unmapped', canView, ctrl.getUnmapped);
+
+// Tiles and max CPA (M8-T10)
+router.get('/summary', canView, kpi.getSummary);
 
 export default router;
