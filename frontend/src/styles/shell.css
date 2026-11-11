@@ -16,12 +16,12 @@
   .v2 .app.collapsed{grid-template-columns:72px 1fr}
   .v2 .app.collapsed .side{padding:18px 10px;overflow-x:hidden}
   .v2 .app.collapsed .brand{flex-direction:column;gap:10px;padding:4px 0 14px}
-  .v2 .app.collapsed .brand b,.v2 .app.collapsed .store .txt,.v2 .app.collapsed .navgroup p,.v2 .app.collapsed .nav .lbl,.v2 .app.collapsed .me .txt{display:none}
+  .v2 .app.collapsed .brand b,.v2 .app.collapsed .store .txt,.v2 .app.collapsed .navgroup p,.v2 .app.collapsed .side .nav .lbl,.v2 .app.collapsed .me .txt{display:none}
   .v2 .app.collapsed .brand .sidetoggle{margin-left:0}
   .v2 .app.collapsed .store{justify-content:center;padding:6px}
   .v2 .app.collapsed .navgroup{padding-bottom:6px;border-bottom:1px solid var(--line)}
-  .v2 .app.collapsed .nav{position:relative;justify-content:center;padding:9px 0}
-  .v2 .app.collapsed .nav .pill{position:absolute;top:1px;right:4px;margin:0;font-size:10px;padding:0 5px}
+  .v2 .app.collapsed .side .nav{position:relative;justify-content:center;padding:9px 0}
+  .v2 .app.collapsed .side .nav .pill{position:absolute;top:1px;right:4px;margin:0;font-size:10px;padding:0 5px}
   .v2 .app.collapsed .me{padding:8px}
   .v2 .app.collapsed .me .row{justify-content:center}
 }
