@@ -10,8 +10,9 @@ import { BlockError } from './dashboard/blocks/Frame';
 import { Part } from './financial/profit/Part';
 import { refreshBlocks } from './financial/profit/useBlock';
 import { CampaignsCard } from './marketing/CampaignsCard';
+import { DailyCard } from './marketing/DailyCard';
 import { FunnelCard } from './marketing/FunnelCard';
-import { useAccounts, useCampaigns, useFunnel, useProducts, useSummary, useUnmapped } from './marketing/blocks';
+import { useAccounts, useCampaigns, useDaily, useFunnel, useProducts, useSummary, useUnmapped } from './marketing/blocks';
 import { MappingDialog, type MapTarget } from './marketing/MappingDialog';
 import { amount, money } from './marketing/format';
 import { PERIODS, periodRange, type Period } from './marketing/range';
@@ -24,7 +25,7 @@ import type { CampaignRow, Unmapped } from '../services/marketing.service';
 /**
  * Marketing (M8-T14, COD-74), built from docs/mockups/v2/marketing.html: Meta ad results by product, from ad click to
  * delivered order. The page does no KPI arithmetic: every figure, status and message comes from the API. The agent
- * cards, the agent drawer and the daily chart are later milestones.
+ * cards and the agent drawer are a later milestone.
  */
 export function Marketing() {
   useV2Page();
@@ -43,6 +44,7 @@ export function Marketing() {
   const products = useProducts(range, connected);
   const campaigns = useCampaigns(range, connected);
   const unmapped = useUnmapped(range, connected);
+  const daily = useDaily(range, connected);
 
   if (accounts.status === 'failed') return <section className="mkt"><BlockError name="Meta accounts" onRetry={accounts.retry} /></section>;
   if (accounts.data === undefined) return <section className="mkt" aria-busy="true" aria-label="Loading Marketing"><Skeleton height={160} className="skelcard" /></section>;
@@ -72,7 +74,7 @@ export function Marketing() {
   const stripTargets = (u: Unmapped): MapTarget[] => u.campaigns.map((c) => toTarget(c, amount(c.spend, c.currency), null));
   // A saved mapping changes the campaign rows, the product rows, the unmapped strip and a product funnel, not the accounts or the tiles
   const refreshAfterMapping = () => refreshBlocks(['mkt|campaigns|', 'mkt|products|', 'mkt|unmapped|', ...(productId !== null ? ['mkt|funnel|'] : [])]);
-  const busy = [summary, funnel, products, campaigns].some((b) => b.status === 'loading' && b.data !== undefined);
+  const busy = [summary, funnel, products, campaigns, daily].some((b) => b.status === 'loading' && b.data !== undefined);
 
   return (
     <section className={clsx('mkt', busy && 'busy')}>
@@ -95,6 +97,7 @@ export function Marketing() {
       <Part name="Campaigns" block={campaigns} height={260}>
         {(c) => <CampaignsCard rows={c.campaigns} totals={c.totals} rangeText={label} onMap={canMap ? (r) => setMapping([rowTarget(r)]) : undefined} />}
       </Part>
+      <Part name="Daily spend vs orders" block={daily} height={380}>{(d) => <DailyCard daily={d} />}</Part>
       {mapping && <MappingDialog targets={mapping} onClose={() => setMapping(null)} onSaved={refreshAfterMapping} />}
     </section>
   );

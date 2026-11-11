@@ -6,10 +6,10 @@ import { ToastProvider } from '../../components/ui-v2';
 import { Marketing } from '../../pages/Marketing';
 import { clearBlockCache } from '../../pages/financial/profit/useBlock';
 import { useConfigStore } from '../../stores/configStore';
-import { campaignRow, funnel, productRow, summary, totals } from '../fixtures/marketing';
+import { campaignRow, funnel, mv, productRow, summary, totals } from '../fixtures/marketing';
 
 const svc = vi.hoisted(() => ({
-  summary: vi.fn(), funnel: vi.fn(), products: vi.fn(), campaigns: vi.fn(), unmapped: vi.fn(), setPick: vi.fn(), addRule: vi.fn(),
+  summary: vi.fn(), daily: vi.fn(), funnel: vi.fn(), products: vi.fn(), campaigns: vi.fn(), unmapped: vi.fn(), setPick: vi.fn(), addRule: vi.fn(),
 }));
 const meta = vi.hoisted(() => ({ getAccounts: vi.fn() }));
 const catalog = vi.hoisted(() => ({ getProducts: vi.fn() }));
@@ -51,6 +51,7 @@ beforeEach(() => {
   svc.products.mockResolvedValue([productRow()]);
   svc.campaigns.mockResolvedValue({ campaigns: [campaignRow('MG_Oct_Retarget', 'Not mapped'), campaignRow('MG_win', 'Winning')], totals: totals() });
   svc.unmapped.mockResolvedValue({ campaigns: unmappedRows, spendByCurrency: { NGN: '50000.0000' } });
+  svc.daily.mockResolvedValue({ from: '2026-11-01', to: '2026-11-11', days: [], best: null, worst: null, average: { spend: mv(0), ordersPerDay: 0 } });
   svc.setPick.mockResolvedValue(undefined);
   svc.addRule.mockResolvedValue(undefined);
   catalog.getProducts.mockResolvedValue([

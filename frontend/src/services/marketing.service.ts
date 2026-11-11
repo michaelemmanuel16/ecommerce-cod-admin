@@ -39,6 +39,23 @@ export interface TileSet {
 }
 export type Summary = TileSet & { previous: TileSet };
 
+/** One day of GET /daily. `spend.store` is null when the day has spend and no FX rate yet. */
+export interface DailyRow {
+  date: string;
+  spend: Omit<MoneyView, 'store'> & { store: Amount | null };
+  waitingForRate: boolean;
+  ordersPlaced: number;
+  costPerOrder: MoneyView | null;
+}
+export interface Daily {
+  from: string;
+  to: string;
+  days: DailyRow[];
+  best: { date: string; costPerOrder: MoneyView } | null;
+  worst: { date: string; costPerOrder: MoneyView } | null;
+  average: { spend: MoneyView; ordersPerDay: number };
+}
+
 export interface Funnel {
   from: string;
   to: string;
@@ -115,6 +132,7 @@ const get = async <T>(path: string, params: object): Promise<T> =>
 
 export const marketingService = {
   summary: (r: DayRange) => get<Summary>('summary', r),
+  daily: (r: DayRange) => get<Daily>('daily', r),
   funnel: (r: DayRange, productId: number | null) => get<Funnel>('funnel', { ...r, ...(productId !== null && { productId }) }),
   products: async (r: DayRange) => (await get<{ products: ProductRow[] }>('products', r)).products,
   campaigns: (r: DayRange) => get<{ campaigns: CampaignRow[]; totals: CampaignTotals }>('campaigns/performance', r),
