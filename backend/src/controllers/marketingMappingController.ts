@@ -6,7 +6,7 @@ import * as Money from '../utils/money';
 import * as mapping from '../services/marketing/campaignMappingService';
 
 /** `from` and `to` are required YYYY-MM-DD days; from must not be after to. */
-function dateRange(req: AuthRequest): { from: string; to: string } {
+export function dateRange(req: AuthRequest): { from: string; to: string } {
   const { from, to } = req.query;
   if (typeof from !== 'string' || typeof to !== 'string') throw new AppError('from and to are required (YYYY-MM-DD)', 400, 'INVALID_RANGE');
   try {

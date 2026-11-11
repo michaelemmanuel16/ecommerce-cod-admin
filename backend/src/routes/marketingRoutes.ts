@@ -1,9 +1,10 @@
 import { Router } from 'express';
-import { body, param } from 'express-validator';
+import { body, param, query } from 'express-validator';
 import { authenticate, requireResourcePermission } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate } from '../middleware/validation';
 import * as ctrl from '../controllers/marketingMappingController';
+import * as kpi from '../controllers/marketingKpiController';
 
 const router = Router();
 
@@ -39,5 +40,12 @@ router.put(
 );
 router.get('/campaigns', canView, ctrl.getCampaigns);
 router.get('/campaigns/unmapped', canView, ctrl.getUnmapped);
+
+// Tiles and max CPA (M8-T10)
+router.get('/summary', canView, kpi.getSummary);
+
+// Funnel and campaign performance (M8-T11)
+router.get('/funnel', canView, [query('productId').optional().isInt({ min: 1 }).withMessage('productId must be a product id')], validate, kpi.getFunnel);
+router.get('/campaigns/performance', canView, kpi.getCampaignPerformance);
 
 export default router;
