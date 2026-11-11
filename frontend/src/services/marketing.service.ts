@@ -57,7 +57,7 @@ export interface CampaignRow {
   adAccountId: number;
   campaignId: string;
   campaignName: string;
-  product: { id: number; name: string; archived: boolean } | null;
+  product: { id: number; name: string; archived: boolean; via: 'campaign' | 'prefix' } | null;
   spend: MoneyView;
   impressions: number;
   linkClicks: number;

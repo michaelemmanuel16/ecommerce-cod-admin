@@ -39,7 +39,7 @@ export const productRow = (over: Partial<ProductRow> = {}): ProductRow => ({
 
 export const campaignRow = (name: string, status: CampaignRow['status'], over: Partial<CampaignRow> = {}): CampaignRow => ({
   adAccountId: 1, campaignId: `id-${name}`, campaignName: name,
-  product: status === 'Not mapped' ? null : { id: 7, name: 'Magic Groove', archived: false },
+  product: status === 'Not mapped' ? null : { id: 7, name: 'Magic Groove', archived: false, via: 'campaign' as const },
   spend: mv(100000), impressions: 1000, linkClicks: 100, landingPageViews: 80, checkoutsStarted: 20, purchases: 20, cpa: mv(5000),
   projectedDelivered: 6.7, projectedDeliveredLabel: 'Meta purchases', maxCpa: status === 'Not mapped' ? null : maxCpa(), status, lowData: false, ...over,
 });

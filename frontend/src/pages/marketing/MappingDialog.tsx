@@ -11,7 +11,7 @@ export interface MapTarget {
   campaignId: string;
   campaignName: string;
   spend: string;
-  product: { id: number; name: string; archived: boolean } | null;
+  product: { id: number; name: string; archived: boolean; via?: 'campaign' | 'prefix' } | null;
 }
 
 interface Props {
@@ -76,7 +76,7 @@ export function MappingDialog({ targets, onClose, onSaved }: Props) {
       open onClose={onClose} title="Map a campaign to a product"
       description={<>{target.campaignName} spent {target.spend}.</>}
       footer={<>
-        {target.product && <Button onClick={() => void remove()} disabled={saving}>Remove mapping</Button>}
+        {target.product?.via === 'campaign' && <Button onClick={() => void remove()} disabled={saving}>Remove mapping</Button>}
         <Button onClick={onClose}>Cancel</Button>
         <Button variant="primary" onClick={() => void save()} disabled={saving || !ready}>Save mapping</Button>
       </>}

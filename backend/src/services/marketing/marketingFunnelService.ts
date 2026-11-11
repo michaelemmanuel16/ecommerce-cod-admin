@@ -102,7 +102,8 @@ export interface CampaignPerformanceRow {
   adAccountId: number;
   campaignId: string;
   campaignName: string;
-  product: { id: number; name: string; archived: boolean } | null;
+  /** `via`: 'campaign' = a one-off pick, 'prefix' = a name rule. */
+  product: { id: number; name: string; archived: boolean; via: 'campaign' | 'prefix' } | null;
   spend: MoneyView;
   impressions: number;
   linkClicks: number;
@@ -169,7 +170,7 @@ export async function campaigns(input: { from: string; to: string }): Promise<{ 
     const cpaStore = a.purchases > 0 ? Money.div(a.storeSpend, a.purchases) : null;
     return {
       adAccountId: c.adAccountId, campaignId: c.campaignId, campaignName: c.campaignName,
-      product: c.product ? { id: c.product.productId, name: c.product.productName, archived: c.product.archived } : null,
+      product: c.product ? { id: c.product.productId, name: c.product.productName, archived: c.product.archived, via: c.product.via } : null,
       spend: view(a.storeSpend, original, c.currency, store),
       impressions: a.impressions, linkClicks: a.linkClicks, landingPageViews: a.landingPageViews, checkoutsStarted: a.checkoutsStarted, purchases: a.purchases,
       cpa: cpaStore ? view(cpaStore, Money.div(original, a.purchases), c.currency, store) : null,
