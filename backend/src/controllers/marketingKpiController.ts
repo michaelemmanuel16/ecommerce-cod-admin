@@ -28,3 +28,11 @@ export const getCampaignPerformance = async (req: AuthRequest, res: Response, ne
     next(error);
   }
 };
+
+export const getProducts = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    res.json(await funnel.products(dateRange(req)));
+  } catch (error) {
+    next(error);
+  }
+};
