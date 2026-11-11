@@ -19,7 +19,7 @@ import { resolveTenantId } from '../../utils/tenantContext';
 import { rateOn } from '../fxService';
 import { rates, CONFIRMED, DIGITAL } from '../kpi/rates';
 import { getStoreTimeZone, shiftYmd, startOfDay, utcDateOfYmd } from '../kpi/dates';
-import { NOT_ENOUGH_CLOSED } from '../finance/profitService';
+import { NOT_ENOUGH_CLOSED, shares } from '../finance/profitService';
 import { convertSpend } from './metaLedgerService';
 
 export const NO_ROOM_FOR_ADS = 'No room for ads at this price';
@@ -109,18 +109,6 @@ function cohortDays(to: string): { from: string; to: string } {
   return { from: shiftYmd(end, -COHORT_DAYS), to: end };
 }
 
-/** Split `amount` over weights; the last share takes the rounding rest (same split as profitService). */
-function shares(amount: Money.Money, weights: Money.Money[]): Money.Money[] {
-  const total = Money.sum(weights);
-  let left = amount;
-  return weights.map((w, i) => {
-    if (i === weights.length - 1) return left;
-    const share = total.isZero() ? Money.ZERO : Money.roundHalfUp(Money.mul(amount, Money.div(w, total)), 4);
-    left = Money.sub(left, share);
-    return share;
-  });
-}
-
 /**
  * Averages over the delivered orders placed in [from, to). Account level: the order totals. Product level: the share of
  * each order that belongs to the product (revenue and fee split by item value, cost by item cost). An order delivered
@@ -205,43 +193,44 @@ export async function maxCpa(input: { to: string; productId?: number }): Promise
 // Tiles
 // ---------------------------------------------------------------------------------------------
 
-/** Rate to the store currency of a (currency, day) pair, 1 for the store currency, null when no rate exists. Each pair is read once. */
-export function dayRateLookup(tenantId: string, store: string): (currency: string, ymd: string) => Promise<Money.Money | null> {
-  const cache = new Map<string, Promise<Money.Money | null>>();
-  return (currency, ymd) => {
-    if (currency === store) return Promise.resolve(Money.parse(1));
-    const key = `${currency}|${ymd}`;
-    if (!cache.has(key)) cache.set(key, rateOn(tenantId, currency, store, ymd).then((f) => f?.rate ?? null));
-    return cache.get(key)!;
-  };
+/** Key of a (currency, day) pair in the map of `dayRates`. */
+export const rateKey = (currency: string, date: Date): string => `${currency}|${date.toISOString().slice(0, 10)}`;
+
+/** Rate to the store currency of each (currency, day) pair of `rows`: 1 for the store currency, null when no rate exists. Each pair is read once. */
+export async function dayRates(rows: { currency: string; date: Date }[], store: string): Promise<Map<string, Money.Money | null>> {
+  const tenantId = resolveTenantId();
+  const pairs = new Map<string, { currency: string; ymd: string }>();
+  for (const r of rows) pairs.set(rateKey(r.currency, r.date), { currency: r.currency, ymd: r.date.toISOString().slice(0, 10) });
+  const out = new Map<string, Money.Money | null>();
+  await Promise.all([...pairs].map(async ([key, { currency, ymd }]) => {
+    out.set(key, currency === store ? Money.parse(1) : (await rateOn(tenantId, currency, store, ymd))?.rate ?? null);
+  }));
+  return out;
 }
 
 /** Meta spend of days [from, to] in the store currency: each (account, day) converted at its day rate, like the ledger. */
-export async function spendInRange(range: { from: string; to: string }) {
-  const store = await getCurrency();
-  const tenantId = resolveTenantId();
+export async function spendInRange(range: { from: string; to: string }, store: string) {
   const rows = await prisma.metaSpendDay.findMany({
     where: { date: { gte: utcDateOfYmd(range.from), lte: utcDateOfYmd(range.to) } },
     select: { adAccountId: true, date: true, currency: true, spend: true },
   });
-  const byDay = new Map<string, { currency: string; ymd: string; original: Money.Money }>();
+  const byDay = new Map<string, { currency: string; date: Date; original: Money.Money }>();
   for (const r of rows) {
-    const ymd = r.date.toISOString().slice(0, 10);
-    const key = `${r.adAccountId}|${ymd}`;
-    const day = byDay.get(key) ?? { currency: r.currency, ymd, original: Money.ZERO };
+    const key = `${r.adAccountId}|${rateKey(r.currency, r.date)}`;
+    const day = byDay.get(key) ?? { currency: r.currency, date: r.date, original: Money.ZERO };
     day.original = Money.add(day.original, r.spend);
     byDay.set(key, day);
   }
-  const rateFor = dayRateLookup(tenantId, store);
+  const rates = await dayRates(rows, store);
   let spend = Money.ZERO;
   let waitingForRate = 0;
   const originals = new Map<string, Money.Money>();
-  await Promise.all([...byDay.values()].map(async (d) => {
-    const rate = await rateFor(d.currency, d.ymd);
-    if (!rate) { waitingForRate += 1; return; }
+  for (const d of byDay.values()) {
+    const rate = rates.get(rateKey(d.currency, d.date));
+    if (!rate) { waitingForRate += 1; continue; }
     spend = Money.add(spend, convertSpend(d.original, rate));
     originals.set(d.currency, Money.add(originals.get(d.currency) ?? Money.ZERO, d.original));
-  }));
+  }
   return { spend, waitingForRate, originals };
 }
 
@@ -268,15 +257,15 @@ async function tilesFor(from: string, to: string): Promise<TileSet> {
   const end = startOfDay(shiftYmd(to, 1), zone);
   const placedWhere = { tenantId, deletedAt: null, status: { notIn: DIGITAL }, createdAt: { gte: start, lt: end } };
 
+  const store = await getCurrency();
   const [spent, ctx, cpa, ordersPlaced, confirmed, delivered] = await Promise.all([
-    spendInRange({ from, to }),
+    spendInRange({ from, to }, store),
     accountContext(to),
     maxCpaRaw({ to }),
     prisma.order.count({ where: placedWhere }),
     prisma.order.count({ where: { ...placedWhere, status: { in: CONFIRMED } } }),
     prisma.order.count({ where: { tenantId, deletedAt: null, status: 'delivered', deliveryDate: { gte: start, lt: end } } }),
   ]);
-  const store = await getCurrency();
   // The ad account figure of spend is the sum of what Meta reported, not the store amount x one rate.
   const originals = [...spent.originals.entries()];
   const spend: MoneyView = {

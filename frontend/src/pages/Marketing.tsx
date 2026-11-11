@@ -47,15 +47,11 @@ export function Marketing() {
   if (accounts.status === 'failed') return <section className="mkt"><BlockError name="Meta accounts" onRetry={accounts.retry} /></section>;
   if (accounts.data === undefined) return <section className="mkt" aria-busy="true" aria-label="Loading Marketing"><Skeleton height={160} className="skelcard" /></section>;
 
-  const head = (
-    <div className="head">
-      <div><h1>Marketing</h1><p>Meta ad results by product, from ad click to delivered order.</p></div>
-    </div>
-  );
+  const title = <div><h1>Marketing</h1><p>Meta ad results by product, from ad click to delivered order.</p></div>;
   if (accounts.data.length === 0) {
     return (
       <section className="mkt">
-        {head}
+        <div className="head">{title}</div>
         <div className="card">
           <EmptyState
             icon={<Megaphone />} title="Meta Ads is not connected"
@@ -70,14 +66,18 @@ export function Marketing() {
   const live = accounts.data.some((a) => a.status === 'connected');
   const pulled = accounts.data.map((a) => a.lastPulledAt).filter((d): d is string => !!d).sort().pop();
   const label = rangeLabel(range.from, range.to);
-  const rowTarget = (r: CampaignRow): MapTarget => ({ adAccountId: r.adAccountId, campaignId: r.campaignId, campaignName: r.campaignName, spend: money(r.spend), product: r.product });
-  const stripTargets = (u: Unmapped): MapTarget[] => u.campaigns.map((c) => ({ adAccountId: c.adAccountId, campaignId: c.campaignId, campaignName: c.campaignName, spend: amount(c.spend, c.currency), product: null }));
+  const toTarget = (c: { adAccountId: number; campaignId: string; campaignName: string }, spend: string, product: CampaignRow['product']): MapTarget =>
+    ({ adAccountId: c.adAccountId, campaignId: c.campaignId, campaignName: c.campaignName, spend, product });
+  const rowTarget = (r: CampaignRow): MapTarget => toTarget(r, money(r.spend), r.product);
+  const stripTargets = (u: Unmapped): MapTarget[] => u.campaigns.map((c) => toTarget(c, amount(c.spend, c.currency), null));
+  // A saved mapping changes the campaign rows, the product rows, the unmapped strip and a product funnel, not the accounts or the tiles
+  const refreshAfterMapping = () => refreshBlocks(['mkt|campaigns|', 'mkt|products|', 'mkt|unmapped|', ...(productId !== null ? ['mkt|funnel|'] : [])]);
   const busy = [summary, funnel, products, campaigns].some((b) => b.status === 'loading' && b.data !== undefined);
 
   return (
     <section className={clsx('mkt', busy && 'busy')}>
       <div className="head">
-        <div><h1>Marketing</h1><p>Meta ad results by product, from ad click to delivered order.</p></div>
+        {title}
         <div className="hd-actions">
           <span className="conn"><i className={live ? undefined : 'off'} /><span>Meta account: {live ? 'connected' : 'disconnected'}{pulled && <small>, pulled {formatRelativeTime(pulled)}</small>}</span></span>
           <Select compact label="Period" value={period} onChange={(e) => setPeriod(e.target.value as Period)}>
@@ -95,7 +95,7 @@ export function Marketing() {
       <Part name="Campaigns" block={campaigns} height={260}>
         {(c) => <CampaignsCard rows={c.campaigns} totals={c.totals} rangeText={label} onMap={canMap ? (r) => setMapping([rowTarget(r)]) : undefined} />}
       </Part>
-      {mapping && <MappingDialog targets={mapping} onClose={() => setMapping(null)} onSaved={refreshBlocks} />}
+      {mapping && <MappingDialog targets={mapping} onClose={() => setMapping(null)} onSaved={refreshAfterMapping} />}
     </section>
   );
 }

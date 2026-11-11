@@ -1,4 +1,5 @@
 import { apiClient } from './api';
+import type { DayRange } from '../pages/reports/range';
 
 /**
  * The Marketing APIs of M8 (backend marketingRoutes.ts). Money is a string or a number once the client has normalized
@@ -108,8 +109,6 @@ export interface Unmapped {
   campaigns: UnmappedCampaign[];
   spendByCurrency: Record<string, Amount>;
 }
-
-export interface DayRange { from: string; to: string }
 
 const get = async <T>(path: string, params: object): Promise<T> =>
   (await apiClient.get<T>(`/api/marketing/${path}`, { params, skipCache: true, quiet: true })).data;

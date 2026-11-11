@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../types';
 import logger from '../utils/logger';
+import { safeErrorMessage } from '../utils/safeError';
 import { isOAuthConfigured } from '../services/metaOAuthService';
 import { resolveTenantId } from '../utils/tenantContext';
 import prisma from '../utils/prisma';
@@ -18,7 +19,7 @@ import {
 
 function fail(res: Response, err: any, what: string): void {
   if (err instanceof MetaAdsError) {
-    res.status(err.status).json({ error: err.message });
+    res.status(err.status).json({ error: safeErrorMessage(err) });
     return;
   }
   logger.error(`Meta Ads: ${what} failed`, { error: err.message });

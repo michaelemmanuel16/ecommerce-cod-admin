@@ -78,7 +78,8 @@ describe('Not mapped strip and mapping dialog', () => {
       expect(svc.campaigns).toHaveBeenCalledTimes(2);
       expect(svc.products).toHaveBeenCalledTimes(2);
       expect(svc.unmapped).toHaveBeenCalledTimes(2);
-      expect(svc.funnel).toHaveBeenCalledTimes(2);
+      expect(svc.funnel).toHaveBeenCalledTimes(1); // no product filter: the overall funnel does not change
+      expect(svc.summary).toHaveBeenCalledTimes(1);
     });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
