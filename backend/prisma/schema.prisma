@@ -91,6 +91,9 @@ model Tenant {
   assignmentCursors       AssignmentCursor[]
   upsellLines             UpsellLine[]
   confirmTokens           ConfirmToken[]
+  metaAdAccounts          MetaAdAccount[]
+  metaSpendDays           MetaSpendDay[]
+  metaCampaignMappings    MetaCampaignMapping[]
 
   @@index([paystackCustomerCode])
   @@index([paystackSubscriptionCode])
@@ -130,88 +133,90 @@ model PlatformAnnouncement {
 }
 
 model User {
-  id                    Int                     @id @default(autoincrement())
-  email                 String                  @unique
-  password              String
-  phoneNumber           String?                 @map("phone_number")
-  role                  UserRole
-  isActive              Boolean                 @default(true) @map("is_active")
-  isPlatformAdmin       Boolean                 @default(false) @map("is_platform_admin")
-  isAvailable           Boolean                 @default(true) @map("is_available")
-  lastLogin             DateTime?               @map("last_login")
-  refreshToken          String?                 @map("refresh_token")
-  passwordResetToken    String?                 @unique @map("password_reset_token")
-  passwordResetExpires  DateTime?               @map("password_reset_expires")
-  commissionAmount      Decimal?                @default(0) @map("commission_amount") @db.Decimal(19, 4) /// Fixed commission amount per delivery (GHS)
+  id                      Int                     @id @default(autoincrement())
+  email                   String                  @unique
+  password                String
+  phoneNumber             String?                 @map("phone_number")
+  role                    UserRole
+  isActive                Boolean                 @default(true) @map("is_active")
+  isPlatformAdmin         Boolean                 @default(false) @map("is_platform_admin")
+  isAvailable             Boolean                 @default(true) @map("is_available")
+  lastLogin               DateTime?               @map("last_login")
+  refreshToken            String?                 @map("refresh_token")
+  passwordResetToken      String?                 @unique @map("password_reset_token")
+  passwordResetExpires    DateTime?               @map("password_reset_expires")
+  commissionAmount        Decimal?                @default(0) @map("commission_amount") @db.Decimal(19, 4) /// Fixed commission amount per delivery (GHS)
   /// M6 (F-1158): invite state; only the token hash is stored.
-  invitedAt             DateTime?               @map("invited_at")
-  inviteTokenHash       String?                 @unique @map("invite_token_hash")
-  inviteExpiresAt       DateTime?               @map("invite_expires_at")
+  invitedAt               DateTime?               @map("invited_at")
+  inviteTokenHash         String?                 @unique @map("invite_token_hash")
+  inviteExpiresAt         DateTime?               @map("invite_expires_at")
   /// M6 (F-1160): set when staff soft-delete a person (also isActive=false); cleared on restore. Not set by a plain deactivate.
-  deletedAt             DateTime?               @map("deleted_at")
-  country               String?
-  preferences           Json?
-  vehicleType           String?                 @map("vehicle_type")
-  vehicleId             String?                 @map("vehicle_id")
-  deliveryRate          Float?                  @default(0) @map("delivery_rate")
-  totalEarnings         Decimal?                @default(0) @map("total_earnings") @db.Decimal(19, 4)
-  totalCollected        Decimal                 @default(0) @map("total_collected") @db.Decimal(19, 4)
-  location              String?
-  createdAt             DateTime                @default(now()) @map("created_at")
-  updatedAt             DateTime                @updatedAt @map("updated_at")
-  firstName             String                  @map("first_name")
-  lastName              String                  @map("last_name")
-  displayName           String?                 @map("display_name")
-  photoUrl              String?                 @map("photo_url")
-  calls                 Call[]                  @relation("CallSalesRep")
-  deliveries            Delivery[]
-  expenses              Expense[]
-  notifications         Notification[]
-  createdOrders         Order[]                 @relation("OrderCreatedBy")
-  assignedOrdersAsRep   Order[]                 @relation("OrderCustomerRep")
-  assignedOrdersAsAgent Order[]                 @relation("OrderDeliveryAgent")
-  payouts               Payout[]
-  auditLogs             AuditLog[]
-  journalEntriesCreated JournalEntry[]          @relation("JournalEntryCreator")
-  journalEntriesVoided  JournalEntry[]          @relation("VoidedByUser")
-  collections           AgentCollection[]       @relation("AgentCollections")
-  verifiedCollections   AgentCollection[]       @relation("VerifiedCollections")
-  approvedCollections   AgentCollection[]       @relation("ApprovedCollections")
-  balance               AgentBalance?
-  deposits              AgentDeposit[]          @relation("AgentDeposits")
-  verifiedDeposits      AgentDeposit[]          @relation("VerifiedDeposits")
-  blockedBalances       AgentBalance[]          @relation("BlockedBy")
-  agentStock            AgentStock[]            @relation("AgentStockHoldings")
-  transfersFrom         InventoryTransfer[]     @relation("TransferFrom")
-  transfersTo           InventoryTransfer[]     @relation("TransferTo")
-  transfersCreated      InventoryTransfer[]     @relation("TransferCreator")
-  shipmentsCreated      InventoryShipment[]     @relation("ShipmentCreator")
-  shipmentsReceived     InventoryShipment[]     @relation("ShipmentReceiver")
-  transfersReceived     InventoryTransfer[]     @relation("TransferReceiver")
-  stockLocations        StockLocation[]         @relation("StockLocationHolder")
-  stockCountsMade       StockCount[]            @relation("StockCountCounter")
-  partnerProfile        DeliveryPartnerProfile? @relation("PartnerProfileUser")
-  deliveryAttempts      DeliveryAttempt[]       @relation("DeliveryAttemptPartner")
-  confirmedOrders       Order[]                 @relation("OrderConfirmedBy")
-  targetsAsOwner        Target[]                @relation("TargetUser")
-  feeRules              FeeRule[]               @relation("FeeRulePartner")
-  fxRatesCreated        FxRate[]                @relation("FxRateCreator")
-  feeRulesCreated       FeeRule[]               @relation("FeeRuleCreator")
-  findingsAssigned      Finding[]               @relation("FindingAssignee")
-  findingsResolved      Finding[]               @relation("FindingResolver")
-  partnerSettlements    PartnerSettlement[]     @relation("SettlementPartner")
-  commissionEntries     CommissionEntry[]       @relation("CommissionEntryUser")
-  payoutsRecorded       Payout[]                @relation("PayoutRecorder")
-  kind                  UserKind                @default(person)
-  roleAssignments       RoleAssignment[]        @relation("RoleAssignmentHolder")
-  badgeAwards           BadgeAward[]            @relation("BadgeAwardUser")
-  sessions              UserSession[]
-  customersCreated      Customer[]              @relation("CustomerCreatedBy")
-  customerCodOverrides  Customer[]              @relation("CustomerCodOverrideBy")
-  upsellLines           UpsellLine[]            @relation("UpsellLineRep")
-  mcpApiKeys            McpApiKey[]             @relation("McpApiKeyUser")
-  tenantId              String?                 @map("tenant_id")
-  tenant                Tenant?                 @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  deletedAt               DateTime?               @map("deleted_at")
+  country                 String?
+  preferences             Json?
+  vehicleType             String?                 @map("vehicle_type")
+  vehicleId               String?                 @map("vehicle_id")
+  deliveryRate            Float?                  @default(0) @map("delivery_rate")
+  totalEarnings           Decimal?                @default(0) @map("total_earnings") @db.Decimal(19, 4)
+  totalCollected          Decimal                 @default(0) @map("total_collected") @db.Decimal(19, 4)
+  location                String?
+  createdAt               DateTime                @default(now()) @map("created_at")
+  updatedAt               DateTime                @updatedAt @map("updated_at")
+  firstName               String                  @map("first_name")
+  lastName                String                  @map("last_name")
+  displayName             String?                 @map("display_name")
+  photoUrl                String?                 @map("photo_url")
+  calls                   Call[]                  @relation("CallSalesRep")
+  deliveries              Delivery[]
+  expenses                Expense[]
+  notifications           Notification[]
+  createdOrders           Order[]                 @relation("OrderCreatedBy")
+  assignedOrdersAsRep     Order[]                 @relation("OrderCustomerRep")
+  assignedOrdersAsAgent   Order[]                 @relation("OrderDeliveryAgent")
+  payouts                 Payout[]
+  auditLogs               AuditLog[]
+  journalEntriesCreated   JournalEntry[]          @relation("JournalEntryCreator")
+  journalEntriesVoided    JournalEntry[]          @relation("VoidedByUser")
+  collections             AgentCollection[]       @relation("AgentCollections")
+  verifiedCollections     AgentCollection[]       @relation("VerifiedCollections")
+  approvedCollections     AgentCollection[]       @relation("ApprovedCollections")
+  balance                 AgentBalance?
+  deposits                AgentDeposit[]          @relation("AgentDeposits")
+  verifiedDeposits        AgentDeposit[]          @relation("VerifiedDeposits")
+  blockedBalances         AgentBalance[]          @relation("BlockedBy")
+  agentStock              AgentStock[]            @relation("AgentStockHoldings")
+  transfersFrom           InventoryTransfer[]     @relation("TransferFrom")
+  transfersTo             InventoryTransfer[]     @relation("TransferTo")
+  transfersCreated        InventoryTransfer[]     @relation("TransferCreator")
+  shipmentsCreated        InventoryShipment[]     @relation("ShipmentCreator")
+  shipmentsReceived       InventoryShipment[]     @relation("ShipmentReceiver")
+  transfersReceived       InventoryTransfer[]     @relation("TransferReceiver")
+  stockLocations          StockLocation[]         @relation("StockLocationHolder")
+  stockCountsMade         StockCount[]            @relation("StockCountCounter")
+  partnerProfile          DeliveryPartnerProfile? @relation("PartnerProfileUser")
+  deliveryAttempts        DeliveryAttempt[]       @relation("DeliveryAttemptPartner")
+  confirmedOrders         Order[]                 @relation("OrderConfirmedBy")
+  targetsAsOwner          Target[]                @relation("TargetUser")
+  feeRules                FeeRule[]               @relation("FeeRulePartner")
+  fxRatesCreated          FxRate[]                @relation("FxRateCreator")
+  metaAdAccountsConnected MetaAdAccount[]         @relation("MetaAdAccountConnector")
+  metaMappingsCreated     MetaCampaignMapping[]   @relation("MetaMappingCreator")
+  feeRulesCreated         FeeRule[]               @relation("FeeRuleCreator")
+  findingsAssigned        Finding[]               @relation("FindingAssignee")
+  findingsResolved        Finding[]               @relation("FindingResolver")
+  partnerSettlements      PartnerSettlement[]     @relation("SettlementPartner")
+  commissionEntries       CommissionEntry[]       @relation("CommissionEntryUser")
+  payoutsRecorded         Payout[]                @relation("PayoutRecorder")
+  kind                    UserKind                @default(person)
+  roleAssignments         RoleAssignment[]        @relation("RoleAssignmentHolder")
+  badgeAwards             BadgeAward[]            @relation("BadgeAwardUser")
+  sessions                UserSession[]
+  customersCreated        Customer[]              @relation("CustomerCreatedBy")
+  customerCodOverrides    Customer[]              @relation("CustomerCodOverrideBy")
+  upsellLines             UpsellLine[]            @relation("UpsellLineRep")
+  mcpApiKeys              McpApiKey[]             @relation("McpApiKeyUser")
+  tenantId                String?                 @map("tenant_id")
+  tenant                  Tenant?                 @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([role, isActive])
   @@index([role, isActive, isAvailable])
@@ -220,48 +225,48 @@ model User {
 }
 
 model Customer {
-  id               Int          @id @default(autoincrement())
+  id               Int               @id @default(autoincrement())
   email            String?
-  phoneNumber      String       @map("phone_number")
-  alternatePhone   String?      @map("alternate_phone")
+  phoneNumber      String            @map("phone_number")
+  alternatePhone   String?           @map("alternate_phone")
   address          String
   state            String
   area             String
   landmark         String?
-  tags             String[]     @default([])
+  tags             String[]          @default([])
   notes            String?
-  totalOrders      Int          @default(0) @map("total_orders")
-  totalSpent       Decimal      @default(0) @map("total_spent") @db.Decimal(19, 4)
+  totalOrders      Int               @default(0) @map("total_orders")
+  totalSpent       Decimal           @default(0) @map("total_spent") @db.Decimal(19, 4)
   // Stored stats (F-357). customerStatsService.recompute rebuilds them from orders.
-  deliveredOrders  Int          @default(0) @map("delivered_orders")
-  refusedOrders    Int          @default(0) @map("refused_orders")
-  deliveredValue   Decimal      @default(0) @map("delivered_value") @db.Decimal(19, 4)
-  lastOrderAt      DateTime?    @map("last_order_at")
-  createdById      Int?         @map("created_by_id")
-  isActive         Boolean      @default(true) @map("is_active")
-  smsOptOut        Boolean      @default(false) @map("sms_opt_out")
-  whatsappOptOut   Boolean      @default(false) @map("whatsapp_opt_out")
-  emailOptOut      Boolean      @default(false) @map("email_opt_out")
+  deliveredOrders  Int               @default(0) @map("delivered_orders")
+  refusedOrders    Int               @default(0) @map("refused_orders")
+  deliveredValue   Decimal           @default(0) @map("delivered_value") @db.Decimal(19, 4)
+  lastOrderAt      DateTime?         @map("last_order_at")
+  createdById      Int?              @map("created_by_id")
+  isActive         Boolean           @default(true) @map("is_active")
+  smsOptOut        Boolean           @default(false) @map("sms_opt_out")
+  whatsappOptOut   Boolean           @default(false) @map("whatsapp_opt_out")
+  emailOptOut      Boolean           @default(false) @map("email_opt_out")
   // Stored 32-byte random hex (not signed, not derived from id); generated lazily before marketing sends.
-  unsubscribeToken String?            @unique @map("unsubscribe_token")
-  codBlocked       Boolean            @default(false) @map("cod_blocked")
-  codOverride      Boolean            @default(false) @map("cod_override")
-  codOverrideNote  String?            @map("cod_override_note")
-  codOverrideById  Int?               @map("cod_override_by_id")
-  codOverrideAt    DateTime?          @map("cod_override_at")
-  riskLevel        CustomerRiskLevel  @default(normal) @map("risk_level")
-  wrongNumber      Boolean            @default(false) @map("wrong_number")
-  createdAt        DateTime           @default(now()) @map("created_at")
-  updatedAt        DateTime           @updatedAt @map("updated_at")
-  firstName        String             @map("first_name")
-  lastName         String             @map("last_name")
+  unsubscribeToken String?           @unique @map("unsubscribe_token")
+  codBlocked       Boolean           @default(false) @map("cod_blocked")
+  codOverride      Boolean           @default(false) @map("cod_override")
+  codOverrideNote  String?           @map("cod_override_note")
+  codOverrideById  Int?              @map("cod_override_by_id")
+  codOverrideAt    DateTime?         @map("cod_override_at")
+  riskLevel        CustomerRiskLevel @default(normal) @map("risk_level")
+  wrongNumber      Boolean           @default(false) @map("wrong_number")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+  firstName        String            @map("first_name")
+  lastName         String            @map("last_name")
   calls            Call[]
   orders           Order[]
   messageLogs      MessageLog[]
-  tenantId         String?            @map("tenant_id")
-  tenant           Tenant?            @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  createdBy        User?              @relation("CustomerCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  codOverrideBy    User?              @relation("CustomerCodOverrideBy", fields: [codOverrideById], references: [id], onDelete: SetNull)
+  tenantId         String?           @map("tenant_id")
+  tenant           Tenant?           @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  createdBy        User?             @relation("CustomerCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  codOverrideBy    User?             @relation("CustomerCodOverrideBy", fields: [codOverrideById], references: [id], onDelete: SetNull)
 
   @@unique([phoneNumber, tenantId], map: "customers_phone_number_tenant_key")
   @@index([isActive])
@@ -308,6 +313,7 @@ model Product {
   inventoryShipments      InventoryShipment[]
   stockLevels             StockLevel[]
   stockCountLines         StockCountLine[]
+  metaCampaignMappings    MetaCampaignMapping[]
   tenantId                String?                @map("tenant_id")
   tenant                  Tenant?                @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -554,23 +560,30 @@ model Transaction {
 }
 
 model Expense {
-  id             Int              @id @default(autoincrement())
-  category       String
-  amount         Decimal          @db.Decimal(19, 4)
-  description    String
-  receiptUrl     String?          @map("receipt_url")
-  recordedBy     Int?             @map("recorded_by")
-  expenseDate    DateTime         @map("expense_date")
-  createdAt      DateTime         @default(now()) @map("created_at")
+  id               Int              @id @default(autoincrement())
+  category         String
+  amount           Decimal          @db.Decimal(19, 4)
+  description      String
+  receiptUrl       String?          @map("receipt_url")
+  recordedBy       Int?             @map("recorded_by")
+  expenseDate      DateTime         @map("expense_date")
+  createdAt        DateTime         @default(now()) @map("created_at")
   // M5: where the expense came from, what paid it, and the ledger entry that booked it (F-917).
-  source         ExpenseSource    @default(manual)
-  paidFrom       ExpensePaidFrom? @map("paid_from")
-  journalEntryId Int?             @map("journal_entry_id")
-  journalEntry   JournalEntry?    @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
-  tenantId       String?          @map("tenant_id")
-  tenant         Tenant?          @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  user           User?            @relation(fields: [recordedBy], references: [id])
+  source           ExpenseSource    @default(manual)
+  paidFrom         ExpensePaidFrom? @map("paid_from")
+  journalEntryId   Int?             @map("journal_entry_id")
+  journalEntry     JournalEntry?    @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+  // M8: a Meta ad spend expense keeps the original currency, amount and FX rate; one per (account, day).
+  originalCurrency String?          @map("original_currency") @db.VarChar(3)
+  originalAmount   Decimal?         @map("original_amount") @db.Decimal(19, 4)
+  fxRate           Decimal?         @map("fx_rate") @db.Decimal(19, 8)
+  metaAdAccountId  Int?             @map("meta_ad_account_id")
+  metaAdAccount    MetaAdAccount?   @relation(fields: [metaAdAccountId], references: [id], onDelete: SetNull)
+  tenantId         String?          @map("tenant_id")
+  tenant           Tenant?          @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user             User?            @relation(fields: [recordedBy], references: [id])
 
+  @@unique([metaAdAccountId, expenseDate])
   @@index([category])
   @@index([expenseDate])
   @@index([tenantId])
@@ -1427,6 +1440,8 @@ enum FindingType {
   negative_cash_held
   // A verify refused because it would take a partner's cash held below zero (F-912). Not closed by the cash held sync.
   verify_exceeds_cash_held
+  // M8: a Meta spend day with no FX rate to the tenant currency.
+  fx_missing
 }
 
 enum FindingStatus {
@@ -2359,4 +2374,100 @@ model ConfirmToken {
   @@index([orderId])
   @@index([token])
   @@map("confirm_tokens")
+}
+
+enum MetaConnectionStatus {
+  connected
+  disconnected
+}
+
+enum MetaSpendSource {
+  api
+}
+
+enum MetaMappingKind {
+  prefix
+  campaign
+}
+
+/// M8: one row per connected Meta ad account. accessToken holds ciphertext only (`enc:v1:`).
+model MetaAdAccount {
+  id              Int                   @id @default(autoincrement())
+  accountId       String                @map("account_id")
+  name            String
+  currency        String                @db.VarChar(3)
+  timezone        String
+  enabled         Boolean               @default(true)
+  status          MetaConnectionStatus  @default(connected)
+  statusReason    String?               @map("status_reason")
+  accessToken     String                @map("access_token")
+  tokenType       String?               @map("token_type")
+  tokenExpiresAt  DateTime?             @map("token_expires_at")
+  scopes          String[]              @default([])
+  connectedById   Int?                  @map("connected_by_id")
+  lastPulledAt    DateTime?             @map("last_pulled_at")
+  lastPullError   String?               @map("last_pull_error")
+  failedPullCount Int                   @default(0) @map("failed_pull_count")
+  createdAt       DateTime              @default(now()) @map("created_at")
+  updatedAt       DateTime              @updatedAt @map("updated_at")
+  tenantId        String                @map("tenant_id")
+  tenant          Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  connectedBy     User?                 @relation("MetaAdAccountConnector", fields: [connectedById], references: [id], onDelete: SetNull)
+  spendDays       MetaSpendDay[]
+  mappings        MetaCampaignMapping[]
+  expenses        Expense[]
+
+  @@unique([tenantId, accountId])
+  @@index([tenantId])
+  @@map("meta_ad_accounts")
+}
+
+/// M8: campaign-level spend, one row per (account, campaign, date).
+model MetaSpendDay {
+  id               Int             @id @default(autoincrement())
+  adAccountId      Int             @map("ad_account_id")
+  campaignId       String          @map("campaign_id")
+  campaignName     String          @map("campaign_name")
+  campaignStatus   String?         @map("campaign_status")
+  date             DateTime        @db.Date
+  currency         String          @db.VarChar(3)
+  spend            Decimal         @db.Decimal(19, 4)
+  impressions      Int             @default(0)
+  linkClicks       Int             @default(0) @map("link_clicks")
+  landingPageViews Int             @default(0) @map("landing_page_views")
+  checkoutsStarted Int             @default(0) @map("checkouts_started")
+  purchases        Int             @default(0)
+  pulledAt         DateTime        @map("pulled_at")
+  source           MetaSpendSource @default(api)
+  tenantId         String          @map("tenant_id")
+  tenant           Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  adAccount        MetaAdAccount   @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([adAccountId, campaignId, date])
+  @@index([tenantId])
+  @@index([tenantId, date])
+  @@map("meta_spend_days")
+}
+
+/// M8: maps Meta campaigns to a product, by name prefix or by one picked campaign.
+model MetaCampaignMapping {
+  id          Int             @id @default(autoincrement())
+  kind        MetaMappingKind
+  prefix      String?
+  adAccountId Int?            @map("ad_account_id")
+  campaignId  String?         @map("campaign_id")
+  productId   Int             @map("product_id")
+  createdById Int?            @map("created_by_id")
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+  tenantId    String          @map("tenant_id")
+  tenant      Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  adAccount   MetaAdAccount?  @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+  product     Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdBy   User?           @relation("MetaMappingCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, kind, prefix])
+  @@unique([tenantId, adAccountId, campaignId])
+  @@index([tenantId])
+  @@map("meta_campaign_mappings")
 }

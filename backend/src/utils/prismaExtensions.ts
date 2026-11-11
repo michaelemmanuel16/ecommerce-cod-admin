@@ -22,6 +22,7 @@ export const TENANT_SCOPED_MODELS = new Set([
   'PartnerSettlement', 'PartnerSettlementLine', 'CommissionEntry',
   'RewardTier', 'BadgeAward', 'AssignmentCursor',
   'UpsellLine', 'ConfirmToken',
+  'MetaAdAccount', 'MetaSpendDay', 'MetaCampaignMapping',
 ]);
 
 /**
