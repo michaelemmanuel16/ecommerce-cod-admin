@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as orderController from '../controllers/orderController';
 import * as bulkOrderController from '../controllers/bulkOrderController';
+import * as upsellController from '../controllers/upsellController';
 import { authenticate, requireResourcePermission } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate, validateRequest } from '../middleware/validation';
@@ -41,5 +42,7 @@ router.get('/:id/transitions', requireResourcePermission('orders', 'view'), orde
 router.patch('/:id/status', validateRequest(updateOrderStatusValidation), requireResourcePermission('orders', 'update', 'update_status'), orderController.updateOrderStatus);
 router.patch('/:id/assign-rep', validateRequest(assignRepValidation), requireResourcePermission('orders', 'assign'), orderController.assignCustomerRep);
 router.patch('/:id/assign-agent', validateRequest(assignAgentValidation), requireResourcePermission('orders', 'assign'), orderController.assignDeliveryAgent);
+router.get('/:id/upsell-options', requireResourcePermission('orders', 'view'), upsellController.getUpsellOptions);
+router.post('/:id/upsell', requireResourcePermission('orders', 'update'), upsellController.applyUpsell);
 
 export default router;

@@ -89,9 +89,6 @@ export function subLine(h: Header): string {
   return `${day} You need ${more} more delivered revenue today to stay on pace.`;
 }
 
-
-export const orderNumber = (o: Pick<RecentOrder, 'id' | 'externalOrderId'>): string => `#${o.externalOrderId ?? o.id}`;
-
 export interface ChartPoint { date: string; cumulative: number | null; targetPace: number | null; vsPace: number | null }
 
 export const toChartPoint = (d: Chart['days'][number]): ChartPoint => ({

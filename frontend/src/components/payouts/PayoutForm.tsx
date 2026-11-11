@@ -7,6 +7,7 @@ import { payoutsService, type CommissionKind, type OwedPreview, type PayoutRow }
 import { apiErrorMessage } from '../../utils/apiError';
 import { currencySymbol, formatCurrency, formatDate, todayYmd } from '../../utils/format';
 import { toCents } from '../../utils/money';
+import { formatOrderNumber } from '../../utils/orderNumber';
 
 const KIND_LABEL: Record<CommissionKind, string> = { base: 'Commission', upsell: 'Upsell reward', reward: 'Target reward' };
 // The mockup's words (the server takes any text). Not the deposit methods of the mobile collections page: those are snake_case values.
@@ -171,15 +172,19 @@ export const PayoutForm: React.FC<PayoutFormProps> = ({ personId, personName, on
                       <tr><th className="chkcol"><span className="sr-only">Pay</span></th><th>Entry</th><th>Order</th><th>Earned</th><th className="r">Amount</th></tr>
                     </thead>
                     <tbody>
-                      {preview.entries.map((e) => (
-                        <tr key={e.id}>
-                          <td><input type="checkbox" checked={ticked.has(e.id)} onChange={() => toggle(e.id)} aria-label={`Pay ${KIND_LABEL[e.kind]}${e.orderId ? ` of order ${e.orderId}` : ''}`} /></td>
-                          <td>{KIND_LABEL[e.kind]}</td>
-                          <td>{e.orderId ? `#${e.orderId}` : '—'}</td>
-                          <td>{e.earnedAt ? formatDate(e.earnedAt, 'd MMM') : '—'}</td>
-                          <td className="r num">{formatCurrency(e.amount)}</td>
-                        </tr>
-                      ))}
+                      {preview.entries.map((e) => {
+                        const isDeduction = Number(e.amount) < 0;
+                        const label = isDeduction ? `Order #${e.orderId} returned` : KIND_LABEL[e.kind];
+                        return (
+                          <tr key={e.id}>
+                            <td><input type="checkbox" checked={ticked.has(e.id)} onChange={() => toggle(e.id)} aria-label={`Pay ${label}${e.orderId ? ` of order ${e.orderId}` : ''}`} /></td>
+                            <td>{label}</td>
+                            <td>{e.orderId ? formatOrderNumber(e.orderId) : '—'}</td>
+                            <td>{e.earnedAt ? formatDate(e.earnedAt, 'd MMM') : '—'}</td>
+                            <td className="r num">{formatCurrency(e.amount)}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

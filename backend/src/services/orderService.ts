@@ -1,4 +1,5 @@
 import prisma, { prismaBase } from '../utils/prisma';
+import { withSoftDeleted } from '../utils/prismaExtensions';
 import { resolveTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma, OrderStatus, DeclineReason, FailureReason } from '@prisma/client';
@@ -30,6 +31,7 @@ import { deliveredRevenue, revenueScope } from './kpi/revenue';
 import { duplicateCandidatesWhere, IMPORT_BLOCKED_STATUSES, isDuplicateOf, isForwardStatus } from './orderImportService';
 import { cleanText, deliveryAddressOf } from '../utils/checkoutLocation';
 import { normalizeOrderRegion } from './regionService';
+import { customerNeedsManualCall } from './refusalRuleService';
 
 
 
@@ -58,12 +60,14 @@ interface CreateOrderData {
   landmark?: string;
   notes?: string;
   estimatedDelivery?: Date;
+  packageId?: number;
   createdById?: number;
   /** F-317: the call rep and delivery agent. A sales_rep requester is always the call rep; only `orders:assign` roles may set either. */
   customerRepId?: number;
   deliveryAgentId?: number;
   /** F-317: "Customer already confirmed on this call". The order moves to confirmed through the machine and a manual `Call` is saved. */
   customerConfirmed?: boolean;
+  requiresManualCall?: boolean;
   requester?: Requester;
 }
 
@@ -436,6 +440,7 @@ export class OrderService {
             state: data.deliveryState,
             area: data.deliveryArea,
             landmark: cleanText(data.landmark) || null,
+            createdById: data.createdById ?? data.requester?.id,
           }
         });
       } else {
@@ -479,13 +484,43 @@ export class OrderService {
 
     // Validate products and check stock (batch query to avoid N+1)
     const productIds = [...new Set(data.orderItems.map(item => item.productId))];
-    const products = await prisma.product.findMany({
+    const products = await withSoftDeleted(() => prisma.product.findMany({
       where: { id: { in: productIds } }
-    });
+    }));
     const productMap = new Map<number, any>(products.map(p => [p.id, p]));
     for (const item of data.orderItems) {
-      if (!productMap.has(item.productId)) {
+      const prod = productMap.get(item.productId);
+      if (!prod) {
         throw new AppError(`Product ID ${item.productId} not found`, 404);
+      }
+      if (prod.isActive === false) {
+        throw new AppError('Archived products are not selectable', 400);
+      }
+    }
+
+    // Validate packages (archived packages are not selectable, F-355/M7-T07)
+    const packageIds: number[] = [];
+    if (data.packageId != null) packageIds.push(Number(data.packageId));
+    for (const item of data.orderItems) {
+      const pkgId = (item as any).packageId ?? item.metadata?.packageId;
+      if (pkgId != null) packageIds.push(Number(pkgId));
+    }
+    if (packageIds.length > 0) {
+      const packages = await withSoftDeleted(() => prisma.formPackage.findMany({
+        where: { id: { in: packageIds } },
+        include: { form: { include: { product: true } } }
+      }));
+      const packageMap = new Map<number, any>(packages.map(pkg => [pkg.id, pkg]));
+      for (const pkgId of packageIds) {
+        const pkg = packageMap.get(pkgId);
+        if (!pkg) {
+          throw new AppError('Archived packages are not selectable', 400);
+        }
+        const isFormArchived = pkg.form?.archivedAt != null || !pkg.form?.isActive;
+        const isProductActive = pkg.form?.product ? pkg.form.product.isActive : true;
+        if (isFormArchived || !isProductActive) {
+          throw new AppError('Archived packages are not selectable', 400);
+        }
       }
     }
 
@@ -516,6 +551,7 @@ export class OrderService {
           discount: data.discount || 0,
           totalAmount: data.totalAmount,
           codAmount: data.totalAmount,
+          requiresManualCall: customerNeedsManualCall(customer) || Boolean(data.requiresManualCall),
           deliveryAddress: deliveryAddressOf(data.deliveryAddress, data.landmark) ?? data.deliveryAddress,
           deliveryState: data.deliveryState,
           deliveryArea: data.deliveryArea,
@@ -779,6 +815,7 @@ export class OrderService {
                 subtotal: orderData.subtotal,
                 totalAmount: orderData.totalAmount,
                 codAmount: orderData.totalAmount,
+                requiresManualCall: customerNeedsManualCall(customer),
                 deliveryAddress: orderData.deliveryAddress,
                 deliveryState: orderData.deliveryState,
                 deliveryArea: orderData.deliveryArea,
@@ -1288,6 +1325,55 @@ export class OrderService {
     });
 
     return prisma.order.findFirst({ where: { id: orderId, deletedAt: null }, include: ORDER_EVENT_INCLUDE });
+  }
+
+  /**
+   * M7-T08: Customer confirms an order directly (via auto-confirm WhatsApp YES reply or public confirm page).
+   * Moves the order to 'confirmed', sets customerResponse='yes', firstContactAt.
+   * Creates NO call row and NO commission entry.
+   * Second YES is ignored (no-op). Reply after cancelled is ignored and logged.
+   */
+  async confirmByCustomer(orderId: number) {
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        id: true,
+        status: true,
+        customerResponse: true,
+        confirmedAt: true,
+        firstContactAt: true,
+        deletedAt: true,
+        tenantId: true,
+      },
+    });
+
+    if (!order || order.deletedAt !== null) {
+      throw new AppError('Order not found', 404);
+    }
+
+    // Customer confirm acts only on an order waiting for confirmation (pending_confirmation).
+    // Any other status (confirmed by a rep, cancelled, shipped, delivered, ...):
+    // change nothing, log at info level with orderId and status, return the order.
+    if (order.status !== 'pending_confirmation') {
+      logger.info('Customer confirm reply received for non-pending order - ignored', {
+        orderId,
+        status: order.status,
+      });
+      return order;
+    }
+
+    const now = new Date();
+    await transitionOrder(orderId, 'confirmed', { kind: 'system' }, { note: 'Auto-confirmed by customer' });
+
+    await prisma.order.update({
+      where: { id: orderId },
+      data: {
+        customerResponse: 'yes',
+        firstContactAt: order.firstContactAt ?? now,
+      },
+    });
+
+    return prisma.order.findUnique({ where: { id: orderId }, include: ORDER_EVENT_INCLUDE });
   }
 
   /**

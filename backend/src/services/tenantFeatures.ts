@@ -51,8 +51,8 @@ export function parseFeaturePatch(stored: unknown, sent: unknown): Record<string
 export interface RewardFeatures { baseCommission?: string; upsellPercent?: string; badgesDisplay?: boolean }
 
 /** The tenant's stored reward settings; empty fields mean "not set yet" (the service applies its defaults). Inside the tenant's context. */
-export async function getRewardFeatures(): Promise<RewardFeatures> {
-  const config = await prisma.systemConfig.findFirst({ select: { features: true } });
+export async function getRewardFeatures(client: TransactionClient | null = null): Promise<RewardFeatures> {
+  const config = await (client ?? prisma).systemConfig.findFirst({ select: { features: true } });
   return ((config?.features ?? {}) as { rewards?: RewardFeatures }).rewards ?? {};
 }
 

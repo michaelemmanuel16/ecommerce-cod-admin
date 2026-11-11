@@ -76,15 +76,15 @@ beforeAll(async () => {
   await addCustomer('yaw', 'Yaw', 3, { totalOrders: 2, deliveredOrders: 2, deliveredValue: 300, lastOrderAt: day(12) });
   await addCustomer('esi', 'Esi', 4, { totalOrders: 3, deliveredOrders: 2, deliveredValue: 500, refusedOrders: 1, lastOrderAt: day(8), area: 'Kumasi', state: 'Ashanti' });
   await addCustomer('kojo', 'Kojo', 5, { totalOrders: 4, deliveredOrders: 1, deliveredValue: 100, refusedOrders: 2, lastOrderAt: day(3), area: 'Tema' });
-  await addCustomer('abena', 'Abena', 6, { lastName: 'Owusu', totalOrders: 5, refusedOrders: 3, lastOrderAt: day(1), area: 'Tamale', state: 'Northern', email: 'abena@example.com', alternatePhone: '+233200001111' });
+  await addCustomer('abena', 'Abena', 6, { lastName: 'Owusu', totalOrders: 5, refusedOrders: 3, codBlocked: true, lastOrderAt: day(1), area: 'Tamale', state: 'Northern', email: 'abena@example.com', alternatePhone: '+233200001111' });
   await addCustomer('nii', 'Nii', 7, { totalOrders: 1, lastOrderAt: day(2) });
   await addCustomer('efua', 'Efua', 8, { totalOrders: 1, lastOrderAt: day(4) });
   await addCustomer('kwesi', 'Kwesi', 9, { totalOrders: 1, lastOrderAt: day(6) });
   await addCustomer('made', 'Made', 10, { createdById: rep1.id });
   await addCustomer('gone', 'Gone', 11, { isActive: false, totalOrders: 1 });
 
-  // Not reachable: the newest call is not_reachable / no_answer. Efua was reached later, so she is not.
-  await call(ids.nii, 'no_answer', 10);
+  // Not reachable: the newest call is not_reachable. Efua was reached later, so she is not.
+  await call(ids.nii, 'not_reachable', 10);
   await call(ids.efua, 'not_reachable', 30);
   await call(ids.efua, 'confirmed', 5);
   await call(ids.kwesi, 'confirmed', 60);
@@ -278,11 +278,11 @@ describe('create and edit (F-355)', () => {
     expect(res.body.customer).toMatchObject({ totalOrders: 0, refusedOrders: 0, smsOptOut: false });
   });
 
-  it('a phone that exists is blocked with the name; letters are an error; required fields', async () => {
+  it('duplicate phone on create returns existing customer with duplicate: true; letters are an error; required fields', async () => {
     const dup = await request(app).post('/api/customers').set(bearer(tokens.owner)).send(body(6));
-    expect(dup.status).toBe(409);
-    expect(dup.body.error ?? dup.body.message).toContain('This number belongs to Abena Owusu');
-    expect(dup.body).toMatchObject({ code: 'PHONE_BELONGS_TO_OTHER_CUSTOMER', customerId: ids.abena });
+    expect(dup.status).toBe(200);
+    expect(dup.body.duplicate).toBe(true);
+    expect(dup.body.customer.id).toBe(ids.abena);
 
     expect((await request(app).post('/api/customers').set(bearer(tokens.owner)).send(body(22, { phoneNumber: '024abc0103' }))).status).toBe(400);
     expect((await request(app).post('/api/customers').set(bearer(tokens.owner)).send({ firstName: 'No', phoneNumber: local(23) })).status).toBe(400);
@@ -314,17 +314,21 @@ describe('create and edit (F-355)', () => {
   });
 
   it('the 409 carries the customer id only when the requester can open that customer', async () => {
-    // Abena is outside rep1's scope: name in the message, no id
+    // Abena is outside rep1's scope: name in the message, no id (409)
     const out = await request(app).post('/api/customers').set(bearer(tokens.rep1)).send(body(6));
     expect(out.status).toBe(409);
     expect(out.body.message).toBe('This number belongs to Abena Owusu');
     expect(out.body.customerId).toBeUndefined();
-    // Kofi is rep1's own customer: id included
+    // Kofi is rep1's own customer: 200 duplicate with record
     const inside = await request(app).post('/api/customers').set(bearer(tokens.rep1)).send(body(1));
-    expect(inside.body).toMatchObject({ message: 'This number belongs to Kofi T', customerId: ids.kofi });
-    // Admin roles always get the id
+    expect(inside.status).toBe(200);
+    expect(inside.body.duplicate).toBe(true);
+    expect(inside.body.customer.id).toBe(ids.kofi);
+    // Manager can open Abena: 200 duplicate with record
     const admin = await request(app).post('/api/customers').set(bearer(tokens.manager)).send(body(6));
-    expect(admin.body.customerId).toBe(ids.abena);
+    expect(admin.status).toBe(200);
+    expect(admin.body.duplicate).toBe(true);
+    expect(admin.body.customer.id).toBe(ids.abena);
     // Same on edit
     const edit = await request(app).put(`/api/customers/${ids.kofi}`).set(bearer(tokens.rep1)).send({ phoneNumber: local(6) });
     expect(edit.status).toBe(409);

@@ -23,6 +23,13 @@ describe('CallService', () => {
   beforeEach(() => {
     callService = new CallService();
     jest.clearAllMocks();
+    (prismaMock.$transaction as any).mockImplementation(async (cb: any) => cb(prismaMock));
+    prismaMock.order.findFirst.mockImplementation(((args: any) => prismaMock.order.findUnique(args)) as any);
+    prismaMock.order.updateMany.mockResolvedValue({ count: 1 } as any);
+    prismaMock.order.update.mockResolvedValue({} as any);
+    prismaMock.orderHistory.create.mockResolvedValue({ id: 1 } as any);
+    prismaMock.auditLog.create.mockResolvedValue({ id: 1 } as any);
+    prismaMock.agentCollection.findFirst.mockResolvedValue(null as any);
   });
 
   describe('createCall', () => {
@@ -53,7 +60,8 @@ describe('CallService', () => {
     const mockOrder = {
       id: 100,
       customerId: 1, // Must match validCallData.customerId
-      status: 'confirmed'
+      status: 'pending_confirmation',
+      customerRepId: 5,
     };
 
     const mockCreatedCall = {
@@ -81,7 +89,8 @@ describe('CallService', () => {
 
       await callService.createCall({ ...validCallData, startedAt: new Date('2026-09-01T00:00:00Z') });
       expect((prismaMock.call.create.mock.calls[1][0] as any).data.startedAt).toEqual(createdAt);
-      expect((prismaMock.order.updateMany.mock.calls[1][0] as any).data.firstContactAt).toEqual(createdAt);
+      const contactCalls = (prismaMock.order.updateMany.mock.calls as any[]).filter((c) => c[0].data?.firstContactAt !== undefined);
+      expect(contactCalls[1][0].data.firstContactAt).toEqual(createdAt);
     });
 
     it('sets firstContactAt on the first call and not on the second (race-safe updateMany)', async () => {
@@ -94,11 +103,14 @@ describe('CallService', () => {
       // Stateful stand-in for the DB: only a null firstContactAt matches the where clause.
       let stored: Date | null = null;
       prismaMock.order.updateMany.mockImplementation((async (args: any) => {
-        if (args.where.firstContactAt === null && stored === null) {
-          stored = args.data.firstContactAt;
-          return { count: 1 };
+        if (args.where?.firstContactAt === null) {
+          if (stored === null) {
+            stored = args.data.firstContactAt;
+            return { count: 1 };
+          }
+          return { count: 0 };
         }
-        return { count: 0 };
+        return { count: 1 };
       }) as any);
 
       await callService.createCall({ ...validCallData, startedAt: first });
@@ -387,7 +399,7 @@ describe('CallService', () => {
       {
         id: 2,
         salesRepId: 5,
-        outcome: 'no_answer',
+        outcome: 'not_reachable',
         duration: 30,
         createdAt: new Date('2024-12-27T14:00:00'),
         salesRep: { id: 5, firstName: 'John', lastName: 'Doe' }
@@ -399,7 +411,7 @@ describe('CallService', () => {
       prismaMock.call.count.mockResolvedValue(2);
       prismaMock.call.groupBy.mockResolvedValue([
         { outcome: 'confirmed', _count: 1 },
-        { outcome: 'no_answer', _count: 1 }
+        { outcome: 'not_reachable', _count: 1 }
       ] as any);
       prismaMock.call.findMany.mockResolvedValue(mockCalls as any);
 
@@ -416,6 +428,14 @@ describe('CallService', () => {
       expect(result[0]).toHaveProperty('avgCallsPerDay');
       expect(result[0]).toHaveProperty('avgDuration');
       expect(result[0]).toHaveProperty('outcomeBreakdown');
+      expect(result[0].outcomeBreakdown).toEqual({
+        confirmed: 1,
+        not_reachable: 1,
+        call_back_later: 0,
+        declined: 0,
+        wrong_number: 0,
+        other: 0
+      });
       expect(result[0]).toHaveProperty('timeline');
     });
 
@@ -426,7 +446,7 @@ describe('CallService', () => {
       prismaMock.call.count.mockResolvedValue(2);
       prismaMock.call.groupBy.mockResolvedValue([
         { outcome: 'confirmed', _count: 1 },
-        { outcome: 'no_answer', _count: 1 }
+        { outcome: 'not_reachable', _count: 1 }
       ] as any);
       prismaMock.call.findMany.mockResolvedValue(mockCalls as any);
 
@@ -440,7 +460,7 @@ describe('CallService', () => {
       prismaMock.call.count.mockResolvedValue(2);
       prismaMock.call.groupBy.mockResolvedValue([
         { outcome: 'confirmed', _count: 1 },
-        { outcome: 'no_answer', _count: 1 }
+        { outcome: 'not_reachable', _count: 1 }
       ] as any);
       prismaMock.call.findMany.mockResolvedValue(mockCalls as any);
 

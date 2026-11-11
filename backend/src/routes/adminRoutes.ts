@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import * as adminController from '../controllers/adminController';
-import { authenticate, requireSuperAdmin, requirePermission } from '../middleware/auth';
+import { authenticate, requireSuperAdmin, requirePermission, requireResourcePermission } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 const router = Router();
 
@@ -19,6 +19,10 @@ router.get('/config/me', adminController.getPublicConfig);
 // System Configuration
 router.get('/settings', requireSuperAdmin, adminController.getSystemConfig);
 router.put('/settings', requireSuperAdmin, adminController.updateSystemConfig);
+
+// Operations Settings (M7-T05)
+router.get('/settings/operations', requireResourcePermission('settings', 'view'), adminController.getOperationsSettings);
+router.put('/settings/operations', requireResourcePermission('settings', 'update'), adminController.updateOperationsSettings);
 
 // Role Permissions (super_admin only)
 router.get('/permissions', requireSuperAdmin, adminController.getRolePermissions);

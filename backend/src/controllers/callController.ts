@@ -6,7 +6,19 @@ import { readDateBound } from '../utils/kpiRequest';
 
 export const createCall = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { customerId, orderId, outcome, duration, notes, startedAt, source } = req.body;
+    const {
+      customerId,
+      orderId,
+      outcome,
+      duration,
+      notes,
+      startedAt,
+      source,
+      declineReason,
+      callbackAt,
+      expectedUpdatedAt,
+      orderChanges,
+    } = req.body;
 
     const call = await callService.createCall({
       customerId,
@@ -16,10 +28,17 @@ export const createCall = async (req: AuthRequest, res: Response): Promise<void>
       notes,
       startedAt: startedAt ? new Date(startedAt) : undefined,
       source,
-      salesRepId: req.user!.id
+      declineReason,
+      callbackAt: callbackAt ? new Date(callbackAt) : undefined,
+      salesRepId: req.user!.id,
+      expectedUpdatedAt,
+      orderChanges,
     });
 
-    res.status(201).json({ call });
+    const nextOrderId = (call as any).nextOrderId ?? null;
+    const upsell = (call as any).upsell ?? null;
+    const warningFlag = (call as any).warningFlag ?? false;
+    res.status(201).json({ call, nextOrderId, upsell, warningFlag });
   } catch (error) {
     throw error;
   }
@@ -97,7 +116,25 @@ export const getCallStats = async (req: AuthRequest, res: Response): Promise<voi
       endDate: readDateBound(endDate, 'to')
     });
 
-    res.json({ stats });
+    const outcomes: Record<string, number> = {
+      confirmed: 0,
+      not_reachable: 0,
+      call_back_later: 0,
+      declined: 0,
+      wrong_number: 0,
+      other: 0,
+    };
+    for (const rep of stats) {
+      for (const [key, count] of Object.entries(rep.outcomeBreakdown)) {
+        if (key in outcomes) {
+          outcomes[key] += count;
+        } else {
+          outcomes.other += count;
+        }
+      }
+    }
+
+    res.json({ stats, outcomes });
   } catch (error) {
     throw error;
   }

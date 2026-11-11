@@ -34,20 +34,33 @@ interface Allocation {
 }
 
 /**
- * Pays the oldest entries first. Whole entries until the amount runs out; the last one may be split (the part paid
- * and the remainder that stays earned). Entries with no `earnedAt` count as oldest. Throws when the amount is above what the
- * entries hold: callers check that first for a clear message.
+ * Pays the oldest entries first (COD-193).
+ * Negative entries (deductions) are applied first in full: they increase what is left to allocate and are never split.
+ * Then positive entries oldest first. The last positive entry may be split (part paid and remainder stays earned).
+ * Entries with no `earnedAt` count as oldest. Throws when amount is above what entries hold.
  */
 export function allocateOldestFirst(entries: OpenEntry[], amount: Money.Money): Allocation[] {
-  const sorted = [...entries].sort((a, b) => (a.earnedAt?.getTime() ?? 0) - (b.earnedAt?.getTime() ?? 0) || a.id - b.id);
+  const byAge = (a: OpenEntry, b: OpenEntry) => (a.earnedAt?.getTime() ?? 0) - (b.earnedAt?.getTime() ?? 0) || a.id - b.id;
+  const negatives = entries.filter((e) => e.amount.lt(0)).sort(byAge);
+  const positives = entries.filter((e) => !e.amount.lt(0)).sort(byAge);
+
   const out: Allocation[] = [];
   let left = amount;
-  for (const e of sorted) {
+
+  // Apply ALL negative entries first in full (pay = amount, remainder 0; they increase what is left to allocate)
+  for (const e of negatives) {
+    out.push({ entryId: e.id, pay: e.amount, remainder: Money.ZERO });
+    left = left.minus(e.amount);
+  }
+
+  // Apply positive entries oldest first
+  for (const e of positives) {
     if (left.lte(0)) break;
     const pay = e.amount.lt(left) ? e.amount : left;
     out.push({ entryId: e.id, pay, remainder: e.amount.minus(pay) });
     left = left.minus(pay);
   }
+
   if (left.gt(0)) throw new RangeError('Amount is above what the entries hold');
   return out;
 }
@@ -295,6 +308,7 @@ class PayoutService {
 
         const owed = summarize(locked).owed;
         if (!owed.gt(0)) {
+          if (owed.lt(0)) throw new AppError('Nothing is owed to this person', 400);
           const hasPaid = await tx.commissionEntry.count({ where: { userId: payee.id, status: 'paid', ...(rewardOnly ? { kind: 'reward' } : {}) } });
           if (hasPaid > 0) throw new AppError('Already paid', 409);
           throw new AppError('Nothing is owed to this person', 400);

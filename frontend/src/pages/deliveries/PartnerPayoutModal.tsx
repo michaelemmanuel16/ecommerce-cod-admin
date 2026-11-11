@@ -5,6 +5,7 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { apiErrorMessage } from '../../utils/apiError';
 import { currencySymbol, formatCurrency, todayYmd } from '../../utils/format';
 import { toCents } from '../../utils/money';
+import { formatOrderNumber } from '../../utils/orderNumber';
 
 interface PartnerPayoutModalProps {
   /** The partner who paid. 0 means none is chosen yet (the Finance header, whose `lead` select picks one). */
@@ -21,7 +22,7 @@ interface PartnerPayoutModalProps {
 }
 
 const COLUMNS: Column<ManualPreviewOrder>[] = [
-  { key: 'order', header: 'Order', render: (o) => `#${o.orderId}` },
+  { key: 'order', header: 'Order', render: (o) => formatOrderNumber(o.orderId) },
   { key: 'applied', header: 'Paid now', right: true, render: (o) => formatCurrency(o.applied) },
   { key: 'result', header: 'Result', render: (o) => (o.clearsOrder ? 'Cleared' : 'Part paid') },
 ];

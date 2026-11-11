@@ -67,9 +67,13 @@ export const customersService = {
     };
   },
 
-  async createCustomer(customer: any): Promise<Customer> {
+  async createCustomer(customer: any): Promise<Customer & { duplicate?: boolean }> {
     const response = await apiClient.post('/api/customers', customer);
-    return response.data.customer || response.data;
+    const data = response.data.customer || response.data;
+    if (response.data?.duplicate || (data as any)?.duplicate) {
+      data.duplicate = true;
+    }
+    return data;
   },
 
   async updateCustomer(id: number, customer: any): Promise<Customer> {
@@ -79,6 +83,12 @@ export const customersService = {
 
   async deleteCustomer(id: number): Promise<void> {
     await apiClient.delete(`/api/customers/${id}`);
+  },
+
+  /** Override COD status (F-357, M7-T06, M7-T20). */
+  async overrideCod(customerId: number, data: { allow: boolean; note: string }): Promise<any> {
+    const response = await apiClient.post(`/api/customers/${customerId}/cod-override`, data);
+    return response.data;
   },
 
   /** The v2 customers list (F-350 to F-353). Rows keep the API names; `skipCache` is for refetches after a change. */

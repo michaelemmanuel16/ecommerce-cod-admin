@@ -15,6 +15,7 @@ const TENANT_SCOPED_SEND_ACTIONS = new Set([
   'send_email',
   'send_sms',
   'send_whatsapp',
+  'send_auto_confirm',
   'send_digital_product', // forward-looking: action lands in MAN-80; guard is in place first
 ]);
 
@@ -340,6 +341,7 @@ export async function executeAction(action: any, input: any, conditions?: any): 
         orderId: input.orderId,
         customerId: input.customerId,
       });
+      if (!smsResult.sent) throw new Error('SMS is not set up: message not sent');
       return { sent: true, messageLogId: smsResult.messageLogId };
     }
 
@@ -351,7 +353,17 @@ export async function executeAction(action: any, input: any, conditions?: any): 
     case 'send_whatsapp': {
       const { sendWhatsAppForOrder } = await import('../services/whatsappService');
       const result = await sendWhatsAppForOrder(action.config.templateKey, input.orderId, action.config.customLink);
+      // sent === false: channel not set up. (An opted-out customer returns no `sent` field and stays a quiet skip.)
+      if (result.sent === false) throw new Error('WhatsApp is not set up: message not sent');
       return { sent: true, messageLogId: result.messageLogId };
+    }
+
+    case 'send_auto_confirm': {
+      const { runAutoConfirmAction } = await import('../services/autoConfirmService');
+      const result = await runAutoConfirmAction(input.orderId, getTenantId(), action.config);
+      // Ineligible / already sent is a skip, not a failure
+      if (result.skipped) return { sent: false, skipped: true, reason: result.reason };
+      return { sent: true, channel: result.channel };
     }
 
     case 'update_order': {

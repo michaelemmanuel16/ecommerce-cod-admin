@@ -160,6 +160,6 @@ describe('Settings, Rewards tab (M6-T18, F-1231)', () => {
 
   it('tells the owner when a save takes effect', async () => {
     renderAt();
-    expect(await screen.findByText(/New tier amounts apply from the next month close\. A new commission or upsell share applies to orders delivered after you save\./)).toBeInTheDocument();
+    expect(await screen.findByText(/New tier amounts apply from the next month close\. A new commission or upsell share applies to orders confirmed after you save\./)).toBeInTheDocument();
   });
 });

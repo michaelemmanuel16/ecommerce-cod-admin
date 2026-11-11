@@ -10,6 +10,7 @@ import { DAY_MS, MONTH_RE, getStoreTimeZone, localDate, monthRange } from './kpi
 import { ratePercent } from './kpi/rates';
 import { canSeeCost } from '../utils/costAccess';
 import { successTargetPct } from './kpi/successTarget';
+import { adminService } from './adminService';
 
 /**
  * Products API (F-600, F-601, F-602, M4-T16). Stock figures are computed from the levels and the orders, never stored:
@@ -108,20 +109,22 @@ async function recentUnits(ids: number[]): Promise<Map<number, number>> {
 async function figures(products: Row[], window: { from: Date; to: Date }) {
   const ids = products.map((p) => p.id);
   if (ids.length === 0) return [];
-  const [onHand, reserved, inMonth, last14, success] = await Promise.all([
+  const [onHand, reserved, inMonth, last14, success, settings] = await Promise.all([
     getOnHandMany(ids),
     getReservedMany(ids),
     productDeliveredUnits(resolveTenantId(), ids, window.from, window.to, { idsOnly: true }),
     recentUnits(ids),
     deliverySuccess(ids, window.from, window.to),
+    adminService.getOperationsSettings(),
   ]);
+  const defaultLowStock = settings.lowStockCoverDays ?? DEFAULT_LOW_STOCK_DAYS;
   const monthUnits = new Map((inMonth.byProduct ?? []).map((l) => [l.productId, l.units]));
 
   return products.map((p) => {
     const digital = p.productType === 'digital';
     const stock = onHand.get(p.id) ?? 0;
     const cover = coverOf(p, stock, last14.get(p.id) ?? 0);
-    const lowDays = p.lowStockDays ?? DEFAULT_LOW_STOCK_DAYS;
+    const lowDays = p.lowStockDays ?? defaultLowStock;
     return {
       ...p,
       onHandTotal: digital ? null : stock,
@@ -201,11 +204,16 @@ async function lowStockIds(active: Array<{ id: number; isActive: boolean; produc
   const physical = active.filter((p) => p.productType !== 'digital');
   if (physical.length === 0) return [];
   const ids = physical.map((p) => p.id);
-  const [onHand, last14] = await Promise.all([getOnHandMany(ids), recentUnits(ids)]);
+  const [onHand, last14, settings] = await Promise.all([
+    getOnHandMany(ids),
+    recentUnits(ids),
+    adminService.getOperationsSettings(),
+  ]);
+  const defaultLowStock = settings.lowStockCoverDays ?? DEFAULT_LOW_STOCK_DAYS;
   return physical
     .filter((p) => {
       const stock = onHand.get(p.id) ?? 0;
-      return productStatus(p, stock, coverOf(p, stock, last14.get(p.id) ?? 0), p.lowStockDays ?? DEFAULT_LOW_STOCK_DAYS) === 'low_stock';
+      return productStatus(p, stock, coverOf(p, stock, last14.get(p.id) ?? 0), p.lowStockDays ?? defaultLowStock) === 'low_stock';
     })
     .map((p) => p.id);
 }

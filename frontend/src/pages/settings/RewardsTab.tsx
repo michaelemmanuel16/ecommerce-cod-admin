@@ -237,7 +237,7 @@ export function RewardsTab({ editable }: { editable: boolean }) {
         </label>
       </div>
 
-      <div className="setinfo">New tier amounts apply from the next month close. A new commission or upsell share applies to orders delivered after you save.</div>
+      <div className="setinfo">New tier amounts apply from the next month close. A new commission or upsell share applies to orders confirmed after you save.</div>
       {editable && (
         <div className="cardfoot">
           <Button variant="primary" disabled={busy} onClick={save}>{busy ? 'Saving...' : 'Save rewards'}</Button>

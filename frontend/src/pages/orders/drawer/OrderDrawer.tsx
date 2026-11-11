@@ -12,6 +12,7 @@ import { CallOutcome } from '../../../types';
 import { ORDER_STATUS_LABELS } from '../../../utils/orderStatus';
 import { formatCurrency } from '../../../utils/format';
 import { orderNumber } from '../model';
+import { declineReasonLabel, failureReasonLabel } from '../reasons';
 import { useFilterOptions } from '../useFilterOptions';
 import { useOrderActions } from '../useOrderActions';
 import { CallsBlock } from './CallsBlock';
@@ -261,6 +262,18 @@ export function OrderDrawer({ id, onClose }: OrderDrawerProps) {
               <>
                 <ItemsView order={order} />
                 <CustomerView order={order} />
+                {order.declineReason && (
+                  <div className="sec">
+                    <h4>Decline reason</h4>
+                    <p>{declineReasonLabel(order.declineReason)}</p>
+                  </div>
+                )}
+                {order.failureReason && (
+                  <div className="sec">
+                    <h4>Failure reason</h4>
+                    <p>{failureReasonLabel(order.failureReason)}</p>
+                  </div>
+                )}
                 {order.notes && (
                   <div className="sec">
                     <h4>Notes</h4>

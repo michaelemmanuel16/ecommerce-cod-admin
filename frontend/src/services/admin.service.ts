@@ -241,4 +241,47 @@ export const adminService = {
     const response = await apiClient.get('/api/whatsapp/oauth/enabled');
     return response.data;
   },
+
+  // Operations Settings (M7-T21, F-1229)
+  async getOperationsSettings(): Promise<OperationsSettings> {
+    const response = await apiClient.get('/api/admin/settings/operations');
+    return response.data;
+  },
+
+  async updateOperationsSettings(data: UpdateOperationsSettingsData): Promise<OperationsSettings> {
+    const response = await apiClient.put('/api/admin/settings/operations', data);
+    return response.data;
+  },
 };
+
+export interface DayHours {
+  open: string;
+  close: string;
+  enabled: boolean;
+}
+
+export interface OperatingHoursConfig {
+  days?: Partial<Record<string, DayHours>>;
+  queueWaitAlertMinutes?: number;
+  firstCallTargetMinutes?: number;
+  defaultDaysToPay?: number;
+  lowStockCoverDays?: number;
+}
+
+export interface OperationsSettings {
+  operatingHours: OperatingHoursConfig | null;
+  timeZone: string;
+  queueWaitAlertMinutes: number;
+  firstCallTargetMinutes: number;
+  defaultDaysToPay: number;
+  lowStockCoverDays: number;
+}
+
+export interface UpdateOperationsSettingsData {
+  operatingHours?: OperatingHoursConfig;
+  timeZone?: string;
+  queueWaitAlertMinutes?: number;
+  firstCallTargetMinutes?: number;
+  defaultDaysToPay?: number;
+  lowStockCoverDays?: number;
+}

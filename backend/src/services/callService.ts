@@ -1,10 +1,12 @@
 import prisma from '../utils/prisma';
 import { resolveTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
-import { CallOutcome, CallSource, Prisma } from '@prisma/client';
+import { CallOutcome, CallSource, DeclineReason, OrderStatus, Prisma } from '@prisma/client';
 import logger from '../utils/logger';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitCallLogged } from '../sockets/index';
+import { transitionOrder, TransitionActor } from './orderStateMachine';
+import { fullName } from '../utils/nameUtils';
 
 interface CreateCallData {
   customerId: number;
@@ -15,6 +17,15 @@ interface CreateCallData {
   salesRepId: number;
   startedAt?: Date;
   source?: CallSource;
+  declineReason?: DeclineReason;
+  callbackAt?: Date;
+  expectedUpdatedAt?: Date | string;
+  orderChanges?: {
+    packageId?: number;
+    addOnIds?: number[];
+    value?: any;
+    extraValue?: any;
+  };
 }
 
 interface CallFilters {
@@ -49,11 +60,11 @@ export class CallService {
     }
 
     // Validate order exists if provided
-    let order: { createdAt: Date; customerId: number } | null = null;
+    let order: { id: number; createdAt: Date; customerId: number; status: OrderStatus; customerRepId: number | null; tenantId: string | null } | null = null;
     if (data.orderId) {
       order = await prisma.order.findUnique({
         where: { id: data.orderId }
-      });
+      }) as any;
 
       if (!order) {
         throw new AppError('Order not found', 404);
@@ -80,58 +91,210 @@ export class CallService {
       throw new AppError('User does not have permission to log calls', 403);
     }
 
+    // M7-T03: Rep logging a call on another rep's order -> 403
+    if (order && salesRep.role === 'sales_rep') {
+      if (order.customerRepId != null && order.customerRepId !== data.salesRepId) {
+        throw new AppError("You cannot log a call on another rep's order", 403, 'FORBIDDEN');
+      }
+    }
+
+    // Normalize outcome aliases (F3)
+    let outcome = data.outcome;
+    const rawOutcome = outcome as string;
+    if (rawOutcome === 'call_back' || rawOutcome === 'rescheduled') {
+      outcome = CallOutcome.call_back_later;
+    } else if (rawOutcome === 'no_answer') {
+      outcome = CallOutcome.not_reachable;
+    } else if (rawOutcome === 'cancelled') {
+      outcome = CallOutcome.declined;
+    }
+
+    // M7-T03 Outcome validations:
+    // 1. Confirm on already-confirmed order -> 409
+    if (outcome === CallOutcome.confirmed && order) {
+      if (order.status === 'confirmed') {
+        throw new AppError('Already handled', 409, 'ALREADY_HANDLED');
+      }
+    }
+
+    // 2. Declined needs a reason
+    if (outcome === CallOutcome.declined) {
+      if (!data.declineReason) {
+        throw new AppError('Decline reason is required', 400, 'DECLINE_REASON_REQUIRED');
+      }
+    }
+
+    // 3. Call back in the past -> 400
+    if (outcome === CallOutcome.call_back_later) {
+      if (!data.callbackAt) {
+        throw new AppError('Call back time is required', 400, 'CALLBACK_TIME_REQUIRED');
+      }
+      const cbTime = new Date(data.callbackAt).getTime();
+      if (isNaN(cbTime) || cbTime < Date.now() - 60_000) {
+        throw new AppError('Call back time cannot be in the past', 400, 'INVALID_CALLBACK_TIME');
+      }
+    }
+
     // A client-sent start time may not be in the future or before the order existed:
     // it feeds firstContactAt and so the time-to-first-call KPI.
     const now = new Date();
     let startedAt = data.startedAt && data.startedAt <= now ? data.startedAt : now;
     if (order && startedAt < order.createdAt) startedAt = order.createdAt;
 
-    // Create call log
-    const call = await prisma.call.create({
-      data: {
-        tenantId: resolveTenantId(customer.tenantId),
-        customerId: data.customerId,
-        orderId: data.orderId,
-        salesRepId: data.salesRepId,
-        outcome: data.outcome,
-        duration: data.duration,
-        notes: data.notes,
-        startedAt,
-        source: data.source ?? CallSource.manual
-      },
-      include: {
-        customer: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            phoneNumber: true
-          }
-        },
-        salesRep: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true
-          }
-        },
-        order: {
-          select: {
-            id: true,
-            status: true
-          }
+    const declineReason = outcome === CallOutcome.wrong_number ? ('wrong_number' as DeclineReason) : data.declineReason;
+    const isAutoConfirm = data.source === CallSource.auto_confirm || (data.source as string) === 'auto_confirm';
+
+    // F2: Atomic transaction for call row insert, firstContactAt, upsell apply, order transition, commission entries, wrongNumber update
+    const txResult = await prisma.$transaction(async (tx) => {
+      // M7-T10 One-save guard inside the transaction: atomic conditional update.
+      // It applies to a save from the call card (expectedUpdatedAt sent) or on an order that was pending when
+      // the save started. The order drawer can still log a call (no expectedUpdatedAt) on an order in any other status.
+      if (order && (order.status === 'pending_confirmation' || data.expectedUpdatedAt)) {
+        const orderTenantId = order?.tenantId ?? resolveTenantId(customer.tenantId);
+        const guardResult = await tx.order.updateMany({
+          where: {
+            id: data.orderId,
+            tenantId: orderTenantId,
+            status: 'pending_confirmation',
+            ...(data.expectedUpdatedAt ? { updatedAt: new Date(data.expectedUpdatedAt) } : {}),
+          },
+          data: { updatedAt: new Date() },
+        });
+
+        if (guardResult.count === 0) {
+          throw new AppError('Already handled', 409, 'ALREADY_HANDLED');
         }
       }
+
+      // 1. Create call log row
+      const callRow = await tx.call.create({
+        data: {
+          tenantId: resolveTenantId(customer.tenantId),
+          customerId: data.customerId,
+          orderId: data.orderId,
+          salesRepId: data.salesRepId,
+          outcome,
+          duration: data.duration,
+          notes: data.notes,
+          startedAt,
+          source: data.source ?? CallSource.manual,
+          declineReason,
+          callbackAt: data.callbackAt ? new Date(data.callbackAt) : null,
+        },
+        include: {
+          customer: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              phoneNumber: true
+            }
+          },
+          salesRep: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true
+            }
+          },
+          order: {
+            select: {
+              id: true,
+              status: true
+            }
+          }
+        }
+      });
+
+      // 2. M7-T03: Set firstContactAt on the first rep call attempt only; auto_confirm calls never set it.
+      if (!isAutoConfirm && data.orderId) {
+        await tx.order.updateMany({
+          where: { id: data.orderId, firstContactAt: null },
+          data: { firstContactAt: startedAt }
+        });
+      }
+
+      // 3. M7-T04: Upsell changes via call card (server computes extra value, client sends only IDs)
+      let upsellResult: any = null;
+      if (data.orderChanges && data.orderId) {
+        const { upsellService } = await import('./upsellService');
+        upsellResult = await upsellService.applyUpsell({
+          orderId: data.orderId,
+          repId: data.salesRepId,
+          role: salesRep.role,
+          packageId: data.orderChanges.packageId,
+          addOnIds: data.orderChanges.addOnIds,
+          tenantId: resolveTenantId(salesRep.tenantId),
+          tx,
+        });
+      }
+
+      // 4. M7-T03: Order status transitions and side effects
+      let transitionResult: any = null;
+      if (order && data.orderId) {
+        const actor: TransitionActor = { kind: 'user', userId: data.salesRepId, role: salesRep.role as any };
+        if (outcome === CallOutcome.confirmed) {
+          transitionResult = await transitionOrder(data.orderId, 'confirmed', actor, { tx });
+        } else if (outcome === CallOutcome.declined) {
+          transitionResult = await transitionOrder(data.orderId, 'cancelled', actor, { declineReason: data.declineReason, tx });
+        } else if (outcome === CallOutcome.wrong_number) {
+          transitionResult = await transitionOrder(data.orderId, 'cancelled', actor, { declineReason: 'wrong_number' as any, tx });
+          await tx.customer.update({
+            where: { id: data.customerId },
+            data: { wrongNumber: true },
+          });
+        }
+      }
+
+      // 5. F1 (money, P6): Commission entries are created ONLY when a person rep logs a confirmed call with source not auto_confirm
+      if (outcome === CallOutcome.confirmed && !isAutoConfirm && data.orderId && salesRep.role === 'sales_rep') {
+        const { createCommissionEntriesOnConfirm } = await import('./commissionService');
+        await createCommissionEntriesOnConfirm(tx, data.orderId, data.salesRepId);
+      }
+
+      return {
+        call: callRow,
+        upsellResult,
+        transitionResult,
+      };
     });
 
-    // First contact: every call has a rep (same rule as backfill-order-timestamps.ts).
-    // updateMany with firstContactAt: null is race-safe and never overwrites.
+    // Run afterCommit from transitionOrder after outer transaction commits
+    txResult.transitionResult?.afterCommit?.();
+
+    const call = txResult.call;
+    const upsellResult = txResult.upsellResult;
+
+    // M7-T03: Next queue order id in the rep's queue
+    let nextOrderId: number | null = null;
     if (data.orderId) {
-      await prisma.order.updateMany({
-        where: { id: data.orderId, firstContactAt: null },
-        data: { firstContactAt: startedAt }
+      const nextOrder = await prisma.order.findFirst({
+        where: {
+          customerRepId: data.salesRepId,
+          status: 'pending_confirmation',
+          id: { not: data.orderId },
+        },
+        orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
+        select: { id: true },
       });
+      nextOrderId = nextOrder?.id ?? null;
     }
+
+    Object.defineProperty(call, 'nextOrderId', {
+      value: nextOrderId,
+      enumerable: false,
+      writable: true,
+    });
+    Object.defineProperty(call, 'upsell', {
+      value: upsellResult,
+      enumerable: false,
+      writable: true,
+    });
+    Object.defineProperty(call, 'warningFlag', {
+      value: upsellResult?.warningFlag ?? false,
+      enumerable: false,
+      writable: true,
+    });
 
     logger.info('Call logged', {
       callId: call.id,
@@ -359,18 +522,39 @@ export class CallService {
         const totalDuration = callsWithDuration.reduce((sum, c) => sum + (c.duration || 0), 0);
         const avgDuration = callsWithDuration.length > 0 ? totalDuration / callsWithDuration.length : 0;
 
-        // Build outcome breakdown
-        const outcomes = outcomeBreakdown.reduce((acc, item) => {
-          acc[item.outcome] = item._count;
-          return acc;
-        }, {} as Record<string, number>);
+        // Build outcome breakdown: five outcomes plus "other" for legacy rows (COD-65)
+        const standardOutcomes = new Set([
+          'confirmed',
+          'not_reachable',
+          'call_back_later',
+          'declined',
+          'wrong_number',
+        ]);
+        let otherCount = 0;
+        const normalizedOutcomes: Record<string, number> = {
+          confirmed: 0,
+          not_reachable: 0,
+          call_back_later: 0,
+          declined: 0,
+          wrong_number: 0,
+          other: 0,
+        };
+        for (const item of outcomeBreakdown) {
+          const outcomeKey = item.outcome as string;
+          if (standardOutcomes.has(outcomeKey)) {
+            normalizedOutcomes[outcomeKey] = item._count;
+          } else {
+            otherCount += item._count;
+          }
+        }
+        normalizedOutcomes.other = otherCount;
 
         // Get timeline (calls per day for last 30 days)
         const timeline = await this.getCallTimeline(rep.id, 30);
 
         return {
           repId: rep.id,
-          repName: `${rep.firstName} ${rep.lastName}`,
+          repName: fullName(rep),
           totalCalls,
           todayCalls,
           weekCalls,
@@ -378,11 +562,12 @@ export class CallService {
           avgCallsPerDay: Math.round(avgCallsPerDay * 10) / 10,
           avgDuration: Math.round(avgDuration),
           outcomeBreakdown: {
-            confirmed: outcomes.confirmed || 0,
-            rescheduled: outcomes.rescheduled || 0,
-            no_answer: outcomes.no_answer || 0,
-            cancelled: outcomes.cancelled || 0,
-            other: outcomes.other || 0
+            confirmed: normalizedOutcomes.confirmed,
+            not_reachable: normalizedOutcomes.not_reachable,
+            call_back_later: normalizedOutcomes.call_back_later,
+            declined: normalizedOutcomes.declined,
+            wrong_number: normalizedOutcomes.wrong_number,
+            other: normalizedOutcomes.other,
           },
           timeline
         };
@@ -432,4 +617,5 @@ export class CallService {
   }
 }
 
-export default new CallService();
+export const callService = new CallService();
+export default callService;

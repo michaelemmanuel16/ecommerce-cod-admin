@@ -20,8 +20,7 @@ export const PAYMENT_TAG_LABELS: Record<PaymentTagCode, string> = {
 export const DEFAULT_DAYS_TO_PAY = 7;
 
 /**
- * Days to pay for a partner: its own value when above 0, else the Settings default, else 7. The Settings task adds
- * `SystemConfig.defaultDaysToPay` (F-1200); until then no caller passes `config` and every partner without a value gets 7.
+ * Days to pay for a partner: its own value when above 0, else the Settings default, else 7 (F-309, F-704, F-1200).
  */
 export const resolveDaysToPay = (
   profile?: { daysToPay?: number | null } | null,

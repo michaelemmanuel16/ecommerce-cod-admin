@@ -47,19 +47,37 @@ describe('CustomerService', () => {
       expect(prismaMock.customer.create).toHaveBeenCalled();
     });
 
-    it('should throw error when phone number already exists', async () => {
+    it('returns existing customer with duplicate: true when phone number already exists', async () => {
       prismaMock.customer.findMany.mockResolvedValue([{
         id: 2,
         firstName: 'Abena',
         lastName: 'Owusu',
-        phoneNumber: '+1234567890'
+        phoneNumber: '+1234567890',
+        isActive: true
       } as any]);
 
+      const result = await customerService.createCustomer(createCustomerData);
+      expect(result).toMatchObject({ id: 2, duplicate: true });
+    });
+
+    it('throws 409 when requester cannot open existing duplicate customer', async () => {
+      prismaMock.customer.findMany.mockResolvedValue([{
+        id: 2,
+        firstName: 'Abena',
+        lastName: 'Owusu',
+        phoneNumber: '+1234567890',
+        isActive: true
+      } as any]);
+      prismaMock.customer.count.mockResolvedValue(0);
+
       await expect(
-        customerService.createCustomer(createCustomerData)
-      ).rejects.toThrow(
-        new AppError('This number belongs to Abena Owusu', 409)
-      );
+        customerService.createCustomer(createCustomerData, { id: 99, role: 'sales_rep' as any })
+      ).rejects.toMatchObject({
+        message: 'This number belongs to Abena Owusu',
+        statusCode: 409,
+        errorCode: 'PHONE_BELONGS_TO_OTHER_CUSTOMER',
+        details: { customerName: 'Abena Owusu' },
+      });
     });
   });
 

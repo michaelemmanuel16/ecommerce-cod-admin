@@ -279,6 +279,22 @@ describe('Add customer (F-355)', () => {
     expect(within(dlg).getByRole('link', { name: 'Open Abena Owusu' })).toHaveAttribute('href', '/customers/5');
   });
 
+  it('duplicate phone returning 200 with duplicate: true shows clash UI with open link and does not call onSaved', async () => {
+    createCustomer.mockResolvedValue({
+      id: 5,
+      firstName: 'Abena',
+      lastName: 'Owusu',
+      duplicate: true,
+    });
+    const dlg = await open();
+    await fill(dlg);
+    await userEvent.click(within(dlg).getByRole('button', { name: 'Add customer' }));
+    expect(await within(dlg).findByText('This number belongs to Abena Owusu')).toBeInTheDocument();
+    expect(within(dlg).getByRole('link', { name: 'Open Abena Owusu' })).toHaveAttribute('href', '/customers/5');
+    expect(screen.queryByText('Abena Owusu added')).toBeNull();
+    expect(screen.getByRole('dialog', { name: 'Add customer' })).toBeInTheDocument();
+  });
+
   it('a deleted customer with the phone offers Reactivate to an owner, admin or manager only', async () => {
     const archived = Object.assign(new Error('409'), {
       isAxiosError: true,

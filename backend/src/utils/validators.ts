@@ -84,6 +84,12 @@ export const updateCustomerValidation: ValidationChain[] = [
   body('alternatePhone').optional({ values: 'falsy' }).custom(customerPhone('Alternate phone')),
 ];
 
+export const codOverrideValidation: ValidationChain[] = [
+  param('id').isInt({ min: 1 }).withMessage('Invalid customer ID').toInt(),
+  body('allow').isBoolean().withMessage('allow must be a boolean'),
+  body('note').isString().trim().notEmpty().withMessage('note is required'),
+];
+
 
 const NO_STOCK_QUANTITY = 'stockQuantity is not accepted. Give openingStock when you create a product, or use Adjust quantity in Inventory.';
 
@@ -117,8 +123,9 @@ export const updateProductValidation: ValidationChain[] = [
 
 export const createOrderValidation: ValidationChain[] = [
   body('customerId').optional(),
-  // F-317: fewer than 9 digits is an error
-  body('customerPhone').optional().custom((v) => String(v).replace(/\D/g, '').length >= 9).withMessage('Phone number needs at least 9 digits'),
+  body('packageId').optional({ nullable: true }).isInt({ min: 1 }),
+  // F-317 / F-355: phone with letters is an error; fewer than 9 digits is too short
+  body('customerPhone').optional().custom(customerPhone('Phone number')),
   body('orderItems').isArray({ min: 1 }),
   body('orderItems.*.productId').notEmpty(),
   body('orderItems.*.quantity').isInt({ min: 1 }),
@@ -255,11 +262,17 @@ export const resetPasswordValidation: ValidationChain[] = [
 export const createCallValidation: ValidationChain[] = [
   body('customerId').isInt().withMessage('Customer ID is required'),
   body('orderId').optional().isInt(),
-  body('outcome').isIn(['confirmed', 'rescheduled', 'no_answer', 'cancelled', 'other']).withMessage('Invalid call outcome'),
+  body('outcome').isIn(['confirmed', 'not_reachable', 'call_back_later', 'call_back', 'declined', 'wrong_number', 'other', 'rescheduled', 'no_answer', 'cancelled']).withMessage('Invalid call outcome'),
   body('duration').optional().isInt({ min: 0 }).withMessage('Duration must be a positive number'),
   body('notes').optional().isString().isLength({ max: 500 }).withMessage('Notes must be 500 characters or less'),
   body('startedAt').optional().isISO8601().withMessage('startedAt must be an ISO date'),
-  body('source').optional().isIn(['manual', 'auto_confirm', 'tap_to_call']).withMessage('Invalid call source')
+  body('source').optional().isIn(['manual', 'auto_confirm', 'tap_to_call']).withMessage('Invalid call source'),
+  body('declineReason').optional().isIn(['price_too_high', 'prank_or_mistake', 'changed_mind', 'bought_elsewhere', 'wrong_number', 'other']).withMessage('Invalid decline reason'),
+  body('callbackAt').optional().isISO8601().withMessage('callbackAt must be an ISO date'),
+  body('orderChanges').optional().isObject().withMessage('orderChanges must be an object'),
+  body('orderChanges.packageId').optional({ nullable: true }).isInt({ min: 1 }).withMessage('packageId must be an integer'),
+  body('orderChanges.addOnIds').optional().isArray().withMessage('addOnIds must be an array'),
+  body('expectedUpdatedAt').optional().isISO8601().withMessage('expectedUpdatedAt must be an ISO date')
 ];
 
 export const createAccountValidation: ValidationChain[] = [

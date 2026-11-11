@@ -320,4 +320,27 @@ describe('M5-T15: Orders "Unpaid by agent" tab', () => {
   it('a role without financial view is refused', async () => {
     expect((await request(app).get('/api/orders?tab=unpaid_by_agent').set(bearer(rep.token))).status).toBe(403);
   });
+
+  it('defaultDaysToPay in settings applies to a partner without its own value (orders delivered 4 days ago are overdue when defaultDaysToPay is 3)', async () => {
+    const setRes = await request(app).put('/api/admin/settings/operations').set(bearer(owner.token)).send({ defaultDaysToPay: 3 });
+    expect(setRes.status).toBe(200);
+    expect(setRes.body.defaultDaysToPay).toBe(3);
+
+    const partner = (await mkPartner(tenantId, 'nopay')).id;
+    await setBalance(partner, 1000);
+    const del4 = await delivered(partner, { daysAgo: 4 });
+    const del2 = await delivered(partner, { daysAgo: 2 });
+
+    const res = await request(app).get('/api/orders?tab=unpaid_by_agent&limit=100').set(bearer(owner.token));
+    expect(res.status).toBe(200);
+    const order4 = res.body.orders.find((o: any) => o.id === del4.orderId);
+    const order2 = res.body.orders.find((o: any) => o.id === del2.orderId);
+    expect(order4).toBeDefined();
+    expect(order4.unpaid).toEqual({ days: 4, daysToPay: 3 });
+    expect(order2).toBeUndefined();
+
+    const body = (await agentAging()).body;
+    const row = partnerRow(body, partner);
+    expect(row.daysToPay).toBe(3);
+  });
 });

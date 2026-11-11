@@ -13,6 +13,7 @@ import type { Product } from '../../types';
 import { apiErrorMessage } from '../../utils/apiError';
 import { getCountryByCurrency, getCurrencySymbol, getRegionsForCountry } from '../../utils/countries';
 import { formatCurrency, formatPhoneLocal } from '../../utils/format';
+import { formatOrderNumber } from '../../utils/orderNumber';
 import type { Option } from './useFilterOptions';
 import { phoneOk } from '../../utils/phone';
 import { asNumber, computedTotal, linesSum, totalGap, unitsByProduct, type DraftLine } from './newOrder';
@@ -191,7 +192,7 @@ export function NewOrderSheet({ open, onClose, onCreated, customerId, canAssign,
         ...(canAssign && form.repId && { customerRepId: Number(form.repId) }),
         ...(canAssign && form.agentId && { deliveryAgentId: Number(form.agentId) }),
       });
-      say(`Order ${order.orderNumber || `#${order.id}`} created`);
+      say(`Order ${order.orderNumber || formatOrderNumber(order.id)} created`);
       onCreated();
       onClose();
     } catch (e) {

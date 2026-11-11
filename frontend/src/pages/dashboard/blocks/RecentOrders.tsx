@@ -5,7 +5,8 @@ import { ORDER_STATUS_LABELS } from '../../../utils/orderStatus';
 import type { OrderStatus } from '../../../types';
 import { formatCurrency } from '../../../utils/format';
 import { INFO } from '../copy';
-import { initials, orderNumber } from '../format';
+import { initials } from '../format';
+import { formatOrderNumber } from '../../../utils/orderNumber';
 import { PageLink } from '../links';
 import { PATHS } from '../paths';
 import { BlockFrame, Tip } from './Frame';
@@ -23,7 +24,7 @@ const AVATARS = ['pine', 'gold', 'violet', 'coral'] as const;
 
 function columns(rows: RecentOrder[]): Column<RecentOrder>[] {
   return [
-    { key: 'order', header: 'Order', render: (o) => <b>{orderNumber(o)}</b> },
+    { key: 'order', header: 'Order', render: (o) => <b>{formatOrderNumber(o.externalOrderId ?? o.id)}</b> },
     {
       key: 'customer',
       header: 'Customer',

@@ -1,0 +1,948 @@
+/* Call rep screen styling (M7-T14, M7-T15, M7-T16, F-750, F-751, F-752, F-753, F-754).
+   Built strictly from v2 tokens in tokens.css. Scoped under .v2 .rep-shell. No hex colours. */
+
+.v2 .rep-shell {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.v2 .rep-shell .app-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: 100vh;
+}
+
+/* desktop rail */
+.v2 .rep-shell .side {
+  background: var(--side);
+  border-right: 1px solid var(--line);
+  padding: 20px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.v2 .rep-shell .brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 17px;
+  font-weight: 800;
+  font-family: "Bricolage Grotesque", sans-serif;
+  color: var(--ink);
+}
+
+.v2 .rep-shell .brand .logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--pine);
+  color: var(--on-pine);
+  display: grid;
+  place-items: center;
+}
+
+.v2 .rep-shell .navgroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.v2 .rep-shell .nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  color: var(--ink-2);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 14px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.v2 .rep-shell .nav:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.v2 .rep-shell .nav.on {
+  background: var(--pine-soft);
+  color: var(--pine);
+}
+
+.v2 .rep-shell .nav .pill {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 99px;
+  background: var(--coral-soft);
+  color: var(--coral);
+}
+
+/* main area and top bar */
+.v2 .rep-shell .main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.v2 .rep-shell .bar2 {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 28px;
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+
+.v2 .rep-shell .bar2 .logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: none;
+  place-items: center;
+  background: var(--pine);
+  color: var(--on-pine);
+}
+
+.v2 .rep-shell .bar2 .who2 {
+  line-height: 1.2;
+}
+
+.v2 .rep-shell .bar2 .who2 b {
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 17px;
+  font-weight: 800;
+  display: block;
+}
+
+.v2 .rep-shell .bar2 .who2 small {
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+
+.v2 .rep-shell .bar2 .sp {
+  flex: 1;
+}
+
+.v2 .rep-shell .bar2 .back {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--pine);
+  font-weight: 600;
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.v2 .rep-shell .bar2 .back:hover {
+  text-decoration: underline;
+}
+
+.v2 .rep-shell .bar2 .bcnt {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 17px;
+  height: 17px;
+  border-radius: 9px;
+  background: var(--coral);
+  color: var(--on-pine);
+  font-size: 10.5px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  padding: 0 4px;
+  pointer-events: none;
+}
+
+.v2 .rep-shell .bar2 .bell-btn {
+  position: relative;
+}
+
+.v2 .rep-shell .content {
+  padding: 26px 28px 70px;
+  flex: 1;
+}
+
+.v2 .rep-shell .head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.v2 .rep-shell .head h1 {
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1.1;
+  font-family: "Bricolage Grotesque", sans-serif;
+}
+
+.v2 .rep-shell .head p {
+  color: var(--ink-2);
+  margin-top: 4px;
+  font-size: 14px;
+}
+
+/* mobile bottom tabs */
+.v2 .rep-shell .ptab {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .v2 .rep-shell .app-layout {
+    grid-template-columns: 1fr;
+  }
+  .v2 .rep-shell .side {
+    display: none;
+  }
+  .v2 .rep-shell .bar2 {
+    padding: 10px 16px;
+  }
+  .v2 .rep-shell .bar2 .logo {
+    display: grid;
+  }
+  .v2 .rep-shell .bar2 .back span {
+    display: none;
+  }
+  .v2 .rep-shell .content {
+    padding: 18px 16px 100px;
+  }
+  .v2 .rep-shell .ptab {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    padding: 8px 6px calc(8px + env(safe-area-inset-bottom));
+    background: var(--card);
+    border-top: 1px solid var(--line);
+  }
+  .v2 .rep-shell .ptab a {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--ink-3);
+    text-decoration: none;
+    padding: 4px 0;
+    border-radius: 10px;
+  }
+  .v2 .rep-shell .ptab a:hover,
+  .v2 .rep-shell .ptab a.on {
+    color: var(--pine);
+  }
+  .v2 .rep-shell .ptab a.on {
+    background: var(--pine-soft);
+  }
+  .v2 .rep-shell .ptab .pill {
+    position: absolute;
+    top: 0;
+    left: calc(50% + 6px);
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 0 6px;
+    border-radius: 99px;
+    background: var(--coral-soft);
+    color: var(--coral);
+  }
+}
+
+/* Today page styles */
+.v2 .rep-shell .today {
+  display: grid;
+  grid-template-columns: 1.1fr 1.5fr;
+  gap: 16px;
+}
+
+.v2 .rep-shell .hero {
+  padding: 22px;
+  background: radial-gradient(120% 120% at 0% 0%, var(--pine-2), var(--pine));
+  color: var(--on-pine);
+  border-radius: 20px;
+}
+
+.v2 .rep-shell .hero small {
+  opacity: 0.85;
+  font-weight: 600;
+  display: block;
+  font-size: 13px;
+}
+
+.v2 .rep-shell .hero .big {
+  font-size: 52px;
+  font-weight: 800;
+  line-height: 1;
+  margin: 8px 0 4px;
+  font-family: "Bricolage Grotesque", sans-serif;
+}
+
+.v2 .rep-shell .hero .of {
+  opacity: 0.9;
+  font-size: 13px;
+  margin-top: 8px;
+}
+
+.v2 .rep-shell .rew {
+  padding: 18px 20px;
+}
+
+.v2 .rep-shell .rew h3 {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.v2 .rep-shell .tier {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.v2 .rep-shell .tier div {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 8px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--ink-3);
+  background: var(--bg);
+}
+
+.v2 .rep-shell .tier div b {
+  display: block;
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 15px;
+  color: var(--ink);
+  margin-bottom: 2px;
+}
+
+.v2 .rep-shell .tier .got {
+  background: var(--mint-soft);
+  border-color: transparent;
+}
+
+.v2 .rep-shell .tier .next {
+  border-color: var(--pine);
+  box-shadow: 0 0 0 3px var(--pine-soft);
+}
+
+.v2 .rep-shell .tkpis {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.v2 .rep-shell .tk {
+  padding: 14px 16px;
+}
+
+.v2 .rep-shell .tk small {
+  color: var(--ink-2);
+  font-weight: 500;
+  display: block;
+  font-size: 13px;
+}
+
+.v2 .rep-shell .tk .v {
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.15;
+  margin-top: 4px;
+}
+
+.v2 .rep-shell .tk .s {
+  font-size: 12.5px;
+  color: var(--ink-3);
+  margin-top: 2px;
+}
+
+.v2 .rep-shell .prog {
+  height: 8px;
+  background: var(--hover);
+  border-radius: 99px;
+  overflow: hidden;
+  margin-top: 12px;
+}
+
+.v2 .rep-shell .prog i {
+  display: block;
+  height: 100%;
+  background: var(--pine);
+  border-radius: 99px;
+  transition: width 0.3s ease;
+}
+
+/* Queue page styles */
+.v2 .rep-shell .work {
+  display: grid;
+  grid-template-columns: minmax(340px, 440px) 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.v2 .rep-shell .qtabs {
+  display: flex;
+  gap: 2px;
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.v2 .rep-shell .qtabs::-webkit-scrollbar {
+  display: none;
+}
+
+.v2 .rep-shell .qtabs .tab {
+  flex: none;
+  padding: 7px 10px;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+}
+
+.v2 .rep-shell .qtabs .tab.on {
+  background: var(--ink);
+  color: var(--bg);
+}
+
+.v2 .rep-shell .find {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  margin: 12px 14px 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--ink-3);
+}
+
+.v2 .rep-shell .find input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 500 14px "Plus Jakarta Sans", sans-serif;
+  outline: 0;
+}
+
+.v2 .rep-shell .qlist {
+  padding: 6px 0;
+}
+
+.v2 .rep-shell .qi {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: background 0.1s ease;
+}
+
+.v2 .rep-shell .qi:last-child {
+  border-bottom: 0;
+}
+
+.v2 .rep-shell .qi:hover {
+  background: var(--hover);
+}
+
+.v2 .rep-shell .qi.sel {
+  background: var(--pine-soft);
+  border-left-color: var(--pine);
+}
+
+.v2 .rep-shell .qi.late-callback {
+  background: var(--coral-soft);
+  border-left-color: var(--coral);
+}
+
+.v2 .rep-shell .wt {
+  flex: none;
+  width: 86px;
+  white-space: nowrap;
+  text-align: center;
+  border-radius: 12px;
+  padding: 6px 4px;
+  background: var(--hover);
+}
+
+.v2 .rep-shell .wt small {
+  display: block;
+  font-size: 11px;
+  color: var(--ink-3);
+  font-weight: 600;
+}
+
+.v2 .rep-shell .wt b {
+  display: block;
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.v2 .rep-shell .wt.gold {
+  background: var(--gold-soft);
+}
+
+.v2 .rep-shell .wt.gold b {
+  color: var(--warn-ink);
+}
+
+.v2 .rep-shell .wt.coral {
+  background: var(--coral-soft);
+}
+
+.v2 .rep-shell .wt.coral b {
+  color: var(--coral);
+}
+
+.v2 .rep-shell .qm {
+  min-width: 0;
+  flex: 1;
+}
+
+.v2 .rep-shell .qm b {
+  display: block;
+  font-size: 14.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.v2 .rep-shell .qm small {
+  display: block;
+  color: var(--ink-3);
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.v2 .rep-shell .qa {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+.v2 .rep-shell .qa .ibtn {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+}
+
+.v2 .rep-shell .qa .ibtn.call {
+  background: var(--pine);
+  border-color: var(--pine);
+  color: var(--on-pine);
+}
+
+.v2 .rep-shell .empty {
+  padding: 34px 20px;
+  text-align: center;
+  color: var(--ink-2);
+}
+
+.v2 .rep-shell .callpanel {
+  position: sticky;
+  top: 76px;
+  max-height: calc(100vh - 92px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+@media (max-width: 1100px) {
+  .v2 .rep-shell .today {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .v2 .rep-shell .work {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .v2 .rep-shell .callpanel {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .v2 .rep-shell .tkpis {
+    grid-template-columns: 1fr;
+  }
+  .v2 .rep-shell .tier {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* M7-T19: My orders, My numbers, Earnings pages */
+.v2 .rep-shell .low {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.v2 .rep-shell .low > .card.sec {
+  margin-top: 0;
+}
+
+.v2 .rep-shell .owed {
+  padding: 18px 20px 6px;
+}
+
+.v2 .rep-shell .owed small {
+  color: var(--ink-3);
+  font-size: 13px;
+  font-weight: 600;
+  display: block;
+}
+
+.v2 .rep-shell .owed .big {
+  font-size: 38px;
+  font-weight: 800;
+  line-height: 1.1;
+  font-family: "Bricolage Grotesque", sans-serif;
+}
+
+.v2 .rep-shell .owed .big.coral {
+  color: var(--coral);
+}
+
+.v2 .rep-shell .lines {
+  padding: 6px 20px 4px;
+}
+
+.v2 .rep-shell .lines .li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+
+.v2 .rep-shell .lines .li:last-child {
+  border-bottom: 0;
+}
+
+.v2 .rep-shell .lines .li span em {
+  display: block;
+  font-style: normal;
+  font-size: 12px;
+  color: var(--ink-3);
+  margin-top: 2px;
+}
+
+.v2 .rep-shell .note1 {
+  margin: 6px 20px 18px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--gold-soft);
+  color: var(--ink);
+  font-size: 13px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.v2 .rep-shell .note1 svg {
+  flex: none;
+  color: var(--gold);
+}
+
+.v2 .rep-shell .pays {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.v2 .rep-shell .pays th {
+  text-align: left;
+  font-size: 12px;
+  color: var(--ink-3);
+  font-weight: 600;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.v2 .rep-shell .pays td {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.v2 .rep-shell .pays tr:last-child td {
+  border-bottom: 0;
+}
+
+.v2 .rep-shell .nums {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  padding: 16px 20px;
+}
+
+.v2 .rep-shell .nums .drv {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.v2 .rep-shell .nums .drv small {
+  display: block;
+  font-size: 12px;
+  color: var(--ink-3);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.v2 .rep-shell .nums .drv b {
+  display: block;
+  font-size: 22px;
+  font-family: "Bricolage Grotesque", sans-serif;
+  color: var(--ink);
+  line-height: 1.1;
+}
+
+.v2 .rep-shell .nums .drv em {
+  display: block;
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--ink-3);
+  margin-top: 4px;
+}
+
+.v2 .rep-shell .ranks {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 0 20px 16px;
+}
+
+.v2 .rep-shell .rk {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 14px;
+  background: var(--card);
+}
+
+.v2 .rep-shell .rk .rank {
+  background: var(--mint-soft);
+  color: #14975f;
+  font-size: 18px;
+  font-weight: 800;
+  font-family: "Bricolage Grotesque", sans-serif;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+[data-theme="dark"] .v2 .rep-shell .rk .rank {
+  color: var(--mint);
+}
+
+.v2 .rep-shell .rk small {
+  display: block;
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.v2 .rep-shell .rk b {
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.v2 .rep-shell .sh {
+  padding: 14px 20px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-3);
+}
+
+.v2 .rep-shell .stack {
+  display: flex;
+  height: 12px;
+  border-radius: 99px;
+  overflow: hidden;
+  gap: 2px;
+  margin: 10px 20px 0;
+  background: var(--hover);
+}
+
+.v2 .rep-shell .stack i {
+  display: block;
+  height: 100%;
+}
+
+.v2 .rep-shell .leg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding: 10px 20px 4px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+.v2 .rep-shell .leg i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.v2 .rep-shell .callrow {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  padding: 14px 20px 0;
+}
+
+.v2 .rep-shell .callrow div {
+  font-size: 12px;
+  color: var(--ink-3);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.v2 .rep-shell .callrow b {
+  display: block;
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 20px;
+  color: var(--ink);
+  line-height: 1.2;
+}
+
+.v2 .rep-shell .bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+  height: 64px;
+  padding: 0 20px;
+  margin-top: 8px;
+}
+
+.v2 .rep-shell .bars i {
+  flex: 1;
+  background: var(--pine-soft);
+  border-radius: 5px 5px 0 0;
+  min-height: 4px;
+  transition: height 0.2s ease;
+}
+
+.v2 .rep-shell .bars i.t {
+  background: var(--pine);
+}
+
+.v2 .rep-shell .filter-bar {
+  display: flex;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  align-items: center;
+}
+
+.v2 .rep-shell .status-select {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--ink);
+  font: 500 13px "Plus Jakarta Sans", sans-serif;
+  padding: 8px 12px;
+  outline: 0;
+  cursor: pointer;
+}
+
+.v2 .rep-shell .pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+@media (max-width: 1100px) {
+  .v2 .rep-shell .low {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .v2 .rep-shell #opanel.callpanel.open {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    max-height: 100vh;
+    border-radius: 0;
+    top: 0;
+    background: var(--card);
+    overflow-y: auto;
+  }
+}
+
+@media (max-width: 760px) {
+  .v2 .rep-shell .nums {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .v2 .rep-shell .ranks {
+    grid-template-columns: 1fr;
+  }
+  .v2 .rep-shell .callrow {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .v2 .rep-shell .filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+@media (max-width: 640px) {
+  .v2 .rep-shell .nums {
+    grid-template-columns: 1fr;
+  }
+}

@@ -36,7 +36,13 @@ import { formTenantBySlug } from './tenantLookupService';
 import { clearCheckoutFormConfigCache } from './checkoutFormService';
 import { currencyOfTenant, getCurrency } from '../utils/currency';
 import { changeStoreCurrency } from './fxService';
-import { parseOperatingHours } from './kpi/workingTime';
+import {
+  parseOperatingHours,
+  readOperatingSettings,
+  DEFAULT_FIRST_CALL_TARGET_MINUTES,
+  DEFAULT_QUEUE_WAIT_ALERT_MINUTES,
+} from './kpi/workingTime';
+import { getStoreTimeZone } from './kpi/dates';
 import { normalizeInternationalPhone } from '../utils/phone';
 import { isValidTimeZone } from '../utils/timeZone';
 import { defaultRolePermissions } from '../config/defaultRolePermissions';
@@ -209,6 +215,89 @@ export const adminService = {
       businessName: config?.businessName ?? tenant.name ?? null,
       currency: await currencyOfTenant(tenant.id),
     };
+  },
+
+  async getOperationsSettings(requester?: Requester) {
+    if (requester) {
+      await this.checkAdminPrivilege(requester, 'manager');
+    }
+    const tenantId = getTenantId();
+    const config = tenantId
+      ? await prisma.systemConfig.findUnique({ where: { tenantId } })
+      : await prisma.systemConfig.findFirst({ where: { tenantId: null } });
+    const opHours = readOperatingSettings(config?.operatingHours);
+    return {
+      operatingHours: config?.operatingHours ?? null,
+      timeZone: config?.timeZone || getStoreTimeZone(tenantId),
+      queueWaitAlertMinutes: opHours?.queueWaitAlertMinutes ?? DEFAULT_QUEUE_WAIT_ALERT_MINUTES,
+      firstCallTargetMinutes: opHours?.firstCallTargetMinutes ?? DEFAULT_FIRST_CALL_TARGET_MINUTES,
+      defaultDaysToPay: opHours?.defaultDaysToPay ?? 7,
+      lowStockCoverDays: opHours?.lowStockCoverDays ?? 14,
+    };
+  },
+
+  async updateOperationsSettings(requester: Requester, data: {
+    operatingHours?: any;
+    timeZone?: string;
+    queueWaitAlertMinutes?: number;
+    firstCallTargetMinutes?: number;
+    defaultDaysToPay?: number;
+    lowStockCoverDays?: number;
+  }) {
+    await this.checkAdminPrivilege(requester, 'super_admin');
+
+    let operatingHours = data.operatingHours;
+    if (operatingHours !== undefined && operatingHours !== null) {
+      if (typeof operatingHours !== 'object' || Array.isArray(operatingHours)) {
+        throw new AppError('operatingHours must be an object', 400, 'INVALID_OPERATING_HOURS');
+      }
+      const cloned = { ...operatingHours };
+      if (data.queueWaitAlertMinutes !== undefined) {
+        cloned.queueWaitAlertMinutes = data.queueWaitAlertMinutes;
+      }
+      if (data.firstCallTargetMinutes !== undefined) {
+        cloned.firstCallTargetMinutes = data.firstCallTargetMinutes;
+      }
+      if (data.defaultDaysToPay !== undefined) {
+        cloned.defaultDaysToPay = data.defaultDaysToPay;
+      }
+      if (data.lowStockCoverDays !== undefined) {
+        cloned.lowStockCoverDays = data.lowStockCoverDays;
+      }
+      try {
+        operatingHours = parseOperatingHours(cloned);
+      } catch (error) {
+        if (error instanceof RangeError) throw new AppError(error.message, 400, 'INVALID_OPERATING_HOURS');
+        throw error;
+      }
+    } else if (
+      data.queueWaitAlertMinutes !== undefined ||
+      data.firstCallTargetMinutes !== undefined ||
+      data.defaultDaysToPay !== undefined ||
+      data.lowStockCoverDays !== undefined
+    ) {
+      const current = await this.getSystemConfig();
+      const currentHours = current.operatingHours && typeof current.operatingHours === 'object' && !Array.isArray(current.operatingHours)
+        ? { ...(current.operatingHours as object) }
+        : { days: {} };
+      if (data.queueWaitAlertMinutes !== undefined) (currentHours as any).queueWaitAlertMinutes = data.queueWaitAlertMinutes;
+      if (data.firstCallTargetMinutes !== undefined) (currentHours as any).firstCallTargetMinutes = data.firstCallTargetMinutes;
+      if (data.defaultDaysToPay !== undefined) (currentHours as any).defaultDaysToPay = data.defaultDaysToPay;
+      if (data.lowStockCoverDays !== undefined) (currentHours as any).lowStockCoverDays = data.lowStockCoverDays;
+      try {
+        operatingHours = parseOperatingHours(currentHours);
+      } catch (error) {
+        if (error instanceof RangeError) throw new AppError(error.message, 400, 'INVALID_OPERATING_HOURS');
+        throw error;
+      }
+    }
+
+    const payload: any = {};
+    if (operatingHours !== undefined) payload.operatingHours = operatingHours;
+    if (data.timeZone !== undefined) payload.timeZone = data.timeZone;
+
+    await this.updateSystemConfig(requester, payload);
+    return this.getOperationsSettings(requester);
   },
 
   async updateSystemConfig(requester: Requester, data: {

@@ -3,6 +3,7 @@ import { CheckCircle } from 'lucide-react';
 import { PixelConfig } from '../../types/checkout-form';
 import type { PublicCheckoutForm } from '../../services/public-orders.service';
 import { trackPurchase } from '../../utils/pixelTracking';
+import { formatOrderNumber } from '../../utils/orderNumber';
 import { PublicScreen, StatusIcon, SupportLine } from './PublicScreen';
 import { screenColors } from '../../lib/publicTheme';
 
@@ -33,7 +34,7 @@ export const OrderSuccess: React.FC<OrderSuccessProps> = ({
   }, []); // intentionally empty — fires once on mount
 
   const { primary } = screenColors(design);
-  const number = orderNumber || (orderId != null ? `#${orderId}` : null);
+  const number = orderNumber || (orderId != null ? formatOrderNumber(orderId) : null);
   const steps = digital
     ? ['We sent the download link to your email.']
     : ['We call you to confirm your order.', 'We deliver to you.', 'You pay when it arrives.'];

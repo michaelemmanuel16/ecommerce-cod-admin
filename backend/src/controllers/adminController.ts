@@ -44,6 +44,24 @@ export const updateSystemConfig = async (req: AuthRequest, res: Response, next: 
   }
 };
 
+export const getOperationsSettings = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const settings = await adminService.getOperationsSettings(req.user);
+    res.json(settings);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateOperationsSettings = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const settings = await adminService.updateOperationsSettings(req.user!, req.body);
+    res.json(settings);
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getRolePermissions = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const permissions = await adminService.getRolePermissions(req.user!);

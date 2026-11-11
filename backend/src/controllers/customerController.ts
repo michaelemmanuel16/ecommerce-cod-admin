@@ -40,6 +40,10 @@ export const getCustomerTowns = async (req: AuthRequest, res: Response): Promise
 
 export const createCustomer = async (req: AuthRequest, res: Response): Promise<void> => {
   const customer = await customerService.createCustomer(req.body, req.user);
+  if ((customer as any).duplicate) {
+    res.status(200).json({ customer, duplicate: true });
+    return;
+  }
   res.status(201).json({ customer });
 };
 
@@ -72,6 +76,13 @@ export const deleteCustomer = async (req: AuthRequest, res: Response): Promise<v
   } catch (error) {
     throw error;
   }
+};
+
+export const overrideCod = async (req: AuthRequest, res: Response): Promise<void> => {
+  const customerId = parseInt(req.params.id, 10);
+  const { allow, note } = req.body;
+  const customer = await customerService.overrideCod(customerId, { allow, note }, req.user!);
+  res.json({ customer });
 };
 
 type ExportCustomer = BatchRow<ReturnType<typeof customerService.exportBatches>>;

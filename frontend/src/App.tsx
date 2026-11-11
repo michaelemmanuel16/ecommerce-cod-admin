@@ -13,6 +13,7 @@ import { useConfigStore } from './stores/configStore';
 import { isPlatformDomain, platformLoginPath } from './utils/platformDomain';
 import { SaasRoute } from './components/auth/SaasRoute';
 import { NotFound } from './pages/NotFound';
+import { features } from './config/features';
 
 // Eager load authentication pages (critical path)
 import { Login } from './pages/Login';
@@ -50,6 +51,14 @@ const PublicCheckout = lazy(() => import('./pages/PublicCheckout').then(m => ({ 
 const PaymentCallback = lazy(() => import('./pages/PaymentCallback').then(m => ({ default: m.PaymentCallback })));
 // Dev-only design-system gallery. The DEV flag is replaced at build time, so production bundles drop the import.
 const UiGallery = import.meta.env.DEV ? lazy(() => import('./pages/dev/UiGallery')) : null;
+const RepShell = lazy(() => import('./pages/rep/RepShell'));
+const RepTodayPage = lazy(() => import('./pages/rep/RepTodayPage'));
+const RepQueuePage = lazy(() => import('./pages/rep/RepQueuePage'));
+const RepComingSoon = lazy(() => import('./pages/rep/RepComingSoon'));
+const RepOrdersPage = lazy(() => import('./pages/rep/RepOrdersPage'));
+const RepEarningsPage = lazy(() => import('./pages/rep/RepEarningsPage'));
+const RepNumbersPage = lazy(() => import('./pages/rep/RepNumbersPage'));
+const RepCallPage = lazy(() => import('./pages/rep/RepCallPage'));
 const EarningsHistory = lazy(() => import('./pages/EarningsHistory'));
 const AgentMyInventory = lazy(() => import('./pages/AgentMyInventory'));
 const Inventory = lazy(() => import('./pages/Inventory').then(m => ({ default: m.Inventory })));
@@ -99,6 +108,20 @@ const MobileGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return <>{children}</>;
 };
 
+// Rep app gate: sales_rep and manager-up roles may open the rep app when features.repApp is on (F-750)
+export const RepGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useAuthStore();
+  if (!user) return null;
+  if (!features.repApp) {
+    return <Navigate to="/" replace />;
+  }
+  const allowed = user.role === 'sales_rep' || isManagerUp(user.role);
+  if (!allowed) {
+    return <Navigate to="/" replace />;
+  }
+  return <>{children}</>;
+};
+
 // Wraps a platform admin page with guard + suspense for use in the tenant domain tree
 const platformRoute = (Component: React.ComponentType) => (
   <PlatformGuard>
@@ -128,6 +151,7 @@ const DashboardIndex: React.FC = () => {
   const { user } = useAuthStore();
   if (user?.isPlatformAdmin) return <Navigate to="/platform" replace />;
   if (user && isManagerUp(user.role)) return <Dashboard />;
+  if (user?.role === 'sales_rep' && features.repApp) return <Navigate to="/rep/today" replace />;
   return <DynamicDashboard />;
 };
 
@@ -135,7 +159,16 @@ const DashboardIndex: React.FC = () => {
 const MobileIndex: React.FC = () => {
   const { user } = useAuthStore();
   if (user && isManagerUp(user.role)) return <Navigate to="/" replace />;
+  if (user?.role === 'sales_rep' && features.repApp) return <Navigate to="/rep/today" replace />;
   return <DynamicDashboard />;
+};
+
+const EarningsHistoryRoute: React.FC = () => {
+  const { user } = useAuthStore();
+  if (user?.role === 'sales_rep' && features.repApp) {
+    return <Navigate to="/rep/today" replace />;
+  }
+  return <EarningsHistory />;
 };
 
 function App() {
@@ -269,6 +302,29 @@ function App() {
             } />
           </Route>
 
+          {/* Rep app routes (M7-T14, F-750) */}
+          <Route
+            path="/rep"
+            element={
+              <ProtectedRoute>
+                <RepGate>
+                  <Suspense fallback={<Loading />}>
+                    <RepShell />
+                  </Suspense>
+                </RepGate>
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<Navigate to="/rep/today" replace />} />
+            <Route path="today" element={<Suspense fallback={<Loading />}><RepTodayPage /></Suspense>} />
+            <Route path="queue" element={<Suspense fallback={<Loading />}><RepQueuePage /></Suspense>} />
+            <Route path="orders" element={<Suspense fallback={<Loading />}><RepOrdersPage /></Suspense>} />
+            <Route path="earnings" element={<Suspense fallback={<Loading />}><RepEarningsPage /></Suspense>} />
+            <Route path="numbers" element={<Suspense fallback={<Loading />}><RepNumbersPage /></Suspense>} />
+            <Route path="inbox" element={<Suspense fallback={<Loading />}><RepComingSoon title="Inbox" /></Suspense>} />
+            <Route path="call/:orderId" element={<Suspense fallback={<Loading />}><RepCallPage /></Suspense>} />
+          </Route>
+
           {/* Desktop routes */}
           <Route
             path="/"
@@ -361,7 +417,7 @@ function App() {
               <Suspense fallback={<Loading />}><Webhooks /></Suspense>
             } />
             <Route path="earnings-history" element={
-              <Suspense fallback={<Loading />}><EarningsHistory /></Suspense>
+              <Suspense fallback={<Loading />}><EarningsHistoryRoute /></Suspense>
             } />
             </Route>
             <Route path="agent-inventory" element={

@@ -49,6 +49,13 @@ const actionTypes: ActionType[] = [
     color: 'from-emerald-500 to-emerald-600',
   },
   {
+    type: 'send_auto_confirm',
+    label: 'Send auto-confirm message',
+    description: 'Ask the customer to confirm, change or cancel the order',
+    icon: <Phone className="w-5 h-5" />,
+    color: 'from-teal-500 to-teal-600',
+  },
+  {
     type: 'update_order',
     label: 'Update Order',
     description: 'Change order status or properties',
@@ -93,6 +100,8 @@ export const ActionsStep: React.FC<ActionsStepProps> = ({
       defaultConfig = {
         templateKey: 'confirmed',
       };
+    } else if (actionType === 'send_auto_confirm') {
+      defaultConfig = { channel: 'whatsapp' };
     }
 
     const newAction: WorkflowAction = {

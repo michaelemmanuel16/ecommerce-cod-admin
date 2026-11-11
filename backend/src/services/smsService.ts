@@ -86,7 +86,7 @@ interface SendSmsOptions {
 }
 
 class SmsService {
-  async sendSms(options: SendSmsOptions): Promise<{ messageLogId: number; providerMessageId?: string }> {
+  async sendSms(options: SendSmsOptions): Promise<{ messageLogId: number; providerMessageId?: string; sent: boolean }> {
     const { to, body, logBody, orderId, customerId } = options;
     const formattedPhone = formatPhoneNumber(to);
 
@@ -102,21 +102,21 @@ class SmsService {
       },
     });
 
-    const providerMessageId = await this.dispatch(messageLog.id, formattedPhone, body);
-    return { messageLogId: messageLog.id, providerMessageId };
+    const { sent, providerMessageId } = await this.dispatch(messageLog.id, formattedPhone, body);
+    return { messageLogId: messageLog.id, providerMessageId, sent };
   }
 
-  private async dispatch(messageLogId: number, phone: string, message: string): Promise<string | undefined> {
+  private async dispatch(messageLogId: number, phone: string, message: string): Promise<{ sent: boolean; providerMessageId?: string }> {
     const config = await getDbSmsConfig();
 
     if (!config) {
       logger.warn('SMS not configured, skipping send', { messageLogId });
-      return undefined;
+      return { sent: false };
     }
 
     if (!config.isEnabled) {
       logger.info('SMS disabled, skipping send', { messageLogId });
-      return undefined;
+      return { sent: false };
     }
 
     try {
@@ -156,7 +156,7 @@ class SmsService {
       });
 
       logger.info('SMS sent successfully', { messageLogId, providerMessageId, phone });
-      return providerMessageId;
+      return { sent: true, providerMessageId };
     } catch (error: any) {
       if (!error.message?.startsWith('Arkesel API error')) {
         await prisma.messageLog.update({
@@ -219,7 +219,7 @@ export const smsService = new SmsService();
 export async function sendSmsForOrder(
   templateKey: string,
   orderId: number,
-): Promise<{ messageLogId: number; providerMessageId?: string }> {
+): Promise<{ messageLogId: number; providerMessageId?: string; sent?: boolean }> {
   const templateConfig = SMS_TEMPLATES[templateKey];
   if (!templateConfig) {
     throw new Error(`Unknown SMS template: ${templateKey}`);

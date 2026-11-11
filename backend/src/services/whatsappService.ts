@@ -6,6 +6,7 @@ import { refreshTokenIfNeeded } from './whatsappTokenRefreshService';
 import { getTenantId, withoutTenant } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 import { getStoreTimeZone, parseInclusiveBound } from './kpi/dates';
+import { formatOrderNumber } from '../utils/orderNumber';
 
 // WhatsApp Business Cloud API configuration
 const WHATSAPP_API_URL = 'https://graph.facebook.com/v21.0';
@@ -148,23 +149,23 @@ export const ORDER_STATUS_TEMPLATES: Record<string, {
 }> = {
   order_created: {
     templateName: 'order_created',
-    bodyParams: (o) => [o.customerName, `#${o.orderId}`],
+    bodyParams: (o) => [o.customerName, formatOrderNumber(o.orderId)],
   },
   confirmed: {
     templateName: 'order_confirmed',
-    bodyParams: (o) => [o.customerName, `#${o.orderId}`],
+    bodyParams: (o) => [o.customerName, formatOrderNumber(o.orderId)],
   },
   out_for_delivery: {
     templateName: 'order_out_for_delivery',
-    bodyParams: (o) => [o.customerName, `#${o.orderId}, ${o.productName || 'your items'}`],
+    bodyParams: (o) => [o.customerName, `${formatOrderNumber(o.orderId)}, ${o.productName || 'your items'}`],
   },
   delivered: {
     templateName: 'order_delivered',
-    bodyParams: (o) => [o.customerName, `#${o.orderId}, ${o.productName || 'your items'}`],
+    bodyParams: (o) => [o.customerName, `${formatOrderNumber(o.orderId)}, ${o.productName || 'your items'}`],
   },
   failed_delivery: {
     templateName: 'order_delivery_failed',
-    bodyParams: (o) => [o.customerName, `#${o.orderId}`],
+    bodyParams: (o) => [o.customerName, formatOrderNumber(o.orderId)],
   },
 };
 
@@ -192,7 +193,7 @@ export async function sendWhatsAppForOrder(
   templateKey: string,
   orderId: number,
   customLink?: string,
-): Promise<{ messageLogId: number; providerMessageId?: string }> {
+): Promise<{ messageLogId: number; providerMessageId?: string; sent?: boolean }> {
   if (!orderId) {
     throw new Error(`Cannot send WhatsApp: orderId is required (got ${orderId}). For manual workflow tests, provide an orderId in the input.`);
   }
@@ -272,6 +273,8 @@ interface SendTemplateOptions {
   templateName: string;
   languageCode?: string;
   bodyParams?: string[];
+  headerParams?: string[];
+  buttonPayloads?: string[];
   orderId?: number;
   customerId?: number;
 }
@@ -334,6 +337,7 @@ function buildMessageBody(templateName: string, bodyParams: string[]): string {
     order_out_for_delivery: `Hi {1}, Your order {2} has been shipped and is on its way to you.`,
     order_delivered: `Hi {1}, your order {2} has been delivered! Visit {3} for your product guide. Thank you for your purchase!`,
     order_delivery_failed: `Hi {1}, we were unable to deliver your order {2}. We'll contact you to reschedule.`,
+    order_auto_confirm: `Hello {1},\n\nThank you for your order.\n\n*Package:* {2}\n*Order number:* #{3}\n*Pay on delivery:* {4}\n\nPlease confirm your order so we can send it out for delivery.`,
   };
 
   let body = templates[templateName] || `Template: ${templateName}`;
@@ -352,12 +356,12 @@ class WhatsAppService {
     messageLogId: number,
     formattedPhone: string,
     payload: object,
-  ): Promise<string | undefined> {
+  ): Promise<{ sent: boolean; providerMessageId?: string }> {
     let config = await getConfig();
 
     if (!config.accessToken || !config.phoneNumberId || !config.isEnabled) {
       logger.warn('WhatsApp not configured — message logged but not sent', { messageLogId });
-      return undefined;
+      return { sent: false };
     }
 
     // On-demand token refresh for OAuth mode — only triggers when cron has failed
@@ -405,7 +409,7 @@ class WhatsAppService {
       });
 
       logger.info('WhatsApp message sent', { messageLogId, to: formattedPhone, providerMessageId });
-      return providerMessageId;
+      return { sent: true, providerMessageId };
     } catch (error: any) {
       await prisma.messageLog.update({
         where: { id: messageLogId },
@@ -423,8 +427,17 @@ class WhatsAppService {
   /**
    * Send a template message via WhatsApp Business Cloud API.
    */
-  async sendTemplate(options: SendTemplateOptions): Promise<{ messageLogId: number; providerMessageId?: string }> {
-    const { to, templateName, languageCode = 'en_US', bodyParams = [], orderId, customerId } = options;
+  async sendTemplate(options: SendTemplateOptions): Promise<{ messageLogId: number; providerMessageId?: string; sent: boolean }> {
+    const {
+      to,
+      templateName,
+      languageCode = 'en_US',
+      bodyParams = [],
+      headerParams = [],
+      buttonPayloads = [],
+      orderId,
+      customerId,
+    } = options;
     const formattedPhone = formatPhoneNumber(to);
     const messageBody = buildMessageBody(templateName, bodyParams);
 
@@ -437,9 +450,33 @@ class WhatsAppService {
         templateName,
         messageBody,
         status: MessageStatus.pending,
-        metadata: { bodyParams, languageCode, to: formattedPhone },
+        metadata: { bodyParams, headerParams, buttonPayloads, languageCode, to: formattedPhone },
       },
     });
+
+    const components: any[] = [];
+    if (headerParams.length > 0) {
+      components.push({
+        type: 'header',
+        parameters: headerParams.map((text) => ({ type: 'text', text })),
+      });
+    }
+    if (bodyParams.length > 0) {
+      components.push({
+        type: 'body',
+        parameters: bodyParams.map((text) => ({ type: 'text', text })),
+      });
+    }
+    if (buttonPayloads.length > 0) {
+      buttonPayloads.forEach((payload, i) => {
+        components.push({
+          type: 'button',
+          sub_type: 'quick_reply',
+          index: String(i),
+          parameters: [{ type: 'payload', payload }],
+        });
+      });
+    }
 
     const payload = {
       messaging_product: 'whatsapp',
@@ -448,23 +485,18 @@ class WhatsAppService {
       template: {
         name: templateName,
         language: { code: languageCode },
-        components: bodyParams.length > 0
-          ? [{
-              type: 'body',
-              parameters: bodyParams.map(text => ({ type: 'text', text })),
-            }]
-          : undefined,
+        components: components.length > 0 ? components : undefined,
       },
     };
 
-    const providerMessageId = await this.dispatch(messageLog.id, formattedPhone, payload);
-    return { messageLogId: messageLog.id, providerMessageId };
+    const { sent, providerMessageId } = await this.dispatch(messageLog.id, formattedPhone, payload);
+    return { messageLogId: messageLog.id, providerMessageId, sent };
   }
 
   /**
    * Send a free-form text message via WhatsApp.
    */
-  async sendText(options: SendTextOptions): Promise<{ messageLogId: number; providerMessageId?: string }> {
+  async sendText(options: SendTextOptions): Promise<{ messageLogId: number; providerMessageId?: string; sent: boolean }> {
     const { to, body, logBody, orderId, customerId } = options;
     const formattedPhone = formatPhoneNumber(to);
 
@@ -487,8 +519,8 @@ class WhatsAppService {
       text: { body },
     };
 
-    const providerMessageId = await this.dispatch(messageLog.id, formattedPhone, payload);
-    return { messageLogId: messageLog.id, providerMessageId };
+    const { sent, providerMessageId } = await this.dispatch(messageLog.id, formattedPhone, payload);
+    return { messageLogId: messageLog.id, providerMessageId, sent };
   }
 
   /**

@@ -10,7 +10,8 @@ import { useConfigStore } from '../../stores/configStore';
 import { apiErrorMessage } from '../../utils/apiError';
 import { getCountryByCurrency, getRegionsForCountry } from '../../utils/countries';
 import { isManagerUp } from '../../components/shell/navModel';
-import { customerName, phoneProblem } from './model';
+import { phoneProblem } from './model';
+import { personName } from '../../utils/people';
 import { formatPhoneLocal } from '../../utils/format';
 
 interface CustomerModalProps {
@@ -128,7 +129,13 @@ export function CustomerModal({ open, onClose, customer, onSaved }: CustomerModa
       const saved = customer
         ? await customersService.updateCustomer(customer.id, body)
         : await customersService.createCustomer(body);
-      onSaved(customerName({ firstName: body.firstName, lastName: body.lastName }), saved.id);
+      if ((saved as any)?.duplicate) {
+        setSaving(false);
+        const name = personName(saved);
+        setClash({ message: `This number belongs to ${name}`, id: saved.id, name, archived: false });
+        return;
+      }
+      onSaved(personName(body), saved.id);
     } catch (e) {
       setSaving(false);
       const data = axios.isAxiosError(e) ? e.response?.data : undefined;

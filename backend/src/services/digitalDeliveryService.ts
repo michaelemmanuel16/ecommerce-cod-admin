@@ -155,13 +155,18 @@ export const digitalDeliveryService = {
     try {
       const message = `Thank you for your purchase of ${productName}! 🎉\n\nHere is your download link:\n${downloadUrl}\n\nThis link expires in ${expiryHours} hours and can be used up to ${maxDownloads} times.`;
 
-      await whatsappService.sendText({
+      const result = await whatsappService.sendText({
         to: order.customer.phoneNumber,
         body: message,
         orderId: order.id,
         customerId: order.customerId,
       });
-      logger.info('Digital product WhatsApp sent', { orderId, phone: order.customer.phoneNumber });
+      if (result.sent) {
+        logger.info('Digital product WhatsApp sent', { orderId, phone: order.customer.phoneNumber });
+      } else {
+        // Log stays pending (not 'sent'), so hasBeenDelivered() keeps this delivery retryable like a provider error.
+        logger.warn('Digital product WhatsApp not sent: WhatsApp is not set up', { orderId, customerId: order.customerId });
+      }
     } catch (error: any) {
       logger.error('Failed to send digital product WhatsApp', { orderId, error: error.message });
     }

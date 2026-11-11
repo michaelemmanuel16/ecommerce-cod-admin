@@ -68,6 +68,7 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
       send_email: 'Send Email',
       send_sms: 'Send SMS',
       send_whatsapp: 'Send WhatsApp',
+      send_auto_confirm: 'Send auto-confirm message',
       update_order: 'Update Order',
       wait: 'Wait',
       http_request: 'HTTP Request',
@@ -85,6 +86,8 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
         return action.config.message?.substring(0, 50) || 'No message';
       case 'send_whatsapp':
         return WHATSAPP_TEMPLATE_LABELS[action.config.templateKey] || action.config.templateKey || 'No template';
+      case 'send_auto_confirm':
+        return `Channel: ${action.config.channel === 'sms' ? 'SMS' : 'WhatsApp'}`;
       case 'update_order':
         return action.config.status || 'unspecified';
       case 'wait':

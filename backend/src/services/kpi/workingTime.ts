@@ -15,11 +15,16 @@ import { localDate, shiftYmd, startOfDay } from './dates';
 export const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
 export type Weekday = (typeof WEEKDAYS)[number];
 
+export const DEFAULT_FIRST_CALL_TARGET_MINUTES = 15;
+export const DEFAULT_QUEUE_WAIT_ALERT_MINUTES = 30;
+
 export interface DayHours { open: string; close: string; enabled: boolean }
 export interface OperatingHours {
   days: Partial<Record<Weekday, DayHours>>;
   firstCallTargetMinutes?: number;
   queueWaitAlertMinutes?: number;
+  defaultDaysToPay?: number;
+  lowStockCoverDays?: number;
 }
 
 const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -58,20 +63,33 @@ export function parseOperatingHours(value: unknown): OperatingHours {
     if (typeof n !== 'number' || !Number.isFinite(n) || n <= 0) throw new RangeError(`operatingHours.${key} must be a positive number`);
     out[key] = n;
   }
+  for (const key of ['defaultDaysToPay', 'lowStockCoverDays'] as const) {
+    if (input[key] === undefined) continue;
+    const n = input[key];
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 1) {
+      throw new RangeError(`operatingHours.${key} must be a positive whole number`);
+    }
+    out[key] = n;
+  }
   const { firstCallTargetMinutes: target, queueWaitAlertMinutes: alert } = out;
   if (target !== undefined && alert !== undefined && alert < target) throw new RangeError('queueWaitAlertMinutes must not be below firstCallTargetMinutes');
   return out;
 }
 
-/** Same as parseOperatingHours, but a stored value that is empty or bad reads as "not set" (null). */
-export function readOperatingHours(value: unknown): OperatingHours | null {
+/** The stored value parsed, or null when it is missing or bad. Use it for the settings kept beside the days. */
+export function readOperatingSettings(value: unknown): OperatingHours | null {
   if (value === null || value === undefined) return null;
   try {
-    const hours = parseOperatingHours(value);
-    return Object.values(hours.days).some((d) => d?.enabled) ? hours : null;
+    return parseOperatingHours(value);
   } catch {
     return null;
   }
+}
+
+/** Same as readOperatingSettings, but hours with no open day also read as "not set" (null): every minute counts. */
+export function readOperatingHours(value: unknown): OperatingHours | null {
+  const hours = readOperatingSettings(value);
+  return hours && Object.values(hours.days).some((d) => d?.enabled) ? hours : null;
 }
 
 /** Weekday of a local calendar day 'YYYY-MM-DD'. */

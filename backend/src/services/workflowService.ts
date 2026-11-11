@@ -395,6 +395,9 @@ export class WorkflowService {
       case 'send_whatsapp':
         return this.executeSendWhatsApp(action, context);
 
+      case 'send_auto_confirm':
+        return this.executeSendAutoConfirm(action, context);
+
       case 'update_order':
         return this.executeUpdateOrder(action, context);
 
@@ -435,6 +438,7 @@ export class WorkflowService {
       orderId: context.orderId,
       customerId: context.customerId,
     });
+    if (!result.sent) throw new Error('SMS is not set up: message not sent');
     return { success: true, messageLogId: result.messageLogId, to: phone };
   }
 
@@ -456,6 +460,8 @@ export class WorkflowService {
   private async executeSendWhatsApp(action: any, context: any): Promise<any> {
     const { sendWhatsAppForOrder } = await import('./whatsappService');
     const result = await sendWhatsAppForOrder(action.config?.templateKey, context.orderId, action.config?.customLink);
+    // sent === false: channel not set up. (An opted-out customer returns no `sent` field and stays a quiet skip.)
+    if (result.sent === false) throw new Error('WhatsApp is not set up: message not sent');
 
     logger.info('WhatsApp message sent via workflow', {
       orderId: context.orderId,
@@ -463,6 +469,17 @@ export class WorkflowService {
     });
 
     return { success: true, messageLogId: result.messageLogId };
+  }
+
+  /**
+   * Execute send auto-confirm action (COD-193 M7-R2): WhatsApp template by default, SMS when config.channel is 'sms'.
+   * An ineligible order is skipped, not an error.
+   */
+  private async executeSendAutoConfirm(action: any, context: any): Promise<any> {
+    const { runAutoConfirmAction } = await import('./autoConfirmService');
+    const result = await runAutoConfirmAction(context.orderId, getTenantId(), action.config);
+    if (result.skipped) return { success: true, skipped: true, reason: result.reason };
+    return { success: true, channel: result.channel };
   }
 
   /**
@@ -695,6 +712,7 @@ export class WorkflowService {
       'send_sms',
       'send_email',
       'send_whatsapp',
+      'send_auto_confirm',
       'update_order',
       'assign_agent',
       'assign_user',

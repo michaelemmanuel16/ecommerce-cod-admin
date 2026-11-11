@@ -10,8 +10,11 @@ import whatsappService, {
 } from '../services/whatsappService';
 import { runInTenant } from '../utils/tenantContext';
 import logger from '../utils/logger';
-import { MessageChannel, MessageStatus } from '@prisma/client';
+import { MessageChannel, MessageDirection, MessageStatus } from '@prisma/client';
 import * as Money from '../utils/money';
+import { phoneLookupVariants } from '../utils/phone';
+import orderService from '../services/orderService';
+import prisma from '../utils/prisma';
 
 export const verifyWebhook = async (req: AuthRequest, res: Response): Promise<void> => {
   const mode = req.query['hub.mode'] as string;
@@ -92,13 +95,13 @@ export const handleWebhook = async (req: AuthRequest, res: Response): Promise<vo
   }
   const { tenantId, config: dbConfig } = verified[0];
 
-  // Respond 200 quickly to prevent WhatsApp retries
-  res.status(200).send('EVENT_RECEIVED');
-
   try {
     const body = req.body;
 
-    if (!body?.entry) return;
+    if (!body?.entry) {
+      res.status(200).send('EVENT_RECEIVED');
+      return;
+    }
 
     // Everything below runs inside the verified tenant's context
     await runInTenant(tenantId, async () => {
@@ -124,21 +127,230 @@ export const handleWebhook = async (req: AuthRequest, res: Response): Promise<vo
             );
           }
 
-          // Log inbound messages (for future reply handling)
+          // Inbound messages (M7-T09)
           for (const message of value.messages || []) {
-            logger.info('Inbound WhatsApp message received', {
-              from: message.from,
-              type: message.type,
-              messageId: message.id,
-            });
+            await processInboundWhatsappMessage(tenantId, message);
           }
         }
       }
     });
+
+    res.status(200).send('EVENT_RECEIVED');
   } catch (error: any) {
     logger.error('Error processing WhatsApp webhook', { error: error.message });
+    res.status(200).send('EVENT_RECEIVED');
   }
 };
+
+const PAYLOAD_KIND = { CONFIRM: 'yes', CHANGE: 'change', CANCEL: 'cancel' } as const;
+
+/** Reply text per response kind. A kind with no entry (typed "no") gets no reply. */
+const REPLY_TEXT: Record<string, ((firstName: string, orderId: number) => string) | undefined> = {
+  yes: (name, id) => `Thank you, ${name}. Your order #${id} is confirmed. We will send it out for delivery.`,
+  change: (name) => `Thank you, ${name}. One of our team will call you soon to make the change.`,
+  cancel: (name) => `Thank you, ${name}. One of our team will call you shortly about your order.`,
+};
+
+/**
+ * M7-T09: Process an inbound WhatsApp message.
+ * - Idempotent by providerMessageId (message.id)
+ * - Links to customer by phone (unknown number stored, not dropped)
+ * - Links to message it answers (message.context.id)
+ * - Keywords YES/NO: YES confirms order via confirmByCustomer; NO sets saidNo and requiresManualCall
+ * - Stores message in MessageLog with direction: inbound
+ */
+async function processInboundWhatsappMessage(tenantId: string, message: any): Promise<void> {
+  // Idempotency check: duplicate webhook delivery is ignored
+  if (message.id) {
+    const existing = await prisma.messageLog.findFirst({
+      where: { providerMessageId: message.id },
+    });
+    if (existing) {
+      logger.info('Duplicate WhatsApp webhook message ignored', { messageId: message.id });
+      return;
+    }
+  }
+
+  const fromPhone = message.from;
+  let responseKind: 'yes' | 'change' | 'cancel' | 'no' | null = null;
+
+  // Read button payload first (COD-193 M7-R1)
+  let buttonPayload: string | null = null;
+  if (message.type === 'button') {
+    buttonPayload = message.button?.payload || null;
+  } else if (message.type === 'interactive') {
+    buttonPayload = message.interactive?.button_reply?.id || null;
+  }
+
+  if (buttonPayload) {
+    responseKind = PAYLOAD_KIND[buttonPayload as keyof typeof PAYLOAD_KIND] ?? null;
+  }
+
+  let rawText = '';
+  if (message.type === 'text') {
+    rawText = message.text?.body || '';
+  } else if (message.type === 'button') {
+    rawText = message.button?.text || '';
+  } else if (message.type === 'interactive') {
+    rawText = message.interactive?.button_reply?.title || '';
+  }
+
+  const trimmed = rawText.trim();
+  // Strip trailing and leading punctuation: "YES.", "Yes!", "NO."
+  const cleanText = trimmed.replace(/^[\s.,!?;:"'()]+|[\s.,!?;:"'()]+$/g, '').toLowerCase();
+
+  if (!responseKind) {
+    if (cleanText === 'yes' || cleanText === 'y' || cleanText === 'confirm') {
+      responseKind = 'yes';
+    } else if (cleanText === 'no' || cleanText === 'n' || cleanText === 'cancel') {
+      responseKind = 'no';
+    }
+  }
+
+  // Link to customer by phone
+  let customer: any = null;
+  if (fromPhone) {
+    const rawNoPlus = fromPhone.replace(/^\+/, '');
+    const rawPlus = `+${rawNoPlus}`;
+    const variants = Array.from(new Set([
+      fromPhone,
+      rawNoPlus,
+      rawPlus,
+      ...phoneLookupVariants(fromPhone),
+      ...phoneLookupVariants(rawPlus),
+    ]));
+    customer = await prisma.customer.findFirst({
+      where: {
+        tenantId,
+        OR: [
+          { phoneNumber: { in: variants } },
+          { alternatePhone: { in: variants } },
+        ],
+      },
+    });
+  }
+
+  // Link to the message it answers (if context exists)
+  let answeredMessage: any = null;
+  if (message.context?.id) {
+    answeredMessage = await prisma.messageLog.findFirst({
+      where: { providerMessageId: message.context.id },
+    });
+  }
+
+  if (!customer && answeredMessage?.customerId) {
+    customer = await prisma.customer.findFirst({
+      where: { tenantId, id: answeredMessage.customerId },
+    });
+  }
+
+  // Store first: create the MessageLog row before any order change
+  // providerMessageId is unique: on Prisma P2002, log duplicate and return
+  let createdLog: any = null;
+  try {
+    createdLog = await prisma.messageLog.create({
+      data: {
+        tenantId,
+        customerId: customer?.id ?? answeredMessage?.customerId ?? null,
+        orderId: null,
+        channel: MessageChannel.whatsapp,
+        direction: MessageDirection.inbound,
+        status: MessageStatus.delivered,
+        messageBody: trimmed || buttonPayload || `[${message.type || 'message'}]`,
+        providerMessageId: message.id || null,
+        metadata: {
+          from: fromPhone,
+          type: message.type,
+          context: message.context ?? null,
+          answeredMessageLogId: answeredMessage?.id ?? null,
+          matchedKeyword: responseKind,
+        },
+      },
+    });
+  } catch (err: any) {
+    if (err?.code === 'P2002') {
+      logger.info('Duplicate WhatsApp webhook message ignored', { messageId: message.id });
+      return;
+    }
+    throw err;
+  }
+
+  // Resolve target order
+  let targetOrder: any = null;
+  if (answeredMessage?.orderId) {
+    targetOrder = await prisma.order.findFirst({
+      where: {
+        tenantId,
+        id: answeredMessage.orderId,
+        deletedAt: null,
+      },
+      include: { customer: true },
+    });
+  } else if (customer) {
+    // First: open auto-confirm order
+    targetOrder = await prisma.order.findFirst({
+      where: {
+        tenantId,
+        customerId: customer.id,
+        status: 'pending_confirmation',
+        autoConfirmSentAt: { not: null },
+        customerResponse: null,
+        deletedAt: null,
+      },
+      include: { customer: true },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  // Handle auto-confirm responses
+  // Acts only on an open auto-confirm: status pending_confirmation and autoConfirmSentAt not null.
+  if (targetOrder && targetOrder.status === 'pending_confirmation' && targetOrder.autoConfirmSentAt !== null && responseKind) {
+    const firstName = targetOrder.customer?.firstName || customer?.firstName || 'there';
+
+    if (responseKind === 'yes') {
+      await orderService.confirmByCustomer(targetOrder.id);
+    } else {
+      await prisma.order.update({
+        where: { id: targetOrder.id },
+        data: {
+          saidNo: true,
+          requiresManualCall: true,
+          customerResponse: responseKind,
+        },
+      });
+    }
+    await prisma.confirmToken.updateMany({
+      where: { orderId: targetOrder.id, usedAt: null },
+      data: { usedAt: new Date(), response: responseKind },
+    });
+
+    const replyText = REPLY_TEXT[responseKind];
+    if (replyText) {
+      try {
+        const reply = await whatsappService.sendText({
+          to: fromPhone,
+          body: replyText(firstName, targetOrder.id),
+          orderId: targetOrder.id,
+          customerId: targetOrder.customer?.id ?? customer?.id,
+        });
+        if (!reply.sent) {
+          logger.warn(`${responseKind} reply WhatsApp message not sent: WhatsApp is not set up`, { orderId: targetOrder.id, customerId: targetOrder.customer?.id ?? customer?.id });
+        }
+      } catch (err: any) {
+        logger.error(`Failed to send ${responseKind === 'yes' ? 'confirmation' : responseKind} reply WhatsApp message`, { error: err.message, orderId: targetOrder.id });
+      }
+    }
+  }
+
+  // After the order step, update that row's orderId if an order was found
+  const resolvedOrderId = targetOrder?.id ?? answeredMessage?.orderId ?? null;
+  if (resolvedOrderId && createdLog?.id) {
+    await prisma.messageLog.update({
+      where: { id: createdLog.id },
+      data: { orderId: resolvedOrderId },
+    });
+  }
+}
 
 /**
  * GET /api/whatsapp/messages — List message logs with filters.
@@ -208,6 +420,9 @@ export const sendMessage = async (req: AuthRequest, res: Response): Promise<void
       customerId: customerId ? parseInt(customerId, 10) : undefined,
     });
 
+    if (!result.sent) {
+      logger.warn('Manual WhatsApp message not sent: WhatsApp is not set up', { orderId, customerId, messageLogId: result.messageLogId });
+    }
     res.status(201).json(result);
   } catch (error: any) {
     logger.error('Error sending WhatsApp message', { error: error.message });
@@ -329,6 +544,11 @@ export const testSend = async (req: AuthRequest, res: Response): Promise<void> =
       templateName: templateConfig.templateName,
       bodyParams: templateConfig.bodyParams(dummyContext),
     });
+
+    if (!result.sent) {
+      res.status(409).json({ error: 'WhatsApp is not set up' });
+      return;
+    }
 
     res.status(200).json({
       success: true,

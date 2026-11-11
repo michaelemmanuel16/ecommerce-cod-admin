@@ -217,4 +217,24 @@ describe('Order drawer: edit mode (M3-T47, F-318)', () => {
     await screen.findByText('Order status');
     expect(screen.queryByRole('button', { name: /Edit/ })).toBeNull();
   });
+
+  it('shows decline reason and failure reason where an order has one (F-306)', async () => {
+    getOrderDetail.mockResolvedValueOnce({
+      ...DETAIL,
+      declineReason: 'price_too_high',
+      failureReason: null,
+    });
+    renderDrawer();
+    expect(await screen.findByText('Decline reason')).toBeInTheDocument();
+    expect(screen.getByText('Price too high')).toBeInTheDocument();
+
+    getOrderDetail.mockResolvedValueOnce({
+      ...DETAIL,
+      declineReason: null,
+      failureReason: 'refused',
+    });
+    renderDrawer();
+    expect(await screen.findByText('Failure reason')).toBeInTheDocument();
+    expect(screen.getByText('Refused')).toBeInTheDocument();
+  });
 });

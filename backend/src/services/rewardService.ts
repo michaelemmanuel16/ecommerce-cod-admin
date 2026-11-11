@@ -1,5 +1,5 @@
 import { Prisma, UserRole } from '@prisma/client';
-import prisma from '../utils/prisma';
+import prisma, { TransactionClient } from '../utils/prisma';
 import { resolveTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
 import { Requester, isManagerUp } from '../utils/authUtils';
@@ -32,18 +32,33 @@ import type { RewardSettingsInput } from '../validators/rewardSchema';
  * "On track to earn ..." and a closed month "Earned ...". AI agents and companies show attainment and get no payout.
  */
 
-const REP_PAY_DEFAULTS = { baseCommission: '8.00', upsellPercent: '10.00' } as const;
-const SETTINGS_NOTICE = 'Saved. Tier changes apply from the next month close. Commission and upsell changes apply to orders delivered after the save.';
+export const REP_PAY_DEFAULTS = { baseCommission: '8.00', upsellPercent: '10.00' } as const;
+const SETTINGS_NOTICE = 'Saved. Tier changes apply from the next month close. Commission and upsell changes apply to orders confirmed after the save.';
 
 /**
  * The rep pay of a stored settings object, with the defaults for what is not set: per delivered order the rep confirmed by call,
- * and the share of the extra value they added. Pure. GL posting still reads `User.commissionAmount` until M6-T10 / M7 switch
- * commission entries to this setting; until then a change here does not move a posted amount.
+ * and the share of the extra value they added. Pure. Commission entries read this setting when they are created, so a change
+ * does not move an amount already booked.
  */
-const repPayOf = (stored: RewardFeatures) => ({
+export const repPayOf = (stored: RewardFeatures) => ({
   baseCommission: Money.parse(stored.baseCommission ?? REP_PAY_DEFAULTS.baseCommission),
   upsellPercent: Money.parse(stored.upsellPercent ?? REP_PAY_DEFAULTS.upsellPercent),
 });
+
+/**
+ * Loads the tenant's stored reward features and returns { base: Money, upsellRate: Decimal } (M7-R1 COD-193).
+ * upsellRate = upsellPercent / 100.
+ */
+export async function getRepPay(
+  client: TransactionClient | null,
+  _tenantId: string | null | undefined
+): Promise<{ base: Money.Money; upsellRate: Prisma.Decimal }> {
+  const pay = repPayOf(await getRewardFeatures(client));
+  return {
+    base: pay.baseCommission,
+    upsellRate: pay.upsellPercent.div(100),
+  };
+}
 
 const tierView = (t: { amount: Prisma.Decimal; dayOff: boolean; payout: boolean } | undefined) =>
   t ? { amount: Money.toApi(t.amount), dayOff: t.dayOff, payout: t.payout } : null;
@@ -155,7 +170,7 @@ export const basisOf = (metric: string | null, preset: UserRole | null): Measure
   return preset === 'sales_rep' ? 'count' : preset === 'delivery_agent' ? 'rate' : null;
 };
 
-interface Distance { next: '100' | '120'; amount: number | null; unit: string; message: string }
+export interface Distance { next: '100' | '120'; amount: number | null; unit: string; message: string }
 
 export interface AttainmentRow {
   userId: number;

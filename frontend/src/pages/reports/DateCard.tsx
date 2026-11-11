@@ -31,7 +31,7 @@ export function DateCard({ preset, range, onPreset, onCustom, compare, onCompare
           <input type="date" className="psel" aria-label="To date" value={range.to} min={range.from} onChange={(e) => e.target.value && onCustom({ from: range.from, to: e.target.value })} />
         </div>
       )}
-      <label className="sw">
+      <label className="cmpsw">
         <input type="checkbox" checked={compare} onChange={(e) => onCompare(e.target.checked)} />
         <span className="tg" />
         Compare to previous period

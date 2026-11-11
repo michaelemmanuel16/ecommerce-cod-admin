@@ -12,6 +12,8 @@ import { generateAccessToken } from '../../utils/jwt';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
 import { makeOrder, makeUser, KpiOrderInput } from './helpers/kpiOrders';
 import { timeToFirstCall } from '../../services/kpi/timeToFirstCall';
+import orderService from '../../services/orderService';
+import { runInTenant } from '../../utils/tenantContext';
 
 let pair: TwoTenants;
 let superToken: string;
@@ -115,6 +117,100 @@ describe('timeToFirstCall (hours set)', () => {
     const r = await timeToFirstCall(tenantId, d('2026-10-06T00:00:00Z'), d('2026-10-07T00:00:00Z'), { repId });
     expect(r.value).toBe(12);
     expect(r.detail).toMatchObject({ measured: 1, autoConfirmed: 1, noContact: 1 });
+  });
+
+  it('customer YES auto-confirm order is counted in autoConfirmed and not as a call', async () => {
+    // Create an order with customerResponse='yes' and no call row
+    const yesOrder = await makeOrder({
+      tenantId,
+      customerId,
+      status: 'confirmed',
+      customerRepId: repId,
+      createdAt: d('2026-10-06T14:00:00Z'),
+    });
+    await prismaBase.order.update({
+      where: { id: yesOrder.id },
+      data: { customerResponse: 'yes' },
+    });
+
+    const r = await timeToFirstCall(tenantId, d('2026-10-06T00:00:00Z'), d('2026-10-07T00:00:00Z'), { repId });
+    // autoConfirmed is now 2 (O3 with source: auto_confirm + yesOrder with customerResponse: yes)
+    expect(r.detail.autoConfirmed).toBe(2);
+    expect(r.detail.measured).toBe(1); // Still only O1 measured as call
+
+    // Clean up yesOrder so downstream placed count is unaffected
+    await prismaBase.order.delete({ where: { id: yesOrder.id } });
+  });
+
+  it('rep-confirmed order, then customer YES: customerResponse stays null, the KPI still counts the rep\'s call minutes', async () => {
+    // Rep confirmed order placed at 14:00, called at 14:10 (10 working minutes)
+    const repOrder = await order({
+      status: 'confirmed',
+      customerRepId: repId,
+      createdAt: d('2026-10-06T14:00:00Z'),
+      firstContactAt: d('2026-10-06T14:10:00Z'),
+      callSource: 'manual',
+    });
+
+    // Customer subsequently attempts to confirm via confirmByCustomer
+    const confirmResult = await runInTenant(tenantId, () => orderService.confirmByCustomer(repOrder.id));
+    expect(confirmResult?.status).toBe('confirmed');
+
+    // customerResponse stays null!
+    const checkOrder = await prismaBase.order.findUniqueOrThrow({ where: { id: repOrder.id } });
+    expect(checkOrder.customerResponse).toBeNull();
+
+    // The KPI still counts the rep's call minutes in measured and not in autoConfirmed
+    const r = await timeToFirstCall(tenantId, d('2026-10-06T00:00:00Z'), d('2026-10-07T00:00:00Z'), { repId });
+    expect(r.detail.autoConfirmed).toBe(1); // Only O3
+    expect(r.detail.measured).toBe(2); // O1 (12 min) + repOrder (10 min)
+    // Median of 12 and 10 is 11
+    expect(r.value).toBe(11);
+
+    // Clean up
+    await prismaBase.call.deleteMany({ where: { orderId: repOrder.id } });
+    await prismaBase.order.delete({ where: { id: repOrder.id } });
+  });
+});
+
+describe('Operations Settings API (GET/PUT /api/admin/settings/operations)', () => {
+  it('GET /api/admin/settings/operations returns settings with defaults', async () => {
+    const res = await request(app).get('/api/admin/settings/operations').set(auth(pair.a.users.admin.token));
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      operatingHours: expect.any(Object),
+      timeZone: 'Africa/Accra',
+      queueWaitAlertMinutes: 30,
+      firstCallTargetMinutes: 15,
+    });
+  });
+
+  it('PUT /api/admin/settings/operations rejects overnight ranges with 400', async () => {
+    const bad = {
+      operatingHours: {
+        days: { monday: { open: '20:00', close: '08:00', enabled: true } },
+      },
+    };
+    const res = await request(app).put('/api/admin/settings/operations').set(auth(superToken)).send(bad);
+    expect(res.status).toBe(400);
+  });
+
+  it('PUT /api/admin/settings/operations updates hours and thresholds', async () => {
+    const payload = {
+      operatingHours: HOURS,
+      queueWaitAlertMinutes: 30,
+      firstCallTargetMinutes: 15,
+      defaultDaysToPay: 9,
+      lowStockCoverDays: 12,
+    };
+    const res = await request(app).put('/api/admin/settings/operations').set(auth(superToken)).send(payload);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      queueWaitAlertMinutes: 30,
+      firstCallTargetMinutes: 15,
+      defaultDaysToPay: 9,
+      lowStockCoverDays: 12,
+    });
   });
 });
 

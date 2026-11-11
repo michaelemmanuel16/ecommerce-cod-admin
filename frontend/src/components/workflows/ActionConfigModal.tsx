@@ -58,6 +58,7 @@ export const ActionConfigModal: React.FC<ActionConfigModalProps> = ({
       send_email: 'Configure Email',
       send_sms: 'Configure SMS',
       send_whatsapp: 'Configure WhatsApp Message',
+      send_auto_confirm: 'Configure auto-confirm message',
       update_order: 'Configure Order Update',
       wait: 'Configure Wait Time',
       http_request: 'Configure HTTP Request',
@@ -181,6 +182,26 @@ export const ActionConfigModal: React.FC<ActionConfigModalProps> = ({
                     Available variables: {'{customerName}'}, {'{orderNumber}'}, {'{totalAmount}'}
                   </p>
                 </div>
+              </div>
+            )}
+
+            {action.type === 'send_auto_confirm' && (
+              <div>
+                <label htmlFor="auto-confirm-channel" className="block text-sm font-medium text-gray-700 mb-2">
+                  Channel
+                </label>
+                <select
+                  id="auto-confirm-channel"
+                  value={config.channel === 'sms' ? 'sms' : 'whatsapp'}
+                  onChange={(e) => setConfig({ ...config, channel: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="whatsapp">WhatsApp</option>
+                  <option value="sms">SMS</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-2">
+                  Sends the confirm request with Confirm, Change and Cancel buttons. Each order gets it once. SMS asks the customer to reply YES or NO.
+                </p>
               </div>
             )}
 

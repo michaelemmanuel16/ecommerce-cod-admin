@@ -300,7 +300,7 @@ describe('channels', () => {
   });
 
   it('with a provider, the provider gets the real link and the message log never holds the token', async () => {
-    const dispatch = jest.spyOn(smsService as unknown as { dispatch: (...a: unknown[]) => Promise<string> }, 'dispatch').mockResolvedValue('provider-msg-1');
+    const dispatch = jest.spyOn(smsService as unknown as { dispatch: (...a: unknown[]) => Promise<{ sent: boolean; providerMessageId?: string }> }, 'dispatch').mockResolvedValue({ sent: true, providerMessageId: 'provider-msg-1' });
     try {
       const res = await invite({ channel: 'sms', phoneNumber: '0244000333' });
       expect(res.body.delivery).toEqual({ channel: 'sms', sent: true });

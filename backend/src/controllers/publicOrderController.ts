@@ -1,5 +1,5 @@
 import { Response, Request, NextFunction } from 'express';
-import { resolveTenantId, withoutTenant } from '../utils/tenantContext';
+import { resolveTenantId, withoutTenant, runInTenant } from '../utils/tenantContext';
 import { OrderStatus, Prisma } from '@prisma/client';
 import { emitOrderCreatedEvent } from '../utils/appEvents';
 import checkoutFormService from '../services/checkoutFormService';
@@ -18,6 +18,10 @@ import { isUpsellAvailable } from '../utils/checkoutFormRules';
 import { getAvailableMany } from '../services/stockService';
 import { formatOrderNumber } from '../utils/orderNumber';
 import { getFrontendUrl } from '../utils/url';
+import { AppError } from '../middleware/errorHandler';
+import orderService from '../services/orderService';
+import { customerNeedsManualCall } from '../services/refusalRuleService';
+import { fullName } from '../utils/nameUtils';
 
 // Buyer-selectable payment methods (F-402). `cod` settles on delivery; the two online methods charge through the
 // form's payment provider on the tenant's own account: `online_full` for the whole total, `online_deposit` for a
@@ -544,6 +548,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
         discount,
         totalAmount: finalTotal,
         codAmount: finalTotal,
+        requiresManualCall: customerNeedsManualCall(customer),
         balanceDue: 0,
         deliveryAddress: deliveryAddressOf(formData.address, landmark),
         deliveryState: formData.state || null,
@@ -727,6 +732,130 @@ export const trackOrder = async (req: Request, res: Response, next: NextFunction
           notes: h.notes,
           createdAt: h.createdAt
         }))
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getConfirmOrder = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { token } = req.params;
+    const confirmToken = await withoutTenant('public-confirm-token-lookup', () =>
+      prisma.confirmToken.findUnique({
+        where: { token },
+        include: {
+          order: {
+            include: {
+              customer: true,
+              orderItems: { include: { product: true } },
+            },
+          },
+        },
+      })
+    );
+
+    if (!confirmToken) {
+      throw new AppError('Confirmation token not found', 404, 'TOKEN_NOT_FOUND');
+    }
+
+    if (confirmToken.usedAt !== null || confirmToken.expiresAt < new Date()) {
+      throw new AppError('This confirmation link has expired or has already been used', 410, 'TOKEN_EXPIRED');
+    }
+
+    const { order } = confirmToken;
+    const customer = order.customer;
+
+    res.json({
+      orderId: order.id,
+      orderNumber: order.id,
+      status: order.status,
+      customerResponse: order.customerResponse,
+      customerName: customer ? fullName(customer) : null,
+      phoneNumber: customer?.phoneNumber ?? null,
+      deliveryAddress: order.deliveryAddress,
+      deliveryArea: order.deliveryArea,
+      deliveryState: order.deliveryState,
+      totalAmount: Money.toApi(Money.parse(order.totalAmount)),
+      currency: order.currency ?? 'GHS',
+      items: order.orderItems.map((item) => ({
+        id: item.id,
+        name: item.product?.name ?? 'Item',
+        quantity: item.quantity,
+        unitPrice: Money.toApi(Money.parse(item.unitPrice)),
+        totalPrice: Money.toApi(Money.parse(item.totalPrice)),
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const postConfirmOrder = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { token } = req.params;
+    const { action } = req.body;
+
+    if (!action || !['yes', 'change'].includes(action)) {
+      throw new AppError('Action must be "yes" or "change"', 400, 'INVALID_ACTION');
+    }
+
+    const confirmToken = await withoutTenant('public-confirm-token-post', () =>
+      prisma.confirmToken.findUnique({
+        where: { token },
+        include: {
+          order: true,
+        },
+      })
+    );
+
+    if (!confirmToken) {
+      throw new AppError('Confirmation token not found', 404, 'TOKEN_NOT_FOUND');
+    }
+
+    // A second YES is ignored (200, no change)
+    if (confirmToken.response === 'yes' && action === 'yes') {
+      res.json({ message: 'Order is already confirmed', status: confirmToken.order.status });
+      return;
+    }
+
+    // Check expiry or previous use
+    if (confirmToken.usedAt !== null || confirmToken.expiresAt < new Date()) {
+      throw new AppError('This confirmation link has expired or has already been used', 410, 'TOKEN_EXPIRED');
+    }
+
+    const { order } = confirmToken;
+
+    await runInTenant(confirmToken.tenantId, async () => {
+      if (action === 'yes') {
+        const updated = await orderService.confirmByCustomer(order.id);
+        await prisma.confirmToken.update({
+          where: { id: confirmToken.id },
+          data: { usedAt: new Date(), response: 'yes' },
+        });
+        res.json({ message: 'Order confirmed successfully', status: updated?.status ?? order.status });
+        return;
+      }
+
+      if (action === 'change') {
+        if (order.status === 'pending_confirmation') {
+          await prisma.order.update({
+            where: { id: order.id },
+            data: {
+              customerResponse: 'change',
+              requiresManualCall: true,
+            },
+          });
+        } else {
+          logger.info('Change request received for non-pending order - ignored', { orderId: order.id, status: order.status });
+        }
+        await prisma.confirmToken.update({
+          where: { id: confirmToken.id },
+          data: { usedAt: new Date(), response: 'change' },
+        });
+        res.json({ message: 'Change request noted', status: order.status });
+        return;
       }
     });
   } catch (error) {

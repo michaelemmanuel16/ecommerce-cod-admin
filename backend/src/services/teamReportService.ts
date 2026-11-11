@@ -5,7 +5,7 @@
  * Counts:
  *  - confirmed (rep row, activity): orders the rep confirmed (Order.confirmedById), placed in the range.
  *  - calls: Call rows created in the range, by Call.salesRepId.
- *  - notReachable: calls with outcome not_reachable or no_answer (no_answer is the old value for the same thing).
+ *  - notReachable: calls with outcome not_reachable.
  *  - declineReasons: Order.declineReason on orders placed in the range; percent of all declined orders.
  *  - queue: orders waiting for a call right now (pending_confirmation), not tied to the range.
  *  - timeToFirstCallMinutes: the KPI of services/kpi/timeToFirstCall.ts (median working minutes, orders assigned to the
@@ -26,7 +26,7 @@ import { timeToFirstCall } from './kpi/timeToFirstCall';
 import { repRates, RepRates } from './kpi/reps';
 import { CONFIRMED_DELIVERED_METRIC } from '../config/targetMetrics';
 
-const NOT_REACHABLE = ['not_reachable', 'no_answer'];
+const NOT_REACHABLE = ['not_reachable'];
 
 export { CONFIRMED_DELIVERED_METRIC };
 
