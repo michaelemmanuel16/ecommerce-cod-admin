@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Input, Modal, Select, useToast } from '../../components/ui-v2';
+import { Button, Modal, Select, useToast } from '../../components/ui-v2';
 import { marketingService } from '../../services/marketing.service';
 import { productsService } from '../../services/products.service';
 import type { Product } from '../../types';
@@ -95,9 +95,11 @@ export function MappingDialog({ targets, onClose, onSaved }: Props) {
       <fieldset className="mapscope">
         <legend className="sr">Apply to</legend>
         <label><input type="radio" name="scope" checked={scope === 'campaign'} onChange={() => setScope('campaign')} /> Only this campaign</label>
-        <label><input type="radio" name="scope" checked={scope === 'prefix'} onChange={() => setScope('prefix')} /> All campaigns whose name starts with <b>{prefix.trim()}</b></label>
+        <div className="prefixrow">
+          <label><input type="radio" name="scope" checked={scope === 'prefix'} onChange={() => setScope('prefix')} /> All campaigns whose name starts with</label>
+          <input type="text" className="prefixin" aria-label="Name starts with" value={prefix} maxLength={40} onChange={(e) => setPrefix(e.target.value)} />
+        </div>
       </fieldset>
-      {scope === 'prefix' && <Input label="Name starts with" value={prefix} maxLength={40} onChange={(e) => setPrefix(e.target.value)} />}
       {error && <p className="err" role="alert">{error}</p>}
     </Modal>
   );

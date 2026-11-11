@@ -79,7 +79,7 @@ export function Marketing() {
       <div className="head">
         <div><h1>Marketing</h1><p>Meta ad results by product, from ad click to delivered order.</p></div>
         <div className="hd-actions">
-          <span className="conn"><i className={live ? undefined : 'off'} />Meta account: {live ? 'connected' : 'disconnected'}{pulled && <small>, pulled {formatRelativeTime(pulled)}</small>}</span>
+          <span className="conn"><i className={live ? undefined : 'off'} /><span>Meta account: {live ? 'connected' : 'disconnected'}{pulled && <small>, pulled {formatRelativeTime(pulled)}</small>}</span></span>
           <Select compact label="Period" value={period} onChange={(e) => setPeriod(e.target.value as Period)}>
             {PERIODS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
           </Select>
