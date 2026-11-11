@@ -188,7 +188,7 @@ export async function maxCpaRaw(input: { to: string; productId?: number }): Prom
   return { ...base, available: true, yieldPct, profit, max, message };
 }
 
-function maxCpaView(raw: MaxCpaRaw, ctx: AccountContext | null): MaxCpa {
+export function maxCpaView(raw: MaxCpaRaw, ctx: AccountContext | null): MaxCpa {
   return {
     available: raw.available, yieldPct: raw.yieldPct, message: raw.message, closedOrders: raw.closedOrders, cohort: raw.cohort,
     profitBeforeAds: raw.profit ? moneyView(raw.profit, ctx, { tenth: true }) : null,
@@ -205,30 +205,34 @@ export async function maxCpa(input: { to: string; productId?: number }): Promise
 // Tiles
 // ---------------------------------------------------------------------------------------------
 
+/** Rate to the store currency of a (currency, day) pair, 1 for the store currency, null when no rate exists. Each pair is read once. */
+export function dayRateLookup(tenantId: string, store: string): (currency: string, ymd: string) => Promise<Money.Money | null> {
+  const cache = new Map<string, Promise<Money.Money | null>>();
+  return (currency, ymd) => {
+    if (currency === store) return Promise.resolve(Money.parse(1));
+    const key = `${currency}|${ymd}`;
+    if (!cache.has(key)) cache.set(key, rateOn(tenantId, currency, store, ymd).then((f) => f?.rate ?? null));
+    return cache.get(key)!;
+  };
+}
+
 /** Meta spend of days [from, to] in the store currency: each (account, day) converted at its day rate, like the ledger. */
-export async function spendInRange(range: { from: string; to: string; campaignKeys?: Set<string> }) {
+export async function spendInRange(range: { from: string; to: string }) {
   const store = await getCurrency();
   const tenantId = resolveTenantId();
   const rows = await prisma.metaSpendDay.findMany({
     where: { date: { gte: utcDateOfYmd(range.from), lte: utcDateOfYmd(range.to) } },
-    select: { adAccountId: true, campaignId: true, date: true, currency: true, spend: true },
+    select: { adAccountId: true, date: true, currency: true, spend: true },
   });
   const byDay = new Map<string, { currency: string; ymd: string; original: Money.Money }>();
   for (const r of rows) {
-    if (range.campaignKeys && !range.campaignKeys.has(`${r.adAccountId}:${r.campaignId}`)) continue;
     const ymd = r.date.toISOString().slice(0, 10);
     const key = `${r.adAccountId}|${ymd}`;
     const day = byDay.get(key) ?? { currency: r.currency, ymd, original: Money.ZERO };
     day.original = Money.add(day.original, r.spend);
     byDay.set(key, day);
   }
-  const rateOf = new Map<string, Promise<Money.Money | null>>();
-  const rateFor = (currency: string, ymd: string) => {
-    if (currency === store) return Promise.resolve(Money.parse(1));
-    const key = `${currency}|${ymd}`;
-    if (!rateOf.has(key)) rateOf.set(key, rateOn(tenantId, currency, store, ymd).then((f) => f?.rate ?? null));
-    return rateOf.get(key)!;
-  };
+  const rateFor = dayRateLookup(tenantId, store);
   let spend = Money.ZERO;
   let waitingForRate = 0;
   const originals = new Map<string, Money.Money>();

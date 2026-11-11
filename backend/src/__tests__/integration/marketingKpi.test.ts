@@ -15,6 +15,7 @@ import { mkCustomer } from './helpers/settlementFixtures';
 import { postMetaSpend } from '../../services/marketing/metaLedgerService';
 import { maxCpa, tiles, NO_ROOM_FOR_ADS } from '../../services/marketing/marketingKpiService';
 import { utcDateOfYmd } from '../../services/kpi/dates';
+import { at, mkProduct, seedOrders, spendRow } from './helpers/marketingFixtures';
 
 jest.setTimeout(240_000);
 
@@ -29,25 +30,6 @@ let p4: number;
 let account: number;
 
 const inA = <T>(fn: () => Promise<T>) => runInTenant(a, fn);
-const mkProduct = (tenantId: string, sku: string, cogs: number) =>
-  prismaBase.product.create({ data: { tenantId, sku, name: sku, category: 'test', price: 100, stockQuantity: 0, cogs } }).then((p) => p.id);
-const at = (ymd: string) => new Date(`${ymd}T12:00:00Z`);
-const spendRow = (tenantId: string, accountId: number, ymd: string, campaign: string, spend: number) =>
-  prismaBase.metaSpendDay.create({ data: { adAccountId: accountId, campaignId: campaign, campaignName: campaign, date: utcDateOfYmd(ymd), currency: 'NGN', spend, pulledAt: new Date(), tenantId } });
-/** Orders of one product with the PRD numbers (total 249, fee 34, landed cost 30), created on `ymd`. */
-async function seedOrders(tenantId: string, customerId: number, productId: number, ymd: string, status: 'delivered' | 'failed_delivery' | 'cancelled', count: number, opts: { total?: number } = {}) {
-  const total = opts.total ?? 249;
-  await prismaBase.order.createMany({
-    data: Array.from({ length: count }, () => ({
-      customerId, tenantId, status, subtotal: total, totalAmount: total, codAmount: total, createdAt: at(ymd),
-      deliveryFee: 34, landedCostTotal: 30, ...(status === 'delivered' ? { deliveryDate: at(ymd) } : {}),
-    })),
-  });
-  const ids = (await prismaBase.order.findMany({ where: { tenantId, status, createdAt: at(ymd), totalAmount: total }, select: { id: true }, orderBy: { id: 'desc' }, take: count })).map((o) => o.id);
-  await prismaBase.orderItem.createMany({ data: ids.map((orderId) => ({ orderId, productId, quantity: 1, unitPrice: total, totalPrice: total })) });
-  return ids;
-}
-
 beforeAll(async () => {
   a = (await createTenant('Mkt KPI A', { currency: 'GHS' })).id;
   b = (await createTenant('Mkt KPI B', { currency: 'GHS' })).id;
