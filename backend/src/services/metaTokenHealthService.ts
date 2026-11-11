@@ -3,6 +3,7 @@ import logger from '../utils/logger';
 import { debugToken } from './metaOAuthService';
 import { decryptString } from '../utils/providerCrypto';
 import { createNotification, findTenantAdmins } from './notificationService';
+import { safeErrorMessage } from '../utils/safeError';
 
 const WARN_DAYS = 7;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -40,7 +41,7 @@ async function applyHealth(rows: Row[], next: Health, alert: boolean): Promise<v
       });
     }
   } catch (err: any) {
-    logger.error('Meta Ads token alert failed', { error: err.message });
+    logger.error('Meta Ads token alert failed', { error: safeErrorMessage(err) });
   }
 }
 
@@ -65,7 +66,7 @@ export async function checkAdsTokens(): Promise<void> {
     try {
       info = await debugToken(token);
     } catch (err: any) {
-      logger.warn('Meta Ads token check failed', { error: err.message });
+      logger.warn('Meta Ads token check failed', { error: safeErrorMessage(err) });
       continue;
     }
 

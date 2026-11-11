@@ -1,6 +1,7 @@
 import logger from '../../utils/logger';
 import { pullAccount } from './metaInsightsService';
 import { postMetaSpend } from './metaLedgerService';
+import { safeErrorMessage } from '../../utils/safeError';
 
 
 /**
@@ -14,7 +15,7 @@ export async function runAccountPull(adAccountId: number): Promise<string[]> {
   try {
     await postMetaSpend(adAccountId, dates);
   } catch (err: any) {
-    logger.error('Meta spend ledger posting failed', { adAccountId, error: err?.message });
+    logger.error('Meta spend ledger posting failed', { adAccountId, error: safeErrorMessage(err) });
   }
   return dates;
 }

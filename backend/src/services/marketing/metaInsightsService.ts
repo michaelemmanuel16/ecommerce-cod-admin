@@ -6,6 +6,7 @@ import { ADS_GRAPH_API_BASE } from '../metaOAuthService';
 import { metaAdsApiError } from '../metaTokenHealthService';
 import { createNotification, findTenantAdmins } from '../notificationService';
 import { localDate, shiftYmd, utcDateOfYmd } from '../kpi/dates';
+import { safeErrorMessage } from '../../utils/safeError';
 
 /**
  * M8-T05 (COD-71): pull campaign-level daily insights from Meta and keep them in MetaSpendDay.
@@ -199,7 +200,7 @@ async function alertTwiceFailed(accountName: string, adAccountId: number): Promi
       );
     }
   } catch (err: any) {
-    logger.error('Meta Ads pull alert failed', { error: err.message });
+    logger.error('Meta Ads pull alert failed', { error: safeErrorMessage(err) });
   }
 }
 
@@ -246,7 +247,7 @@ export async function pullAccount(adAccountId: number, days = 3, opts: PullOptio
     return dates;
   } catch (err) {
     // Token errors and Meta codes only. Never the token, never the raw URL.
-    logger.warn('Meta insights pull failed', { adAccountId, error: (err as Error)?.message });
+    logger.warn('Meta insights pull failed', { adAccountId, error: safeErrorMessage(err) });
     if ((err as MetaApiError)?.code === 190) await metaAdsApiError(adAccountId, err);
     const updated = await prisma.metaAdAccount.update({
       where: { id: adAccountId },
