@@ -1,7 +1,6 @@
 import { Response } from 'express';
 import { AuthRequest } from '../types';
 import logger from '../utils/logger';
-import { generateApiKey } from '../utils/crypto';
 import {
   generateAuthUrl,
   exchangeCodeForToken,
@@ -19,11 +18,7 @@ import { adminService } from '../services/adminService';
 import { clearWhatsAppConfigCache } from '../services/whatsappService';
 import { encryptProviderSecrets, decryptProviderSecrets } from '../utils/providerCrypto';
 import prisma from '../utils/prisma';
-
-// In-memory CSRF state store (state → { userId, expiresAt })
-const csrfStateStore = new Map<string, { userId: number; expiresAt: number }>();
-const CSRF_TTL_MS = 10 * 60 * 1000; // 10 minutes
-const MAX_CSRF_ENTRIES = 100;
+import { createOAuthState, consumeOAuthState, sweepOAuthState } from '../utils/oauthState';
 
 // In-memory pending OAuth data store (userId → { token, phones, expiresAt })
 interface PendingOAuthData {
@@ -44,9 +39,7 @@ export function startCleanupInterval(): void {
   if (cleanupIntervalId) return;
   cleanupIntervalId = setInterval(() => {
     const now = Date.now();
-    for (const [key, val] of csrfStateStore) {
-      if (val.expiresAt < now) csrfStateStore.delete(key);
-    }
+    sweepOAuthState();
     for (const [key, val] of pendingOAuthStore) {
       if (val.expiresAt < now) pendingOAuthStore.delete(key);
     }
@@ -77,18 +70,7 @@ export async function initiateOAuth(req: AuthRequest, res: Response): Promise<vo
     }
 
     const userId = req.user!.id;
-    const state = generateApiKey();
-
-    // Evict oldest entries if store is full
-    if (csrfStateStore.size >= MAX_CSRF_ENTRIES) {
-      const oldestKey = csrfStateStore.keys().next().value;
-      if (oldestKey) csrfStateStore.delete(oldestKey);
-    }
-
-    csrfStateStore.set(state, {
-      userId,
-      expiresAt: Date.now() + CSRF_TTL_MS,
-    });
+    const state = createOAuthState({ kind: 'whatsapp', userId });
 
     const redirectUri = getRedirectUri();
     const authUrl = generateAuthUrl(redirectUri, state);
@@ -126,10 +108,9 @@ export async function handleOAuthCallback(req: AuthRequest, res: Response): Prom
     }
 
     // Consume CSRF state immediately to prevent replay attacks
-    const storedState = csrfStateStore.get(state);
-    csrfStateStore.delete(state);
+    const storedState = consumeOAuthState<{ kind: string; userId: number }>(state);
 
-    if (!storedState || storedState.expiresAt < Date.now()) {
+    if (!storedState || storedState.kind !== 'whatsapp') {
       logger.warn('OAuth callback: invalid or expired CSRF state');
       res.redirect(`${frontendUrl}/settings?oauth=error&message=${encodeURIComponent('Invalid or expired state. Please try again.')}`);
       return;

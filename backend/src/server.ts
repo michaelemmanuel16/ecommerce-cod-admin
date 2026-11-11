@@ -78,6 +78,7 @@ import agentInventoryRoutes from './routes/agentInventoryRoutes';
 import inventoryRoutes from './routes/inventoryRoutes';
 import shipmentRoutes from './routes/shipmentRoutes';
 import whatsappRoutes from './routes/whatsappRoutes';
+import metaAdsRoutes from './routes/metaAdsRoutes';
 import smsRoutes from './routes/smsRoutes';
 import emailRoutes from './routes/emailRoutes';
 import paystackRoutes from './routes/paystackRoutes';
@@ -107,6 +108,7 @@ import mcpHttpTransport from './mcp/httpTransport';
 import { closeRateLimiter } from './mcp/rateLimiter';
 import { verifyWebhook, handleWebhook } from './controllers/whatsappController';
 import { handleOAuthCallback, stopCleanupInterval } from './controllers/whatsappOAuthController';
+import { callback as metaAdsOAuthCallback } from './controllers/metaAdsController';
 import { scheduleTokenRefresh } from './services/whatsappTokenRefreshService';
 import { seedTenantDefaults } from './services/tenantDefaultsService';
 import { GLAccountService } from './services/glAccountService';
@@ -300,6 +302,9 @@ app.post('/api/whatsapp/webhook', whatsappWebhookLimiter, handleWebhook);
 app.get('/api/whatsapp/oauth/callback', apiLimiter, handleOAuthCallback);
 // Admin endpoints use standard rate limiter
 app.use('/api/whatsapp', apiLimiter, whatsappRoutes);
+// Meta Ads OAuth callback — unauthenticated (CSRF state validates the request)
+app.get('/api/meta-ads/oauth/callback', apiLimiter, metaAdsOAuthCallback);
+app.use('/api/meta-ads', apiLimiter, metaAdsRoutes);
 app.use('/api/sms', apiLimiter, smsRoutes);
 app.use('/api/email', apiLimiter, emailRoutes);
 app.use('/api/paystack', apiLimiter, paystackRoutes);

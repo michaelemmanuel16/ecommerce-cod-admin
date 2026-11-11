@@ -2,6 +2,10 @@ import logger from '../utils/logger';
 
 export const GRAPH_API_VERSION = 'v21.0';
 export const GRAPH_API_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
+/** Ads (insights, ad accounts, token debug) calls use v25.0; WhatsApp stays on GRAPH_API_VERSION. */
+export const ADS_GRAPH_API_VERSION = 'v25.0';
+export const ADS_GRAPH_API_BASE = `https://graph.facebook.com/${ADS_GRAPH_API_VERSION}`;
+const ADS_OAUTH_SCOPES = 'ads_read,business_management';
 const OAUTH_SCOPES = 'whatsapp_business_management,whatsapp_business_messaging';
 
 /** Fallback token lifetime when Meta doesn't return expires_in */
@@ -42,6 +46,11 @@ export function getRedirectUri(): string {
   return `${backendUrl}/api/whatsapp/oauth/callback`;
 }
 
+export function getAdsRedirectUri(): string {
+  const backendUrl = process.env.BACKEND_URL || 'http://localhost:3000';
+  return `${backendUrl}/api/meta-ads/oauth/callback`;
+}
+
 export function isOAuthConfigured(): boolean {
   return !!(process.env.META_APP_ID && process.env.META_APP_SECRET);
 }
@@ -57,7 +66,26 @@ export function generateAuthUrl(redirectUri: string, state: string): string {
   return `https://www.facebook.com/${GRAPH_API_VERSION}/dialog/oauth?${params.toString()}`;
 }
 
-export async function exchangeCodeForToken(code: string, redirectUri: string): Promise<TokenExchangeResult> {
+/** Meta Ads login. With META_ADS_CONFIG_ID: Facebook Login for Business (system user token). Otherwise a user token. */
+export function generateAdsAuthUrl(redirectUri: string, state: string): string {
+  const params = new URLSearchParams({
+    client_id: getMetaAppId(),
+    redirect_uri: redirectUri,
+    state,
+  });
+  const configId = process.env.META_ADS_CONFIG_ID;
+  if (configId) {
+    params.set('config_id', configId);
+    params.set('response_type', 'code');
+    params.set('override_default_response_type', 'true');
+  } else {
+    params.set('scope', ADS_OAUTH_SCOPES);
+    params.set('response_type', 'code');
+  }
+  return `https://www.facebook.com/${ADS_GRAPH_API_VERSION}/dialog/oauth?${params.toString()}`;
+}
+
+export async function exchangeCodeForToken(code: string, redirectUri: string, base: string = GRAPH_API_BASE): Promise<TokenExchangeResult> {
   const params = new URLSearchParams({
     client_id: getMetaAppId(),
     client_secret: getMetaAppSecret(),
@@ -65,7 +93,7 @@ export async function exchangeCodeForToken(code: string, redirectUri: string): P
     code,
   });
 
-  const response = await fetch(`${GRAPH_API_BASE}/oauth/access_token?${params.toString()}`);
+  const response = await fetch(`${base}/oauth/access_token?${params.toString()}`);
   if (!response.ok) {
     const body = await response.text();
     logger.error('Meta OAuth token exchange failed', { status: response.status, body });
@@ -82,7 +110,7 @@ export async function exchangeCodeForToken(code: string, redirectUri: string): P
  * Exchange a token for a long-lived token (~60 days).
  * Used both for initial short→long exchange and for refreshing existing long-lived tokens.
  */
-async function exchangeToken(fbExchangeToken: string, logContext: string): Promise<TokenExchangeResult> {
+async function exchangeToken(fbExchangeToken: string, logContext: string, base: string = GRAPH_API_BASE): Promise<TokenExchangeResult> {
   const params = new URLSearchParams({
     grant_type: 'fb_exchange_token',
     client_id: getMetaAppId(),
@@ -90,7 +118,7 @@ async function exchangeToken(fbExchangeToken: string, logContext: string): Promi
     fb_exchange_token: fbExchangeToken,
   });
 
-  const response = await fetch(`${GRAPH_API_BASE}/oauth/access_token?${params.toString()}`);
+  const response = await fetch(`${base}/oauth/access_token?${params.toString()}`);
   if (!response.ok) {
     const body = await response.text();
     logger.error(`Meta ${logContext} failed`, { status: response.status, body });
@@ -110,8 +138,8 @@ async function exchangeToken(fbExchangeToken: string, logContext: string): Promi
   };
 }
 
-export function exchangeForLongLivedToken(shortToken: string): Promise<TokenExchangeResult> {
-  return exchangeToken(shortToken, 'long-lived token exchange');
+export function exchangeForLongLivedToken(shortToken: string, base: string = GRAPH_API_BASE): Promise<TokenExchangeResult> {
+  return exchangeToken(shortToken, 'long-lived token exchange', base);
 }
 
 export function refreshLongLivedToken(currentToken: string): Promise<TokenExchangeResult> {
@@ -276,4 +304,71 @@ export async function fetchWABAPhoneNumbers(userId: string, token: string): Prom
   }
 
   return [];
+}
+
+export interface DebugTokenResult {
+  isValid: boolean;
+  /** Meta token type, e.g. USER or SYSTEM_USER */
+  type: string;
+  /** null when the token never expires (Meta sends 0) */
+  expiresAt: Date | null;
+  scopes: string[];
+}
+
+/** Ask Meta about a token (validity, type, expiry, scopes) using the app token. Throws on a transport or API failure. */
+export async function debugToken(token: string): Promise<DebugTokenResult> {
+  const appToken = `${getMetaAppId()}|${getMetaAppSecret()}`;
+  const params = new URLSearchParams({ input_token: token, access_token: appToken });
+  const response = await fetch(`${ADS_GRAPH_API_BASE}/debug_token?${params.toString()}`);
+  if (!response.ok) {
+    logger.warn('Meta debug_token failed', { status: response.status });
+    throw new Error(`debug_token failed: ${response.status}`);
+  }
+  const data = ((await response.json()) as any).data || {};
+  return {
+    isValid: data.is_valid === true,
+    type: String(data.type || ''),
+    expiresAt: data.expires_at ? new Date(data.expires_at * 1000) : null,
+    scopes: Array.isArray(data.scopes) ? data.scopes : [],
+  };
+}
+
+export interface MetaAdAccountInfo {
+  accountId: string;
+  name: string;
+  currency: string;
+  timezone: string;
+  accountStatus?: number;
+}
+
+/** Every ad account the token can read, following the paging cursors (the token stays in the header, never in a next-page URL). */
+export async function fetchAdAccounts(token: string): Promise<MetaAdAccountInfo[]> {
+  const accounts: MetaAdAccountInfo[] = [];
+  let after: string | undefined;
+  do {
+    const params = new URLSearchParams({
+      fields: 'account_id,name,currency,timezone_name,account_status',
+      limit: '100',
+    });
+    if (after) params.set('after', after);
+    const response = await fetch(`${ADS_GRAPH_API_BASE}/me/adaccounts?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      logger.warn('Meta ad account list failed', { status: response.status });
+      throw new Error(`Ad account list failed: ${response.status}`);
+    }
+    const body = await response.json() as any;
+    for (const a of body.data || []) {
+      accounts.push({
+        accountId: String(a.account_id),
+        name: a.name,
+        currency: a.currency,
+        timezone: a.timezone_name,
+        accountStatus: a.account_status,
+      });
+    }
+    after = body.paging?.next ? body.paging.cursors?.after : undefined;
+  } while (after);
+  return accounts;
 }
