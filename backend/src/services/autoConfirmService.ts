@@ -7,6 +7,16 @@ import { whatsappService } from './whatsappService';
 import { smsService } from './smsService';
 import { fullName } from '../utils/nameUtils';
 
+/**
+ * whatsappService/smsService return quietly when their channel is not set up:
+ * the message log stays 'pending' and nothing is sent. Treat that as a failed send.
+ */
+async function assertDispatched(result: { messageLogId?: number } | undefined, channel: string): Promise<void> {
+  if (typeof result?.messageLogId !== 'number') return;
+  const log = await prisma.messageLog.findUnique({ where: { id: result.messageLogId }, select: { status: true } });
+  if (log?.status === 'pending') throw new Error(`${channel} is not set up: message logged but not sent`);
+}
+
 export interface AutoConfirmResult {
   token: string;
   channel: string;
@@ -137,7 +147,7 @@ export async function sendAutoConfirmForOrder(
     let sent = true;
     if (targetChannel === 'whatsapp') {
       try {
-        await whatsappService.sendTemplate({
+        const waResult = await whatsappService.sendTemplate({
           to: phone,
           templateName: 'order_auto_confirm',
           languageCode: 'en_US', // must match the approved template's language on Meta
@@ -152,15 +162,16 @@ export async function sendAutoConfirmForOrder(
           orderId: order.id,
           customerId: order.customer.id,
         });
+        await assertDispatched(waResult, 'WhatsApp');
       } catch (err: any) {
         logger.warn('Auto-confirm WhatsApp send failed, falling back to SMS', { orderId: order.id, error: err.message });
         try {
-          await smsService.sendSms({
+          await assertDispatched(await smsService.sendSms({
             to: phone,
             body: smsMessage,
             orderId: order.id,
             customerId: order.customer.id,
-          });
+          }), 'SMS');
         } catch (smsErr: any) {
           logger.error('Auto-confirm SMS fallback also failed', { orderId: order.id, error: smsErr.message });
           sent = false;
@@ -168,12 +179,12 @@ export async function sendAutoConfirmForOrder(
       }
     } else {
       try {
-        await smsService.sendSms({
+        await assertDispatched(await smsService.sendSms({
           to: phone,
           body: smsMessage,
           orderId: order.id,
           customerId: order.customer.id,
-        });
+        }), 'SMS');
       } catch (err: any) {
         logger.error('Auto-confirm SMS send failed', { orderId: order.id, error: err.message });
         sent = false;

@@ -5,7 +5,7 @@ import { prismaBase } from '../../utils/prisma';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
 import { makeOrder } from './helpers/kpiOrders';
 import { sendAutoConfirmForOrder } from '../../services/autoConfirmService';
-import { whatsappService } from '../../services/whatsappService';
+import { whatsappService, clearWhatsAppConfigCache } from '../../services/whatsappService';
 import { smsService } from '../../services/smsService';
 import orderService from '../../services/orderService';
 import { runInTenant } from '../../utils/tenantContext';
@@ -276,6 +276,33 @@ describe('M7-T08: Auto-confirm send and public confirmation API', () => {
     expect(await prismaBase.confirmToken.count({ where: { orderId: order.id } })).toBe(0);
     waSpy.mockRestore();
     smsSpy.mockRestore();
+  });
+
+  it('releases the claim when neither channel is set up (send only logged)', async () => {
+    const order = await makeOrder({
+      tenantId,
+      customerId,
+      status: 'pending_confirmation',
+      paymentMethod: 'cod',
+      orderType: 'physical',
+    });
+    const savedToken = process.env.WHATSAPP_ACCESS_TOKEN;
+    delete process.env.WHATSAPP_ACCESS_TOKEN;
+    clearWhatsAppConfigCache();
+    try {
+      // No spies: the real services find no config, log the message as pending and send nothing.
+      await expect(sendAutoConfirmForOrder(order.id, tenantId)).rejects.toThrow(/could not be sent/);
+    } finally {
+      if (savedToken !== undefined) process.env.WHATSAPP_ACCESS_TOKEN = savedToken;
+      clearWhatsAppConfigCache();
+    }
+
+    const after = await prismaBase.order.findUnique({ where: { id: order.id } });
+    expect(after!.autoConfirmSentAt).toBeNull();
+    expect(await prismaBase.confirmToken.count({ where: { orderId: order.id } })).toBe(0);
+    const logs = await prismaBase.messageLog.findMany({ where: { orderId: order.id }, select: { channel: true, status: true } });
+    expect(logs.map((l) => l.channel).sort()).toEqual(['sms', 'whatsapp']);
+    expect(logs.every((l) => l.status === 'pending')).toBe(true);
   });
 
   it('WhatsApp failure falls back to SMS', async () => {
