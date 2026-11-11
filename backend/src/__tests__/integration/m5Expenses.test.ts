@@ -252,9 +252,9 @@ describe('system rows and permissions', () => {
     expect(list.body.expenses.find((e: any) => e.id === row.id).locked).toBe(true);
     expect(list.body.expenses.find((e: any) => e.source === 'manual').locked).toBe(false);
     const put = await request(app).put(`/api/financial/expenses/${row.id}`).set(bearer(owner.token)).send({ amount: 1 });
-    expect(put.status).toBe(403);
+    expect(put.status).toBe(409);
     expect(put.body.code).toBe('EXPENSE_LOCKED');
-    expect((await request(app).delete(`/api/financial/expenses/${row.id}`).set(bearer(owner.token))).status).toBe(403);
+    expect((await request(app).delete(`/api/financial/expenses/${row.id}`).set(bearer(owner.token))).status).toBe(409);
     expect(await prismaBase.expense.findUnique({ where: { id: row.id } })).not.toBeNull();
   });
 

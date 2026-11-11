@@ -456,6 +456,32 @@ export class GLAutomationService {
   }
 
   /**
+   * Meta ad spend entry for one expense (M8-T07). A rise posts DR 5080 / CR 1010 for the amount, a fall posts the
+   * reverse (DR 1010 / CR 5080). `seq` counts the expense's entries (1 for the first), so each change is one entry
+   * and a repeat of the same call posts nothing twice. Entries are dated by the expense date and never edited.
+   */
+  static async createMetaSpendGLEntry(
+    tx: Prisma.TransactionClient,
+    p: { expenseId: number; seq: number; delta: Money.MoneyInput; description: string; userId: number; entryDate: Date }
+  ): Promise<JournalEntryWithTransactions | null> {
+    const delta = Money.parse(p.delta);
+    const rise = delta.greaterThan(0);
+    return this.postOnce(tx, {
+      sourceType: JournalSourceType.expense,
+      externalRef: `meta-spend:${p.expenseId}:${p.seq}`,
+      sourceId: p.expenseId,
+      entryDate: p.entryDate,
+      description: `Expense - ${p.description}`,
+      createdBy: p.userId,
+      debitCode: rise ? GL_ACCOUNTS.META_AD_SPEND : GL_ACCOUNTS.CASH_IN_HAND,
+      creditCode: rise ? GL_ACCOUNTS.CASH_IN_HAND : GL_ACCOUNTS.META_AD_SPEND,
+      amount: delta.abs(),
+      debitNote: rise ? `Meta ad spend: ${p.description}` : `Cash back for lower Meta spend: ${p.description}`,
+      creditNote: rise ? `Cash reduction for Meta ad spend: ${p.description}` : `Meta ad spend lowered: ${p.description}`,
+    });
+  }
+
+  /**
    * Delivery fee entry, one per outcome move (F-936, F-935): DR 5070 / CR 1015 for the fee stamped on the order.
    * The partner keeps the fee from the cash it holds, so 1015 goes down by the fee and nothing is paid out.
    * Keyed on `<outcome>:<OrderHistory id>` in `externalRef` with the order as source, so a repeat of the same
