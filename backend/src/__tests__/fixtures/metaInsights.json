@@ -1,0 +1,61 @@
+{
+  "source": "Shape verified live on Graph v25.0 (docs/plan/M8-T01-meta-access.md): level=campaign, time_increment=1. Values are made up.",
+  "page1": {
+    "data": [
+      {
+        "account_currency": "NGN",
+        "campaign_id": "6001",
+        "campaign_name": "MG_Oct_Teacher_UGC",
+        "date_start": "2026-11-09",
+        "date_stop": "2026-11-09",
+        "spend": "43700.55",
+        "impressions": "20000",
+        "inline_link_clicks": "330",
+        "actions": [
+          { "action_type": "link_click", "value": "340" },
+          { "action_type": "landing_page_view", "value": "234" },
+          { "action_type": "offsite_conversion.fb_pixel_initiate_checkout", "value": "23" },
+          { "action_type": "omni_initiated_checkout", "value": "23" },
+          { "action_type": "offsite_conversion.fb_pixel_purchase", "value": "7" }
+        ]
+      },
+      {
+        "account_currency": "NGN",
+        "campaign_id": "6002",
+        "campaign_name": "MG_Oct_Mom_POV",
+        "date_start": "2026-11-09",
+        "date_stop": "2026-11-09",
+        "spend": "0.10"
+      }
+    ],
+    "paging": {
+      "cursors": { "before": "a", "after": "b" },
+      "next": "https://graph.facebook.com/v25.0/act_1001/insights?after=b&limit=500"
+    }
+  },
+  "page2": {
+    "data": [
+      {
+        "account_currency": "NGN",
+        "campaign_id": "6001",
+        "campaign_name": "MG_Oct_Teacher_UGC",
+        "date_start": "2026-11-10",
+        "date_stop": "2026-11-10",
+        "spend": "51000.00",
+        "impressions": "24000",
+        "inline_link_clicks": "400",
+        "actions": [
+          { "action_type": "landing_page_view", "value": "290" },
+          { "action_type": "offsite_conversion.fb_pixel_purchase", "value": "9" }
+        ]
+      }
+    ]
+  },
+  "statuses": {
+    "6001": { "effective_status": "ACTIVE", "id": "6001" },
+    "6002": { "effective_status": "PAUSED", "id": "6002" }
+  },
+  "rateLimitError": { "error": { "message": "Application request limit reached", "type": "OAuthException", "code": 4, "fbtrace_id": "x" } },
+  "adsInsightsLimitError": { "error": { "message": "Ads Insights limit", "type": "OAuthException", "code": 80000, "error_subcode": 2446079, "fbtrace_id": "x" } },
+  "tokenError": { "error": { "message": "Error validating access token", "type": "OAuthException", "code": 190, "error_subcode": 460, "fbtrace_id": "x" } }
+}
