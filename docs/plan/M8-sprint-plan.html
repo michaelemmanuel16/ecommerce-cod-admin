@@ -37,16 +37,16 @@ pre{font-family:var(--mono);font-size:.8rem;background:var(--bg);border:1px soli
 </style>
 <main>
 <header>
-  <div class="eyebrow">CodAdmin rebuild · Milestone 8 · plan for approval · 2026-11-11</div>
+  <div class="eyebrow">CodAdmin rebuild · Milestone 8 · lean · approved 2026-11-11</div>
   <h1>M8: Marketing</h1>
-  <p>CodAdmin pulls Meta ad spend by itself. It maps each campaign to a product, books the spend in the ledger, and shows spend, funnel, max CPA and campaign status. The numbers must match Ads Manager.</p>
+  <p>One question: how much do I pay in ads for each delivered order, per product, and is it under my max CPA? CodAdmin pulls Meta spend daily, maps campaigns to products, books the spend in the ledger, and shows cost per delivered order against max CPA.</p>
 </header>
 
 <section>
   <div class="summary">
     <div><b>7</b><span>Linear issues (COD-70 to COD-76)</span></div>
-    <div><b>24</b><span>plan tasks (T01 to T24)</span></div>
-    <div><b>150 h</b><span>likely work (+10 h for one connection and token health)</span></div>
+    <div><b>19</b><span>plan tasks (was 24)</span></div>
+    <div><b>~82 h</b><span>likely work (was 140 h)</span></div>
     <div><b>1 PR</b><span><code>feature/m8-marketing</code> into <code>develop</code></span></div>
   </div>
 </section>
@@ -54,87 +54,57 @@ pre{font-family:var(--mono);font-size:.8rem;background:var(--bg);border:1px soli
 <section>
   <h2>Queue</h2>
   <div class="scroll"><table>
-    <tr><th>#</th><th>Issue</th><th>Title</th><th>Tasks</th><th>Hours</th></tr>
-    <tr><td>1</td><td class="id">COD-70</td><td>Meta access check (combined scopes, token type) and manual CSV fallback</td><td>T01, T02</td><td>12</td></tr>
-    <tr><td>2</td><td class="id">COD-71</td><td>Meta models, one Meta connection (extends the WhatsApp login), token health, insights pull and jobs</td><td>T03–T06</td><td>36</td></tr>
-    <tr><td>3</td><td class="id">COD-72</td><td>Spend to ledger and order campaign tags</td><td>T07, T08</td><td>15</td></tr>
-    <tr><td>4</td><td class="id">COD-73</td><td>Mapping, Marketing KPI, funnel, ad and daily services, permission</td><td>T09–T13</td><td>28</td></tr>
-    <tr><td>5</td><td class="id">COD-74</td><td>Marketing page, funnel and ad drilldown UI</td><td>T14, T15</td><td>15</td></tr>
-    <tr><td>6</td><td class="id">COD-75</td><td>Mapping screen, one Meta card (WhatsApp, ad accounts, token health), Reports tab, forms stats</td><td>T16–T18</td><td>18</td></tr>
-    <tr><td>7</td><td class="id">COD-76</td><td>Tests, parity week, simplify, checks, owner review</td><td>T19–T24</td><td>26</td></tr>
+    <tr><th>Issue</th><th>What</th><th>Tasks</th><th>Hours</th><th>State</th></tr>
+    <tr><td class="id">COD-70</td><td>Meta access check</td><td>T01</td><td>1</td><td><span class="chip">Done</span></td></tr>
+    <tr><td class="id">COD-71</td><td>Schema, Meta Ads connection, token health, daily pull</td><td>T03–T06</td><td>22</td><td><span class="chip warn">In progress</span></td></tr>
+    <tr><td class="id">COD-72</td><td>Spend to ledger (FX)</td><td>T07</td><td>6</td><td>Backlog</td></tr>
+    <tr><td class="id">COD-73</td><td>Mapping, max CPA, funnel, campaign status, permission</td><td>T09–T11, T13</td><td>18</td><td>Backlog</td></tr>
+    <tr><td class="id">COD-74</td><td>Marketing page UI</td><td>T14</td><td>6</td><td>Backlog</td></tr>
+    <tr><td class="id">COD-75</td><td>Mapping dialog, Meta Ads card</td><td>T16, T17</td><td>9</td><td>Backlog</td></tr>
+    <tr><td class="id">COD-76</td><td>Tests, parity week, simplify, checks, review</td><td>T19–T24</td><td>20</td><td>Backlog</td></tr>
   </table></div>
 </section>
 
 <section>
-  <h2>Build on the existing Meta integration <span class="chip">owner choice 2026-11-11</span></h2>
-  <p>The app already has one Facebook login (for WhatsApp), encrypted token storage, a token refresh job and a phone number picker. M8 grows this into <b>one Meta connection</b>. No second login. Pixel and CAPI are set per checkout form with their own token, and M8 does not change them.</p>
-  <ol>
-    <li>One Facebook login asks for WhatsApp and Ads together. After the phone number pick, a second step picks the ad accounts.</li>
-    <li>One token, kept in one place. WhatsApp and the spend pull both read it. The current WhatsApp token moves there, so WhatsApp keeps working.</li>
-    <li>One "Meta" card in Settings, Integrations. It shows the WhatsApp number, the ad accounts with on/off switches, last pull, and token health. Pixel and CAPI stay in each checkout form's Tracking tab, unchanged.</li>
-    <li>Your store reconnects once, to add the Ads permission. Until then WhatsApp runs on the old token.</li>
-  </ol>
-</section>
-
-<section>
-  <h2>Token expiry: what I found</h2>
-  <div class="scroll"><table>
-    <tr><th>Gap in the current code</th><th>What happens now</th><th>M8 fix</th></tr>
-    <tr><td>A failed refresh only writes a log line</td><td>Nobody is told. The token runs out and WhatsApp sends stop.</td><td>Status turns "Expiring" or "Disconnected". You get an alert in the app.</td></tr>
-    <tr><td>No check that the token still works</td><td>If the token is revoked (password change, removed app), you find out when sends fail.</td><td>A daily check asks Meta if the token is valid and has every permission. A missing permission is named on the card.</td></tr>
-    <tr><td>A token with no expiry date is skipped</td><td>The job never checks it.</td><td>The daily check covers every token.</td></tr>
-    <tr><td>No warning before expiry</td><td>You cannot plan a reconnect.</td><td>Alert 7 days before expiry if the refresh did not work. A "Reconnect" button on the card.</td></tr>
-    <tr><td>Refresh runs in the web server process (node-cron, 01:00 server time)</td><td>Two servers can run it twice.</td><td>It moves to the Bull job queue with the spend pulls, once per tenant.</td></tr>
-  </table></div>
-  <p>T01 also checks if Meta can give a token that does not expire (a system user token). If it can, I use it, and refresh stops being needed. This is checked, not assumed.</p>
-</section>
-
-<section>
-  <h2>How I run it (same as M7, with Sonnet builders only)</h2>
-  <ol>
-    <li>I write each spec and review every diff. Sonnet builder agents write all the code. No Antigravity.</li>
-    <li>Up to 3 builders work at once. Each has its own worktree (<code>m8-a</code>, <code>m8-b</code>, <code>m8-c</code>) and its own test database (<code>ecommerce_cod_test_a/b/c</code>). Only lane A changes the schema.</li>
-    <li>I approve each issue myself when every check passes (mode A). Checks: type check, lint, unit tests, changed-file tests, workflow validation, and a browser check with screenshots for UI work.</li>
-    <li>After each approved issue I merge the lane into <code>feature/m8-marketing</code>, re-run the checks, update the feature doc and CHANGELOG, comment on Linear, set the issue to Done and push the branch. CI runs the full suite on a draft PR. Red CI blocks the next issue.</li>
-    <li>At the end (Phase 7): one <code>/simplify</code> on the whole diff, then <code>/cso</code> and <code>/qa</code> on the local app. Critical and high findings get fixed. Medium and low become Backlog tickets.</li>
-    <li>I stop before merge and send you the findings table and the PR link.</li>
-  </ol>
-</section>
-
-<section>
-  <h2>Order of work</h2>
-  <div class="scroll"><table>
-    <tr><th>Wave</th><th>Lane A (schema owner)</th><th>Lane B</th><th>Lane C</th></tr>
-    <tr><td>0</td><td colspan="3">T01 Meta access check (scout reads Meta docs and our Meta app settings). The result decides T02.</td></tr>
-    <tr><td>1</td><td>T03 migration (all new models)</td><td>T13 <code>marketing</code> permission</td><td>T02 CSV import, only if T01 says the live pull cannot run soon</td></tr>
-    <tr><td>2</td><td>T04 one Meta connection and token health (extends <code>metaOAuthService</code>), then T05 insights pull, then T06 jobs (token check moves here too)</td><td>T08 order campaign tags, form visits</td><td>T09 mapping service</td></tr>
-    <tr><td>3</td><td>T07 spend to ledger</td><td>T17 Meta connection card</td><td>—</td></tr>
-    <tr><td>4</td><td>T10 KPI and max CPA, then T11 funnel and status, then T12 ad and daily</td><td>T19 backend tests (jobs, ledger, mapping, tenant, token)</td><td>—</td></tr>
-    <tr><td>5</td><td>T14 Marketing page, then T15 funnel and drilldown</td><td>T16 mapping screen</td><td>T18 Reports tab and forms stats</td></tr>
-    <tr><td>6</td><td colspan="3">T20 parity week, then Phase 7 (T21 simplify, T22 full checks, T23 browser check), then T24 PR ready for your review</td></tr>
-  </table></div>
-</section>
-
-<section>
-  <h2>Defaults I will use (from the M8 plan)</h2>
+  <h2>T01 result: Meta access</h2>
   <ul>
-    <li>Campaign status: Winning at or under 85% of max CPA. On track at or under max CPA. Over max CPA above it.</li>
-    <li>Closed cohort: orders older than 30 days.</li>
-    <li>Campaign tag on orders: <code>utm_campaign</code> and <code>utm_content</code>. I check what the live form sends first.</li>
-    <li>Daily re-pull at 05:00 Accra time. Hourly pull for today.</li>
-    <li>Meta card sits in Settings, Integrations. M9 moves it.</li>
-    <li>No fixed ₦6,400 CPA anywhere. Max CPA comes from profit before ads and yield.</li>
+    <li>Meta app <b>COD Admin Pro</b> is Live and already has the Marketing API use case.</li>
+    <li><b>No App Review now.</b> The app reads your own ad accounts. App Review is needed only when another store connects.</li>
+    <li><b>Token: system user token.</b> Tested live: it never expires and reads the Magic Groove account.</li>
+    <li>Field names tested live on Graph v25. The Magic Groove account bills in <b>NGN</b>, so spend is converted to GH₵ at the day rate.</li>
+    <li>No CSV fallback needed.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Key choices</h2>
+  <ul>
+    <li>WhatsApp login stays as it is. Meta Ads gets its own "Connect Meta Ads" button on the same Meta app and the same login code.</li>
+    <li>A failed token (WhatsApp or Ads) shows "Disconnected" and sends you an alert. Today a WhatsApp refresh failure only writes a log line.</li>
+    <li>Daily pull at 05:00 Accra time re-pulls the last 3 days. A "Refresh now" button pulls on demand.</li>
+    <li>Campaign level only. Per product: real CodAdmin orders through the campaign mapping. Per campaign: Meta purchases × the product delivery rate (labelled "Meta purchases"). Your live ads have no UTM tags and land on goshop.com.ng, so UTM capture moved to Backlog.</li>
+    <li>Status: Winning at or under 85% of max CPA, On track at or under max CPA, Over max CPA, Not mapped, Paused.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Moved to Backlog (COD-194)</h2>
+  <ul>
+    <li>UTM tags on checkout orders (T08)</li>
+    <li>Hourly pull</li>
+    <li>Ad-level data, hook and hold rate, ad drilldown, best and worst day chart (AdMarrow covers these)</li>
+    <li>Reports "Marketing" tab, form visits by device</li>
+    <li>CSV import</li>
+    <li>Meta App Review for other stores</li>
   </ul>
 </section>
 
 <section class="ask">
-  <h2>What I need from you</h2>
+  <h2>What I need from you later</h2>
   <ol>
-    <li><b>Approve this plan.</b> Then I start with T01.</li>
-    <li><b>If T01 shows Meta App Review is needed:</b> you submit it the same day. I will give you the exact steps.</li>
-    <li><b>Parity week (T20):</b> one Ads Manager export, 7 days, per campaign, for the account we connect. I ask when we reach T20.</li>
-    <li><b>Facebook login:</b> the browser check connects an ad account through Facebook. If Facebook asks you to approve, I will ping you.</li>
-    <li><b>Reconnect once:</b> after M8 ships, your store logs in to Meta one more time to add the Ads permission.</li>
+    <li><b>Parity week (T20):</b> one Ads Manager export, 7 days, per campaign. I ask when we get there.</li>
+    <li><b>System user token:</b> create a Facebook Login for Business configuration (System-user token, never expires, ad accounts, ads_read + business_management) and send me the Configuration ID.</li>
+    <li><b>Facebook login:</b> if Facebook asks you to approve during the browser check, I will ping you.</li>
   </ol>
 </section>
 </main>
