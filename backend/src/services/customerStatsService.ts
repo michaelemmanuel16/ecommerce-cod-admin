@@ -21,6 +21,9 @@ import {
  *   Owner override resets the refusal count and clears the block.
  */
 
+// The per-customer aggregate runs once (`AS MATERIALIZED`). As a plain subquery the planner may nest it in a loop over the
+// customers and run the whole aggregate again for every row. For a tenant with no statistics yet (a new tenant id) the row
+// estimate is 1, which invites that plan: on CI this UPDATE ran for 8+ minutes on CPU with no lock wait (COD-76).
 /** `scope` is a WHERE condition on the customers table `c`; its parameters follow `$1`. */
 function statsSql(action: 'update' | 'count', scope: Prisma.Sql): Prisma.Sql {
   const fresh = Prisma.sql`
@@ -58,9 +61,10 @@ function statsSql(action: 'update' | 'count', scope: Prisma.Sql): Prisma.Sql {
       END
     )`;
   if (action === 'count') {
-    return Prisma.sql`SELECT COUNT(*)::int AS n FROM customers c JOIN (${fresh}) s ON s.id = c.id WHERE ${changed}`;
+    return Prisma.sql`WITH s AS MATERIALIZED (${fresh}) SELECT COUNT(*)::int AS n FROM customers c JOIN s ON s.id = c.id WHERE ${changed}`;
   }
   return Prisma.sql`
+    WITH s AS MATERIALIZED (${fresh})
     UPDATE customers c
     SET total_orders = s.total_orders,
         delivered_orders = s.delivered_orders,
@@ -77,7 +81,7 @@ function statsSql(action: 'update' | 'count', scope: Prisma.Sql): Prisma.Sql {
           WHEN c.cod_override_at IS NOT NULL AND c.cod_override IS FALSE THEN TRUE
           ELSE FALSE
         END
-    FROM (${fresh}) s
+    FROM s
     WHERE s.id = c.id AND ${changed}`;
 }
 
