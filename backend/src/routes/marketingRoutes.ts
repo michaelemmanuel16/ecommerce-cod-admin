@@ -44,6 +44,9 @@ router.get('/campaigns/unmapped', canView, ctrl.getUnmapped);
 // Tiles and max CPA (M8-T10)
 router.get('/summary', canView, kpi.getSummary);
 
+// Daily spend vs orders (M8, COD-74)
+router.get('/daily', canView, kpi.getDaily);
+
 // Funnel and campaign performance (M8-T11)
 router.get('/funnel', canView, [query('productId').optional().isInt({ min: 1 }).withMessage('productId must be a product id')], validate, kpi.getFunnel);
 router.get('/campaigns/performance', canView, kpi.getCampaignPerformance);

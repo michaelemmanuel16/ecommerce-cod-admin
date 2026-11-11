@@ -12,6 +12,14 @@ export const getSummary = async (req: AuthRequest, res: Response, next: NextFunc
   }
 };
 
+export const getDaily = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    res.json(await kpi.daily(dateRange(req)));
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getFunnel = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const productId = req.query.productId === undefined ? undefined : Number(req.query.productId);

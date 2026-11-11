@@ -18,7 +18,8 @@ import { getCurrency } from '../../utils/currency';
 import { resolveTenantId } from '../../utils/tenantContext';
 import { rateOn } from '../fxService';
 import { rates, CONFIRMED, DIGITAL } from '../kpi/rates';
-import { getStoreTimeZone, shiftYmd, startOfDay, utcDateOfYmd } from '../kpi/dates';
+import { getStoreTimeZone, localDate, shiftYmd, startOfDay, utcDateOfYmd } from '../kpi/dates';
+import { AppError } from '../../middleware/errorHandler';
 import { NOT_ENOUGH_CLOSED, shares } from '../finance/profitService';
 import { convertSpend } from './metaLedgerService';
 
@@ -223,12 +224,10 @@ export async function dayRates(rows: { currency: string; date: Date }[], store: 
   return out;
 }
 
-/** Meta spend of days [from, to] in the store currency: each (account, day) converted at its day rate, like the ledger. */
-export async function spendInRange(range: { from: string; to: string }, store: string) {
-  const rows = await prisma.metaSpendDay.findMany({
-    where: { date: { gte: utcDateOfYmd(range.from), lte: utcDateOfYmd(range.to) } },
-    select: { adAccountId: true, date: true, currency: true, spend: true },
-  });
+type SpendRow = { adAccountId: number; date: Date; currency: string; spend: Money.MoneyInput };
+
+/** The spend of `rows` in the store currency: each (account, day) converted at its day rate, like the ledger. */
+async function spendOfRows(rows: SpendRow[], store: string) {
   const byDay = new Map<string, { currency: string; date: Date; original: Money.Money }>();
   for (const r of rows) {
     const key = `${r.adAccountId}|${rateKey(r.currency, r.date)}`;
@@ -240,15 +239,56 @@ export async function spendInRange(range: { from: string; to: string }, store: s
   let spend = Money.ZERO;
   let waitingForRate = 0;
   const originals = new Map<string, Money.Money>();
+  /** What Meta reported for the (account, day) pairs that have no rate yet (the chart still shows them in the account currency). */
+  const unconverted = new Map<string, Money.Money>();
   const usedRates = new Set<string>();
   for (const d of byDay.values()) {
     const rate = rates.get(rateKey(d.currency, d.date));
-    if (!rate) { waitingForRate += 1; continue; }
+    if (!rate) { waitingForRate += 1; unconverted.set(d.currency, Money.add(unconverted.get(d.currency) ?? Money.ZERO, d.original)); continue; }
     usedRates.add(rate.toString());
     spend = Money.add(spend, convertSpend(d.original, rate));
     originals.set(d.currency, Money.add(originals.get(d.currency) ?? Money.ZERO, d.original));
   }
-  return { spend, waitingForRate, originals, usedRates };
+  return { spend, waitingForRate, originals, unconverted, usedRates };
+}
+
+const spendRowsOf = (range: { from: string; to: string }): Promise<SpendRow[]> => prisma.metaSpendDay.findMany({
+  where: { date: { gte: utcDateOfYmd(range.from), lte: utcDateOfYmd(range.to) } },
+  select: { adAccountId: true, date: true, currency: true, spend: true },
+});
+
+/** Meta spend of days [from, to] in the store currency: each (account, day) converted at its day rate, like the ledger. */
+export async function spendInRange(range: { from: string; to: string }, store: string) {
+  return spendOfRows(await spendRowsOf(range), store);
+}
+
+type Spent = Awaited<ReturnType<typeof spendInRange>>;
+
+/** The spend figure of a tile or a day: the store total, and the real sum Meta reported when the account currency is known. */
+function spendFigure(spent: Spent, ectx: AccountContext | null, store: string): MoneyView {
+  const originalSpend = ectx ? spent.originals.get(ectx.currency) : undefined;
+  if (originalSpend) return moneyView(spent.spend, ectx, { account: originalSpend });
+  const originals = [...spent.originals.entries()];
+  return {
+    ...moneyView(spent.spend, null),
+    ...(originals.length === 1 && originals[0][0] !== store ? { account: Money.toApi(originals[0][1]), accountCurrency: originals[0][0] } : {}),
+  };
+}
+
+/** A day with spend that has no FX rate: no store figure when nothing was converted, the account currency figure as Meta reported it. */
+function waitingFigure(spent: Spent, ectx: AccountContext | null, store: string): DailyRow['spend'] {
+  const all = new Map(spent.originals);
+  for (const [currency, amount] of spent.unconverted) all.set(currency, Money.add(all.get(currency) ?? Money.ZERO, amount));
+  const [only] = all.size === 1 ? [...all] : [];
+  const account = only ? { account: Money.toApi(only[1]), accountCurrency: only[0] } : {};
+  if (spent.spend.gt(0)) return { ...spendFigure(spent, ectx, store), ...account };
+  return { store: null, account: null, accountCurrency: null, rate: null, rateDate: null, ...account };
+}
+
+/** A cost per order or per day: spend / n in the store currency, and the account sum / n, never store x a rate. */
+function perCountOf(spent: Spent, ectx: AccountContext | null, n: Money.MoneyInput): MoneyView {
+  const originalSpend = ectx ? spent.originals.get(ectx.currency) : undefined;
+  return moneyView(Money.div(spent.spend, n), ectx, { tenth: true, ...(originalSpend ? { account: Money.div(originalSpend, n) } : {}) });
 }
 
 export interface TileSet {
@@ -285,16 +325,8 @@ async function tilesFor(from: string, to: string): Promise<TileSet> {
   ]);
   // One rate for the whole tile set: the effective rate of the range, so the label and every figure agree.
   const ectx = effectiveContext(ctx, spent);
-  // The ad account figure is the real sum of what Meta reported, and a cost per order is that sum / the count, never store x a rate.
-  const originalSpend = ectx ? spent.originals.get(ectx.currency) : undefined;
-  const perCount = (n: Money.MoneyInput) => moneyView(Money.div(spent.spend, n), ectx, { tenth: true, ...(originalSpend ? { account: Money.div(originalSpend, n) } : {}) });
-  const originals = [...spent.originals.entries()];
-  const spend: MoneyView = originalSpend
-    ? moneyView(spent.spend, ectx, { account: originalSpend })
-    : {
-      ...moneyView(spent.spend, null),
-      ...(originals.length === 1 && originals[0][0] !== store ? { account: Money.toApi(originals[0][1]), accountCurrency: originals[0][0] } : {}),
-    };
+  const perCount = (n: Money.MoneyInput) => perCountOf(spent, ectx, n);
+  const spend = spendFigure(spent, ectx, store);
 
   let projected: TileSet['projectedCostPerDelivered'];
   if (cpa.yieldPct === null) projected = { value: null, message: NOT_ENOUGH_CLOSED };
@@ -315,4 +347,100 @@ export async function tiles(range: { from: string; to: string }): Promise<TileSe
   const previousTo = shiftYmd(range.from, -1);
   const [current, previous] = await Promise.all([tilesFor(range.from, range.to), tilesFor(shiftYmd(previousTo, 1 - length), previousTo)]);
   return { ...current, previous };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Daily spend vs orders (M8, COD-74)
+// ---------------------------------------------------------------------------------------------
+
+/** Longest range `daily` answers, in days. */
+export const MAX_DAILY_DAYS = 366;
+
+export interface DailyRow {
+  date: string;
+  /** `store` is null with `waitingForRate` when the day has spend and no FX rate yet. */
+  spend: Omit<MoneyView, 'store'> & { store: string | null };
+  waitingForRate: boolean;
+  ordersPlaced: number;
+  /** Spend / orders placed, in the account currency when there is one. Null with no order or no spend. */
+  costPerOrder: MoneyView | null;
+}
+
+export interface DailyResult {
+  from: string;
+  to: string;
+  days: DailyRow[];
+  best: { date: string; costPerOrder: MoneyView } | null;
+  worst: { date: string; costPerOrder: MoneyView } | null;
+  average: { spend: MoneyView; ordersPerDay: number };
+}
+
+/** The figure a cost per order is ranked by: the account currency when shown, else the store currency. */
+const rankOf = (v: MoneyView): Money.Money => Money.parse(v.account ?? v.store);
+
+/**
+ * One row per day of [from, to] in the store time zone, days with nothing included. Spend of a day is converted at that
+ * day's rate (as the tiles and the ledger do); orders placed follow the tile rule (not digital, `createdAt` in that day).
+ * Best and worst day: lowest and highest cost per order among the days that have both spend and orders.
+ */
+export async function daily(range: { from: string; to: string }): Promise<DailyResult> {
+  const tenantId = resolveTenantId();
+  const zone = getStoreTimeZone(tenantId);
+  const length = Math.round((utcDateOfYmd(range.to).getTime() - utcDateOfYmd(range.from).getTime()) / 86_400_000) + 1;
+  if (length > MAX_DAILY_DAYS) throw new AppError(`The range must not be longer than ${MAX_DAILY_DAYS} days`, 400, 'INVALID_RANGE');
+  const dates = Array.from({ length }, (_, i) => shiftYmd(range.from, i));
+
+  const store = await getCurrency();
+  const [rows, orders, ctx] = await Promise.all([
+    spendRowsOf(range),
+    prisma.order.findMany({
+      where: { tenantId, deletedAt: null, status: { notIn: DIGITAL }, createdAt: { gte: startOfDay(range.from, zone), lt: startOfDay(shiftYmd(range.to, 1), zone) } },
+      select: { createdAt: true },
+    }),
+    accountContext(range.to),
+  ]);
+  const placed = new Map<string, number>();
+  for (const o of orders) {
+    const ymd = localDate(o.createdAt, zone);
+    placed.set(ymd, (placed.get(ymd) ?? 0) + 1);
+  }
+  const rowsByDay = new Map<string, SpendRow[]>();
+  for (const r of rows) {
+    const ymd = r.date.toISOString().slice(0, 10);
+    rowsByDay.set(ymd, [...(rowsByDay.get(ymd) ?? []), r]);
+  }
+
+  const spents = await Promise.all(dates.map((d) => spendOfRows(rowsByDay.get(d) ?? [], store)));
+  const days: DailyRow[] = dates.map((date, i) => {
+    const spent = spents[i];
+    const ectx = effectiveContext(ctx, spent);
+    const ordersPlaced = placed.get(date) ?? 0;
+    const waitingForRate = spent.waitingForRate > 0;
+    const hasSpend = spent.spend.gt(0);
+    return {
+      date,
+      spend: waitingForRate ? waitingFigure(spent, ectx, store) : hasSpend ? spendFigure(spent, ectx, store) : moneyView(Money.ZERO, ectx),
+      waitingForRate,
+      ordersPlaced,
+      costPerOrder: ordersPlaced > 0 && hasSpend ? perCountOf(spent, ectx, ordersPlaced) : null,
+    };
+  });
+
+  const ranked = days.filter((d): d is DailyRow & { costPerOrder: MoneyView } => d.costPerOrder !== null);
+  let best: DailyResult['best'] = null;
+  let worst: DailyResult['worst'] = null;
+  for (const d of ranked) {
+    if (!best || rankOf(d.costPerOrder).lt(rankOf(best.costPerOrder))) best = { date: d.date, costPerOrder: d.costPerOrder };
+    if (!worst || rankOf(d.costPerOrder).gt(rankOf(worst.costPerOrder))) worst = { date: d.date, costPerOrder: d.costPerOrder };
+  }
+
+  const total = await spendOfRows(rows, store);
+  const totalOrders = days.reduce((n, d) => n + d.ordersPlaced, 0);
+  return {
+    from: range.from, to: range.to, days, best, worst,
+    average: {
+      spend: perCountOf(total, effectiveContext(ctx, total), length),
+      ordersPerDay: Math.round((totalOrders / length) * 100) / 100,
+    },
+  };
 }
