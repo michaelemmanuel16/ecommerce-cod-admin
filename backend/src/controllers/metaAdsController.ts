@@ -3,6 +3,8 @@ import { AuthRequest } from '../types';
 import logger from '../utils/logger';
 import { isOAuthConfigured } from '../services/metaOAuthService';
 import { resolveTenantId } from '../utils/tenantContext';
+import prisma from '../utils/prisma';
+import { runAccountPull } from '../services/marketing/metaPullRunner';
 import {
   MetaAdsError,
   initiateAdsOAuth,
@@ -94,5 +96,21 @@ export async function remove(req: AuthRequest, res: Response): Promise<void> {
     res.json(await deleteAccount(accountId(req)));
   } catch (err: any) {
     fail(res, err, 'disconnect the ad account');
+  }
+}
+
+/** POST /api/meta-ads/accounts/:id/refresh  Pull the last 3 days now and post the spend. One call per account per 5 minutes (route). */
+export async function refresh(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const id = accountId(req);
+    if (!(await prisma.metaAdAccount.findFirst({ where: { id }, select: { id: true } }))) {
+      res.status(404).json({ error: 'Ad account not found' });
+      return;
+    }
+    const days = await runAccountPull(id);
+    const row = await prisma.metaAdAccount.findFirst({ where: { id }, select: { lastPulledAt: true, lastPullError: true } });
+    res.json({ lastPulledAt: row?.lastPulledAt ?? null, days, lastPullError: row?.lastPullError ?? null });
+  } catch (err: any) {
+    fail(res, err, 'refresh the ad account');
   }
 }

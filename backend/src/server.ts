@@ -123,6 +123,7 @@ import './queues/emailCampaignQueue';
 
 import { setupAgingCron } from './queues/agingQueue';
 import { setupFxRateCron } from './queues/fxRateQueue';
+import { setupMetaPullCron } from './queues/metaPullQueue';
 import { setupFinancialReconciliationCron } from './queues/financialReconciliationQueue';
 import { setupLedgerCheckCron } from './queues/ledgerCheckQueue';
 import { setupStockCheckCron } from './queues/stockCheckQueue';
@@ -385,6 +386,9 @@ if (process.env.NODE_ENV !== 'test') {
 
     // Setup daily FX rate refresh (M1-T30)
     await setupFxRateCron();
+
+    // Setup daily Meta Ads pull (M8-T06)
+    await setupMetaPullCron();
 
     // Setup Financial Reconciliation Cron Job
     await setupFinancialReconciliationCron();
