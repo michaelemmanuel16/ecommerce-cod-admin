@@ -48,4 +48,7 @@ router.get('/summary', canView, kpi.getSummary);
 router.get('/funnel', canView, [query('productId').optional().isInt({ min: 1 }).withMessage('productId must be a product id')], validate, kpi.getFunnel);
 router.get('/campaigns/performance', canView, kpi.getCampaignPerformance);
 
+// Per-product rows (M8-T14)
+router.get('/products', canView, kpi.getProducts);
+
 export default router;

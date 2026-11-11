@@ -21,7 +21,7 @@ import { resolveTenantId } from '../../utils/tenantContext';
 import { CONFIRMED, DIGITAL } from '../kpi/rates';
 import { getStoreTimeZone, shiftYmd, startOfDay, utcDateOfYmd } from '../kpi/dates';
 import { campaignKey, listCampaigns, resolveProducts } from './campaignMappingService';
-import { accountContext, dayRateLookup, maxCpaRaw, maxCpaView, type MaxCpa, type MoneyView } from './marketingKpiService';
+import { accountContext, dayRateLookup, maxCpa, maxCpaRaw, maxCpaView, moneyView, type MaxCpa, type MoneyView } from './marketingKpiService';
 
 /** A campaign at or under this percent of max CPA is Winning. */
 export const WINNING_PERCENT_OF_MAX_CPA = 85;
@@ -198,4 +198,61 @@ export async function campaigns(input: { from: string; to: string }): Promise<{ 
       projectedDeliveredLabel: META_PURCHASES_LABEL,
     },
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Products (M8-T14)
+// ---------------------------------------------------------------------------------------------
+
+export interface ProductPerformanceRow {
+  product: { id: number; name: string; archived: boolean };
+  /** Store spend of the product's campaigns in the range. */
+  spend: MoneyView;
+  purchases: number;
+  ordersPlaced: number;
+  confirmed: number;
+  delivered: number;
+  /** Order-to-cash yield percent of the product cohort (also in maxCpa). */
+  yieldPct: number | null;
+  maxCpa: MaxCpa;
+  /** Spend / orders placed, store currency. Null with no placed order. */
+  costPerPlaced: MoneyView | null;
+  lowData: boolean;
+}
+
+/** One row per product that has a mapped campaign in the range. Reuses campaigns(), funnel() and maxCpa(); no new math. */
+export async function products(input: { from: string; to: string }): Promise<{ products: ProductPerformanceRow[] }> {
+  const { campaigns: rows } = await campaigns(input);
+  const byProduct = new Map<number, { product: NonNullable<CampaignPerformanceRow['product']>; rows: CampaignPerformanceRow[] }>();
+  for (const r of rows) {
+    if (!r.product) continue;
+    const entry = byProduct.get(r.product.id) ?? { product: r.product, rows: [] };
+    entry.rows.push(r);
+    byProduct.set(r.product.id, entry);
+  }
+  const ctx = await accountContext(input.to);
+  const out = await Promise.all([...byProduct.values()].map(async ({ product, rows: rs }) => {
+    const [f, max] = await Promise.all([funnel({ ...input, productId: product.id }), maxCpa({ to: input.to, productId: product.id })]);
+    const storeSpend = Money.sum(rs.map((r) => r.spend.store));
+    // The account figure shows only when every campaign has one in the same currency
+    const currencies = new Set(rs.map((r) => r.spend.accountCurrency));
+    const oneAccountCurrency = currencies.size === 1 && !currencies.has(null);
+    const spend: MoneyView = {
+      store: Money.toApi(storeSpend),
+      account: oneAccountCurrency ? Money.toApi(Money.sum(rs.map((r) => r.spend.account!))) : null,
+      accountCurrency: oneAccountCurrency ? [...currencies][0] : null,
+      rate: null, rateDate: null,
+    };
+    return {
+      product: { id: product.id, name: product.name, archived: product.archived },
+      spend,
+      purchases: rs.reduce((n, r) => n + r.purchases, 0),
+      ordersPlaced: f.ordersPlaced, confirmed: f.confirmed, delivered: f.delivered,
+      yieldPct: max.yieldPct,
+      maxCpa: max,
+      costPerPlaced: f.ordersPlaced > 0 ? moneyView(Money.div(storeSpend, f.ordersPlaced), ctx) : null,
+      lowData: max.closedOrders < LOW_DATA_CLOSED_ORDERS,
+    };
+  }));
+  return { products: out.sort((x, y) => Money.compare(y.spend.store, x.spend.store)) };
 }
