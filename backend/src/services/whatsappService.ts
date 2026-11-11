@@ -193,7 +193,7 @@ export async function sendWhatsAppForOrder(
   templateKey: string,
   orderId: number,
   customLink?: string,
-): Promise<{ messageLogId: number; providerMessageId?: string }> {
+): Promise<{ messageLogId: number; providerMessageId?: string; sent?: boolean }> {
   if (!orderId) {
     throw new Error(`Cannot send WhatsApp: orderId is required (got ${orderId}). For manual workflow tests, provide an orderId in the input.`);
   }
@@ -356,12 +356,12 @@ class WhatsAppService {
     messageLogId: number,
     formattedPhone: string,
     payload: object,
-  ): Promise<string | undefined> {
+  ): Promise<{ sent: boolean; providerMessageId?: string }> {
     let config = await getConfig();
 
     if (!config.accessToken || !config.phoneNumberId || !config.isEnabled) {
       logger.warn('WhatsApp not configured — message logged but not sent', { messageLogId });
-      return undefined;
+      return { sent: false };
     }
 
     // On-demand token refresh for OAuth mode — only triggers when cron has failed
@@ -409,7 +409,7 @@ class WhatsAppService {
       });
 
       logger.info('WhatsApp message sent', { messageLogId, to: formattedPhone, providerMessageId });
-      return providerMessageId;
+      return { sent: true, providerMessageId };
     } catch (error: any) {
       await prisma.messageLog.update({
         where: { id: messageLogId },
@@ -427,7 +427,7 @@ class WhatsAppService {
   /**
    * Send a template message via WhatsApp Business Cloud API.
    */
-  async sendTemplate(options: SendTemplateOptions): Promise<{ messageLogId: number; providerMessageId?: string }> {
+  async sendTemplate(options: SendTemplateOptions): Promise<{ messageLogId: number; providerMessageId?: string; sent: boolean }> {
     const {
       to,
       templateName,
@@ -489,14 +489,14 @@ class WhatsAppService {
       },
     };
 
-    const providerMessageId = await this.dispatch(messageLog.id, formattedPhone, payload);
-    return { messageLogId: messageLog.id, providerMessageId };
+    const { sent, providerMessageId } = await this.dispatch(messageLog.id, formattedPhone, payload);
+    return { messageLogId: messageLog.id, providerMessageId, sent };
   }
 
   /**
    * Send a free-form text message via WhatsApp.
    */
-  async sendText(options: SendTextOptions): Promise<{ messageLogId: number; providerMessageId?: string }> {
+  async sendText(options: SendTextOptions): Promise<{ messageLogId: number; providerMessageId?: string; sent: boolean }> {
     const { to, body, logBody, orderId, customerId } = options;
     const formattedPhone = formatPhoneNumber(to);
 
@@ -519,8 +519,8 @@ class WhatsAppService {
       text: { body },
     };
 
-    const providerMessageId = await this.dispatch(messageLog.id, formattedPhone, payload);
-    return { messageLogId: messageLog.id, providerMessageId };
+    const { sent, providerMessageId } = await this.dispatch(messageLog.id, formattedPhone, payload);
+    return { messageLogId: messageLog.id, providerMessageId, sent };
   }
 
   /**

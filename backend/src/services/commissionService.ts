@@ -174,13 +174,24 @@ export async function postEntry(
 export async function voidOpenEntriesForOrder(tx: TransactionClient, orderId: number, actorId: () => Promise<number>): Promise<number> {
   const tenantId = resolveTenantId();
 
-  // 1. Lock and void open entries (pending / earned). A deduction (amount < 0) is never voided here: a repeat call
-  // would void it and post a second one, so the GL would take the commission back twice.
-  const open = await tx.$queryRaw<{ id: number; tenantId: string; orderId: number | null; amount: Money.Money; journalEntryId: number | null }[]>`
-    SELECT id, tenant_id AS "tenantId", order_id AS "orderId", amount, journal_entry_id AS "journalEntryId"
+  // 1. Lock open and paid entries in one query (amount > 0). A deduction (amount < 0) is never voided here: a repeat
+  // call would void it and post a second one, so the GL would take the commission back twice.
+  const locked = await tx.$queryRaw<{
+    id: number;
+    tenantId: string;
+    orderId: number;
+    userId: number;
+    kind: CommissionKind;
+    status: string;
+    amount: Money.Money;
+    journalEntryId: number | null;
+  }[]>`
+    SELECT id, tenant_id AS "tenantId", order_id AS "orderId", user_id AS "userId", kind, status, amount, journal_entry_id AS "journalEntryId"
     FROM commission_entries
-    WHERE order_id = ${orderId} AND tenant_id = ${tenantId} AND status IN ('pending', 'earned') AND amount > 0
+    WHERE order_id = ${orderId} AND tenant_id = ${tenantId} AND status IN ('pending', 'earned', 'paid') AND amount > 0
     ORDER BY id FOR UPDATE`;
+  const open = locked.filter((e) => e.status !== 'paid');
+  const paid = locked.filter((e) => e.status === 'paid');
 
   if (open.length > 0) {
     const posted = await tx.journalEntry.findMany({
@@ -197,21 +208,7 @@ export async function voidOpenEntriesForOrder(tx: TransactionClient, orderId: nu
     logger.info(`Voided ${open.length} commission entries of order ${orderId}`);
   }
 
-  // 2. Lock paid entries with amount > 0
-  const paid = await tx.$queryRaw<{
-    id: number;
-    tenantId: string;
-    orderId: number;
-    userId: number;
-    kind: CommissionKind;
-    amount: Money.Money;
-    journalEntryId: number | null;
-  }[]>`
-    SELECT id, tenant_id AS "tenantId", order_id AS "orderId", user_id AS "userId", kind, amount, journal_entry_id AS "journalEntryId"
-    FROM commission_entries
-    WHERE order_id = ${orderId} AND tenant_id = ${tenantId} AND status = 'paid' AND amount > 0
-    ORDER BY id FOR UPDATE`;
-
+  // 2. Paid entries get deductions
   if (paid.length > 0) {
     // Group paid entries by (userId, kind)
     const groups = new Map<string, typeof paid>();
@@ -233,7 +230,6 @@ export async function voidOpenEntriesForOrder(tx: TransactionClient, orderId: nu
 
     for (const groupEntries of groups.values()) {
       const { userId, kind } = groupEntries[0];
-      // Check if deduction already exists: orderId, userId, kind, amount < 0, status <> 'void'
       const existingDeduction = await tx.commissionEntry.findFirst({
         where: {
           tenantId,
@@ -249,7 +245,7 @@ export async function voidOpenEntriesForOrder(tx: TransactionClient, orderId: nu
         const totalPaid = Money.sum(groupEntries.map((e) => e.amount));
         const deductionAmount = totalPaid.negated();
 
-        let deduction = await tx.commissionEntry.create({
+        const deduction = await tx.commissionEntry.create({
           data: {
             tenantId,
             orderId,
@@ -270,7 +266,7 @@ export async function voidOpenEntriesForOrder(tx: TransactionClient, orderId: nu
             { id: deduction.id, tenantId, orderId, amount: totalPaid },
             await actorId()
           );
-          deduction = await tx.commissionEntry.update({
+          await tx.commissionEntry.update({
             where: { id: deduction.id },
             data: { journalEntryId: reversalJournal.id },
           });

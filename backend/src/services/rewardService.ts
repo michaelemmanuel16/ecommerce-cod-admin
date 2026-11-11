@@ -33,12 +33,12 @@ import type { RewardSettingsInput } from '../validators/rewardSchema';
  */
 
 export const REP_PAY_DEFAULTS = { baseCommission: '8.00', upsellPercent: '10.00' } as const;
-const SETTINGS_NOTICE = 'Saved. Tier changes apply from the next month close. Commission and upsell changes apply to orders delivered after the save.';
+const SETTINGS_NOTICE = 'Saved. Tier changes apply from the next month close. Commission and upsell changes apply to orders confirmed after the save.';
 
 /**
  * The rep pay of a stored settings object, with the defaults for what is not set: per delivered order the rep confirmed by call,
- * and the share of the extra value they added. Pure. GL posting still reads `User.commissionAmount` until M6-T10 / M7 switch
- * commission entries to this setting; until then a change here does not move a posted amount.
+ * and the share of the extra value they added. Pure. Commission entries read this setting when they are created, so a change
+ * does not move an amount already booked.
  */
 export const repPayOf = (stored: RewardFeatures) => ({
   baseCommission: Money.parse(stored.baseCommission ?? REP_PAY_DEFAULTS.baseCommission),
@@ -51,15 +51,9 @@ export const repPayOf = (stored: RewardFeatures) => ({
  */
 export async function getRepPay(
   client: TransactionClient | null,
-  tenantId: string | null | undefined
+  _tenantId: string | null | undefined
 ): Promise<{ base: Money.Money; upsellRate: Prisma.Decimal }> {
-  const tid = resolveTenantId(tenantId);
-  const config = await (client ?? prisma).systemConfig.findFirst({
-    where: { tenantId: tid },
-    select: { features: true },
-  });
-  const stored = ((config?.features ?? {}) as { rewards?: RewardFeatures }).rewards ?? {};
-  const pay = repPayOf(stored);
+  const pay = repPayOf(await getRewardFeatures(client));
   return {
     base: pay.baseCommission,
     upsellRate: pay.upsellPercent.div(100),

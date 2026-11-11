@@ -444,7 +444,7 @@ export async function getEarnings(actor: Requester, query: RepEarningsQuery = {}
   }
 
   // Same entries as payoutService.getOwed (status: earned or paid) plus void entries for order reversal lines
-  const [entries, payouts, openOrdersCount] = await Promise.all([
+  const [entries, payouts, openOrdersCount, repPay] = await Promise.all([
     prisma.commissionEntry.findMany({
       // Pending entries (confirmed, not yet delivered) are not earnings and get no line.
       where: { tenantId, userId: targetRepId, status: { in: ['earned', 'paid', 'void'] } },
@@ -472,6 +472,7 @@ export async function getEarnings(actor: Requester, query: RepEarningsQuery = {}
         status: { in: ['confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery'] },
       },
     }),
+    rewardService.getRepPay(null, tenantId),
   ]);
 
   // The one owed rule from payoutService: summarize()
@@ -480,7 +481,6 @@ export async function getEarnings(actor: Requester, query: RepEarningsQuery = {}
   const overpaid = isOverpaid ? Money.toApi(summary.owed.abs()) : null;
   const owed = Money.toApi(summary.owed);
 
-  const repPay = await rewardService.getRepPay(null, tenantId);
   const formattedBaseCommission = Money.formatWithSign(repPay.base, currency);
   const openOrdersNote = `${openOrdersCount} of your confirmed orders are still open, each adds ${formattedBaseCommission} when delivered.`;
 

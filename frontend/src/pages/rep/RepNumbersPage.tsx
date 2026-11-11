@@ -2,20 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { repService, type RepNumbersResult } from '../../services/rep.service';
 import { formatCurrency } from '../../utils/format';
 import { RepPageFrame, RepLoadState } from './RepPageFrame';
+import { monthName } from '../targets/model';
 
 function ordinal(n: number): string {
   const s = ['th', 'st', 'nd', 'rd'];
   const v = n % 100;
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
-}
-
-function formatPeriodMonth(period?: string | null): string {
-  if (!period) return '';
-  const m = /^(\d{4})-(\d{2})$/.exec(period.trim());
-  if (!m) return period;
-  const y = Number(m[1]);
-  const month = Number(m[2]);
-  return new Date(Date.UTC(y, month - 1, 1)).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 }
 
 export const RepNumbersPage: React.FC = () => {
@@ -98,7 +90,7 @@ export const RepNumbersPage: React.FC = () => {
       id="numbers"
       ariaLabel="My numbers"
       title="My numbers"
-      subtitle={`${data?.period ? `${formatPeriodMonth(data.period)} · ` : ''}How your calls and orders are doing.`}
+      subtitle={`${data?.period ? `${monthName(data.period)} ${data.period.slice(0, 4)} · ` : ''}How your calls and orders are doing.`}
     >
       <div className="card">
         {/* KPI Grid */}

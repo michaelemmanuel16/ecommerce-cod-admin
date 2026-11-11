@@ -142,6 +142,15 @@ export const handleWebhook = async (req: AuthRequest, res: Response): Promise<vo
   }
 };
 
+const PAYLOAD_KIND = { CONFIRM: 'yes', CHANGE: 'change', CANCEL: 'cancel' } as const;
+
+/** Reply text per response kind. A kind with no entry (typed "no") gets no reply. */
+const REPLY_TEXT: Record<string, ((firstName: string, orderId: number) => string) | undefined> = {
+  yes: (name, id) => `Thank you, ${name}. Your order #${id} is confirmed. We will send it out for delivery.`,
+  change: (name) => `Thank you, ${name}. One of our team will call you soon to make the change.`,
+  cancel: (name) => `Thank you, ${name}. One of our team will call you shortly about your order.`,
+};
+
 /**
  * M7-T09: Process an inbound WhatsApp message.
  * - Idempotent by providerMessageId (message.id)
@@ -174,9 +183,7 @@ async function processInboundWhatsappMessage(tenantId: string, message: any): Pr
   }
 
   if (buttonPayload) {
-    if (buttonPayload === 'CONFIRM') responseKind = 'yes';
-    else if (buttonPayload === 'CHANGE') responseKind = 'change';
-    else if (buttonPayload === 'CANCEL') responseKind = 'cancel';
+    responseKind = PAYLOAD_KIND[buttonPayload as keyof typeof PAYLOAD_KIND] ?? null;
   }
 
   let rawText = '';
@@ -302,79 +309,36 @@ async function processInboundWhatsappMessage(tenantId: string, message: any): Pr
 
     if (responseKind === 'yes') {
       await orderService.confirmByCustomer(targetOrder.id);
-      await prisma.confirmToken.updateMany({
-        where: { orderId: targetOrder.id, usedAt: null },
-        data: { usedAt: new Date(), response: 'yes' },
-      });
-      try {
-        await whatsappService.sendText({
-          to: fromPhone,
-          body: `Thank you, ${firstName}. Your order #${targetOrder.id} is confirmed. We will send it out for delivery.`,
-          orderId: targetOrder.id,
-          customerId: targetOrder.customer?.id ?? customer?.id,
-        });
-      } catch (err: any) {
-        logger.error('Failed to send confirmation reply WhatsApp message', { error: err.message, orderId: targetOrder.id });
-      }
-    } else if (responseKind === 'change') {
+    } else {
       await prisma.order.update({
         where: { id: targetOrder.id },
         data: {
           saidNo: true,
           requiresManualCall: true,
-          customerResponse: 'change',
+          customerResponse: responseKind,
         },
       });
-      await prisma.confirmToken.updateMany({
-        where: { orderId: targetOrder.id, usedAt: null },
-        data: { usedAt: new Date(), response: 'change' },
-      });
+    }
+    await prisma.confirmToken.updateMany({
+      where: { orderId: targetOrder.id, usedAt: null },
+      data: { usedAt: new Date(), response: responseKind },
+    });
+
+    const replyText = REPLY_TEXT[responseKind];
+    if (replyText) {
       try {
-        await whatsappService.sendText({
+        const reply = await whatsappService.sendText({
           to: fromPhone,
-          body: `Thank you, ${firstName}. One of our team will call you soon to make the change.`,
+          body: replyText(firstName, targetOrder.id),
           orderId: targetOrder.id,
           customerId: targetOrder.customer?.id ?? customer?.id,
         });
+        if (!reply.sent) {
+          logger.warn(`${responseKind} reply WhatsApp message not sent: WhatsApp is not set up`, { orderId: targetOrder.id, customerId: targetOrder.customer?.id ?? customer?.id });
+        }
       } catch (err: any) {
-        logger.error('Failed to send change reply WhatsApp message', { error: err.message, orderId: targetOrder.id });
+        logger.error(`Failed to send ${responseKind === 'yes' ? 'confirmation' : responseKind} reply WhatsApp message`, { error: err.message, orderId: targetOrder.id });
       }
-    } else if (responseKind === 'cancel') {
-      await prisma.order.update({
-        where: { id: targetOrder.id },
-        data: {
-          saidNo: true,
-          requiresManualCall: true,
-          customerResponse: 'cancel',
-        },
-      });
-      await prisma.confirmToken.updateMany({
-        where: { orderId: targetOrder.id, usedAt: null },
-        data: { usedAt: new Date(), response: 'cancel' },
-      });
-      try {
-        await whatsappService.sendText({
-          to: fromPhone,
-          body: `Thank you, ${firstName}. One of our team will call you shortly about your order.`,
-          orderId: targetOrder.id,
-          customerId: targetOrder.customer?.id ?? customer?.id,
-        });
-      } catch (err: any) {
-        logger.error('Failed to send cancel reply WhatsApp message', { error: err.message, orderId: targetOrder.id });
-      }
-    } else if (responseKind === 'no') {
-      await prisma.order.update({
-        where: { id: targetOrder.id },
-        data: {
-          saidNo: true,
-          requiresManualCall: true,
-          customerResponse: 'no',
-        },
-      });
-      await prisma.confirmToken.updateMany({
-        where: { orderId: targetOrder.id, usedAt: null },
-        data: { usedAt: new Date(), response: 'no' },
-      });
     }
   }
 
@@ -456,6 +420,9 @@ export const sendMessage = async (req: AuthRequest, res: Response): Promise<void
       customerId: customerId ? parseInt(customerId, 10) : undefined,
     });
 
+    if (!result.sent) {
+      logger.warn('Manual WhatsApp message not sent: WhatsApp is not set up', { orderId, customerId, messageLogId: result.messageLogId });
+    }
     res.status(201).json(result);
   } catch (error: any) {
     logger.error('Error sending WhatsApp message', { error: error.message });
@@ -577,6 +544,11 @@ export const testSend = async (req: AuthRequest, res: Response): Promise<void> =
       templateName: templateConfig.templateName,
       bodyParams: templateConfig.bodyParams(dummyContext),
     });
+
+    if (!result.sent) {
+      res.status(409).json({ error: 'WhatsApp is not set up' });
+      return;
+    }
 
     res.status(200).json({
       success: true,

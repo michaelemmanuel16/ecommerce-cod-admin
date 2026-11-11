@@ -39,8 +39,8 @@ describe('M7-T08: Auto-confirm send and public confirmation API', () => {
       orderType: 'physical',
     });
 
-    const sendWhatsAppSpy = jest.spyOn(whatsappService, 'sendTemplate').mockResolvedValue({ messageLogId: 1 } as any);
-    const sendSmsSpy = jest.spyOn(smsService, 'sendSms').mockResolvedValue('msg-id-1' as any);
+    const sendWhatsAppSpy = jest.spyOn(whatsappService, 'sendTemplate').mockResolvedValue({ messageLogId: 1, sent: true } as any);
+    const sendSmsSpy = jest.spyOn(smsService, 'sendSms').mockResolvedValue({ messageLogId: 1, providerMessageId: 'msg-id-1', sent: true } as any);
 
     // The order.created path: no workflow row, so nothing runs
     await runInTenant(tenantId, () => workflowService.triggerOrderCreatedWorkflows({ id: order.id }));
@@ -84,7 +84,7 @@ describe('M7-T08: Auto-confirm send and public confirmation API', () => {
       },
     });
 
-    const sendWhatsAppSpy = jest.spyOn(whatsappService, 'sendTemplate').mockResolvedValue({ messageLogId: 2 } as any);
+    const sendWhatsAppSpy = jest.spyOn(whatsappService, 'sendTemplate').mockResolvedValue({ messageLogId: 2, sent: true } as any);
 
     const customer = await prismaBase.customer.findUniqueOrThrow({ where: { id: customerId } });
     const result = await sendAutoConfirmForOrder(order.id, tenantId);
@@ -164,7 +164,7 @@ describe('M7-T08: Auto-confirm send and public confirmation API', () => {
       },
     });
 
-    const sendWhatsAppSpy = jest.spyOn(whatsappService, 'sendTemplate').mockResolvedValue({ messageLogId: 10 } as any);
+    const sendWhatsAppSpy = jest.spyOn(whatsappService, 'sendTemplate').mockResolvedValue({ messageLogId: 10, sent: true } as any);
 
     const customer = await prismaBase.customer.findUniqueOrThrow({ where: { id: customerId } });
     await sendAutoConfirmForOrder(order.id, tenantId);
@@ -217,7 +217,7 @@ describe('M7-T08: Auto-confirm send and public confirmation API', () => {
         },
       });
 
-      const sendSmsSpy = jest.spyOn(smsService, 'sendSms').mockResolvedValue('sms-id-exact' as any);
+      const sendSmsSpy = jest.spyOn(smsService, 'sendSms').mockResolvedValue({ messageLogId: 1, providerMessageId: 'sms-id-exact', sent: true } as any);
 
       await sendAutoConfirmForOrder(order.id, tenantId, { channel: 'sms' });
 
@@ -244,8 +244,8 @@ describe('M7-T08: Auto-confirm send and public confirmation API', () => {
       paymentMethod: 'cod',
       orderType: 'physical',
     });
-    const waSpy = jest.spyOn(whatsappService, 'sendTemplate').mockResolvedValue({ messageLogId: 30 } as any);
-    const smsSpy = jest.spyOn(smsService, 'sendSms').mockResolvedValue('x' as any);
+    const waSpy = jest.spyOn(whatsappService, 'sendTemplate').mockResolvedValue({ messageLogId: 30, sent: true } as any);
+    const smsSpy = jest.spyOn(smsService, 'sendSms').mockResolvedValue({ messageLogId: 1, providerMessageId: 'x', sent: true } as any);
 
     const result = await sendAutoConfirmForOrder(order.id, 'some-other-tenant');
 
@@ -315,7 +315,7 @@ describe('M7-T08: Auto-confirm send and public confirmation API', () => {
     });
 
     const sendWhatsAppSpy = jest.spyOn(whatsappService, 'sendTemplate').mockRejectedValue(new Error('WhatsApp connection error'));
-    const sendSmsSpy = jest.spyOn(smsService, 'sendSms').mockResolvedValue('sms-fallback-id' as any);
+    const sendSmsSpy = jest.spyOn(smsService, 'sendSms').mockResolvedValue({ messageLogId: 1, providerMessageId: 'sms-fallback-id', sent: true } as any);
 
     const result = await sendAutoConfirmForOrder(order.id, tenantId);
 
@@ -363,8 +363,8 @@ describe('M7-T08: Auto-confirm send and public confirmation API', () => {
     it('order_created workflow sends the template once; a second run is skipped', async () => {
       await mkAutoConfirmWorkflow();
       const order = await mkPending();
-      const waSpy = jest.spyOn(whatsappService, 'sendTemplate').mockResolvedValue({ messageLogId: 21 } as any);
-      const smsSpy = jest.spyOn(smsService, 'sendSms').mockResolvedValue('sms-x' as any);
+      const waSpy = jest.spyOn(whatsappService, 'sendTemplate').mockResolvedValue({ messageLogId: 21, sent: true } as any);
+      const smsSpy = jest.spyOn(smsService, 'sendSms').mockResolvedValue({ messageLogId: 1, providerMessageId: 'sms-x', sent: true } as any);
 
       await runCreated(order.id);
       expect(waSpy).toHaveBeenCalledTimes(1);
@@ -380,8 +380,8 @@ describe('M7-T08: Auto-confirm send and public confirmation API', () => {
     it("config channel 'sms' sends the SMS text, not the template", async () => {
       await mkAutoConfirmWorkflow('sms');
       const order = await mkPending();
-      const waSpy = jest.spyOn(whatsappService, 'sendTemplate').mockResolvedValue({ messageLogId: 22 } as any);
-      const smsSpy = jest.spyOn(smsService, 'sendSms').mockResolvedValue('sms-y' as any);
+      const waSpy = jest.spyOn(whatsappService, 'sendTemplate').mockResolvedValue({ messageLogId: 22, sent: true } as any);
+      const smsSpy = jest.spyOn(smsService, 'sendSms').mockResolvedValue({ messageLogId: 1, providerMessageId: 'sms-y', sent: true } as any);
 
       await runCreated(order.id);
       expect(waSpy).not.toHaveBeenCalled();

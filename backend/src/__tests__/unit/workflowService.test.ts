@@ -25,9 +25,9 @@ jest.mock('../../services/assignmentService', () => ({
 // Mock the SMS service
 jest.mock('../../services/smsService', () => ({
   smsService: {
-    sendSms: jest.fn().mockResolvedValue({ messageLogId: 1 }),
+    sendSms: jest.fn().mockResolvedValue({ messageLogId: 1, sent: true }),
   },
-  sendSmsForOrder: jest.fn().mockResolvedValue({ messageLogId: 1 }),
+  sendSmsForOrder: jest.fn().mockResolvedValue({ messageLogId: 1, sent: true }),
   clearSmsConfigCache: jest.fn(),
 }));
 

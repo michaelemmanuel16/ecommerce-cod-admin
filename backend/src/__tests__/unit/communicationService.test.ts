@@ -174,8 +174,8 @@ describe('CommunicationService', () => {
       ];
       (prismaMock.customer.findMany as jest.Mock).mockResolvedValue(activeCustomers);
       (smsService.sendSms as jest.Mock)
-        .mockResolvedValueOnce({ messageLogId: 101 })
-        .mockResolvedValueOnce({ messageLogId: 102 });
+        .mockResolvedValueOnce({ messageLogId: 101, sent: true })
+        .mockResolvedValueOnce({ messageLogId: 102, sent: true });
 
       const result = await communicationService.bulkSendSms([1, 2, 3], 'Hello!');
 
@@ -199,7 +199,7 @@ describe('CommunicationService', () => {
       ];
       (prismaMock.customer.findMany as jest.Mock).mockResolvedValue(activeCustomers);
       (smsService.sendSms as jest.Mock)
-        .mockResolvedValueOnce({ messageLogId: 101 })
+        .mockResolvedValueOnce({ messageLogId: 101, sent: true })
         .mockRejectedValueOnce(new Error('Network error'));
 
       const result = await communicationService.bulkSendSms([1, 2], 'Hello!');
@@ -226,7 +226,7 @@ describe('CommunicationService', () => {
         { id: 1, firstName: 'John', lastName: 'Doe', phoneNumber: '+233241111111' },
       ];
       (prismaMock.customer.findMany as jest.Mock).mockResolvedValue(activeCustomers);
-      (whatsappService.sendTemplate as jest.Mock).mockResolvedValue({ messageLogId: 201 });
+      (whatsappService.sendTemplate as jest.Mock).mockResolvedValue({ messageLogId: 201, sent: true });
 
       const result = await communicationService.bulkSendWhatsApp([1, 2], 'confirmed');
 
@@ -250,7 +250,7 @@ describe('CommunicationService', () => {
         { id: 1, firstName: 'Jane', lastName: 'Smith', phoneNumber: '+233242222222' },
       ];
       (prismaMock.customer.findMany as jest.Mock).mockResolvedValue(activeCustomers);
-      (whatsappService.sendTemplate as jest.Mock).mockResolvedValue({ messageLogId: 202 });
+      (whatsappService.sendTemplate as jest.Mock).mockResolvedValue({ messageLogId: 202, sent: true });
 
       await communicationService.bulkSendWhatsApp([1], 'confirmed', 'https://example.com');
 
@@ -275,7 +275,7 @@ describe('CommunicationService', () => {
       ];
       (prismaMock.customer.findMany as jest.Mock).mockResolvedValue(activeCustomers);
       (whatsappService.sendTemplate as jest.Mock)
-        .mockResolvedValueOnce({ messageLogId: 201 })
+        .mockResolvedValueOnce({ messageLogId: 201, sent: true })
         .mockRejectedValueOnce(new Error('API rate limit'));
 
       const result = await communicationService.bulkSendWhatsApp([1, 2], 'confirmed');

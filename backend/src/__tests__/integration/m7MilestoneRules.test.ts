@@ -54,7 +54,7 @@ jest.mock('../../services/workflowService', () => ({
 
 // Stub WhatsApp and SMS provider send functions (never send real messages)
 const mockSendText = jest.fn().mockImplementation(async () => ({ success: true, messageId: `wa-mock-${Date.now()}` }));
-const mockSendTemplate = jest.fn().mockImplementation(async () => ({ success: true, messageId: `wa-tpl-mock-${Date.now()}` }));
+const mockSendTemplate = jest.fn().mockImplementation(async () => ({ success: true, sent: true, messageId: `wa-tpl-mock-${Date.now()}` }));
 jest.mock('../../services/whatsappService', () => {
   const actual = jest.requireActual('../../services/whatsappService') as any;
   return {
@@ -67,7 +67,7 @@ jest.mock('../../services/whatsappService', () => {
   };
 });
 
-const mockSendSms = jest.fn().mockImplementation(async () => ({ success: true, messageId: `sms-mock-${Date.now()}` }));
+const mockSendSms = jest.fn().mockImplementation(async () => ({ success: true, sent: true, messageId: `sms-mock-${Date.now()}` }));
 jest.mock('../../services/smsService', () => {
   const actual = jest.requireActual('../../services/smsService') as any;
   return {
@@ -847,6 +847,7 @@ describe('COD-69, M7-T22: Milestone Integration Tests', () => {
       await stockUp(tenant, product.id, 100);
 
       mockSendTemplate.mockClear();
+      mockSendTemplate.mockResolvedValue({ messageLogId: 1, sent: true }); // resetMocks wipes the default implementation
 
       // Create COD order using orderService at night (no operating hours hold)
       const order = await runInTenant(tenant, () =>

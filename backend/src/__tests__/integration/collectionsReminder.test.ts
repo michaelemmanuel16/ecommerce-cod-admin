@@ -60,7 +60,7 @@ describe('POST /api/financial/agent-aging/:agentId/remind', () => {
     const p = (await mkPartner(tenantId, 'Kofi', { daysToPay: 2, phone: PHONE })).id;
     await delivered(p, 1, 100);
     await delivered(p, 5, 50);
-    sendText.mockResolvedValueOnce({ messageLogId: 1, providerMessageId: 'wamid.1' });
+    sendText.mockResolvedValueOnce({ messageLogId: 1, providerMessageId: 'wamid.1', sent: true });
 
     const res = await remind(p);
     expect(res.status).toBe(200);
@@ -76,7 +76,7 @@ describe('POST /api/financial/agent-aging/:agentId/remind', () => {
   it('says sent: false when WhatsApp is not connected (the text is only logged)', async () => {
     const p = (await mkPartner(tenantId, 'Esi', { phone: PHONE })).id;
     await delivered(p, 1);
-    sendText.mockResolvedValueOnce({ messageLogId: 2 });
+    sendText.mockResolvedValueOnce({ messageLogId: 2, sent: false });
     const res = await remind(p);
     expect(res.status).toBe(200);
     expect(res.body.sent).toBe(false);

@@ -1,5 +1,5 @@
 /* Reports (M3-T60, M3-T61, F-1050 to F-1053). Copied from the style block of docs/mockups/v2/reports.html and
-   docs/mockups/v2/app.css (.insight .seg .sw .bars .bar-row .donutrow .dt), with the `.v2` scope added.
+   docs/mockups/v2/app.css (.insight .seg .sw (as .cmpsw) .bars .bar-row .donutrow .dt), with the `.v2` scope added.
    Colours come from tokens.css only. Rules with no mockup counterpart are marked "new". */
 
 .v2 .reports > * + *{margin-top:16px}
@@ -27,13 +27,13 @@
 .v2 .rangetext{margin-left:auto;text-align:right}
 .v2 .rangetext .ink3{font-size:12.5px}
 .v2 .rangeerr{color:var(--coral);font-weight:600}
-.v2 .sw{display:inline-flex;align-items:center;gap:10px;font-weight:600;cursor:pointer}
-.v2 .sw input{position:absolute;opacity:0;width:1px;height:1px}
-.v2 .sw .tg{width:38px;height:22px;border-radius:99px;background:var(--line);position:relative;transition:background .15s;flex:none}
-.v2 .sw .tg::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--card);box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .15s}
-.v2 .sw input:checked+.tg{background:var(--pine)}
-.v2 .sw input:checked+.tg::after{transform:translateX(16px)}
-.v2 .sw input:focus-visible+.tg{outline:2px solid var(--pine);outline-offset:2px}
+.v2 .cmpsw{display:inline-flex;align-items:center;gap:10px;font-weight:600;cursor:pointer}
+.v2 .cmpsw input{position:absolute;opacity:0;width:1px;height:1px}
+.v2 .cmpsw .tg{width:38px;height:22px;border-radius:99px;background:var(--line);position:relative;transition:background .15s;flex:none}
+.v2 .cmpsw .tg::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--card);box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .15s}
+.v2 .cmpsw input:checked+.tg{background:var(--pine)}
+.v2 .cmpsw input:checked+.tg::after{transform:translateX(16px)}
+.v2 .cmpsw input:focus-visible+.tg{outline:2px solid var(--pine);outline-offset:2px}
 
 /* agent card */
 .v2 .insight{border:1px solid var(--line);border-radius:14px;padding:12px 14px}

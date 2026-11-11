@@ -66,6 +66,11 @@ export async function testSend(req: Request, res: Response): Promise<void> {
       body: 'This is a test message from COD Admin. If you received this, SMS is configured correctly!',
     });
 
+    if (!result.sent) {
+      res.status(409).json({ error: 'SMS is not set up' });
+      return;
+    }
+
     res.json({
       success: true,
       messageLogId: result.messageLogId,

@@ -160,7 +160,11 @@ export const communicationService = {
           body: message,
           customerId: customer.id,
         });
-        results.push({ customerId: customer.id, success: true, messageLogId: result.messageLogId });
+        if (!result.sent) {
+          results.push({ customerId: customer.id, success: false, messageLogId: result.messageLogId, error: 'not set up' });
+        } else {
+          results.push({ customerId: customer.id, success: true, messageLogId: result.messageLogId });
+        }
       } catch (error: any) {
         results.push({ customerId: customer.id, success: false, error: error.message });
       }
@@ -200,7 +204,11 @@ export const communicationService = {
           bodyParams,
           customerId: customer.id,
         });
-        results.push({ customerId: customer.id, success: true, messageLogId: result.messageLogId });
+        if (!result.sent) {
+          results.push({ customerId: customer.id, success: false, messageLogId: result.messageLogId, error: 'not set up' });
+        } else {
+          results.push({ customerId: customer.id, success: true, messageLogId: result.messageLogId });
+        }
       } catch (error: any) {
         results.push({ customerId: customer.id, success: false, error: error.message });
       }

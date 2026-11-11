@@ -6,16 +6,7 @@ import { resolveTenantId, runInTenant, withoutTenant } from '../utils/tenantCont
 import { whatsappService } from './whatsappService';
 import { smsService } from './smsService';
 import { fullName } from '../utils/nameUtils';
-
-/**
- * whatsappService/smsService return quietly when their channel is not set up:
- * the message log stays 'pending' and nothing is sent. Treat that as a failed send.
- */
-async function assertDispatched(result: { messageLogId?: number } | undefined, channel: string): Promise<void> {
-  if (typeof result?.messageLogId !== 'number') return;
-  const log = await prisma.messageLog.findUnique({ where: { id: result.messageLogId }, select: { status: true } });
-  if (log?.status === 'pending') throw new Error(`${channel} is not set up: message logged but not sent`);
-}
+import { packageLabelFor } from './upsellService';
 
 export interface AutoConfirmResult {
   token: string;
@@ -79,18 +70,6 @@ export async function sendAutoConfirmForOrder(
     // 4. Exactly one send per order
     if (order.autoConfirmSentAt !== null) return null;
 
-    // 5. Tenant name for the SMS prefix
-    const [config, tenant] = await Promise.all([
-      prisma.systemConfig.findUnique({
-        where: { tenantId: tId },
-        select: { businessName: true },
-      }),
-      prisma.tenant.findUnique({
-        where: { id: tId },
-        select: { name: true },
-      }),
-    ]);
-
     const phone = order.customer.phoneNumber;
     if (!phone) return null;
 
@@ -105,6 +84,18 @@ export async function sendAutoConfirmForOrder(
       data: { autoConfirmSentAt: new Date() },
     });
     if (claimed.count === 0) return null; // Another process already claimed it
+
+    // Tenant name for the SMS prefix
+    const [config, tenant] = await Promise.all([
+      prisma.systemConfig.findUnique({
+        where: { tenantId: tId },
+        select: { businessName: true },
+      }),
+      prisma.tenant.findUnique({
+        where: { id: tId },
+        select: { name: true },
+      }),
+    ]);
 
     // Create ConfirmToken
     const token = crypto.randomBytes(24).toString('hex');
@@ -123,11 +114,7 @@ export async function sendAutoConfirmForOrder(
     // Package label and product name (COD-193 M7-R1)
     const firstItem = order.orderItems[0];
     const productName = firstItem?.product?.name || 'Product';
-    const firstItemMeta = (firstItem?.metadata ?? {}) as Record<string, any>;
-    const packageName = firstItemMeta.packageName;
-    let packageLabel = packageName
-      ? packageName
-      : `${firstItem?.quantity ?? 1} x ${productName}`;
+    let packageLabel = packageLabelFor(firstItem ?? { quantity: 1, metadata: null, product: null });
     if (order.orderItems.length > 1) {
       const extraCount = order.orderItems.length - 1;
       packageLabel += ` + ${extraCount} more item${extraCount > 1 ? 's' : ''}`;
@@ -144,54 +131,45 @@ export async function sendAutoConfirmForOrder(
     const storePrefix = storeName ? `${storeName}: ` : '';
     const smsMessage = `${storePrefix}Hello ${customerFirstName}, please confirm order #${order.id}, ${productName}, ${currency} ${total} on delivery. Reply YES to confirm or NO to change or cancel.`;
 
-    let sent = true;
-    if (targetChannel === 'whatsapp') {
-      try {
-        const waResult = await whatsappService.sendTemplate({
-          to: phone,
-          templateName: 'order_auto_confirm',
-          languageCode: 'en_US', // must match the approved template's language on Meta
-          headerParams: [productName],
-          bodyParams: [
-            customerName,
-            packageLabel,
-            String(order.id),
-            formattedTotalWithSign,
-          ],
-          buttonPayloads: ['CONFIRM', 'CHANGE', 'CANCEL'],
-          orderId: order.id,
-          customerId: order.customer.id,
-        });
-        await assertDispatched(waResult, 'WhatsApp');
-      } catch (err: any) {
-        logger.warn('Auto-confirm WhatsApp send failed, falling back to SMS', { orderId: order.id, error: err.message });
+    // A channel that is not set up returns sent: false: count that as a failed send.
+    const sendSmsFallback = async (): Promise<void> => {
+      const smsResult = await smsService.sendSms({
+        to: phone,
+        body: smsMessage,
+        orderId: order.id,
+        customerId: order.customer!.id,
+      });
+      if (smsResult.sent !== true) throw new Error('SMS is not set up: message logged but not sent');
+    };
+
+    try {
+      if (targetChannel === 'whatsapp') {
         try {
-          await assertDispatched(await smsService.sendSms({
+          const waResult = await whatsappService.sendTemplate({
             to: phone,
-            body: smsMessage,
+            templateName: 'order_auto_confirm',
+            languageCode: 'en_US', // must match the approved template's language on Meta
+            headerParams: [productName],
+            bodyParams: [
+              customerName,
+              packageLabel,
+              String(order.id),
+              formattedTotalWithSign,
+            ],
+            buttonPayloads: ['CONFIRM', 'CHANGE', 'CANCEL'],
             orderId: order.id,
             customerId: order.customer.id,
-          }), 'SMS');
-        } catch (smsErr: any) {
-          logger.error('Auto-confirm SMS fallback also failed', { orderId: order.id, error: smsErr.message });
-          sent = false;
+          });
+          if (waResult.sent !== true) throw new Error('WhatsApp is not set up: message logged but not sent');
+        } catch (err: any) {
+          logger.warn('Auto-confirm WhatsApp send failed, falling back to SMS', { orderId: order.id, error: err.message });
+          await sendSmsFallback();
         }
+      } else {
+        await sendSmsFallback();
       }
-    } else {
-      try {
-        await assertDispatched(await smsService.sendSms({
-          to: phone,
-          body: smsMessage,
-          orderId: order.id,
-          customerId: order.customer.id,
-        }), 'SMS');
-      } catch (err: any) {
-        logger.error('Auto-confirm SMS send failed', { orderId: order.id, error: err.message });
-        sent = false;
-      }
-    }
-
-    if (!sent) {
+    } catch (err: any) {
+      logger.error('Auto-confirm send failed', { orderId: order.id, error: err.message });
       // Nothing reached the customer: release the one-send claim so a later run can try again.
       await prisma.confirmToken.deleteMany({ where: { orderId: order.id, token } });
       await prisma.order.update({ where: { id: order.id }, data: { autoConfirmSentAt: null } });
@@ -200,4 +178,19 @@ export async function sendAutoConfirmForOrder(
 
     return { token, channel: targetChannel };
   });
+}
+
+/**
+ * Run the `send_auto_confirm` workflow action: WhatsApp by default, SMS when config.channel is 'sms'.
+ * An ineligible or already-sent order is a skip, not a failure. Shared by both workflow executors.
+ */
+export async function runAutoConfirmAction(
+  orderId: number,
+  tenantId: string | null | undefined,
+  config: { channel?: string } | undefined,
+): Promise<{ skipped: true; reason: string } | { skipped: false; channel: string }> {
+  const channel = config?.channel === 'sms' ? 'sms' : 'whatsapp';
+  const result = await sendAutoConfirmForOrder(orderId, tenantId, { channel });
+  if (!result) return { skipped: true, reason: 'not_eligible_or_already_sent' };
+  return { skipped: false, channel: result.channel };
 }

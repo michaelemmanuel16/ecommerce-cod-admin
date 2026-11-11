@@ -187,7 +187,7 @@ describe('M7-T09: Inbound WhatsApp core integration tests', () => {
   let sendTextSpy: any;
 
   beforeEach(() => {
-    sendTextSpy = jest.spyOn(whatsappService, 'sendText').mockImplementation(async () => ({ messageLogId: 999 }));
+    sendTextSpy = jest.spyOn(whatsappService, 'sendText').mockImplementation(async () => ({ messageLogId: 999, sent: true }));
   });
 
   afterEach(() => {

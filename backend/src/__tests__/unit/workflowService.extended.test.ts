@@ -13,8 +13,8 @@ jest.mock('../../queues/workflowQueue', () => ({
 }));
 
 jest.mock('../../services/smsService', () => ({
-  smsService: { sendSms: jest.fn().mockResolvedValue({ messageLogId: 1 }) },
-  sendSmsForOrder: jest.fn().mockResolvedValue({ messageLogId: 1 }),
+  smsService: { sendSms: jest.fn().mockResolvedValue({ messageLogId: 1, sent: true }) },
+  sendSmsForOrder: jest.fn().mockResolvedValue({ messageLogId: 1, sent: true }),
   clearSmsConfigCache: jest.fn(),
 }));
 

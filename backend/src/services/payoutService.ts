@@ -40,19 +40,9 @@ interface Allocation {
  * Entries with no `earnedAt` count as oldest. Throws when amount is above what entries hold.
  */
 export function allocateOldestFirst(entries: OpenEntry[], amount: Money.Money): Allocation[] {
-  const negatives: OpenEntry[] = [];
-  const positives: OpenEntry[] = [];
-
-  for (const e of entries) {
-    if (e.amount.lt(0)) {
-      negatives.push(e);
-    } else {
-      positives.push(e);
-    }
-  }
-
-  negatives.sort((a, b) => (a.earnedAt?.getTime() ?? 0) - (b.earnedAt?.getTime() ?? 0) || a.id - b.id);
-  positives.sort((a, b) => (a.earnedAt?.getTime() ?? 0) - (b.earnedAt?.getTime() ?? 0) || a.id - b.id);
+  const byAge = (a: OpenEntry, b: OpenEntry) => (a.earnedAt?.getTime() ?? 0) - (b.earnedAt?.getTime() ?? 0) || a.id - b.id;
+  const negatives = entries.filter((e) => e.amount.lt(0)).sort(byAge);
+  const positives = entries.filter((e) => !e.amount.lt(0)).sort(byAge);
 
   const out: Allocation[] = [];
   let left = amount;

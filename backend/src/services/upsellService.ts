@@ -8,6 +8,16 @@ import logger from '../utils/logger';
 import { upsellCommissionFor } from './commissionService';
 import { getRepPay } from './rewardService';
 
+/** Label for an order line's package: the saved package name, else "<qty> × <product>". */
+export function packageLabelFor(line: {
+  quantity: number;
+  metadata?: unknown;
+  product?: { name?: string | null } | null;
+}): string {
+  const meta = (line.metadata ?? {}) as { packageName?: string };
+  return meta.packageName ?? `${line.quantity} × ${line.product?.name ?? 'Product'}`;
+}
+
 export interface ApplyUpsellInput {
   orderId: number;
   repId: number;
@@ -140,9 +150,9 @@ export class UpsellService {
     if (currentPackageName == null) {
       const line = order.orderItems.find((i) => i.itemType === 'package');
       if (line) {
-        const meta = (line.metadata ?? {}) as { packageName?: string; packageId?: number };
+        const meta = (line.metadata ?? {}) as { packageId?: number };
         currentPackageId = currentPackageId ?? meta.packageId ?? null;
-        currentPackageName = meta.packageName ?? `${line.quantity} × ${line.product?.name ?? 'Product'}`;
+        currentPackageName = packageLabelFor(line);
         currentPackagePrice = Money.parse(line.totalPrice);
       }
     }

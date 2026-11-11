@@ -438,6 +438,7 @@ export class WorkflowService {
       orderId: context.orderId,
       customerId: context.customerId,
     });
+    if (!result.sent) throw new Error('SMS is not set up: message not sent');
     return { success: true, messageLogId: result.messageLogId, to: phone };
   }
 
@@ -459,6 +460,8 @@ export class WorkflowService {
   private async executeSendWhatsApp(action: any, context: any): Promise<any> {
     const { sendWhatsAppForOrder } = await import('./whatsappService');
     const result = await sendWhatsAppForOrder(action.config?.templateKey, context.orderId, action.config?.customLink);
+    // sent === false: channel not set up. (An opted-out customer returns no `sent` field and stays a quiet skip.)
+    if (result.sent === false) throw new Error('WhatsApp is not set up: message not sent');
 
     logger.info('WhatsApp message sent via workflow', {
       orderId: context.orderId,
@@ -473,10 +476,9 @@ export class WorkflowService {
    * An ineligible order is skipped, not an error.
    */
   private async executeSendAutoConfirm(action: any, context: any): Promise<any> {
-    const { sendAutoConfirmForOrder } = await import('./autoConfirmService');
-    const channel = action.config?.channel === 'sms' ? 'sms' : 'whatsapp';
-    const result = await sendAutoConfirmForOrder(context.orderId, getTenantId(), { channel });
-    if (!result) return { success: true, skipped: true, reason: 'not_eligible_or_already_sent' };
+    const { runAutoConfirmAction } = await import('./autoConfirmService');
+    const result = await runAutoConfirmAction(context.orderId, getTenantId(), action.config);
+    if (result.skipped) return { success: true, skipped: true, reason: result.reason };
     return { success: true, channel: result.channel };
   }
 
