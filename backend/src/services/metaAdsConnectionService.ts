@@ -12,6 +12,7 @@ import {
   debugToken,
   fetchAdAccounts,
 } from './metaOAuthService';
+import { safeErrorMessage } from '../utils/safeError';
 
 interface AdsStatePayload { kind: 'ads'; userId: number; tenantId: string }
 interface PickPayload {
@@ -74,7 +75,7 @@ export async function completeAdsCallback(query: Record<string, string | undefin
     } satisfies PickPayload);
     return `${settingsUrl()}&metaAds=pick&pick=${pickId}`;
   } catch (err: any) {
-    logger.error('Meta Ads OAuth callback failed', { error: err.message });
+    logger.error('Meta Ads OAuth callback failed', { error: safeErrorMessage(err) });
     return errorUrl('Meta Ads connection failed. Please try again.');
   }
 }

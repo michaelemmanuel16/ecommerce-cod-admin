@@ -5,6 +5,7 @@ import { forEachTenant } from '../utils/tenantLoop';
 import { DEFAULT_TIME_ZONE } from '../services/kpi/dates';
 import { checkAdsTokens } from '../services/metaTokenHealthService';
 import { runAccountPull } from '../services/marketing/metaPullRunner';
+import { safeErrorMessage } from '../utils/safeError';
 
 const redisConfig = {
     host: process.env.REDIS_HOST || 'localhost',
@@ -48,7 +49,7 @@ export const processMetaPull = async () => {
             try {
                 await runAccountPull(id);
             } catch (err: any) {
-                logger.error(`Meta Ads pull failed for account ${id} (tenant ${tenantId})`, { error: err?.message });
+                logger.error(`Meta Ads pull failed for account ${id} (tenant ${tenantId})`, { error: safeErrorMessage(err) });
             }
         }
     });
