@@ -20,6 +20,7 @@ import './styles/staff.css';
 import './styles/products.css';
 import './styles/onboarding.css';
 import './styles/reports.css';
+import './styles/marketing.css';
 import './styles/financeReports.css';
 import './styles/financeAccounting.css';
 import './styles/checkoutForms.css';

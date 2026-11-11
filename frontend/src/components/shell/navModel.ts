@@ -66,7 +66,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Money',
     items: [
       { key: 'finance', label: 'Finance', icon: Wallet, to: '/finance', count: 'financeOpen' },
-      { key: 'marketing', label: 'Marketing', icon: Megaphone, to: null }, // M8
+      { key: 'marketing', label: 'Marketing', icon: Megaphone, to: '/marketing' },
       { key: 'reports', label: 'Reports', icon: BarChart3, to: '/reports' },
       // Call rep earnings: replaced by the rep app (M7). Old Sidebar: call reps only (when repApp is off).
       { key: 'earningsHistory', label: 'Earnings history', icon: History, to: '/earnings-history', oldPageFor: (r) => r === 'sales_rep' && !features.repApp },
