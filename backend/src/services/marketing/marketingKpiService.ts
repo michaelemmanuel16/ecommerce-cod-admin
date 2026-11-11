@@ -54,9 +54,10 @@ export interface MoneyView {
 const roundToTen = (a: Money.Money): Money.Money => Money.mul(Money.roundHalfUp(Money.div(a, 10), 0), 10);
 
 /** An amount in the store currency, with its ad account currency figure at the rate of `ctx`. */
-export function moneyView(store: Money.Money, ctx: AccountContext | null, opts: { tenth?: boolean } = {}): MoneyView {
+export function moneyView(store: Money.Money, ctx: AccountContext | null, opts: { tenth?: boolean; account?: Money.Money } = {}): MoneyView {
   if (!ctx) return { store: Money.toApi(store), account: null, accountCurrency: null, rate: null, rateDate: null };
-  const converted = Money.mul(store, ctx.rate);
+  // `opts.account` is the real amount in the account currency (a sum Meta reported); without it the store amount x the rate.
+  const converted = opts.account ?? Money.mul(store, ctx.rate);
   const account = opts.tenth && ctx.currency === ROUND_TO_TEN_CURRENCY ? roundToTen(converted) : converted;
   return { store: Money.toApi(store), account: Money.toApi(account), accountCurrency: ctx.currency, rate: ctx.rate.toFixed(4), rateDate: ctx.rateDate };
 }
@@ -68,6 +69,20 @@ export async function accountContext(ymd: string): Promise<AccountContext | null
   if (accounts.length !== 1 || accounts[0].currency === store) return null;
   const found = await rateOn(resolveTenantId(), store, accounts[0].currency, ymd);
   return found ? { currency: accounts[0].currency, rate: found.rate, rateDate: found.date } : null;
+}
+
+/**
+ * The rate a range really used: the account currency total / the store currency total of its spend (each day was converted
+ * at its own rate, so no single day rate matches both figures). With no spend in the range, or spend in more than one
+ * currency, the rate on the end date. Days that all used one rate give that rate.
+ */
+export function effectiveContext(ctx: AccountContext | null, spent: { spend: Money.Money; originals: Map<string, Money.Money>; usedRates: Set<string> }): AccountContext | null {
+  if (!ctx || !spent.spend.gt(0) || spent.originals.size !== 1) return ctx;
+  // Every day at one rate (account to store): that rate turned round, to the 4 dp the page shows. The total / total
+  // only differs from it by the cents each day was rounded to.
+  if (spent.usedRates.size === 1) return { ...ctx, rate: Money.roundHalfUp(Money.div(1, [...spent.usedRates][0]), 4) };
+  const original = spent.originals.get(ctx.currency);
+  return original ? { ...ctx, rate: Money.div(original, spent.spend) } : ctx;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -225,13 +240,15 @@ export async function spendInRange(range: { from: string; to: string }, store: s
   let spend = Money.ZERO;
   let waitingForRate = 0;
   const originals = new Map<string, Money.Money>();
+  const usedRates = new Set<string>();
   for (const d of byDay.values()) {
     const rate = rates.get(rateKey(d.currency, d.date));
     if (!rate) { waitingForRate += 1; continue; }
+    usedRates.add(rate.toString());
     spend = Money.add(spend, convertSpend(d.original, rate));
     originals.set(d.currency, Money.add(originals.get(d.currency) ?? Money.ZERO, d.original));
   }
-  return { spend, waitingForRate, originals };
+  return { spend, waitingForRate, originals, usedRates };
 }
 
 export interface TileSet {
@@ -266,28 +283,29 @@ async function tilesFor(from: string, to: string): Promise<TileSet> {
     prisma.order.count({ where: { ...placedWhere, status: { in: CONFIRMED } } }),
     prisma.order.count({ where: { tenantId, deletedAt: null, status: 'delivered', deliveryDate: { gte: start, lt: end } } }),
   ]);
-  // The ad account figure of spend is the sum of what Meta reported, not the store amount x one rate.
+  // One rate for the whole tile set: the effective rate of the range, so the label and every figure agree.
+  const ectx = effectiveContext(ctx, spent);
+  // The ad account figure is the real sum of what Meta reported, and a cost per order is that sum / the count, never store x a rate.
+  const originalSpend = ectx ? spent.originals.get(ectx.currency) : undefined;
+  const perCount = (n: Money.MoneyInput) => moneyView(Money.div(spent.spend, n), ectx, { tenth: true, ...(originalSpend ? { account: Money.div(originalSpend, n) } : {}) });
   const originals = [...spent.originals.entries()];
-  const spend: MoneyView = {
-    ...moneyView(spent.spend, null),
-    ...(originals.length === 1 && originals[0][0] !== store
-      ? { account: Money.toApi(originals[0][1]), accountCurrency: originals[0][0] }
-      : {}),
-  };
+  const spend: MoneyView = originalSpend
+    ? moneyView(spent.spend, ectx, { account: originalSpend })
+    : {
+      ...moneyView(spent.spend, null),
+      ...(originals.length === 1 && originals[0][0] !== store ? { account: Money.toApi(originals[0][1]), accountCurrency: originals[0][0] } : {}),
+    };
 
   let projected: TileSet['projectedCostPerDelivered'];
   if (cpa.yieldPct === null) projected = { value: null, message: NOT_ENOUGH_CLOSED };
   else if (ordersPlaced === 0 || cpa.yieldPct === 0) projected = { value: null, message: null };
-  else {
-    const deliveredProjected = Money.mul(ordersPlaced, Money.div(cpa.yieldPct, 100));
-    projected = { value: moneyView(Money.div(spent.spend, deliveredProjected), ctx, { tenth: true }), message: null };
-  }
+  else projected = { value: perCount(Money.mul(ordersPlaced, Money.div(cpa.yieldPct, 100))), message: null };
 
   return {
     from, to, spend, spendDaysWaitingForRate: spent.waitingForRate, ordersPlaced, confirmed, delivered,
     projectedCostPerDelivered: projected,
-    actualCostPerDelivered: { label: ACTUAL_COST_LABEL, value: delivered > 0 ? moneyView(Money.div(spent.spend, delivered), ctx, { tenth: true }) : null },
-    maxCpa: maxCpaView(cpa, ctx),
+    actualCostPerDelivered: { label: ACTUAL_COST_LABEL, value: delivered > 0 ? perCount(delivered) : null },
+    maxCpa: maxCpaView(cpa, ectx),
   };
 }
 

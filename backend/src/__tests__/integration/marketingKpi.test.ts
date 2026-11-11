@@ -28,12 +28,15 @@ let p1: number;
 let p2: number;
 let p4: number;
 let account: number;
+let c: string;
+let accountC: number;
 
 const inA = <T>(fn: () => Promise<T>) => runInTenant(a, fn);
 beforeAll(async () => {
   a = (await createTenant('Mkt KPI A', { currency: 'GHS' })).id;
   b = (await createTenant('Mkt KPI B', { currency: 'GHS' })).id;
-  await Promise.all([seedTenantDefaults(a), seedTenantDefaults(b)]);
+  c = (await createTenant('Mkt KPI C', { currency: 'GHS' })).id;
+  await Promise.all([seedTenantDefaults(a), seedTenantDefaults(b), seedTenantDefaults(c)]);
   ownerA = await mkUser(a, 'ownerA', 'super_admin');
   ownerB = await mkUser(b, 'ownerB', 'super_admin');
   repA = await mkUser(a, 'repA', 'sales_rep');
@@ -71,13 +74,26 @@ beforeAll(async () => {
   await spendRow(a, account, '2026-11-05', 'c1', 50000);
   await spendRow(a, account, '2026-10-25', 'c1', 10000);
   await runInTenant(a, () => postMetaSpend(account, ['2026-11-02', '2026-11-05', '2026-10-25']));
+
+  // Tenant C: the day rates (100, 120) differ from the spot rate on the range end (130)
+  accountC = (await prismaBase.metaAdAccount.create({ data: { accountId: 'act_kpi_c', name: 'NGN acct C', currency: 'NGN', timezone: 'UTC', accessToken: 'x', tenantId: c } })).id;
+  await prismaBase.fxRate.createMany({ data: [['2026-12-01', 100], ['2026-12-02', 120], ['2026-12-03', 130]].map(([d, rate]) => (
+    { tenantId: c, fromCurrency: 'GHS', toCurrency: 'NGN', rate: rate as number, date: utcDateOfYmd(d as string), source: 'manual' as const }
+  )) });
+  await spendRow(c, accountC, '2026-12-01', 'c1', 100000);
+  await spendRow(c, accountC, '2026-12-02', 'c1', 120000);
+  const custC = await mkCustomer(c, '+233241100003');
+  await prismaBase.order.createMany({ data: (['delivered', 'delivered', 'confirmed', 'pending_confirmation'] as const).map((status) => ({
+    customerId: custC, tenantId: c, status, subtotal: 100, totalAmount: 100, codAmount: 100, createdAt: at('2026-12-02'),
+    ...(status === 'delivered' ? { deliveryDate: at('2026-12-03') } : {}),
+  })) });
 });
 
 afterAll(async () => {
-  await prismaBase.expense.deleteMany({ where: { tenantId: { in: [a, b] } } });
-  await prismaBase.metaSpendDay.deleteMany({ where: { tenantId: { in: [a, b] } } });
-  await prismaBase.metaAdAccount.deleteMany({ where: { tenantId: { in: [a, b] } } });
-  await deleteTenantRows([a, b]);
+  await prismaBase.expense.deleteMany({ where: { tenantId: { in: [a, b, c] } } });
+  await prismaBase.metaSpendDay.deleteMany({ where: { tenantId: { in: [a, b, c] } } });
+  await prismaBase.metaAdAccount.deleteMany({ where: { tenantId: { in: [a, b, c] } } });
+  await deleteTenantRows([a, b, c]);
   await prismaBase.$disconnect();
 });
 
@@ -140,6 +156,18 @@ describe('tiles', () => {
     expect(t.previous.spend.store).toBe('89.29');
     expect(t.previous.projectedCostPerDelivered.value).toBeNull();
     expect(t.previous.actualCostPerDelivered.value).toBeNull();
+  });
+});
+
+describe('tiles with day rates that differ from the spot rate', () => {
+  it('the account figures are the real sums, cost per order is that sum / count, and the shown rate is the one used', async () => {
+    const t = await runInTenant(c, () => tiles({ from: '2026-12-01', to: '2026-12-03' }));
+    // Store: 100,000 / 100 + 120,000 / 120 = 2,000. The spot rate on 12-03 is 130 and must not touch the figures.
+    expect(t.spend).toMatchObject({ store: '2000.00', account: '220000.00', accountCurrency: 'NGN', rate: '110.0000' });
+    expect(t.delivered).toBe(2);
+    expect(t.actualCostPerDelivered.value).toMatchObject({ store: '1000.00', account: '110000.00', rate: '110.0000' });
+    // 220,000 / (4 placed x yield); with no closed cohort the yield is unknown and the tile says so
+    expect(t.projectedCostPerDelivered.value).toBeNull();
   });
 });
 

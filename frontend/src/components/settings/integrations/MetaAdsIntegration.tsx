@@ -97,6 +97,7 @@ export const MetaAdsIntegration: React.FC = () => {
   const handleToggle = async (a: MetaAdAccount) => {
     try {
       await metaAdsService.setEnabled(a.id, !a.enabled);
+      toast.success(a.enabled ? 'Meta Ads pull turned off' : 'Meta Ads pull turned on');
       setAccounts((cur) => cur.map((x) => (x.id === a.id ? { ...x, enabled: !a.enabled } : x)));
     } catch (err) {
       toast.error(apiMessage(err, 'Failed to update the ad account'));
@@ -181,9 +182,9 @@ export const MetaAdsIntegration: React.FC = () => {
                           act_{a.accountId.replace(/^act_/, '')} · {a.currency}
                         </small>
                       </div>
-                      {a.status === 'connected'
-                        ? <Tag tone="ok">Connected</Tag>
-                        : <Tag tone="bad">Disconnected{a.statusReason ? `: ${a.statusReason}` : ''}</Tag>}
+                      {a.status !== 'connected'
+                        ? <Tag tone="bad">Disconnected{a.statusReason ? `: ${a.statusReason}` : ''}</Tag>
+                        : a.enabled ? <Tag tone="ok">Connected</Tag> : <Tag tone="n">Off</Tag>}
                       {canUpdate && (
                         <button
                           type="button"

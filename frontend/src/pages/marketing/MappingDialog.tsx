@@ -46,16 +46,16 @@ export function MappingDialog({ targets, onClose, onSaved }: Props) {
 
   // A new campaign starts the form again, with the prefix from its name
   const name = target?.campaignName ?? '';
-  useEffect(() => { setPrefix(prefixOf(name)); setProductId(''); setScope('campaign'); setError(''); }, [key, name]);
+  useEffect(() => { setPrefix(prefixOf(name)); setProductId(target?.product && !target.product.archived ? String(target.product.id) : ''); setScope('campaign'); setError(''); }, [key, name]);
 
   if (!target) return null;
 
-  const run = async (work: () => Promise<void>) => {
+  const run = async (work: () => Promise<void>, done = 'Mapping saved') => {
     setSaving(true);
     setError('');
     try {
       await work();
-      say('Mapping saved');
+      say(done);
       onSaved();
       onClose();
     } catch (err) {
@@ -68,7 +68,7 @@ export function MappingDialog({ targets, onClose, onSaved }: Props) {
   const save = () => run(() => (scope === 'campaign'
     ? marketingService.setPick({ adAccountId: target.adAccountId, campaignId: target.campaignId, productId: Number(productId) })
     : marketingService.addRule({ prefix: prefix.trim(), productId: Number(productId) })));
-  const remove = () => run(() => marketingService.setPick({ adAccountId: target.adAccountId, campaignId: target.campaignId, productId: null }));
+  const remove = () => run(() => marketingService.setPick({ adAccountId: target.adAccountId, campaignId: target.campaignId, productId: null }), 'Mapping removed');
   const ready = productId !== '' && (scope === 'campaign' || prefix.trim() !== '');
 
   return (
@@ -94,9 +94,13 @@ export function MappingDialog({ targets, onClose, onSaved }: Props) {
       </Select>
       <fieldset className="mapscope">
         <legend className="sr">Apply to</legend>
-        <label><input type="radio" name="scope" checked={scope === 'campaign'} onChange={() => setScope('campaign')} /> Only this campaign</label>
         <div className="prefixrow">
-          <label><input type="radio" name="scope" checked={scope === 'prefix'} onChange={() => setScope('prefix')} /> All campaigns whose name starts with</label>
+          <input type="radio" id="mapscope-campaign" name="scope" checked={scope === 'campaign'} onChange={() => setScope('campaign')} />
+          <label htmlFor="mapscope-campaign">Only this campaign</label>
+        </div>
+        <div className="prefixrow">
+          <input type="radio" id="mapscope-prefix" name="scope" checked={scope === 'prefix'} onChange={() => setScope('prefix')} />
+          <label htmlFor="mapscope-prefix">All campaigns whose name starts with</label>
           <input type="text" className="prefixin" aria-label="Name starts with" value={prefix} maxLength={40} onChange={(e) => setPrefix(e.target.value)} />
         </div>
       </fieldset>
