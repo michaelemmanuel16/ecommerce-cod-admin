@@ -32,19 +32,6 @@ export function CampaignsCard({ rows, totals, rangeText, onMap }: Props) {
         );
       },
     },
-    { key: 'spend', header: 'Spend', right: true, total: <span className="num">{money(totals.spend)}</span>, render: (r) => <span className="num">{money(r.spend)}</span> },
-    { key: 'imp', header: 'Impressions', right: true, total: num(totals.impressions), render: (r) => num(r.impressions) },
-    { key: 'clicks', header: 'Link clicks', right: true, total: num(totals.linkClicks), render: (r) => num(r.linkClicks) },
-    { key: 'lpv', header: 'Landing page views', right: true, total: num(totals.landingPageViews), render: (r) => num(r.landingPageViews) },
-    { key: 'co', header: 'Checkouts started', right: true, total: num(totals.checkoutsStarted), render: (r) => num(r.checkoutsStarted) },
-    { key: 'pur', header: 'Meta purchases', right: true, total: num(totals.purchases), render: (r) => num(r.purchases) },
-    { key: 'cpa', header: 'CPA', right: true, total: <span className="num">{money(totals.cpa)}</span>, render: (r) => <span className="num">{money(r.cpa)}</span> },
-    { key: 'max', header: 'Max CPA', right: true, render: (r) => <span className="num">{r.maxCpa?.maxCpa ? money(r.maxCpa.maxCpa) : '-'}</span> },
-    {
-      key: 'proj', header: 'Projected delivered (Meta purchases)', right: true,
-      total: <span className="num">{Number(totals.projectedDelivered.toFixed(1))}</span>,
-      render: (r) => <span className="num">{r.projectedDelivered === null ? '-' : r.projectedDelivered}</span>,
-    },
     {
       key: 'status', header: 'Status',
       render: (r) => (
@@ -57,6 +44,19 @@ export function CampaignsCard({ rows, totals, rangeText, onMap }: Props) {
           {r.lowData && <Tag tone="warn" className="lowtag">Low data</Tag>}
         </>
       ),
+    },
+    { key: 'spend', header: 'Spend', right: true, total: <span className="num">{money(totals.spend)}</span>, render: (r) => <span className="num">{money(r.spend)}</span> },
+    { key: 'imp', header: 'Impressions', right: true, total: num(totals.impressions), render: (r) => num(r.impressions) },
+    { key: 'clicks', header: 'Link clicks', right: true, total: num(totals.linkClicks), render: (r) => num(r.linkClicks) },
+    { key: 'lpv', header: 'Landing page views', right: true, total: num(totals.landingPageViews), render: (r) => num(r.landingPageViews) },
+    { key: 'co', header: 'Checkouts started', right: true, total: num(totals.checkoutsStarted), render: (r) => num(r.checkoutsStarted) },
+    { key: 'pur', header: 'Meta purchases', right: true, total: num(totals.purchases), render: (r) => num(r.purchases) },
+    { key: 'cpa', header: 'CPA', right: true, total: <span className="num">{money(totals.cpa)}</span>, render: (r) => <span className="num">{money(r.cpa)}</span> },
+    { key: 'max', header: 'Max CPA', right: true, render: (r) => <span className="num">{r.maxCpa?.maxCpa ? money(r.maxCpa.maxCpa) : '-'}</span> },
+    {
+      key: 'proj', header: <span title="Meta purchases x product yield">Projected delivered</span>, right: true,
+      total: <span className="num">{Number(totals.projectedDelivered.toFixed(1))}</span>,
+      render: (r) => <span className="num">{r.projectedDelivered === null ? '-' : r.projectedDelivered}</span>,
     },
   ];
   return (

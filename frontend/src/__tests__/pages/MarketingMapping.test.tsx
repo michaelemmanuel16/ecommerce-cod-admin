@@ -83,6 +83,16 @@ describe('Not mapped strip and mapping dialog', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
+  it('keeps Save disabled while the prefix is empty', async () => {
+    renderPage();
+    const dialog = await openStripDialog();
+    await waitFor(() => expect(within(dialog).getByRole('option', { name: 'Refill pens' })).toBeInTheDocument());
+    await userEvent.selectOptions(within(dialog).getByLabelText('Product'), 'Refill pens');
+    await userEvent.click(within(dialog).getByLabelText(/All campaigns whose name starts with/));
+    await userEvent.clear(within(dialog).getByLabelText('Name starts with'));
+    expect(within(dialog).getByRole('button', { name: 'Save mapping' })).toBeDisabled();
+  });
+
   it('saves a name rule with the prefix up to the first underscore, editable', async () => {
     renderPage();
     const dialog = await openStripDialog();

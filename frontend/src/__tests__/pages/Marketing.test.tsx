@@ -123,7 +123,36 @@ describe('Marketing page', () => {
     expect(within(row('MG_paused')).getByText('Paused')).toBeInTheDocument();
     expect(within(row('MG_nodata')).getByText('Not enough closed orders')).toBeInTheDocument();
     expect(within(row('MG_nodata')).getByText('Low data')).toBeInTheDocument();
-    expect(within(table).getByText('Projected delivered (Meta purchases)')).toBeInTheDocument();
+    expect(within(table).getByText('Projected delivered')).toHaveAttribute('title', 'Meta purchases x product yield');
+  });
+
+  it('puts Status right after Product, before Spend', async () => {
+    renderPage();
+    const table = await screen.findByRole('table', { name: 'Campaigns' });
+    const heads = [...table.querySelectorAll('thead th')].map((h) => h.textContent);
+    expect(heads.slice(0, 4)).toEqual(['Campaign', 'Product', 'Status', 'Spend']);
+  });
+
+  it('shows naira as whole numbers and keeps the store currency decimals', async () => {
+    svc.products.mockResolvedValue([productRow({ costPerPlaced: { account: '427063.62', accountCurrency: 'NGN', store: '3813.07' } })]);
+    svc.campaigns.mockResolvedValue({
+      campaigns: [campaignRow('MG_win', 'Winning', { cpa: { account: '8714.29', accountCurrency: 'NGN', store: '77.81' } })],
+      totals: totals(),
+    });
+    renderPage();
+    const products = await screen.findByRole('table', { name: 'Marketing by product' });
+    expect(within(products).getByText('₦427,064')).toBeInTheDocument();
+    const table = await screen.findByRole('table', { name: 'Campaigns' });
+    expect(within(table).getByText('₦8,714')).toBeInTheDocument();
+    expect(table.textContent).not.toMatch(/₦[\d,]+\.\d\d/);
+    expect(screen.getByText(/About GH₵76,160\.71/)).toBeInTheDocument();
+  });
+
+  it('shows the Meta line with no space before the comma', async () => {
+    renderPage();
+    const line = (await screen.findByText(/Meta account: connected/)).closest('.conn') as HTMLElement;
+    expect(line.textContent).toMatch(/Meta account: connected, pulled about 3 hours ago/);
+    expect(line.querySelector('small')!.previousSibling).toHaveProperty('nodeValue', 'connected');
   });
 
   it('shows the totals row and the note', async () => {
