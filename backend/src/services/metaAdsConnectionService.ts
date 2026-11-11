@@ -61,7 +61,7 @@ export async function completeAdsCallback(query: Record<string, string | undefin
     const info = await debugToken(token);
     if (!info.isValid) return errorUrl('Meta did not return a valid token. Please try again.');
     if (!info.scopes.includes('ads_read')) {
-      return errorUrl('Missing permission: ads_read. Allow ads access and try again.');
+      return errorUrl(`Missing permission: ads_read. Meta gave: ${info.scopes.join(', ') || 'none'}. Allow ads access and try again.`);
     }
 
     const pickId = createOAuthState({

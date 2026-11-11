@@ -316,6 +316,15 @@ export interface DebugTokenResult {
 }
 
 /** Ask Meta about a token (validity, type, expiry, scopes) using the app token. Throws on a transport or API failure. */
+/** Permission names from debug_token: `scopes` plus `granular_scopes` (system user tokens can list a permission only there). */
+function grantedScopes(data: any): string[] {
+  const scopes: string[] = Array.isArray(data.scopes) ? data.scopes : [];
+  const granular: string[] = Array.isArray(data.granular_scopes)
+    ? data.granular_scopes.map((g: any) => g?.scope).filter((s: unknown): s is string => typeof s === 'string')
+    : [];
+  return [...new Set([...scopes, ...granular])];
+}
+
 export async function debugToken(token: string): Promise<DebugTokenResult> {
   const appToken = `${getMetaAppId()}|${getMetaAppSecret()}`;
   const params = new URLSearchParams({ input_token: token, access_token: appToken });
@@ -329,7 +338,7 @@ export async function debugToken(token: string): Promise<DebugTokenResult> {
     isValid: data.is_valid === true,
     type: String(data.type || ''),
     expiresAt: data.expires_at ? new Date(data.expires_at * 1000) : null,
-    scopes: Array.isArray(data.scopes) ? data.scopes : [],
+    scopes: grantedScopes(data),
   };
 }
 

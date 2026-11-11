@@ -49,6 +49,14 @@ describe('metaOAuthService (T04)', () => {
     expect(url.searchParams.get('scope')).toBeNull();
   });
 
+  it('debugToken: a permission listed only in granular_scopes counts (system user token)', async () => {
+    (global as any).fetch = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({ data: { is_valid: true, type: 'SYSTEM_USER', expires_at: 0, scopes: ['business_management'], granular_scopes: [{ scope: 'business_management' }, { scope: 'ads_read', target_ids: ['864465431329981'] }] } }),
+    }));
+    expect((await debugToken('tok')).scopes).toEqual(['business_management', 'ads_read']);
+  });
+
   it('debugToken: expires_at 0 means never (null); scopes and type are read', async () => {
     const fetchMock = jest.fn(async () => ({
       ok: true,
