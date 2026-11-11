@@ -1,0 +1,110 @@
+<title>M8 Sprint Plan</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,600&display=swap">
+<style>
+/* Layout: one reading column; plan sections in order; tables scroll inside their own box */
+:root{
+  --bg:#f6f7f5; --panel:#ffffff; --fg:#1d2420; --muted:#5b6660; --line:#d9ded9;
+  --accent:#1f6b52; --accent-soft:#e3f0ea; --warn:#9a5b00; --warn-soft:#fbf0dc;
+  --display:"Fraunces",Georgia,serif; --body:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#141a17; --panel:#1b2320; --fg:#e4ebe6; --muted:#9aa8a0; --line:#2e3a35;
+  --accent:#6fcfa8; --accent-soft:#1f3a2f; --warn:#f0b35c; --warn-soft:#3a2d17; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141a17; --panel:#1b2320; --fg:#e4ebe6; --muted:#9aa8a0; --line:#2e3a35;
+  --accent:#6fcfa8; --accent-soft:#1f3a2f; --warn:#f0b35c; --warn-soft:#3a2d17; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.55}
+main{max-width:920px;margin:0 auto;padding-block:32px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:28px}
+h1{font-family:var(--display);font-size:2rem;margin:0;text-wrap:balance}
+h2{font-size:1.15rem;margin:0 0 10px;text-wrap:balance}
+.eyebrow{font-family:var(--mono);font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+p,li{max-width:68ch} p{margin:0 0 8px} ul,ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px}
+section{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:18px 20px;min-width:0}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.9rem;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:600;color:var(--muted);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
+code,.id{font-family:var(--mono);font-size:.85em}
+.chip{display:inline-block;font-family:var(--mono);font-size:.72rem;padding:1px 7px;border-radius:10px;background:var(--accent-soft);color:var(--accent);white-space:nowrap}
+.chip.warn{background:var(--warn-soft);color:var(--warn)}
+.ask{border-left:3px solid var(--warn)}
+.summary{display:flex;flex-wrap:wrap;gap:10px 28px}
+.summary div{display:flex;flex-direction:column}
+.summary b{font-family:var(--display);font-size:1.5rem}
+.summary span{color:var(--muted);font-size:.82rem}
+pre{font-family:var(--mono);font-size:.8rem;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:12px;overflow-x:auto;margin:0}
+</style>
+<main>
+<header>
+  <div class="eyebrow">CodAdmin rebuild · Milestone 8 · lean · approved 2026-11-11</div>
+  <h1>M8: Marketing</h1>
+  <p>One question: how much do I pay in ads for each delivered order, per product, and is it under my max CPA? CodAdmin pulls Meta spend daily, maps campaigns to products, books the spend in the ledger, and shows cost per delivered order against max CPA.</p>
+</header>
+
+<section>
+  <div class="summary">
+    <div><b>7</b><span>Linear issues (COD-70 to COD-76)</span></div>
+    <div><b>19</b><span>plan tasks (was 24)</span></div>
+    <div><b>~82 h</b><span>likely work (was 140 h)</span></div>
+    <div><b>1 PR</b><span><code>feature/m8-marketing</code> into <code>develop</code></span></div>
+  </div>
+</section>
+
+<section>
+  <h2>Queue</h2>
+  <div class="scroll"><table>
+    <tr><th>Issue</th><th>What</th><th>Tasks</th><th>Hours</th><th>State</th></tr>
+    <tr><td class="id">COD-70</td><td>Meta access check</td><td>T01</td><td>1</td><td><span class="chip">Done</span></td></tr>
+    <tr><td class="id">COD-71</td><td>Schema, Meta Ads connection, token health, daily pull</td><td>T03–T06</td><td>22</td><td><span class="chip warn">In progress</span></td></tr>
+    <tr><td class="id">COD-72</td><td>Spend to ledger (FX)</td><td>T07</td><td>6</td><td>Backlog</td></tr>
+    <tr><td class="id">COD-73</td><td>Mapping, max CPA, funnel, campaign status, permission</td><td>T09–T11, T13</td><td>18</td><td>Backlog</td></tr>
+    <tr><td class="id">COD-74</td><td>Marketing page UI</td><td>T14</td><td>6</td><td>Backlog</td></tr>
+    <tr><td class="id">COD-75</td><td>Mapping dialog, Meta Ads card</td><td>T16, T17</td><td>9</td><td>Backlog</td></tr>
+    <tr><td class="id">COD-76</td><td>Tests, parity week, simplify, checks, review</td><td>T19–T24</td><td>20</td><td>Backlog</td></tr>
+  </table></div>
+</section>
+
+<section>
+  <h2>T01 result: Meta access</h2>
+  <ul>
+    <li>Meta app <b>COD Admin Pro</b> is Live and already has the Marketing API use case.</li>
+    <li><b>No App Review now.</b> The app reads your own ad accounts. App Review is needed only when another store connects.</li>
+    <li><b>Token: system user token.</b> Tested live: it never expires and reads the Magic Groove account.</li>
+    <li>Field names tested live on Graph v25. The Magic Groove account bills in <b>NGN</b>, so spend is converted to GH₵ at the day rate.</li>
+    <li>No CSV fallback needed.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Key choices</h2>
+  <ul>
+    <li>WhatsApp login stays as it is. Meta Ads gets its own "Connect Meta Ads" button on the same Meta app and the same login code.</li>
+    <li>A failed token (WhatsApp or Ads) shows "Disconnected" and sends you an alert. Today a WhatsApp refresh failure only writes a log line.</li>
+    <li>Daily pull at 05:00 Accra time re-pulls the last 3 days. A "Refresh now" button pulls on demand.</li>
+    <li>Campaign level only. Per product: real CodAdmin orders through the campaign mapping. Per campaign: Meta purchases × the product delivery rate (labelled "Meta purchases"). Your live ads have no UTM tags and land on goshop.com.ng, so UTM capture moved to Backlog.</li>
+    <li>Status: Winning at or under 85% of max CPA, On track at or under max CPA, Over max CPA, Not mapped, Paused.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Moved to Backlog (COD-194)</h2>
+  <ul>
+    <li>UTM tags on checkout orders (T08)</li>
+    <li>Hourly pull</li>
+    <li>Ad-level data, hook and hold rate, ad drilldown, best and worst day chart (AdMarrow covers these)</li>
+    <li>Reports "Marketing" tab, form visits by device</li>
+    <li>CSV import</li>
+    <li>Meta App Review for other stores</li>
+  </ul>
+</section>
+
+<section class="ask">
+  <h2>What I need from you later</h2>
+  <ol>
+    <li><b>Parity week (T20):</b> one Ads Manager export, 7 days, per campaign. I ask when we get there.</li>
+    <li><b>System user token:</b> create a Facebook Login for Business configuration (System-user token, never expires, ad accounts, ads_read + business_management) and send me the Configuration ID.</li>
+    <li><b>Facebook login:</b> if Facebook asks you to approve during the browser check, I will ping you.</li>
+  </ol>
+</section>
+</main>

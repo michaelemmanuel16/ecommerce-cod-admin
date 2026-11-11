@@ -1,0 +1,446 @@
+/**
+ * Marketing KPIs (M8-T10, COD-73): max CPA and the tiles of the Marketing page.
+ *
+ * Profit per delivered order before ads = average delivered order revenue - average landed cost - average delivery fee
+ * (the fee stamped on the order from the partner fee rules, so it is the weighted fee, R5). No rep commission, no ads.
+ * Max CPA = that profit x order-to-cash yield. It is a cost per PLACED order: only the yield share of placed orders is
+ * delivered. Profit of 0 or less gives max CPA 0 and "No room for ads at this price".
+ *
+ * Cohort: orders placed in the 90 days that end 30 days before the end of the range, so every order has an outcome.
+ * No closed cohort, or no delivered order to average, gives `available: false` and "Not enough closed orders".
+ * Money is in the store currency. When every enabled ad account is in one other currency, each money value also
+ * carries the figure in that currency and the rate used. A NGN figure is rounded to the nearest 10.
+ * Call inside the tenant context.
+ */
+import prisma from '../../utils/prisma';
+import * as Money from '../../utils/money';
+import { getCurrency } from '../../utils/currency';
+import { resolveTenantId } from '../../utils/tenantContext';
+import { rateOn } from '../fxService';
+import { rates, CONFIRMED, DIGITAL } from '../kpi/rates';
+import { getStoreTimeZone, localDate, shiftYmd, startOfDay, utcDateOfYmd } from '../kpi/dates';
+import { AppError } from '../../middleware/errorHandler';
+import { NOT_ENOUGH_CLOSED, shares } from '../finance/profitService';
+import { convertSpend } from './metaLedgerService';
+
+export const NO_ROOM_FOR_ADS = 'No room for ads at this price';
+export const ACTUAL_COST_LABEL = 'Actual, delivered in range';
+
+/** Length of the cohort and the gap between its end and the end of the range, in days. */
+const COHORT_DAYS = 90;
+const COHORT_LAG_DAYS = 30;
+/** A NGN figure is shown to the nearest 10 (PRD: GH₵185 x 112 = ₦20,720; x 34% = ₦7,040). */
+const ROUND_TO_TEN_CURRENCY = 'NGN';
+/** A free bundled digital item is not a sale of its own (same rule as profitService). */
+const FREE_ITEM_WEIGHT = Money.parse('0.0001');
+
+// ---------------------------------------------------------------------------------------------
+// Money views
+// ---------------------------------------------------------------------------------------------
+
+/** The rate to the ad account currency: `rate` units of `currency` for 1 unit of the store currency. */
+export interface AccountContext { currency: string; rate: Money.Money; rateDate: string }
+
+export interface MoneyView {
+  /** Store currency, 2 dp. */
+  store: string;
+  /** The same amount in the ad account currency, or null when the account currency is the store currency or mixed. */
+  account: string | null;
+  accountCurrency: string | null;
+  rate: string | null;
+  rateDate: string | null;
+}
+
+/** Nearest 10 of an amount, half up. */
+const roundToTen = (a: Money.Money): Money.Money => Money.mul(Money.roundHalfUp(Money.div(a, 10), 0), 10);
+
+/** An amount in the store currency, with its ad account currency figure at the rate of `ctx`. */
+export function moneyView(store: Money.Money, ctx: AccountContext | null, opts: { tenth?: boolean; account?: Money.Money } = {}): MoneyView {
+  if (!ctx) return { store: Money.toApi(store), account: null, accountCurrency: null, rate: null, rateDate: null };
+  // `opts.account` is the real amount in the account currency (a sum Meta reported); without it the store amount x the rate.
+  const converted = opts.account ?? Money.mul(store, ctx.rate);
+  const account = opts.tenth && ctx.currency === ROUND_TO_TEN_CURRENCY ? roundToTen(converted) : converted;
+  return { store: Money.toApi(store), account: Money.toApi(account), accountCurrency: ctx.currency, rate: ctx.rate.toFixed(4), rateDate: ctx.rateDate };
+}
+
+/** The ad account currency view: one enabled-account currency that is not the store currency, with its rate on `ymd`. */
+export async function accountContext(ymd: string): Promise<AccountContext | null> {
+  const accounts = await prisma.metaAdAccount.findMany({ where: { enabled: true }, select: { currency: true }, distinct: ['currency'] });
+  const store = await getCurrency();
+  if (accounts.length !== 1 || accounts[0].currency === store) return null;
+  const found = await rateOn(resolveTenantId(), store, accounts[0].currency, ymd);
+  return found ? { currency: accounts[0].currency, rate: found.rate, rateDate: found.date } : null;
+}
+
+/**
+ * The rate a range really used: the account currency total / the store currency total of its spend (each day was converted
+ * at its own rate, so no single day rate matches both figures). With no spend in the range, or spend in more than one
+ * currency, the rate on the end date. Days that all used one rate give that rate.
+ */
+export function effectiveContext(ctx: AccountContext | null, spent: { spend: Money.Money; originals: Map<string, Money.Money>; usedRates: Set<string> }): AccountContext | null {
+  if (!ctx || !spent.spend.gt(0) || spent.originals.size !== 1) return ctx;
+  // Every day at one rate (account to store): that rate turned round, to the 4 dp the page shows. The total / total
+  // only differs from it by the cents each day was rounded to.
+  if (spent.usedRates.size === 1) return { ...ctx, rate: Money.roundHalfUp(Money.div(1, [...spent.usedRates][0]), 4) };
+  const original = spent.originals.get(ctx.currency);
+  return original ? { ...ctx, rate: Money.div(original, spent.spend) } : ctx;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Max CPA
+// ---------------------------------------------------------------------------------------------
+
+/** Pure math. `yieldPct` is a percent (34 means 34%). */
+export function maxCpaMath(input: { revenuePer: Money.MoneyInput; costPer: Money.MoneyInput; feePer: Money.MoneyInput; yieldPct: number }) {
+  const profit = Money.sub(input.revenuePer, Money.add(input.costPer, input.feePer));
+  if (!profit.gt(0)) return { profit, max: Money.ZERO, message: NO_ROOM_FOR_ADS as string | null };
+  return { profit, max: Money.mul(profit, Money.div(input.yieldPct, 100)), message: null as string | null };
+}
+
+export interface MaxCpaRaw {
+  available: boolean;
+  yieldPct: number | null;
+  /** Store currency, unrounded. Null when not available. */
+  profit: Money.Money | null;
+  max: Money.Money | null;
+  message: string | null;
+  /** Delivered + failed + returned orders of the cohort: under 30 is "low data". */
+  closedOrders: number;
+  cohort: { from: string; to: string };
+}
+
+export interface MaxCpa {
+  available: boolean;
+  yieldPct: number | null;
+  profitBeforeAds: MoneyView | null;
+  maxCpa: MoneyView | null;
+  message: string | null;
+  closedOrders: number;
+  cohort: { from: string; to: string };
+}
+
+/** [from, to) of the cohort as local days: 90 days ending 30 days before the day after `to`. */
+function cohortDays(to: string): { from: string; to: string } {
+  const end = shiftYmd(to, 1 - COHORT_LAG_DAYS);
+  return { from: shiftYmd(end, -COHORT_DAYS), to: end };
+}
+
+/**
+ * Averages over the delivered orders placed in [from, to). Account level: the order totals. Product level: the share of
+ * each order that belongs to the product (revenue and fee split by item value, cost by item cost). An order delivered
+ * before its landed cost was stamped is costed at the products' current cost, as `cohortProfit` does.
+ */
+async function deliveredAverages(from: Date, to: Date, productId?: number) {
+  const orders = await prisma.order.findMany({
+    where: {
+      tenantId: resolveTenantId(), deletedAt: null, status: 'delivered', createdAt: { gte: from, lt: to },
+      ...(productId !== undefined ? { orderItems: { some: { productId } } } : {}),
+    },
+    select: {
+      totalAmount: true, deliveryFee: true, landedCostTotal: true,
+      orderItems: { select: { productId: true, quantity: true, totalPrice: true, product: { select: { cogs: true, productType: true } } } },
+    },
+  });
+  let n = 0;
+  let revenue = Money.ZERO;
+  let cost = Money.ZERO;
+  let fee = Money.ZERO;
+  for (const o of orders) {
+    const itemCost = (i: (typeof o.orderItems)[number]) => Money.mul(Money.orZero(i.product.cogs), i.quantity);
+    if (productId === undefined) {
+      n += 1;
+      revenue = Money.add(revenue, Money.orZero(o.totalAmount));
+      cost = Money.add(cost, o.landedCostTotal != null ? Money.parse(o.landedCostTotal) : Money.sum(o.orderItems.map(itemCost)));
+      fee = Money.add(fee, Money.orZero(o.deliveryFee));
+      continue;
+    }
+    const items = o.orderItems.filter((i) => !(Money.orZero(i.totalPrice).isZero() && i.product.productType === 'digital'));
+    if (!items.some((i) => i.productId === productId)) continue;
+    n += 1;
+    const costs = items.map(itemCost);
+    const orderCost = o.landedCostTotal != null ? Money.parse(o.landedCostTotal) : Money.sum(costs);
+    const revenueShares = shares(Money.orZero(o.totalAmount), items.map((i) => Money.orZero(i.totalPrice)));
+    const costShares = shares(orderCost, costs.map((c, k) => (c.isZero() ? Money.mul(FREE_ITEM_WEIGHT, items[k].quantity) : c)));
+    const feeShares = shares(Money.orZero(o.deliveryFee), items.map((i) => Money.orZero(i.totalPrice)));
+    items.forEach((i, k) => {
+      if (i.productId !== productId) return;
+      revenue = Money.add(revenue, revenueShares[k]);
+      cost = Money.add(cost, costShares[k]);
+      fee = Money.add(fee, feeShares[k]);
+    });
+  }
+  if (n === 0) return null;
+  return { revenuePer: Money.div(revenue, n), costPer: Money.div(cost, n), feePer: Money.div(fee, n) };
+}
+
+/** Max CPA with unrounded store-currency numbers (T11 compares CPA to these). `to` is the last day of the range (YYYY-MM-DD). */
+export async function maxCpaRaw(input: { to: string; productId?: number }): Promise<MaxCpaRaw> {
+  const tenantId = resolveTenantId();
+  const zone = getStoreTimeZone(tenantId);
+  const days = cohortDays(input.to);
+  const from = startOfDay(days.from, zone);
+  const to = startOfDay(days.to, zone);
+  const [rate, averages] = await Promise.all([
+    rates(tenantId, from, to, { productId: input.productId }),
+    deliveredAverages(from, to, input.productId),
+  ]);
+  const yieldPct = rate.orderToCashYield.value;
+  const closedOrders = rate.deliverySuccessRate.detail?.closed ?? 0;
+  const base = { closedOrders, cohort: days };
+  if (yieldPct === null || !averages) return { ...base, available: false, yieldPct: null, profit: null, max: null, message: NOT_ENOUGH_CLOSED };
+  const { profit, max, message } = maxCpaMath({ ...averages, yieldPct });
+  return { ...base, available: true, yieldPct, profit, max, message };
+}
+
+export function maxCpaView(raw: MaxCpaRaw, ctx: AccountContext | null): MaxCpa {
+  return {
+    available: raw.available, yieldPct: raw.yieldPct, message: raw.message, closedOrders: raw.closedOrders, cohort: raw.cohort,
+    profitBeforeAds: raw.profit ? moneyView(raw.profit, ctx, { tenth: true }) : null,
+    maxCpa: raw.max ? moneyView(raw.max, ctx, { tenth: true }) : null,
+  };
+}
+
+export async function maxCpa(input: { to: string; productId?: number }): Promise<MaxCpa> {
+  const [raw, ctx] = await Promise.all([maxCpaRaw(input), accountContext(input.to)]);
+  return maxCpaView(raw, ctx);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Tiles
+// ---------------------------------------------------------------------------------------------
+
+/** Key of a (currency, day) pair in the map of `dayRates`. */
+export const rateKey = (currency: string, date: Date): string => `${currency}|${date.toISOString().slice(0, 10)}`;
+
+/** Rate to the store currency of each (currency, day) pair of `rows`: 1 for the store currency, null when no rate exists. Each pair is read once. */
+export async function dayRates(rows: { currency: string; date: Date }[], store: string): Promise<Map<string, Money.Money | null>> {
+  const tenantId = resolveTenantId();
+  const pairs = new Map<string, { currency: string; ymd: string }>();
+  for (const r of rows) pairs.set(rateKey(r.currency, r.date), { currency: r.currency, ymd: r.date.toISOString().slice(0, 10) });
+  const out = new Map<string, Money.Money | null>();
+  await Promise.all([...pairs].map(async ([key, { currency, ymd }]) => {
+    out.set(key, currency === store ? Money.parse(1) : (await rateOn(tenantId, currency, store, ymd))?.rate ?? null);
+  }));
+  return out;
+}
+
+type SpendRow = { adAccountId: number; date: Date; currency: string; spend: Money.MoneyInput };
+
+/** The spend of `rows` in the store currency: each (account, day) converted at its day rate, like the ledger. */
+async function spendOfRows(rows: SpendRow[], store: string) {
+  const byDay = new Map<string, { currency: string; date: Date; original: Money.Money }>();
+  for (const r of rows) {
+    const key = `${r.adAccountId}|${rateKey(r.currency, r.date)}`;
+    const day = byDay.get(key) ?? { currency: r.currency, date: r.date, original: Money.ZERO };
+    day.original = Money.add(day.original, r.spend);
+    byDay.set(key, day);
+  }
+  const rates = await dayRates(rows, store);
+  let spend = Money.ZERO;
+  let waitingForRate = 0;
+  const originals = new Map<string, Money.Money>();
+  /** What Meta reported for the (account, day) pairs that have no rate yet (the chart still shows them in the account currency). */
+  const unconverted = new Map<string, Money.Money>();
+  const usedRates = new Set<string>();
+  for (const d of byDay.values()) {
+    const rate = rates.get(rateKey(d.currency, d.date));
+    if (!rate) { waitingForRate += 1; unconverted.set(d.currency, Money.add(unconverted.get(d.currency) ?? Money.ZERO, d.original)); continue; }
+    usedRates.add(rate.toString());
+    spend = Money.add(spend, convertSpend(d.original, rate));
+    originals.set(d.currency, Money.add(originals.get(d.currency) ?? Money.ZERO, d.original));
+  }
+  return { spend, waitingForRate, originals, unconverted, usedRates };
+}
+
+const spendRowsOf = (range: { from: string; to: string }): Promise<SpendRow[]> => prisma.metaSpendDay.findMany({
+  where: { date: { gte: utcDateOfYmd(range.from), lte: utcDateOfYmd(range.to) } },
+  select: { adAccountId: true, date: true, currency: true, spend: true },
+});
+
+/** Meta spend of days [from, to] in the store currency: each (account, day) converted at its day rate, like the ledger. */
+export async function spendInRange(range: { from: string; to: string }, store: string) {
+  return spendOfRows(await spendRowsOf(range), store);
+}
+
+type Spent = Awaited<ReturnType<typeof spendInRange>>;
+
+/** The spend figure of a tile or a day: the store total, and the real sum Meta reported when the account currency is known. */
+function spendFigure(spent: Spent, ectx: AccountContext | null, store: string): MoneyView {
+  const originalSpend = ectx ? spent.originals.get(ectx.currency) : undefined;
+  if (originalSpend) return moneyView(spent.spend, ectx, { account: originalSpend });
+  const originals = [...spent.originals.entries()];
+  return {
+    ...moneyView(spent.spend, null),
+    ...(originals.length === 1 && originals[0][0] !== store ? { account: Money.toApi(originals[0][1]), accountCurrency: originals[0][0] } : {}),
+  };
+}
+
+/** A day with spend that has no FX rate: no store figure when nothing was converted, the account currency figure as Meta reported it. */
+function waitingFigure(spent: Spent, ectx: AccountContext | null, store: string): DailyRow['spend'] {
+  const all = new Map(spent.originals);
+  for (const [currency, amount] of spent.unconverted) all.set(currency, Money.add(all.get(currency) ?? Money.ZERO, amount));
+  const [only] = all.size === 1 ? [...all] : [];
+  const account = only ? { account: Money.toApi(only[1]), accountCurrency: only[0] } : {};
+  if (spent.spend.gt(0)) return { ...spendFigure(spent, ectx, store), ...account };
+  return { store: null, account: null, accountCurrency: null, rate: null, rateDate: null, ...account };
+}
+
+/** A cost per order or per day: spend / n in the store currency, and the account sum / n, never store x a rate. */
+function perCountOf(spent: Spent, ectx: AccountContext | null, n: Money.MoneyInput): MoneyView {
+  const originalSpend = ectx ? spent.originals.get(ectx.currency) : undefined;
+  return moneyView(Money.div(spent.spend, n), ectx, { tenth: true, ...(originalSpend ? { account: Money.div(originalSpend, n) } : {}) });
+}
+
+export interface TileSet {
+  from: string;
+  to: string;
+  spend: MoneyView;
+  /** Days of spend left out because no FX rate exists for them yet (they are not in the ledger either). */
+  spendDaysWaitingForRate: number;
+  ordersPlaced: number;
+  confirmed: number;
+  /** Delivered in the range, by delivery date. */
+  delivered: number;
+  /** Spend / (orders placed x cohort yield). Null with a message when there is no yield or no order. */
+  projectedCostPerDelivered: { value: MoneyView | null; message: string | null };
+  actualCostPerDelivered: { label: string; value: MoneyView | null };
+  maxCpa: MaxCpa;
+}
+
+async function tilesFor(from: string, to: string): Promise<TileSet> {
+  const tenantId = resolveTenantId();
+  const zone = getStoreTimeZone(tenantId);
+  const start = startOfDay(from, zone);
+  const end = startOfDay(shiftYmd(to, 1), zone);
+  const placedWhere = { tenantId, deletedAt: null, status: { notIn: DIGITAL }, createdAt: { gte: start, lt: end } };
+
+  const store = await getCurrency();
+  const [spent, ctx, cpa, ordersPlaced, confirmed, delivered] = await Promise.all([
+    spendInRange({ from, to }, store),
+    accountContext(to),
+    maxCpaRaw({ to }),
+    prisma.order.count({ where: placedWhere }),
+    prisma.order.count({ where: { ...placedWhere, status: { in: CONFIRMED } } }),
+    prisma.order.count({ where: { tenantId, deletedAt: null, status: 'delivered', deliveryDate: { gte: start, lt: end } } }),
+  ]);
+  // One rate for the whole tile set: the effective rate of the range, so the label and every figure agree.
+  const ectx = effectiveContext(ctx, spent);
+  const perCount = (n: Money.MoneyInput) => perCountOf(spent, ectx, n);
+  const spend = spendFigure(spent, ectx, store);
+
+  let projected: TileSet['projectedCostPerDelivered'];
+  if (cpa.yieldPct === null) projected = { value: null, message: NOT_ENOUGH_CLOSED };
+  else if (ordersPlaced === 0 || cpa.yieldPct === 0) projected = { value: null, message: null };
+  else projected = { value: perCount(Money.mul(ordersPlaced, Money.div(cpa.yieldPct, 100))), message: null };
+
+  return {
+    from, to, spend, spendDaysWaitingForRate: spent.waitingForRate, ordersPlaced, confirmed, delivered,
+    projectedCostPerDelivered: projected,
+    actualCostPerDelivered: { label: ACTUAL_COST_LABEL, value: delivered > 0 ? perCount(delivered) : null },
+    maxCpa: maxCpaView(cpa, ectx),
+  };
+}
+
+/** The tiles of [from, to] (YYYY-MM-DD, both inclusive) and of the period of the same length just before it. */
+export async function tiles(range: { from: string; to: string }): Promise<TileSet & { previous: TileSet }> {
+  const length = Math.round((utcDateOfYmd(range.to).getTime() - utcDateOfYmd(range.from).getTime()) / 86_400_000) + 1;
+  const previousTo = shiftYmd(range.from, -1);
+  const [current, previous] = await Promise.all([tilesFor(range.from, range.to), tilesFor(shiftYmd(previousTo, 1 - length), previousTo)]);
+  return { ...current, previous };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Daily spend vs orders (M8, COD-74)
+// ---------------------------------------------------------------------------------------------
+
+/** Longest range `daily` answers, in days. */
+export const MAX_DAILY_DAYS = 366;
+
+export interface DailyRow {
+  date: string;
+  /** `store` is null with `waitingForRate` when the day has spend and no FX rate yet. */
+  spend: Omit<MoneyView, 'store'> & { store: string | null };
+  waitingForRate: boolean;
+  ordersPlaced: number;
+  /** Spend / orders placed, in the account currency when there is one. Null with no order or no spend. */
+  costPerOrder: MoneyView | null;
+}
+
+export interface DailyResult {
+  from: string;
+  to: string;
+  days: DailyRow[];
+  best: { date: string; costPerOrder: MoneyView } | null;
+  worst: { date: string; costPerOrder: MoneyView } | null;
+  average: { spend: MoneyView; ordersPerDay: number };
+}
+
+/** The figure a cost per order is ranked by: the account currency when shown, else the store currency. */
+const rankOf = (v: MoneyView): Money.Money => Money.parse(v.account ?? v.store);
+
+/**
+ * One row per day of [from, to] in the store time zone, days with nothing included. Spend of a day is converted at that
+ * day's rate (as the tiles and the ledger do); orders placed follow the tile rule (not digital, `createdAt` in that day).
+ * Best and worst day: lowest and highest cost per order among the days that have both spend and orders.
+ */
+export async function daily(range: { from: string; to: string }): Promise<DailyResult> {
+  const tenantId = resolveTenantId();
+  const zone = getStoreTimeZone(tenantId);
+  const length = Math.round((utcDateOfYmd(range.to).getTime() - utcDateOfYmd(range.from).getTime()) / 86_400_000) + 1;
+  if (length > MAX_DAILY_DAYS) throw new AppError(`The range must not be longer than ${MAX_DAILY_DAYS} days`, 400, 'INVALID_RANGE');
+  const dates = Array.from({ length }, (_, i) => shiftYmd(range.from, i));
+
+  const store = await getCurrency();
+  const [rows, orders, ctx] = await Promise.all([
+    spendRowsOf(range),
+    prisma.order.findMany({
+      where: { tenantId, deletedAt: null, status: { notIn: DIGITAL }, createdAt: { gte: startOfDay(range.from, zone), lt: startOfDay(shiftYmd(range.to, 1), zone) } },
+      select: { createdAt: true },
+    }),
+    accountContext(range.to),
+  ]);
+  const placed = new Map<string, number>();
+  for (const o of orders) {
+    const ymd = localDate(o.createdAt, zone);
+    placed.set(ymd, (placed.get(ymd) ?? 0) + 1);
+  }
+  const rowsByDay = new Map<string, SpendRow[]>();
+  for (const r of rows) {
+    const ymd = r.date.toISOString().slice(0, 10);
+    rowsByDay.set(ymd, [...(rowsByDay.get(ymd) ?? []), r]);
+  }
+
+  const spents = await Promise.all(dates.map((d) => spendOfRows(rowsByDay.get(d) ?? [], store)));
+  const days: DailyRow[] = dates.map((date, i) => {
+    const spent = spents[i];
+    const ectx = effectiveContext(ctx, spent);
+    const ordersPlaced = placed.get(date) ?? 0;
+    const waitingForRate = spent.waitingForRate > 0;
+    const hasSpend = spent.spend.gt(0);
+    return {
+      date,
+      spend: waitingForRate ? waitingFigure(spent, ectx, store) : hasSpend ? spendFigure(spent, ectx, store) : moneyView(Money.ZERO, ectx),
+      waitingForRate,
+      ordersPlaced,
+      costPerOrder: ordersPlaced > 0 && hasSpend ? perCountOf(spent, ectx, ordersPlaced) : null,
+    };
+  });
+
+  const ranked = days.filter((d): d is DailyRow & { costPerOrder: MoneyView } => d.costPerOrder !== null);
+  let best: DailyResult['best'] = null;
+  let worst: DailyResult['worst'] = null;
+  for (const d of ranked) {
+    if (!best || rankOf(d.costPerOrder).lt(rankOf(best.costPerOrder))) best = { date: d.date, costPerOrder: d.costPerOrder };
+    if (!worst || rankOf(d.costPerOrder).gt(rankOf(worst.costPerOrder))) worst = { date: d.date, costPerOrder: d.costPerOrder };
+  }
+
+  const total = await spendOfRows(rows, store);
+  const totalOrders = days.reduce((n, d) => n + d.ordersPlaced, 0);
+  return {
+    from: range.from, to: range.to, days, best, worst,
+    average: {
+      spend: perCountOf(total, effectiveContext(ctx, total), length),
+      ordersPerDay: Math.round((totalOrders / length) * 100) / 100,
+    },
+  };
+}

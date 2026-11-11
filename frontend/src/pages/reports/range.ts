@@ -1,5 +1,5 @@
-// The date card of F-1050: five presets. Africa/Accra is UTC and the Orders list already works in UTC dates, so these do too.
-export type Preset = 'today' | 'last7' | 'month' | 'lastMonth' | 'custom';
+// The date card of F-1050: five presets (Reports offers these; `week` is for Marketing). Africa/Accra is UTC and the Orders list already works in UTC dates, so these do too.
+export type Preset = 'today' | 'week' | 'last7' | 'month' | 'lastMonth' | 'custom';
 export interface DayRange { from: string; to: string }
 
 export const PRESETS: Array<{ id: Preset; label: string }> = [
@@ -21,6 +21,7 @@ export function presetRange(preset: Exclude<Preset, 'custom'>, now: Date = new D
   const today = utc(y, m, now.getUTCDate());
   switch (preset) {
     case 'today': return { from: iso(today), to: iso(today) };
+    case 'week': return { from: iso(new Date(+today - ((today.getUTCDay() + 6) % 7) * DAY)), to: iso(today) }; // Monday to today
     case 'last7': return { from: iso(new Date(+today - 6 * DAY)), to: iso(today) };
     case 'month': return { from: iso(utc(y, m, 1)), to: iso(today) };
     case 'lastMonth': return { from: iso(utc(y, m - 1, 1)), to: iso(utc(y, m, 0)) };

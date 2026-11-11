@@ -78,6 +78,7 @@ import agentInventoryRoutes from './routes/agentInventoryRoutes';
 import inventoryRoutes from './routes/inventoryRoutes';
 import shipmentRoutes from './routes/shipmentRoutes';
 import whatsappRoutes from './routes/whatsappRoutes';
+import metaAdsRoutes from './routes/metaAdsRoutes';
 import smsRoutes from './routes/smsRoutes';
 import emailRoutes from './routes/emailRoutes';
 import paystackRoutes from './routes/paystackRoutes';
@@ -89,6 +90,7 @@ import onboardingRoutes from './routes/onboardingRoutes';
 import referenceRoutes from './routes/referenceRoutes';
 import locationRoutes from './routes/locationRoutes';
 import fxRoutes from './routes/fxRoutes';
+import marketingRoutes from './routes/marketingRoutes';
 import billingRoutes from './routes/billingRoutes';
 import platformRoutes from './routes/platformRoutes';
 import mcpKeyRoutes from './routes/mcpKeyRoutes';
@@ -106,6 +108,7 @@ import mcpHttpTransport from './mcp/httpTransport';
 import { closeRateLimiter } from './mcp/rateLimiter';
 import { verifyWebhook, handleWebhook } from './controllers/whatsappController';
 import { handleOAuthCallback, stopCleanupInterval } from './controllers/whatsappOAuthController';
+import { callback as metaAdsOAuthCallback } from './controllers/metaAdsController';
 import { scheduleTokenRefresh } from './services/whatsappTokenRefreshService';
 import { seedTenantDefaults } from './services/tenantDefaultsService';
 import { GLAccountService } from './services/glAccountService';
@@ -120,6 +123,7 @@ import './queues/emailCampaignQueue';
 
 import { setupAgingCron } from './queues/agingQueue';
 import { setupFxRateCron } from './queues/fxRateQueue';
+import { setupMetaPullCron } from './queues/metaPullQueue';
 import { setupFinancialReconciliationCron } from './queues/financialReconciliationQueue';
 import { setupLedgerCheckCron } from './queues/ledgerCheckQueue';
 import { setupStockCheckCron } from './queues/stockCheckQueue';
@@ -299,6 +303,9 @@ app.post('/api/whatsapp/webhook', whatsappWebhookLimiter, handleWebhook);
 app.get('/api/whatsapp/oauth/callback', apiLimiter, handleOAuthCallback);
 // Admin endpoints use standard rate limiter
 app.use('/api/whatsapp', apiLimiter, whatsappRoutes);
+// Meta Ads OAuth callback — unauthenticated (CSRF state validates the request)
+app.get('/api/meta-ads/oauth/callback', apiLimiter, metaAdsOAuthCallback);
+app.use('/api/meta-ads', apiLimiter, metaAdsRoutes);
 app.use('/api/sms', apiLimiter, smsRoutes);
 app.use('/api/email', apiLimiter, emailRoutes);
 app.use('/api/paystack', apiLimiter, paystackRoutes);
@@ -309,6 +316,7 @@ app.use('/api/onboarding', apiLimiter, onboardingRoutes);
 app.use('/api/reference', apiLimiter, referenceRoutes);
 app.use('/api/locations', apiLimiter, locationRoutes);
 app.use('/api/fx', apiLimiter, fxRoutes);
+app.use('/api/marketing', apiLimiter, marketingRoutes);
 app.use('/api/billing', apiLimiter, billingRoutes);
 app.use('/api/platform', platformRoutes);
 app.use('/api/mcp-keys', apiLimiter, mcpKeyRoutes);
@@ -378,6 +386,9 @@ if (process.env.NODE_ENV !== 'test') {
 
     // Setup daily FX rate refresh (M1-T30)
     await setupFxRateCron();
+
+    // Setup daily Meta Ads pull (M8-T06)
+    await setupMetaPullCron();
 
     // Setup Financial Reconciliation Cron Job
     await setupFinancialReconciliationCron();

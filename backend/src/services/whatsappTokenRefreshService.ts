@@ -6,11 +6,34 @@ import { encryptProviderSecrets, decryptProviderSecrets } from '../utils/provide
 import { clearWhatsAppConfigCache } from './whatsappService';
 import { resolveTenantId } from '../utils/tenantContext';
 import { forEachTenant } from '../utils/tenantLoop';
+import { createNotification, findTenantAdmins } from './notificationService';
 
 // Tenants with a refresh in flight (one refresh per tenant at a time)
 const refreshing = new Set<string>();
 
 const REFRESH_BUFFER_DAYS = 7;
+
+/** A failed refresh alerts the owner and admins, at most once per tenant per day (UTC). */
+async function alertRefreshFailed(configId: number, provider: any): Promise<void> {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    if (typeof provider.oauthRefreshFailedAt === 'string' && provider.oauthRefreshFailedAt.slice(0, 10) === today) return;
+
+    const encrypted = encryptProviderSecrets('whatsappProvider', { ...provider, oauthRefreshFailedAt: new Date().toISOString() });
+    await prisma.systemConfig.update({ where: { id: configId }, data: { whatsappProvider: encrypted } });
+
+    for (const admin of await findTenantAdmins()) {
+      await createNotification(
+        String(admin.id),
+        'whatsapp_token_refresh_failed',
+        'WhatsApp connection problem',
+        'WhatsApp connection could not refresh. Reconnect WhatsApp in Settings.'
+      );
+    }
+  } catch (err: any) {
+    logger.error('WhatsApp refresh-failure alert failed', { error: err.message });
+  }
+}
 
 /**
  * Refresh the current tenant's WhatsApp OAuth token if it's within 7 days of expiry.
@@ -65,10 +88,17 @@ export async function refreshTokenIfNeeded(): Promise<{
       currentExpiry: expiry.toISOString(),
     });
 
-    const result = await refreshLongLivedToken(provider.accessToken);
+    let result;
+    try {
+      result = await refreshLongLivedToken(provider.accessToken);
+    } catch (refreshError) {
+      await alertRefreshFailed(config.id, provider);
+      throw refreshError;
+    }
 
+    const { oauthRefreshFailedAt: _failedAt, ...providerRest } = provider;
     const updatedProvider = {
-      ...provider,
+      ...providerRest,
       accessToken: result.accessToken,
       oauthTokenExpiry: result.expiresAt || tokenFallbackExpiry(),
     };

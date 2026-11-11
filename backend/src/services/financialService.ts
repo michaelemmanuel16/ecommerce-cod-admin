@@ -107,6 +107,9 @@ async function ownsExpense(requester: Requester | undefined, expense: { recorded
 
 /** Rows posted by the system (Meta pull, delivery fee, AI) cannot be edited or deleted by hand (F-917). */
 function assertExpenseEditable(expense: { source: string }) {
+  if (expense.source === 'meta') {
+    throw new AppError('Meta ad spend is posted by CodAdmin. Change it in Meta.', 409, 'EXPENSE_LOCKED');
+  }
   if (expense.source !== 'manual') {
     throw new AppError('This expense is posted by the system and cannot be edited or deleted by hand', 403, 'EXPENSE_LOCKED');
   }

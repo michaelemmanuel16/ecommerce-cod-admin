@@ -225,6 +225,7 @@ jobs:
             git reset --hard origin/develop
             export META_APP_ID="${{ secrets.META_APP_ID }}"
             export META_APP_SECRET="${{ secrets.META_APP_SECRET }}"
+            export META_ADS_CONFIG_ID="${{ secrets.META_ADS_CONFIG_ID }}"
             export WHATSAPP_APP_SECRET="${{ secrets.WHATSAPP_APP_SECRET }}"
             export SENTRY_DSN="${{ secrets.BACKEND_SENTRY_DSN }}"
             export PLATFORM_PAYSTACK_SECRET_KEY="${{ secrets.PLATFORM_PAYSTACK_SECRET_KEY_STAGING }}"
@@ -258,6 +259,7 @@ jobs:
             git reset --hard origin/main
             export META_APP_ID="${{ secrets.META_APP_ID }}"
             export META_APP_SECRET="${{ secrets.META_APP_SECRET }}"
+            export META_ADS_CONFIG_ID="${{ secrets.META_ADS_CONFIG_ID }}"
             export WHATSAPP_APP_SECRET="${{ secrets.WHATSAPP_APP_SECRET }}"
             export SENTRY_DSN="${{ secrets.BACKEND_SENTRY_DSN }}"
             export PLATFORM_PAYSTACK_SECRET_KEY="${{ secrets.PLATFORM_PAYSTACK_SECRET_KEY_PROD }}"

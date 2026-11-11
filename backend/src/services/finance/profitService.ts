@@ -33,7 +33,7 @@ function deliveredWhere(from: Date, to: Date) {
 }
 
 /** Split `amount` over weights; the last share takes the rounding rest so the shares add up to `amount` exactly. */
-function shares(amount: Money.Money, weights: Money.Money[]): Money.Money[] {
+export function shares(amount: Money.Money, weights: Money.Money[]): Money.Money[] {
   const total = Money.sum(weights);
   let left = amount;
   return weights.map((w, i) => {

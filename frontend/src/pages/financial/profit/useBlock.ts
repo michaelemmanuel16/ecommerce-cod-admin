@@ -13,12 +13,17 @@ export function clearBlockCache(): void {
 }
 
 /** The mounted blocks, so a save can make every one of them ask again. */
-const mounted = new Set<() => void>();
+const mounted = new Set<{ key: () => string; ask: () => void }>();
 
-/** Forgets every cached answer and asks again in each block on screen. Called after a save changes the books (an expense, a payout). */
-export function refreshBlocks(): void {
-  clearBlockCache();
-  mounted.forEach((ask) => ask());
+/**
+ * Forgets every cached answer and asks again in each block on screen. Called after a save changes the books (an expense, a payout).
+ * With `prefixes`, only the blocks whose key starts with one of them.
+ */
+export function refreshBlocks(prefixes?: string[]): void {
+  const match = (key: string) => !prefixes || prefixes.some((p) => key.startsWith(p));
+  for (const key of [...results.keys()]) if (match(key)) results.delete(key);
+  for (const key of [...inflight.keys()]) if (match(key)) inflight.delete(key);
+  mounted.forEach((m) => { if (match(m.key())) m.ask(); });
 }
 
 /** The answer for `key`: the cached one while it is fresh, the call already on its way, or a new call. `fresh` skips the first two. */
@@ -81,9 +86,9 @@ export function useBlock<T>(key: string, load: () => Promise<T>, enabled = true)
   // refreshBlocks() cleared the cache: the first block to ask makes the call, the others share it
   useEffect(() => {
     if (!enabled) return;
-    const ask = () => run(latestKey.current, false);
-    mounted.add(ask);
-    return () => { mounted.delete(ask); };
+    const entry = { key: () => latestKey.current, ask: () => run(latestKey.current, false) };
+    mounted.add(entry);
+    return () => { mounted.delete(entry); };
   }, [run, enabled]);
 
   return { ...state, retry: () => run(key, true) };

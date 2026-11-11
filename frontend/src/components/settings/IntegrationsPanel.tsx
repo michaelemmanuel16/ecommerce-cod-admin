@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { MessageSquare, Phone, Mail, Webhook, ChevronRight, CreditCard, Bot } from 'lucide-react';
+import { MessageSquare, Phone, Mail, Webhook, ChevronRight, CreditCard, Bot, Megaphone } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { SystemConfig } from '../../services/admin.service';
 import { SmsIntegration } from './integrations/SmsIntegration';
@@ -8,9 +8,10 @@ import { EmailIntegration } from './integrations/EmailIntegration';
 import { PaystackIntegration } from './integrations/PaystackIntegration';
 import { WebhooksOverview } from './integrations/WebhooksOverview';
 import { McpIntegration } from './integrations/McpIntegration';
+import { MetaAdsIntegration } from './integrations/MetaAdsIntegration';
 
-type IntegrationSection = 'sms' | 'whatsapp' | 'email' | 'paystack' | 'webhooks' | 'ai-assistant';
-const VALID_SECTIONS: IntegrationSection[] = ['sms', 'whatsapp', 'email', 'paystack', 'webhooks', 'ai-assistant'];
+type IntegrationSection = 'sms' | 'whatsapp' | 'email' | 'paystack' | 'webhooks' | 'meta-ads' | 'ai-assistant';
+const VALID_SECTIONS: IntegrationSection[] = ['sms', 'whatsapp', 'email', 'paystack', 'webhooks', 'meta-ads', 'ai-assistant'];
 
 const NAV_ITEMS: { id: IntegrationSection; label: string; description: string; icon: React.FC<{ className?: string }> }[] = [
   { id: 'sms', label: 'SMS', description: 'Arkesel SMS', icon: Phone },
@@ -18,6 +19,7 @@ const NAV_ITEMS: { id: IntegrationSection; label: string; description: string; i
   { id: 'email', label: 'Email', description: 'SendGrid / SMTP', icon: Mail },
   { id: 'paystack', label: 'Paystack', description: 'Online Payments', icon: CreditCard },
   { id: 'webhooks', label: 'Webhooks', description: 'Order imports', icon: Webhook },
+  { id: 'meta-ads', label: 'Meta Ads', description: 'Ad spend', icon: Megaphone },
   { id: 'ai-assistant', label: 'AI Assistant', description: 'MCP Server', icon: Bot },
 ];
 
@@ -67,6 +69,8 @@ export const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ systemConf
         return <PaystackIntegration systemConfig={systemConfig} onConfigSaved={onConfigSaved} />;
       case 'webhooks':
         return <WebhooksOverview />;
+      case 'meta-ads':
+        return <MetaAdsIntegration />;
       case 'ai-assistant':
         return <McpIntegration />;
     }

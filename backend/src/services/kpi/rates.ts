@@ -41,6 +41,8 @@ interface RateOptions {
   basis?: RateBasis;
   partnerId?: number;
   repId?: number;
+  /** Only orders that hold this product (M8-T10: the yield of one product's orders). */
+  productId?: number;
 }
 
 export interface Rates {
@@ -170,6 +172,7 @@ export async function rates(tenantId: string, from: Date, to: Date, options: Rat
       deletedAt: null,
       status: { notIn: DIGITAL },
       ...(options.partnerId !== undefined ? { deliveryAgentId: options.partnerId } : {}),
+      ...(options.productId !== undefined ? { orderItems: { some: { productId: options.productId } } } : {}),
     };
     const placed: Prisma.OrderWhereInput = { ...scope, createdAt: { gte: from, lt: to } };
     const placedForRep: Prisma.OrderWhereInput = options.repId !== undefined ? { ...placed, customerRepId: options.repId } : placed;
@@ -208,6 +211,7 @@ export async function rates(tenantId: string, from: Date, to: Date, options: Rat
         AND created_at >= ${from} AND created_at < ${to}
         ${options.partnerId !== undefined ? Prisma.sql`AND delivery_agent_id = ${options.partnerId}` : Prisma.empty}
         ${options.repId !== undefined ? Prisma.sql`AND customer_rep_id = ${options.repId}` : Prisma.empty}
+        ${options.productId !== undefined ? Prisma.sql`AND EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = orders.id AND oi.product_id = ${options.productId})` : Prisma.empty}
       GROUP BY 1`;
 
     const [statusGroups, outcome, dayData] = await Promise.all([placedByStatus, outcomes(), dayRows]);
