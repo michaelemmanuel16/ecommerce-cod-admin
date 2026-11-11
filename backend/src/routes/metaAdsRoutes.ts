@@ -13,7 +13,7 @@ const canUpdate = requireResourcePermission('marketing', 'update');
 const refreshLimiter = rateLimit({
   windowMs: 5 * 60 * 1000,
   max: 1,
-  keyGenerator: (req: any) => `meta-refresh:${req.user?.tenantId ?? ''}:${req.params.id}`,
+  keyGenerator: (req: any) => `meta-refresh:${req.user?.tenantId ?? ''}:${parseInt(req.params.id, 10)}`, // parsed id: "01" and "1x" share the key of 1
   message: { error: 'Refresh again in a few minutes.' },
   standardHeaders: true,
   legacyHeaders: false,

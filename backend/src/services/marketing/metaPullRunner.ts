@@ -1,11 +1,7 @@
 import logger from '../../utils/logger';
 import { pullAccount } from './metaInsightsService';
+import { postMetaSpend } from './metaLedgerService';
 
-type PostMetaSpend = (adAccountId: number, dates: string[]) => Promise<unknown>;
-
-// T07: lane B's metaLedgerService.ts exports postMetaSpend(adAccountId, dates). When it is merged, delete this
-// stub and use: import { postMetaSpend } from './metaLedgerService';
-const postMetaSpend: PostMetaSpend = async () => undefined;
 
 /**
  * Pull the last 3 days of one ad account, then post the spend of those days to the ledger.
