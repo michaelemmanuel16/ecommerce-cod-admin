@@ -7,6 +7,7 @@ import { whatsappService } from './whatsappService';
 import { smsService } from './smsService';
 import { fullName } from '../utils/nameUtils';
 import { packageLabelFor } from './upsellService';
+import { getAutoConfirmTemplate } from './messaging/templateService';
 
 export interface AutoConfirmResult {
   token: string;
@@ -145,10 +146,13 @@ export async function sendAutoConfirmForOrder(
     try {
       if (targetChannel === 'whatsapp') {
         try {
+          // The message comes from the tenant's `auto_confirm` template (Messages > Templates)
+          const template = await getAutoConfirmTemplate(tId);
           const waResult = await whatsappService.sendTemplate({
             to: phone,
-            templateName: 'order_auto_confirm',
-            languageCode: 'en_US', // must match the approved template's language on Meta
+            templateName: template.metaTemplateName ?? 'order_auto_confirm',
+            languageCode: template.language ?? 'en_US', // must match the approved template's language on Meta
+            bodyText: template.body,
             headerParams: [productName],
             bodyParams: [
               customerName,
