@@ -8,6 +8,7 @@ import { validate, validateRequest } from '../middleware/validation';
 import { spreadsheetUpload, handleImportUploadErrors } from '../config/multer';
 import { createOrderValidation, updateOrderStatusValidation, assignRepValidation, assignAgentValidation, orderListValidation, bulkDeleteValidation, bulkStatusValidation, bulkAssignValidation } from '../utils/validators';
 import { bulkOrderRateLimiter, bulkImportRateLimiter } from '../middleware/bulkRateLimiter';
+import * as messageTracking from '../controllers/messageTrackingController';
 
 const router = Router();
 
@@ -37,6 +38,7 @@ router.post('/', createOrderValidation, validate, requireResourcePermission('ord
 router.get('/:id', requireResourcePermission('orders', 'view'), orderController.getOrder);
 router.put('/:id', requireResourcePermission('orders', 'update'), orderController.updateOrder);
 router.delete('/:id', requireResourcePermission('orders', 'delete'), orderController.deleteOrder);
+router.get('/:id/messages', requireResourcePermission('orders', 'view'), messageTracking.forOrder);
 router.get('/:id/timeline', requireResourcePermission('orders', 'view'), orderController.getOrderTimeline);
 router.get('/:id/transitions', requireResourcePermission('orders', 'view'), orderController.getOrderTransitions);
 router.patch('/:id/status', validateRequest(updateOrderStatusValidation), requireResourcePermission('orders', 'update', 'update_status'), orderController.updateOrderStatus);
