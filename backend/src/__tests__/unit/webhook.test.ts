@@ -16,6 +16,7 @@ jest.mock('../../server', () => {
   m.to.mockReturnValue(m);
   return { io: m };
 });
+jest.mock('../../services/orderService', () => ({ __esModule: true, default: { createOrder: jest.fn() } }));
 jest.mock('../../queues/workflowQueue', () => ({
   workflowQueue: {
     add: jest.fn().mockResolvedValue({}),
@@ -25,6 +26,7 @@ jest.mock('../../queues/workflowQueue', () => ({
 // Import prismaMock first to activate the jest.mock in prisma.mock.ts
 import { prismaMock } from '../mocks/prisma.mock';
 import { verifySignature } from '../../utils/crypto';
+import orderService from '../../services/orderService';
 import { importOrdersViaWebhook } from '../../controllers/webhookController';
 
 describe('Webhook Controller', () => {
@@ -89,7 +91,7 @@ describe('Webhook Controller', () => {
       prismaMock.order.findMany.mockResolvedValue([]);
       prismaMock.order.findFirst.mockResolvedValue(null);
       prismaMock.order.count.mockResolvedValue(0);
-      prismaMock.order.create.mockResolvedValue({} as any);
+      (orderService.createOrder as any).mockResolvedValue({} as any);
 
       await importOrdersViaWebhook(mockReq, mockRes, mockNext);
 
@@ -178,7 +180,7 @@ describe('Webhook Controller', () => {
       prismaMock.order.findMany.mockResolvedValue([]);
       prismaMock.order.findFirst.mockResolvedValue(null);
       prismaMock.order.count.mockResolvedValue(0);
-      prismaMock.order.create.mockResolvedValue({} as any);
+      (orderService.createOrder as any).mockResolvedValue({} as any);
 
       await importOrdersViaWebhook(mockReq, mockRes, mockNext);
 
@@ -214,7 +216,7 @@ describe('Webhook Controller', () => {
 
       await importOrdersViaWebhook(mockReq, mockRes, mockNext);
 
-      expect(prismaMock.order.create).not.toHaveBeenCalled();
+      expect(orderService.createOrder).not.toHaveBeenCalled();
       expect(mockRes.json).toHaveBeenCalledWith(
         expect.objectContaining({
           results: expect.objectContaining({ success: 0, skipped: 1, failed: 0 }),
@@ -232,7 +234,7 @@ describe('Webhook Controller', () => {
       const prismaError = new Error('Unique constraint failed') as any;
       prismaError.code = 'P2002';
       prismaError.meta = { target: ['webhook_fingerprint'] };
-      prismaMock.order.create.mockRejectedValue(prismaError);
+      (orderService.createOrder as any).mockRejectedValue(prismaError);
 
       await importOrdersViaWebhook(mockReq, mockRes, mockNext);
 
@@ -249,11 +251,11 @@ describe('Webhook Controller', () => {
 
       prismaMock.order.findMany.mockResolvedValue([]);
       prismaMock.order.findFirst.mockResolvedValue(null); // outside window
-      prismaMock.order.create.mockResolvedValue({ id: 1000 } as any);
+      (orderService.createOrder as any).mockResolvedValue({ id: 1000 } as any);
 
       await importOrdersViaWebhook(mockReq, mockRes, mockNext);
 
-      expect(prismaMock.order.create).toHaveBeenCalledTimes(1);
+      expect(orderService.createOrder).toHaveBeenCalledTimes(1);
       expect(mockRes.json).toHaveBeenCalledWith(
         expect.objectContaining({
           results: expect.objectContaining({ success: 1, skipped: 0, failed: 0 }),
