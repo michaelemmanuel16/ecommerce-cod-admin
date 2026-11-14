@@ -200,6 +200,8 @@ export async function sendWhatsAppForOrder(
 
 interface SendTemplateOptions {
   to: string;
+  /** The template text with {{1}} placeholders, from the MessageTemplate row. The log keeps it filled in. */
+  bodyText?: string;
   templateName: string;
   languageCode?: string;
   bodyParams?: string[];
@@ -264,7 +266,7 @@ export function formatPhoneNumber(phone: string): string {
  * Build a human-readable message body from a template for logging purposes.
  * Best-effort representation — the actual message sent uses Meta's template system.
  */
-function buildMessageBody(templateName: string, bodyParams: string[]): string {
+function buildMessageBody(templateName: string, bodyParams: string[], bodyText?: string): string {
   const templates: Record<string, string> = {
     order_created: `Hi {1}, we've received your order {2}! Total: {3}. We'll confirm it shortly and keep you updated.`,
     order_confirmed: `Hi {1}, your order {2} has been confirmed! Total: {3}. We'll update you as it progresses.`,
@@ -274,9 +276,9 @@ function buildMessageBody(templateName: string, bodyParams: string[]): string {
     order_auto_confirm: `Hello {1},\n\nThank you for your order.\n\n*Package:* {2}\n*Order number:* #{3}\n*Pay on delivery:* {4}\n\nPlease confirm your order so we can send it out for delivery.`,
   };
 
-  let body = templates[templateName] || `Template: ${templateName}`;
+  let body = bodyText ?? (templates[templateName] || `Template: ${templateName}`);
   bodyParams.forEach((param, i) => {
-    body = body.replace(`{${i + 1}}`, param);
+    body = body.replace(`{${i + 1}}`, param).replace(`{{${i + 1}}}`, param);
   });
   return body;
 }
@@ -288,6 +290,7 @@ class WhatsAppService {
   async sendTemplate(options: SendTemplateOptions): Promise<{ messageLogId: number; providerMessageId?: string; sent: boolean }> {
     const {
       to,
+      bodyText,
       templateName,
       languageCode = 'en_US',
       bodyParams = [],
@@ -307,7 +310,7 @@ class WhatsAppService {
       channel: MessageChannel.whatsapp,
       to: formattedPhone,
       template: { name: templateName, languageCode, bodyParams, headerParams, buttonPayloads },
-      logBody: buildMessageBody(templateName, bodyParams),
+      logBody: buildMessageBody(templateName, bodyParams, bodyText),
       orderId,
       customerId,
       conversationId,

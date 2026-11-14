@@ -4,6 +4,7 @@ import { AppError } from '../../middleware/errorHandler';
 import whatsappService, { formatPhoneNumber } from '../whatsappService';
 import { notifyCustomerReply } from './replyNotify';
 import { isOptedOut } from './optOutService';
+import { assertSendable, getTemplate } from './templateService';
 
 export interface Actor {
   id: number;
@@ -155,8 +156,6 @@ export async function getThread(id: number, actor: Actor) {
 export interface ReplyInput {
   body?: string;
   templateId?: number;
-  templateName?: string;
-  languageCode?: string;
   variables?: string[];
 }
 
@@ -164,8 +163,15 @@ export async function replyToConversation(id: number, actor: Actor, input: Reply
   const c = await loadVisible(id, actor);
   if (c.channel !== MessageChannel.whatsapp) throw new AppError('Only WhatsApp conversations can be answered here', 400, 'CHANNEL_NOT_SUPPORTED');
 
+  // A template to send must exist in this tenant and be approved (409 otherwise), whatever the window says
+  const template = input.templateId ? await getTemplate(c.tenantId, input.templateId) : null;
+  if (template) {
+    if (template.channel !== MessageChannel.whatsapp) throw new AppError('Pick a WhatsApp template', 400, 'TEMPLATE_CHANNEL');
+    assertSendable(template);
+  }
+
   const open = windowOpen(c.lastInboundAt);
-  const isTemplate = !!(input.templateId || input.templateName);
+  const isTemplate = !!input.templateId;
   if (!isTemplate && !open) throw new AppError(WINDOW_CLOSED_MESSAGE, 422, 'WINDOW_CLOSED');
 
   // A customer who wrote in the last 24 hours can always be answered; otherwise an opted-out number cannot be messaged,
@@ -183,16 +189,14 @@ export async function replyToConversation(id: number, actor: Actor, input: Reply
   const common = { to: c.phone, customerId: c.customerId ?? undefined, conversationId: c.id, inReplyToId: latestInbound?.id, optOutCheckedByCaller: true };
 
   let result: { messageLogId: number; providerMessageId?: string; sent: boolean };
-  if (isTemplate) {
-    let name = input.templateName;
-    let language = input.languageCode;
-    if (input.templateId) {
-      const template = await prisma.messageTemplate.findFirst({ where: { id: input.templateId, channel: MessageChannel.whatsapp } });
-      if (!template) throw new AppError('Template not found', 404, 'TEMPLATE_NOT_FOUND');
-      name = template.metaTemplateName ?? template.name;
-      language = language ?? template.language ?? undefined;
-    }
-    result = await whatsappService.sendTemplate({ ...common, templateName: name!, languageCode: language, bodyParams: input.variables });
+  if (template) {
+    result = await whatsappService.sendTemplate({
+      ...common,
+      templateName: template.metaTemplateName ?? template.name,
+      languageCode: template.language ?? undefined,
+      bodyParams: input.variables,
+      bodyText: template.body,
+    });
   } else {
     result = await whatsappService.sendText({ ...common, body: input.body! });
   }

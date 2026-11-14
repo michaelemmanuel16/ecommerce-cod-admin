@@ -2682,6 +2682,8 @@ model MessageTemplate {
   language         String?
   category         String?
   quickReplies     Json?          @map("quick_replies")
+  // The Meta components (header, body, footer, buttons) as the sync read them
+  components       Json?
   metaTemplateName String?        @map("meta_template_name")
   // APPROVED | PENDING | REJECTED | PAUSED
   metaStatus       String?        @map("meta_status")

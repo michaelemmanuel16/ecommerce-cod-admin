@@ -6,6 +6,7 @@ import { getProvider } from './providers';
 import { messageStatus } from './messageStatus';
 import { TemplateSend } from './types';
 import { isOptedOut } from './optOutService';
+import { assertTemplateNameSendable } from './templateService';
 
 export interface SendMessageInput {
   tenantId: string | null;
@@ -65,6 +66,10 @@ export function throwIfFailed(result: SendMessageResult): void {
 export type SendGate = (tx: Prisma.TransactionClient) => Promise<void>;
 
 async function run(input: SendMessageInput, gate?: SendGate): Promise<SendMessageResult> {
+  // A WhatsApp template that is pending, rejected or paused cannot be sent (409)
+  if (input.tenantId && input.channel === MessageChannel.whatsapp && input.template) {
+    await assertTemplateNameSendable(input.tenantId, input.template.name, input.template.languageCode);
+  }
   const provider = getProvider(input.channel);
   const base = {
     tenantId: input.tenantId ?? undefined,

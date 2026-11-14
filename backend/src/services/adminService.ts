@@ -169,6 +169,7 @@ export const adminService = {
     // adding a new integration is a one-line map update, not a copy-paste.
     const result: any = { ...config };
     delete result.tenant; // strip the include before sending
+    delete result.notificationTemplates; // the text lives in Message templates now (M9-T09, R8)
     for (const providerType of Object.keys(SENSITIVE_FIELDS)) {
       const raw = result[providerType];
       if (!raw) continue;
@@ -315,7 +316,6 @@ export const adminService = {
     emailProvider?: any;
     whatsappProvider?: any;
     paystackProvider?: any;
-    notificationTemplates?: any;
     features?: Record<string, unknown>;
   }) {
     await this.checkAdminPrivilege(requester, 'super_admin');
@@ -332,7 +332,8 @@ export const adminService = {
     if (!config) throw new Error('System config not found');
 
     // The store currency is Tenant.currency, not a SystemConfig column (M1-T31). The owner can change it at any time.
-    const { currency, ...configData } = data;
+    // The notification texts moved to Message templates (M9-T09, R8): an old client that still sends them changes nothing.
+    const { currency, notificationTemplates: _moved, ...configData } = data as typeof data & { notificationTemplates?: unknown };
     data = configData;
     if (currency !== undefined && tenantId) await changeStoreCurrency(tenantId, currency);
 
@@ -443,7 +444,8 @@ export const adminService = {
 
     await this.createAuditLog(requester, 'update', 'system_config', config.id.toString(), { changes: Object.keys(data) });
 
-    return updatedConfig;
+    const { notificationTemplates: _hidden, ...payload } = updatedConfig as typeof updatedConfig & { notificationTemplates?: unknown };
+    return payload;
   },
 
   // Role Permissions (the Settings matrix). Since M6-T04 it is a thin layer on the grid of the position role mapped from each

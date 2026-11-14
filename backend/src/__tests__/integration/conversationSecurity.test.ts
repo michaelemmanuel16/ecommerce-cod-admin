@@ -20,6 +20,7 @@ let owner: { id: number; token: string };
 let agent: { id: number; token: string };
 let rep: { id: number; token: string };
 let otherRep: { id: number; token: string };
+let templateId: number;
 let seq = 0;
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3600_000);
 const mkConv = (data: Record<string, unknown> = {}) => prismaBase.conversation.create({
@@ -32,6 +33,9 @@ beforeAll(async () => {
   agent = await mkUser(tenantA, 'agent', 'delivery_agent');
   rep = await mkUser(tenantA, 'rep', 'sales_rep');
   otherRep = await mkUser(tenantA, 'rep2', 'sales_rep');
+  templateId = (await prismaBase.messageTemplate.create({
+    data: { tenantId: tenantA, channel: 'whatsapp', name: 'Auto confirm', body: 'Hello', language: 'en_US', metaTemplateName: 'order_auto_confirm', metaStatus: 'APPROVED' },
+  })).id;
 });
 afterAll(async () => {
   await deleteTenantRows([tenantA]);
@@ -71,7 +75,7 @@ describe('opt-out by phone', () => {
   it('a reply to an opted-out unknown number (no customer) outside 24 hours is 409; inside 24 hours it is sent', async () => {
     const stale = await mkConv({ lastInboundAt: hoursAgo(48) });
     await prismaBase.optOutEvent.create({ data: { tenantId: tenantA, phone: stale.phone, channel: 'whatsapp', optedOut: true, reason: 'stop_reply' } });
-    const res = await request(app).post(`/api/conversations/${stale.id}/reply`).set(bearer(owner.token)).send({ templateName: 'order_auto_confirm' });
+    const res = await request(app).post(`/api/conversations/${stale.id}/reply`).set(bearer(owner.token)).send({ templateId });
     expect(res.status).toBe(409);
     const fresh = await mkConv({ lastInboundAt: hoursAgo(1) });
     await prismaBase.optOutEvent.create({ data: { tenantId: tenantA, phone: fresh.phone, channel: 'whatsapp', optedOut: true, reason: 'stop_reply' } });
@@ -82,7 +86,7 @@ describe('opt-out by phone', () => {
     const conv = await mkConv({ lastInboundAt: hoursAgo(48) });
     await prismaBase.optOutEvent.create({ data: { tenantId: tenantA, phone: conv.phone, channel: 'whatsapp', optedOut: true, reason: 'stop_reply', createdAt: hoursAgo(5) } });
     await prismaBase.optOutEvent.create({ data: { tenantId: tenantA, phone: conv.phone, channel: 'whatsapp', optedOut: false, reason: 'resubscribe', createdAt: hoursAgo(1) } });
-    expect((await request(app).post(`/api/conversations/${conv.id}/reply`).set(bearer(owner.token)).send({ templateName: 'order_auto_confirm' })).status).toBe(201);
+    expect((await request(app).post(`/api/conversations/${conv.id}/reply`).set(bearer(owner.token)).send({ templateId })).status).toBe(201);
   });
 
   it('messageSender skips every non-reply send to an opted-out phone: sendTemplate writes a skipped row and sends nothing', async () => {

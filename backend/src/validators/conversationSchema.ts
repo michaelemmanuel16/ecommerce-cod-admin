@@ -11,14 +11,12 @@ export const conversationListSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
 });
 
-/** POST /api/conversations/:id/reply: free text, or a template (a Meta template name until T09 lists templates) */
+/** POST /api/conversations/:id/reply: free text, or an approved template from the templates list */
 export const conversationReplySchema = z.object({
   body: z.string().trim().min(1).max(4096).optional(),
   templateId: z.number().int().positive().optional(),
-  templateName: z.string().trim().min(1).max(512).optional(),
-  languageCode: z.string().trim().min(2).max(10).optional(),
   variables: z.array(z.string().max(1024)).max(20).optional(),
-}).refine((v) => !!v.body !== !!(v.templateId || v.templateName), { message: 'Send either body or a template' });
+}).refine((v) => !!v.body !== !!v.templateId, { message: 'Send either body or a template' });
 
 /** PATCH /api/conversations/:id */
 export const conversationPatchSchema = z.object({

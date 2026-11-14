@@ -9,7 +9,7 @@ import {
 } from '../types';
 
 // WhatsApp Business Cloud API configuration
-const WHATSAPP_API_URL = 'https://graph.facebook.com/v21.0';
+export const WHATSAPP_API_URL = 'https://graph.facebook.com/v21.0';
 
 export interface WhatsAppConfig {
   accessToken: string;
