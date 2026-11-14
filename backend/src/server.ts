@@ -92,6 +92,7 @@ import paymentConnectionRoutes from './routes/paymentConnectionRoutes';
 import communicationRoutes from './routes/communicationRoutes';
 import messageRoutes from './routes/messageRoutes';
 import messageReadRoutes from './routes/messageReadRoutes';
+import connectionsRoutes from './routes/connectionsRoutes';
 import conversationRoutes from './routes/conversationRoutes';
 import onboardingRoutes from './routes/onboardingRoutes';
 import referenceRoutes from './routes/referenceRoutes';
@@ -137,6 +138,7 @@ import { setupLedgerCheckCron } from './queues/ledgerCheckQueue';
 import { setupStockCheckCron } from './queues/stockCheckQueue';
 import { setupPeriodCloseCron } from './queues/periodCloseQueue';
 import { setupMessageCleanupCron } from './queues/messageCleanupQueue';
+import { setupConnectionEventCleanupCron } from './queues/connectionEventCleanupQueue';
 import { setupReminderCron } from './queues/reminderQueue';
 import { setupPendingCheckoutCleanupCron } from './queues/pendingCheckoutCleanupQueue';
 import * as Money from './utils/money';
@@ -329,6 +331,7 @@ app.use('/api/payment-connections', apiLimiter, paymentConnectionRoutes);
 app.use('/api/communications', apiLimiter, communicationRoutes);
 app.use('/api/messages', apiLimiter, messageRoutes);
 app.use('/api/messages', apiLimiter, messageReadRoutes);
+app.use('/api/connections', apiLimiter, connectionsRoutes);
 app.use('/api/conversations', apiLimiter, conversationRoutes);
 app.use('/api/onboarding', apiLimiter, onboardingRoutes);
 app.use('/api/reference', apiLimiter, referenceRoutes);
@@ -428,6 +431,7 @@ if (process.env.NODE_ENV !== 'test') {
 
     // Setup Message Log Cleanup Cron Job
     await setupMessageCleanupCron();
+    await setupConnectionEventCleanupCron();
 
     // Setup reminder due job: every minute (M9-T18)
     await setupReminderCron();

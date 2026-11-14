@@ -11,6 +11,7 @@ import { formatOrderNumber } from '../utils/orderNumber';
 import { maskEmail } from '../utils/mask';
 import { buildThankYouUrl } from '../utils/thankYouUrl';
 import * as Money from '../utils/money';
+import { recordConnectionEvent } from '../services/connections/connectionEventService';
 
 /** Provider the request names. The old Paystack URL has no `:provider`, so it is Paystack. */
 function providerOf(req: Request): PaymentProvider | null {
@@ -67,6 +68,7 @@ async function processTenantWebhook(req: Request, res: Response, provider: Payme
   const isValid = await provider.verifyWebhook(tenantId, rawBody, req.headers);
   if (!isValid) {
     logger.warn('Invalid payment webhook signature', { tenantId, provider: provider.id, event: null, result: 'bad_signature' });
+    await recordConnectionEvent({ tenantId, connection: 'paystack', level: 'error', message: 'A payment webhook was refused: the signature did not match. Check the secret key in Paystack settings.', data: { provider: provider.id } });
     res.status(401).json({ error: 'Invalid signature' });
     return;
   }
