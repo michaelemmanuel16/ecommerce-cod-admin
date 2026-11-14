@@ -67,6 +67,8 @@ import reportRoutes from './routes/reportRoutes';
 import repRoutes from './routes/repRoutes';
 import notificationRoutes from './routes/notificationRoutes';
 import inboxRoutes from './routes/inboxRoutes';
+import reminderRoutes from './routes/reminderRoutes';
+import threadRoutes, { commentRoutes } from './routes/threadRoutes';
 import healthRoutes from './routes/health.routes';
 import uploadRoutes from './routes/uploadRoutes';
 import adminRoutes from './routes/adminRoutes';
@@ -132,6 +134,7 @@ import { setupLedgerCheckCron } from './queues/ledgerCheckQueue';
 import { setupStockCheckCron } from './queues/stockCheckQueue';
 import { setupPeriodCloseCron } from './queues/periodCloseQueue';
 import { setupMessageCleanupCron } from './queues/messageCleanupQueue';
+import { setupReminderCron } from './queues/reminderQueue';
 import { setupPendingCheckoutCleanupCron } from './queues/pendingCheckoutCleanupQueue';
 import * as Money from './utils/money';
 
@@ -294,6 +297,9 @@ app.use('/api/reports', apiLimiter, reportRoutes);
 app.use('/api/rep', apiLimiter, repRoutes);
 app.use('/api/notifications', apiLimiter, notificationRoutes);
 app.use('/api/inbox', apiLimiter, inboxRoutes);
+app.use('/api/reminders', apiLimiter, reminderRoutes);
+app.use('/api/threads', apiLimiter, threadRoutes);
+app.use('/api/comments', apiLimiter, commentRoutes);
 app.use('/api/upload', apiLimiter, uploadRoutes);
 app.use('/api/checkout-forms', apiLimiter, checkoutFormRoutes);
 app.use('/api/calls', apiLimiter, callRoutes);
@@ -411,6 +417,9 @@ if (process.env.NODE_ENV !== 'test') {
 
     // Setup Message Log Cleanup Cron Job
     await setupMessageCleanupCron();
+
+    // Setup reminder due job: every minute (M9-T18)
+    await setupReminderCron();
 
     // Setup abandoned Paystack pending-checkout cleanup
     await setupPendingCheckoutCleanupCron();

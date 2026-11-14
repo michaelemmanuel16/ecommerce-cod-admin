@@ -535,6 +535,7 @@ describe('OrderService', () => {
           orderHistory: { createMany: jest.fn().mockResolvedValue({ count: 2 }) as any },
           order: { updateMany: jest.fn().mockResolvedValue({ count: 2 }) as any },
           agentCollection: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) as any },
+          thread: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) as any },
           auditLog: { create: jest.fn().mockResolvedValue({}) as any },
         });
       });
