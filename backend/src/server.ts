@@ -121,7 +121,8 @@ import { GLAccountService } from './services/glAccountService';
 import cron from 'node-cron';
 
 // Initialize queue workers
-import './queues/workflowQueue';
+import { setupWorkflowOutboxCron } from './queues/workflowQueue';
+import { setupWorkflowSchedules } from './queues/workflowSchedule';
 import { registerWorkflowListeners } from './services/workflowService';
 import { registerCustomerStatsListeners } from './services/customerStatsService';
 import { registerDashboardCacheListeners } from './services/dashboardService';
@@ -395,6 +396,12 @@ if (process.env.NODE_ENV !== 'test') {
 
     // Book settled online payments to the ledger (F-406). Registered once.
     registerLedgerPoster();
+
+    // Drain the workflow trigger outbox every 30 s (M9-T21)
+    await setupWorkflowOutboxCron();
+
+    // One repeat job per schedule workflow, then the late catch-up (M9-T22)
+    await setupWorkflowSchedules();
 
     // Setup Agent Aging Cron Job
     await setupAgingCron();

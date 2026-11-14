@@ -11,6 +11,7 @@ import Bull from 'bull';
 import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
 import { workflowQueue, createWorkflowQueue } from '../../queues/workflowQueue';
+import { drainWorkflowOutbox, MAX_ATTEMPTS } from '../../queues/workflowEnqueue';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
 import { stockUp } from './helpers/stock';
 
@@ -50,8 +51,11 @@ beforeAll(async () => {
   await stockUp(tenantId, pair.a.ids.product, 100);
 }, 60_000);
 
+const outbox = () => prismaBase.workflowTriggerOutbox.findMany({ where: { tenantId }, orderBy: { id: 'asc' } });
+
 afterEach(async () => {
   jest.restoreAllMocks();
+  await prismaBase.workflowTriggerOutbox.deleteMany({ where: { tenantId } });
   await prismaBase.workflow.deleteMany({ where: { tenantId, name: { startsWith: PREFIX } } });
 });
 
@@ -74,8 +78,44 @@ describe('order creation with the workflow queue down', () => {
     expect(await prismaBase.order.findUnique({ where: { id: res.body.order.id } })).not.toBeNull();
     const rows = await waitFor(async () => { const r = await executions(wf.id); return r.length ? r : null; }, 'the execution row');
     expect(rows).toHaveLength(1);
-    expect(rows[0].status).toBe('pending'); // retried in the background, not failed and not lost
+    expect(rows[0].status).toBe('pending'); // waits in the outbox, not failed and not lost
     await waitFor(async () => add.mock.calls.length >= 1, 'the add');
+    const [row] = await waitFor(async () => { const r = await outbox(); return r.length ? r : null; }, 'the outbox row');
+    expect(row).toMatchObject({ event: 'execute-workflow', attempts: 0, processedAt: null });
+    expect((row.payload as any).executionId).toBe(rows[0].id);
+    expect(rows[0]).toMatchObject({ orderId: res.body.order.id, triggerSource: 'screen' });
+  });
+
+  it('the drain adds the run once Redis is back, oldest first, and closes the row', async () => {
+    const wf = await mkWorkflow();
+    const add = jest.spyOn(workflowQueue, 'add').mockRejectedValue(new Error('ECONNREFUSED') as never);
+    const res = await placeOrder();
+    expect(res.status).toBe(201);
+    await waitFor(async () => (await outbox()).length === 1, 'the outbox row');
+    const exec = (await executions(wf.id))[0];
+
+    add.mockResolvedValue({} as never); // Redis is back
+    await drainWorkflowOutbox();
+    expect(add).toHaveBeenLastCalledWith('execute-workflow', expect.objectContaining({ executionId: exec.id }), { jobId: `wf-run:${exec.id}` });
+    const [row] = await outbox();
+    expect(row.processedAt).not.toBeNull();
+    expect(row.attempts).toBe(1);
+    const again = add.mock.calls.length;
+    await drainWorkflowOutbox();
+    expect(add.mock.calls.length).toBe(again); // a processed row is not added twice
+  });
+
+  it('after 10 failed drains the row is closed and the execution is failed', async () => {
+    const wf = await mkWorkflow();
+    jest.spyOn(workflowQueue, 'add').mockRejectedValue(new Error('ECONNREFUSED') as never);
+    await placeOrder();
+    await waitFor(async () => (await outbox()).length === 1, 'the outbox row');
+    for (let i = 0; i < MAX_ATTEMPTS - 1; i++) await drainWorkflowOutbox();
+    expect((await executions(wf.id))[0].status).toBe('pending');
+    expect((await outbox())[0]).toMatchObject({ attempts: MAX_ATTEMPTS - 1, processedAt: null, lastError: 'ECONNREFUSED' });
+    await drainWorkflowOutbox();
+    expect((await outbox())[0].processedAt).not.toBeNull();
+    expect((await executions(wf.id))[0]).toMatchObject({ status: 'failed', error: 'Workflow queue is unavailable' });
   });
 
   it('an add that never answers (Redis hangs): the order is answered at once, not after 5 s', async () => {

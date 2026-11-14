@@ -38,7 +38,6 @@ jest.mock('../../utils/logger', () => ({
 import { prismaMock } from '../mocks/prisma.mock';
 import { useTestTenant } from '../mocks/tenant.mock';
 import { getDbSmsConfig } from '../../services/smsService';
-import { WorkflowService } from '../../services/workflowService';
 import { communicationService } from '../../services/communicationService';
 import { executeAction } from '../../queues/workflowQueue';
 import { testSend as smsTestSend } from '../../controllers/smsController';
@@ -82,14 +81,6 @@ describe('COD-193 quiet send: sent=false is never reported as sent', () => {
       await expect(
         executeAction({ type: 'send_whatsapp', config: { templateKey: 'confirmed' } }, { orderId: 1 }),
       ).resolves.toEqual({ sent: true, messageLogId: 0 });
-    });
-
-    it('service send_sms and send_whatsapp throw too', async () => {
-      const svc = new WorkflowService() as any;
-      await expect(svc.executeSendSMS({ phoneNumber: '0241234567', message: 'Hi' }, { orderId: 1 }))
-        .rejects.toThrow('SMS is not set up: message not sent');
-      await expect(svc.executeSendWhatsApp({ config: { templateKey: 'confirmed' } }, { orderId: 1 }))
-        .rejects.toThrow('WhatsApp is not set up: message not sent');
     });
   });
 

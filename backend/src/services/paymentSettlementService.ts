@@ -304,7 +304,7 @@ async function settleInTenant(
   });
 
   // Workflows + realtime, now that the order exists.
-  emitOrderCreatedEvent(order);
+  emitOrderCreatedEvent(order, { triggerSource: 'payment' });
   emitOrderCreated(getSocketInstance() as any, order);
 
   // Server-side Meta Purchase event (best-effort, idempotent via capiEventFired).
