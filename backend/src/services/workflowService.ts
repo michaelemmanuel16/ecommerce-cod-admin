@@ -2,10 +2,10 @@ import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { WorkflowTriggerType, Prisma, Workflow } from '@prisma/client';
 import logger from '../utils/logger';
-import { workflowQueue } from '../queues/workflowQueue';
+import { enqueueWorkflowRun } from '../queues/workflowEnqueue';
 import assignmentService from './assignmentService';
 import { systemActor } from './systemUserService';
-import { addOrderTag, updateOrderByWorkflow } from './workflowActions';
+import { addOrderTag, runHttpRequestAction, updateOrderByWorkflow } from './workflowActions';
 import { evaluateConditions as evaluateConditionRules } from '../utils/conditionEvaluator';
 import crypto from 'crypto';
 import { getTenantId, resolveTenantId, runInTenant } from '../utils/tenantContext';
@@ -257,20 +257,15 @@ export class WorkflowService {
     // Capture tenant context so the queue worker can restore it
     const tenantId = getTenantId();
 
-    // Add to queue for async processing (with 5s timeout to prevent API hang)
-    await Promise.race([
-      workflowQueue.add('execute-workflow', {
-        executionId: execution.id,
-        workflowId: workflow.id,
-        actions: workflow.actions,
-        conditions: workflow.conditions,
-        input: input || {},
-        tenantId,
-      }),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Workflow queue is currently unavailable. Please try again later.')), 5000)
-      )
-    ]);
+    // Add to queue for async processing. A queue that is down never fails the caller: the add is retried (M9-T21).
+    await enqueueWorkflowRun({
+      executionId: execution.id,
+      workflowId: workflow.id,
+      actions: workflow.actions as any[],
+      conditions: workflow.conditions,
+      input: input || {},
+      tenantId,
+    });
 
     logger.info('Workflow execution started', {
       workflowId: workflow.id,
@@ -534,21 +529,10 @@ export class WorkflowService {
   }
 
   /**
-   * Execute HTTP request action
+   * Execute HTTP request action (shared with the queue worker: timeout, no private addresses)
    */
   private async executeHttpRequest(action: any, _context: any): Promise<any> {
-    // TODO: Implement HTTP request with proper error handling
-    logger.info('HTTP request action executed (mock)', {
-      url: action.url,
-      method: action.method,
-      headers: action.headers
-    });
-
-    return {
-      success: true,
-      message: 'HTTP request sent (mock)',
-      url: action.url
-    };
+    return runHttpRequestAction(action);
   }
 
   /**

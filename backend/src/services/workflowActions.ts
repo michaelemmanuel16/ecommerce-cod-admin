@@ -4,6 +4,7 @@ import { OrderStatus } from '@prisma/client';
 import { transitionOrder } from './orderStateMachine';
 import { systemActor } from './systemUserService';
 import { setOrderPriorityAndNotes } from './orderService';
+import { safeHttpRequest } from '../utils/safeHttp';
 
 /**
  * Order writes shared by the two workflow executors (the Bull job in queues/workflowQueue.ts and
@@ -84,4 +85,16 @@ export async function addOrderTag(orderId: number, tag: string): Promise<void> {
   if (count === 0 && !(await prisma.order.findFirst({ where: { id: orderId }, select: { id: true } }))) {
     throw new AppError('Order not found', 404);
   }
+}
+
+/**
+ * The `http_request` action, shared by both executors (M9-T21). The editor writes `config.url/method/headers/body`;
+ * a flat `action.url` is an older saved shape. A refused or failed call, or a 4xx/5xx answer, throws: the step fails
+ * with a clear message. Nothing about the headers is logged or returned (they may hold a token).
+ */
+export async function runHttpRequestAction(action: any): Promise<{ success: true; status: number; url: string; body: string; truncated: boolean }> {
+  const source = action.config?.url ? action.config : action;
+  const res = await safeHttpRequest({ url: source.url, method: source.method, headers: source.headers, body: source.body });
+  if (!res.ok) throw new Error(`http_request failed: the server answered HTTP ${res.status}`);
+  return { success: true, status: res.status, url: res.url, body: res.body, truncated: res.truncated };
 }
