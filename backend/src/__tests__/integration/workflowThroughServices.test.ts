@@ -65,12 +65,12 @@ async function waitFor<T>(fn: () => Promise<T>, what: string, timeout = 8000): P
   }
 }
 
-/** An active workflow. `http_request` is a harmless action: the test counts executions. */
+/** An active workflow. A wait with no time set is a harmless action (it completes at once): the test counts executions. */
 const mkWorkflow = (
   name: string,
   triggerType: 'status_change' | 'order_created',
   triggerData: Record<string, unknown>,
-  actions: any[] = [{ type: 'http_request', config: { url: 'https://example.test' } }],
+  actions: any[] = [{ type: 'wait', config: { duration: 0 } }],
 ) =>
   prismaBase.workflow.create({
     data: { name: `${name} ${SUFFIX}`, triggerType, triggerData: triggerData as any, actions, isActive: true, tenantId },

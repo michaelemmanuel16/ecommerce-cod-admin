@@ -9,6 +9,11 @@ jest.mock('../../queues/workflowQueue', () => {
   return { ...actual, workflowQueue: { add: queueAdd } };
 });
 
+// http_request makes a real call (M9-T21): the tenant guard test must not touch the network.
+jest.mock('../../utils/safeHttp', () => ({
+  safeHttpRequest: async () => ({ status: 200, ok: true, url: 'https://x/', body: 'ok', truncated: false }),
+}));
+
 // Mock provider crypto so getDbEmailConfig can return decoded config (C2).
 const decryptProviderSecrets = jest.fn();
 jest.mock('../../utils/providerCrypto', () => ({
@@ -93,7 +98,7 @@ describe('Email channel prerequisites (MAN-77)', () => {
     it('allows non-send actions with no tenant context', async () => {
       // http_request is not tenant-scoped — guard must not block it.
       const result = await executeAction({ type: 'http_request', config: { url: 'https://x' } }, {});
-      expect(result).toEqual({ success: true });
+      expect(result).toMatchObject({ success: true, status: 200 });
     });
   });
 
