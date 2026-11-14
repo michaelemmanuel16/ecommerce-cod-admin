@@ -7,6 +7,7 @@ import { normalizeInternationalPhone, phoneLookupVariants } from '../../utils/ph
 import { CallbackRequest, ParsedInbound } from './types';
 import { whatsappCloudProvider } from './providers';
 import { notifyCustomerReply } from './replyNotify';
+import { setOptOut } from './optOutService';
 
 const PAYLOAD_KIND = { CONFIRM: 'yes', CHANGE: 'change', CANCEL: 'cancel' } as const;
 
@@ -91,22 +92,6 @@ async function replyRecipient(tenantId: string, conversation: Conversation): Pro
     if (order?.customerRepId) return order.customerRepId;
   }
   return 'owner';
-}
-
-async function setOptOut(tenantId: string, customerId: number | null, phone: string, optedOut: boolean): Promise<void> {
-  if (customerId) {
-    await prisma.customer.update({ where: { id: customerId }, data: { whatsappOptOut: optedOut } });
-  }
-  await prisma.optOutEvent.create({
-    data: {
-      tenantId,
-      customerId,
-      phone,
-      channel: MessageChannel.whatsapp,
-      optedOut,
-      reason: optedOut ? 'stop_reply' : 'resubscribe',
-    },
-  });
 }
 
 /** Everything one inbound WhatsApp message does. Idempotent by the provider message id. */
@@ -196,7 +181,10 @@ export async function processInboundMessage(tenantId: string, msg: ParsedInbound
   let handledByAutoConfirm = false;
 
   if (isStop || isStart) {
-    await setOptOut(tenantId, customerRecord?.id ?? null, phone, isStop);
+    await setOptOut({
+      tenantId, phone, customerId: customerRecord?.id ?? null, channel: MessageChannel.whatsapp,
+      optedOut: isStop, reason: isStop ? 'stop_reply' : 'resubscribe',
+    });
   } else {
     handledByAutoConfirm = await runAutoConfirm(tenantId, {
       responseKind, fromPhone, customer: customerRecord, contextMessage, logId: createdLog.id,
