@@ -3,6 +3,7 @@ import prisma from '../../utils/prisma';
 import { AppError } from '../../middleware/errorHandler';
 import whatsappService, { formatPhoneNumber } from '../whatsappService';
 import { notifyCustomerReply } from './replyNotify';
+import { isOptedOut } from './optOutService';
 
 export interface Actor {
   id: number;
@@ -14,6 +15,8 @@ export interface Actor {
 export const WINDOW_MS = 24 * 60 * 60 * 1000;
 export const WINDOW_CLOSED_MESSAGE = 'The 24 hour window is closed. Send an approved template.';
 const SEES_ALL: UserRole[] = ['super_admin', 'admin', 'manager'];
+/** Roles that can open the Conversations screen, so the only roles a conversation may be assigned to. */
+export const CONVERSATION_ROLES: UserRole[] = ['super_admin', 'admin', 'manager', 'sales_rep'];
 const PAGE_SIZE = 25;
 const THREAD_LIMIT = 500;
 
@@ -165,10 +168,10 @@ export async function replyToConversation(id: number, actor: Actor, input: Reply
   const isTemplate = !!(input.templateId || input.templateName);
   if (!isTemplate && !open) throw new AppError(WINDOW_CLOSED_MESSAGE, 422, 'WINDOW_CLOSED');
 
-  // A customer who wrote in the last 24 hours can always be answered; otherwise an opted-out customer cannot be messaged
-  if (!open && c.customerId) {
-    const customer = await prisma.customer.findFirst({ where: { id: c.customerId }, select: { whatsappOptOut: true } });
-    if (customer?.whatsappOptOut) throw new AppError('The customer opted out of WhatsApp', 409, 'CUSTOMER_OPTED_OUT');
+  // A customer who wrote in the last 24 hours can always be answered; otherwise an opted-out number cannot be messaged,
+  // found by the phone as well as by the customer (a conversation may have no customer)
+  if (!open && await isOptedOut(c.tenantId, MessageChannel.whatsapp, c.phone, c.customerId)) {
+    throw new AppError('The customer opted out of WhatsApp', 409, 'CUSTOMER_OPTED_OUT');
   }
 
   const latestInbound = await prisma.messageLog.findFirst({
@@ -176,7 +179,8 @@ export async function replyToConversation(id: number, actor: Actor, input: Reply
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     select: { id: true },
   });
-  const common = { to: c.phone, customerId: c.customerId ?? undefined, conversationId: c.id, inReplyToId: latestInbound?.id };
+  // optOutCheckedByCaller: the window and opt-out check above is this path's own
+  const common = { to: c.phone, customerId: c.customerId ?? undefined, conversationId: c.id, inReplyToId: latestInbound?.id, optOutCheckedByCaller: true };
 
   let result: { messageLogId: number; providerMessageId?: string; sent: boolean };
   if (isTemplate) {
@@ -201,8 +205,13 @@ export async function replyToConversation(id: number, actor: Actor, input: Reply
 export async function updateConversation(id: number, actor: Actor, patch: { assignedToId?: number | null; status?: 'open' | 'done' }) {
   const c = await loadVisible(id, actor);
   if (patch.assignedToId) {
-    const assignee = await prisma.user.findFirst({ where: { id: patch.assignedToId, isActive: true }, select: { id: true } });
+    // A rep may hand a conversation only to themselves, or clear it
+    if (actor.role === 'sales_rep' && patch.assignedToId !== actor.id) {
+      throw new AppError('You can assign a conversation only to yourself', 403, 'ASSIGN_FORBIDDEN');
+    }
+    const assignee = await prisma.user.findFirst({ where: { id: patch.assignedToId, tenantId: actor.tenantId, isActive: true }, select: { role: true } });
     if (!assignee) throw new AppError('That user is not in this store', 400, 'ASSIGNEE_NOT_FOUND');
+    if (!CONVERSATION_ROLES.includes(assignee.role)) throw new AppError('This person cannot see conversations', 400, 'ASSIGNEE_CANNOT_SEE');
   }
   const updated = await prisma.conversation.update({
     where: { id: c.id },
@@ -217,6 +226,7 @@ export async function updateConversation(id: number, actor: Actor, patch: { assi
     await notifyCustomerReply({
       tenantId: actor.tenantId,
       conversationId: c.id,
+      event: 'conversation_assigned',
       recipientId: patch.assignedToId,
       actorId: actor.id,
       title: 'A conversation was assigned to you',

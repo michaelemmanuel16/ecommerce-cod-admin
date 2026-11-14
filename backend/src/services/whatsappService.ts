@@ -210,6 +210,8 @@ interface SendTemplateOptions {
   conversationId?: number;
   inReplyToId?: number;
   retryOfId?: number;
+  /** Only replyToConversation sets this: it did its own window and opt-out check. */
+  optOutCheckedByCaller?: boolean;
 }
 
 interface SendTextOptions {
@@ -222,6 +224,8 @@ interface SendTextOptions {
   conversationId?: number;
   inReplyToId?: number;
   retryOfId?: number;
+  /** Only replyToConversation sets this: it did its own window and opt-out check. */
+  optOutCheckedByCaller?: boolean;
 }
 
 /**
@@ -294,6 +298,7 @@ class WhatsAppService {
       conversationId,
       inReplyToId,
       retryOfId,
+      optOutCheckedByCaller,
     } = options;
     const formattedPhone = formatPhoneNumber(to);
 
@@ -308,6 +313,7 @@ class WhatsAppService {
       conversationId,
       inReplyToId,
       retryOfId,
+      optOutCheckedByCaller,
       metadata: { bodyParams, headerParams, buttonPayloads, languageCode },
     });
     throwIfFailed(result);
@@ -318,7 +324,7 @@ class WhatsAppService {
    * Send a free-form text message via WhatsApp.
    */
   async sendText(options: SendTextOptions): Promise<{ messageLogId: number; providerMessageId?: string; sent: boolean }> {
-    const { to, body, logBody, orderId, customerId, conversationId, inReplyToId, retryOfId } = options;
+    const { to, body, logBody, orderId, customerId, conversationId, inReplyToId, retryOfId, optOutCheckedByCaller } = options;
 
     const result = await messageSender.send({
       tenantId: getTenantId(),
@@ -331,6 +337,7 @@ class WhatsAppService {
       conversationId,
       inReplyToId,
       retryOfId,
+      optOutCheckedByCaller,
     });
     throwIfFailed(result);
     return { messageLogId: result.messageLogId, providerMessageId: result.providerMessageId, sent: result.sent };

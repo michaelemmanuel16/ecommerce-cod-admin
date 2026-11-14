@@ -5,6 +5,7 @@ import { getTenantId, runInTenant } from '../../utils/tenantContext';
 import { getProvider } from './providers';
 import { messageStatus } from './messageStatus';
 import { TemplateSend } from './types';
+import { isOptedOut } from './optOutService';
 
 export interface SendMessageInput {
   tenantId: string | null;
@@ -29,6 +30,11 @@ export interface SendMessageInput {
   subject?: string;
   headers?: Record<string, string>;
   sendAs?: 'platform' | 'tenant';
+  /**
+   * Set ONLY by replyToConversation, after its own 24 hour window and opt-out check. Every other send, a retry or a
+   * resend included (they copy conversationId from the old row), runs the opt-out check here.
+   */
+  optOutCheckedByCaller?: boolean;
   /** Write a `skipped` row with this reason and send nothing (an opted-out customer). */
   skipReason?: string;
 }
@@ -79,6 +85,14 @@ async function run(input: SendMessageInput, gate?: SendGate): Promise<SendMessag
   // Skipped: asked to skip, or the provider is off or not set up. A row is written and nothing throws.
   let skipReason = input.skipReason;
   let skipError: string | undefined;
+  // An opted-out number or customer gets nothing, found by phone as well as by customer. A conversation reply is the exception:
+  // it has its own check, which lets a customer who wrote in the last 24 hours be answered.
+  if (!skipReason && input.tenantId && !input.optOutCheckedByCaller) {
+    if (await isOptedOut(input.tenantId, input.channel, input.to, input.customerId)) {
+      skipReason = 'opted_out';
+      skipError = 'opted_out';
+    }
+  }
   if (!skipReason) {
     let enabled = false;
     try {

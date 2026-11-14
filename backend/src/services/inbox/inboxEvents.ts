@@ -29,6 +29,7 @@ const def = (name: string, label: string, kind: NotificationKind, rest: Partial<
 
 const LIST: InboxEventDef[] = [
   def('customer_reply', 'A customer replied', 'reply'),
+  def('conversation_assigned', 'A conversation was assigned to you', 'reply'),
   def('mention', 'Someone mentioned you', 'mention'),
   def('reminder_due', 'A reminder is due', 'reminder'),
   def('team_note', 'A team note on your work', 'note'),

@@ -4,6 +4,7 @@ import { AppError } from '../../middleware/errorHandler';
 import { getTenantId } from '../../utils/tenantContext';
 import { formatPhoneNumber } from '../whatsappService';
 import { messageSender, SendMessageResult } from './messageSender';
+import { isOptedOut } from './optOutService';
 
 interface Actor {
   id: number;
@@ -99,6 +100,8 @@ export async function retryMessage(id: number, actor: Actor): Promise<SendMessag
 
   const to = recipientOf(log);
   if (!to) throw new AppError('This message has no recipient to send to', 400, 'NO_RECIPIENT');
+  // Opt-out by phone as well: the customer may have written STOP after the original message, or have no customer row
+  if (log.tenantId && await isOptedOut(log.tenantId, log.channel, to, log.customerId)) throw new AppError('The customer opted out of this channel', 409, 'CUSTOMER_OPTED_OUT');
 
   const meta = (log.metadata ?? {}) as Record<string, any>;
   const isTemplate = log.channel === MessageChannel.whatsapp && !!log.templateName && Array.isArray(meta.bodyParams);
@@ -162,6 +165,7 @@ export async function resendAsSms(id: number, actor: Actor): Promise<SendMessage
 
   const to = recipientOf(log);
   if (!to) throw new AppError('This message has no recipient to send to', 400, 'NO_RECIPIENT');
+  if (log.tenantId && await isOptedOut(log.tenantId, MessageChannel.sms, to, log.customerId)) throw new AppError('The customer opted out of SMS', 409, 'CUSTOMER_OPTED_OUT');
 
   const gate = async (tx: Tx) => {
     await lock(tx, root);
