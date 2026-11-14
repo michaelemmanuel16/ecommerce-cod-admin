@@ -10,6 +10,7 @@ import { smsService } from '../smsService';
 import { whatsappService } from '../whatsappService';
 import { ChannelSet, InboxEventName, getEventDef, isOwnerRole } from './inboxEvents';
 import { getTenantChannels } from './inboxChannels';
+import { pushInboxNew } from './inboxRealtime';
 import { resolveChannelsFor } from './inboxPreferences';
 
 /** Admins of the current tenant only (the scoped query adds tenantId); not the system user. The owner rule of the inbox. */
@@ -135,6 +136,7 @@ export async function notify(input: NotifyInput): Promise<Notification[]> {
         const row = await writeRow(person, input, kind);
         rows.push(row);
         emitNotification(getSocketInstance() as any, String(person.id), row);
+        await pushInboxNew(row);
       }
       if (channels.email || channels.sms || channels.whatsapp) external.push(person);
     }

@@ -5,6 +5,8 @@ import { AppError } from '../middleware/errorHandler';
 import { formatIssues } from '../tools/shared';
 import { preferencesPutSchema, roleDefaultsPutSchema, roleDefaultsQuerySchema } from '../validators/inboxSchema';
 import * as inboxPreferences from '../services/inbox/inboxPreferences';
+import * as feed from '../services/inbox/inboxFeedService';
+import { pushInboxCounts } from '../services/inbox/inboxRealtime';
 
 export const getNotifications = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -51,50 +53,24 @@ export const getNotifications = async (req: AuthRequest, res: Response): Promise
   }
 };
 
-/** Unread rows of the signed-in user (F-106). The bell reads this; the socket event `notification` tells it to refresh. */
+/** Unread count of the signed-in user (F-106): the inbox's "all" count, from the database. The bell reads this; the socket event `notification` tells it to refresh. */
 export const getUnreadCount = async (req: AuthRequest, res: Response): Promise<void> => {
-  const unreadCount = await prisma.notification.count({
-    where: { userId: req.user!.id, isRead: false }
-  });
-  res.json({ unreadCount });
+  const counts = await feed.getCounts(req.user!.id);
+  res.json({ unreadCount: counts.all });
 };
 
 export const markAsRead = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { id } = req.params;
-
-    const notification = await prisma.notification.update({
-      where: {
-        id: parseInt(id, 10),
-        userId: req.user!.id
-      },
-      data: {
-        isRead: true
-      }
-    });
-
-    res.json({ notification });
-  } catch (error) {
-    throw error;
-  }
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id)) throw new AppError('Notification ID must be a whole number', 400);
+  const notification = await feed.patchRow(req.user!.id, id, { read: true });
+  await pushInboxCounts(req.user!.id, req.user!.tenantId!);
+  res.json({ notification });
 };
 
 export const markAllAsRead = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    await prisma.notification.updateMany({
-      where: {
-        userId: req.user!.id,
-        isRead: false
-      },
-      data: {
-        isRead: true
-      }
-    });
-
-    res.json({ message: 'All notifications marked as read' });
-  } catch (error) {
-    throw error;
-  }
+  await feed.markAll(req.user!.id, 'all');
+  await pushInboxCounts(req.user!.id, req.user!.tenantId!);
+  res.json({ message: 'All notifications marked as read' });
 };
 
 /** GET /api/notifications/preferences: my channels for every event, merged with the role defaults. */
