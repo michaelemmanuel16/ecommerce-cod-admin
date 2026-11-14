@@ -7,6 +7,8 @@ const router = Router();
 
 // Public webhook for Arkesel delivery reports (no auth)
 router.post('/webhook', handleArkeselWebhook);
+// Arkesel's docs show the delivery report as a GET with query parameters
+router.get('/webhook', handleArkeselWebhook);
 
 // Admin-only endpoints
 router.use(authenticate);

@@ -246,3 +246,104 @@ describe('retry and resend as SMS', () => {
     expect((await request(app).post('/api/messages/1/retry')).status).toBe(401);
   });
 });
+
+describe('M9 wave 3 gates', () => {
+  beforeEach(() => {
+    jest.spyOn(whatsappCloudProvider, 'isEnabled').mockResolvedValue(true);
+    jest.spyOn(whatsappCloudProvider, 'send').mockImplementation(async () => ({ accepted: true, providerMessageId: `wa-g-${SUFFIX}-${seq++}` }));
+    jest.spyOn(arkeselSmsProvider, 'isEnabled').mockResolvedValue(true);
+    jest.spyOn(arkeselSmsProvider, 'send').mockImplementation(async () => ({ accepted: true, providerMessageId: `sms-g-${SUFFIX}-${seq++}` }));
+  });
+
+  it('in production a missing ARKESEL_CALLBACK_TOKEN refuses the callback with 401', async () => {
+    const env = process.env.NODE_ENV;
+    delete process.env.ARKESEL_CALLBACK_TOKEN;
+    process.env.NODE_ENV = 'production';
+    try {
+      await request(app).post('/api/sms/webhook').send({ messageId: 'x', status: 'delivered' }).expect(401);
+    } finally {
+      process.env.NODE_ENV = env;
+    }
+  });
+
+  it('two parallel retries make one row', async () => {
+    const log = await mkLog();
+    const [a, b] = await Promise.all([
+      request(app).post(`/api/messages/${log.id}/retry`).set(bearer(owner.token)),
+      request(app).post(`/api/messages/${log.id}/retry`).set(bearer(manager.token)),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([201, 409]);
+    expect(await prismaBase.messageLog.count({ where: { retryOfId: log.id } })).toBe(1);
+  });
+
+  it('a retry is refused while a live retry exists, and after 3 retries in the chain', async () => {
+    const log = await mkLog();
+    await mkLog({ retryOfId: log.id, status: 'sent', errorMessage: null });
+    expect((await request(app).post(`/api/messages/${log.id}/retry`).set(bearer(owner.token))).status).toBe(409);
+
+    const root = await mkLog();
+    const r1 = await mkLog({ retryOfId: root.id });
+    const r2 = await mkLog({ retryOfId: r1.id });
+    await mkLog({ retryOfId: r2.id });
+    const res = await request(app).post(`/api/messages/${root.id}/retry`).set(bearer(owner.token));
+    expect(res.status).toBe(409);
+    expect(res.body.code ?? res.body.error?.code ?? JSON.stringify(res.body)).toContain('MESSAGE_RETRY_LIMIT');
+  });
+
+  it('two parallel resends as SMS make one row', async () => {
+    const log = await mkLog();
+    const [a, b] = await Promise.all([
+      request(app).post(`/api/messages/${log.id}/resend-sms`).set(bearer(owner.token)),
+      request(app).post(`/api/messages/${log.id}/resend-sms`).set(bearer(manager.token)),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([201, 409]);
+    expect(await prismaBase.messageLog.count({ where: { fallbackOfId: log.id } })).toBe(1);
+  });
+
+  it('resend as SMS: a fresh sent or a delivered message is 409; sent for 10 minutes, or skipped, is allowed; a failed fallback does not block', async () => {
+    const fresh = await mkLog({ status: 'sent', errorMessage: null, sentAt: new Date() });
+    expect((await request(app).post(`/api/messages/${fresh.id}/resend-sms`).set(bearer(owner.token))).status).toBe(409);
+    const delivered = await mkLog({ status: 'delivered', errorMessage: null, deliveredAt: new Date() });
+    expect((await request(app).post(`/api/messages/${delivered.id}/resend-sms`).set(bearer(owner.token))).status).toBe(409);
+    const stuck = await mkLog({ status: 'sent', errorMessage: null, sentAt: new Date(Date.now() - 11 * 60_000) });
+    expect((await request(app).post(`/api/messages/${stuck.id}/resend-sms`).set(bearer(owner.token))).status).toBe(201);
+    const skipped = await mkLog({ status: 'skipped', errorMessage: 'provider_disabled' });
+    expect((await request(app).post(`/api/messages/${skipped.id}/resend-sms`).set(bearer(owner.token))).status).toBe(201);
+    const again = await mkLog();
+    await mkLog({ fallbackOfId: again.id, channel: 'sms', status: 'failed' });
+    expect((await request(app).post(`/api/messages/${again.id}/resend-sms`).set(bearer(owner.token))).status).toBe(201);
+  });
+
+  it('retries and resends share one limit of 3 across the lineage; an SMS or an SMS fallback cannot be resent as SMS', async () => {
+    const root = await mkLog();
+    const fb = await mkLog({ fallbackOfId: root.id, channel: 'sms', status: 'failed', provider: 'arkesel' });
+    // resending the fallback itself, or any SMS, is refused
+    expect((await request(app).post(`/api/messages/${fb.id}/resend-sms`).set(bearer(owner.token))).status).toBe(409);
+    const sms = await mkLog({ channel: 'sms', provider: 'arkesel' });
+    expect((await request(app).post(`/api/messages/${sms.id}/resend-sms`).set(bearer(owner.token))).status).toBe(409);
+    // fallback + 2 retries in the lineage = 3 extra sends: the next retry (of the fallback) and resend (of root) are refused
+    const r1 = await mkLog({ retryOfId: root.id });
+    await mkLog({ retryOfId: r1.id });
+    const retry = await request(app).post(`/api/messages/${fb.id}/retry`).set(bearer(owner.token));
+    expect(retry.status).toBe(409);
+    expect(JSON.stringify(retry.body)).toContain('MESSAGE_RETRY_LIMIT');
+    const resend = await request(app).post(`/api/messages/${root.id}/resend-sms`).set(bearer(owner.token));
+    expect(resend.status).toBe(409);
+    expect(JSON.stringify(resend.body)).toContain('MESSAGE_RETRY_LIMIT');
+  });
+
+  it('the provider backfill sets provider by channel, leaves email NULL and keeps the row count', async () => {
+    const sms = await mkLog({ channel: 'sms', provider: null });
+    const wa = await mkLog({ channel: 'whatsapp', provider: null });
+    const em = await mkLog({ channel: 'email', provider: null });
+    const before = await prismaBase.messageLog.count();
+    const sql = require('fs').readFileSync(require('path').join(__dirname, '../../../prisma/migrations/20261114200000_m9_message_provider_backfill/migration.sql'), 'utf8');
+    for (const stmt of sql.split(';').map((x: string) => x.replace(/--.*$/gm, '').trim()).filter(Boolean)) {
+      await prismaBase.$executeRawUnsafe(stmt);
+    }
+    expect(await prismaBase.messageLog.count()).toBe(before);
+    expect((await prismaBase.messageLog.findUniqueOrThrow({ where: { id: sms.id } })).provider).toBe('arkesel');
+    expect((await prismaBase.messageLog.findUniqueOrThrow({ where: { id: wa.id } })).provider).toBe('whatsapp_cloud');
+    expect((await prismaBase.messageLog.findUniqueOrThrow({ where: { id: em.id } })).provider).toBeNull();
+  });
+});

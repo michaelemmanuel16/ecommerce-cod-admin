@@ -5,13 +5,13 @@ import { messageStatus } from '../services/messaging/messageStatus';
 import logger from '../utils/logger';
 import { safeEqual } from '../utils/crypto';
 
-let warnedNoCallbackToken = false;
+let noTokenCalls = 0;
 
 /**
  * Handle Arkesel delivery report webhook (public, no auth).
- * Arkesel does not sign callbacks, so the callback URL carries a secret: `?token=` must equal
- * ARKESEL_CALLBACK_TOKEN. Without the env var, callbacks are still accepted (one warning), but
- * they are never held for a later match.
+ * Arkesel reports carry the secret in the callback URL we send with each message: `?token=` must equal
+ * ARKESEL_CALLBACK_TOKEN. In production a missing env var fails closed (401). In dev and test it is
+ * accepted with a warning, and such events are never held for a later match.
  */
 export async function handleArkeselWebhook(req: Request, res: Response): Promise<void> {
   const expected = process.env.ARKESEL_CALLBACK_TOKEN;
@@ -22,8 +22,11 @@ export async function handleArkeselWebhook(req: Request, res: Response): Promise
       res.status(401).json({ error: 'Unauthorized' });
       return;
     }
-  } else if (!warnedNoCallbackToken) {
-    warnedNoCallbackToken = true;
+  } else if (process.env.NODE_ENV === 'production') {
+    if (noTokenCalls++ % 100 === 0) logger.error('ARKESEL_CALLBACK_TOKEN is not set: Arkesel delivery reports are refused');
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  } else if (noTokenCalls++ % 100 === 0) {
     logger.warn('ARKESEL_CALLBACK_TOKEN is not set: Arkesel delivery reports are accepted without a secret');
   }
 

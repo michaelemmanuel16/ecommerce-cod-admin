@@ -3,6 +3,7 @@ import prisma from '../../../utils/prisma';
 import logger from '../../../utils/logger';
 import { decryptProviderSecrets } from '../../../utils/providerCrypto';
 import { getTenantId } from '../../../utils/tenantContext';
+import { getBackendUrl } from '../../../utils/url';
 import { CallbackRequest, MessagingProvider, ParsedStatus, ProviderSendInput, ProviderSendResult } from '../types';
 
 // Arkesel SMS API
@@ -67,6 +68,19 @@ export const ARKESEL_FAILURE_REASONS: Record<string, string> = {
   rejected: 'The SMS was rejected by the network or the sender ID',
 };
 
+/** The per-message delivery-report URL (`callback_url` of the v2 send API). Null when no token is set. */
+export function arkeselCallbackUrl(): string | null {
+  const token = process.env.ARKESEL_CALLBACK_TOKEN;
+  if (!token) return null;
+  return `${getBackendUrl().replace(/\/+$/, '')}/api/sms/webhook?token=${encodeURIComponent(token)}`;
+}
+
+/** The report fields worth keeping. The callback token (in the URL query) is never stored. */
+function reportPayload(src: Record<string, any>): Record<string, any> {
+  const { token: _token, ...rest } = src;
+  return rest;
+}
+
 export const arkeselSmsProvider: MessagingProvider = {
   channel: MessageChannel.sms,
   name: 'arkesel',
@@ -81,10 +95,16 @@ export const arkeselSmsProvider: MessagingProvider = {
     if (!config || !config.isEnabled) return { accepted: false, error: 'provider_disabled' };
 
     try {
+      const callbackUrl = arkeselCallbackUrl();
       const response = await fetch(ARKESEL_API_URL, {
         method: 'POST',
         headers: { 'api-key': config.apiKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sender: config.senderId, message: input.body ?? '', recipients: [input.to] }),
+        body: JSON.stringify({
+          sender: config.senderId,
+          message: input.body ?? '',
+          recipients: [input.to],
+          ...(callbackUrl ? { callback_url: callbackUrl } : {}),
+        }),
       });
       const data: any = await response.json();
       if (!response.ok) {
@@ -98,7 +118,10 @@ export const arkeselSmsProvider: MessagingProvider = {
   },
 
   parseStatusCallback(req: CallbackRequest): ParsedStatus[] {
-    const { messageId, status } = req.body ?? {};
+    // Arkesel's docs show the report as query parameters (`sms_id`, `status`); older reports use a body.
+    const src = { ...(req.query ?? {}), ...(req.body ?? {}) } as Record<string, any>;
+    const messageId = src.messageId ?? src.sms_id ?? src.id;
+    const status = src.status;
     if (!messageId || !status) return [];
     const word = String(status).toLowerCase();
     const mapped = STATUS_MAP[word];
@@ -112,7 +135,7 @@ export const arkeselSmsProvider: MessagingProvider = {
       occurredAt: new Date(),
       providerStatus: word,
       failureReason: mapped === MessageStatus.failed ? (ARKESEL_FAILURE_REASONS[word] ?? ARKESEL_FAILURE_REASONS.failed) : undefined,
-      payload: req.body,
+      payload: reportPayload(src),
     }];
   },
 };
