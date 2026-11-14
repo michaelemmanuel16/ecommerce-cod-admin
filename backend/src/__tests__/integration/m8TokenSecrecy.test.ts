@@ -168,7 +168,7 @@ describe('pull failure paths', () => {
     expect(await pull(id)).toEqual([]);
     const row = await prismaBase.metaAdAccount.findUniqueOrThrow({ where: { id } });
     expect(row).toMatchObject({ failedPullCount: 2, lastPullError: 'Meta is limiting requests. The next pull will try again.' });
-    expect(await prismaBase.notification.count({ where: { tenantId, type: 'meta_ads_pull' } })).toBeGreaterThanOrEqual(1);
+    expect(await prismaBase.notification.count({ where: { tenantId, type: 'system_problem' } })).toBeGreaterThanOrEqual(1);
     expectClean('rate limit logs', logged(spies));
     expectClean('rate limit stored', await storedText());
   });

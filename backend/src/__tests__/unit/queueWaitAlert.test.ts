@@ -1,7 +1,7 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import { checkQueueWaitAlerts, notifyQueueWaitAlert } from '../../services/queueAlertService';
 import prisma from '../../utils/prisma';
-import * as notificationService from '../../services/notificationService';
+import * as inboxService from '../../services/inbox/inboxService';
 
 jest.mock('../../utils/prisma', () => ({
   __esModule: true,
@@ -13,14 +13,14 @@ jest.mock('../../utils/prisma', () => ({
   },
 }));
 
-jest.mock('../../services/notificationService', () => ({
+jest.mock('../../services/inbox/inboxService', () => ({
   __esModule: true,
-  createNotification: jest.fn(),
+  notify: jest.fn(),
 }));
 
 describe('M7-T05: Queue wait alert service tests', () => {
   const mockPrisma = prisma as any;
-  const mockCreateNotification = notificationService.createNotification as jest.MockedFunction<typeof notificationService.createNotification>;
+  const mockCreateNotification = inboxService.notify as jest.MockedFunction<typeof inboxService.notify>;
   const tenantId = 'tenant-test-ops';
 
   beforeEach(() => {
@@ -65,21 +65,16 @@ describe('M7-T05: Queue wait alert service tests', () => {
     const alerted = await checkQueueWaitAlerts(tenantId, now);
 
     expect(alerted).toEqual([101]);
-    expect(mockCreateNotification).toHaveBeenCalledTimes(2);
-    expect(mockCreateNotification).toHaveBeenCalledWith(
-      '1',
-      'queue_wait_alert',
-      'Queue wait alert',
-      expect.stringContaining('Order #101 has been waiting 45 min'),
-      expect.objectContaining({ orderId: 101, orderNumber: '101', alertMinutes: 30 })
-    );
-    expect(mockCreateNotification).toHaveBeenCalledWith(
-      '2',
-      'queue_wait_alert',
-      'Queue wait alert',
-      expect.stringContaining('Order #101 has been waiting 45 min'),
-      expect.objectContaining({ orderId: 101, orderNumber: '101', alertMinutes: 30 })
-    );
+    expect(mockCreateNotification).toHaveBeenCalledTimes(1);
+    expect(mockCreateNotification).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId,
+      event: 'queue_wait',
+      subject: { type: 'order', id: 101 },
+      recipients: [1, 2],
+      title: 'Queue wait alert',
+      message: expect.stringContaining('Order #101 has been waiting 45 min'),
+      data: expect.objectContaining({ orderId: 101, orderNumber: '101', alertMinutes: 30 }),
+    }));
   });
 
   it('respects custom settings key for queueWaitAlertMinutes', async () => {

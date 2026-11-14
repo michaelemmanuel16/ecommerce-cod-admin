@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import '../mocks/logger.mock';
 import { prismaMock } from '../mocks/prisma.mock';
+import { runInTenant } from '../../utils/tenantContext';
 
 // T04 (COD-71): token health transitions, and one alert per change.
 
@@ -9,9 +10,8 @@ jest.mock('../../services/metaOAuthService', () => ({
   debugToken: (t: string) => mockDebug(t),
 }));
 const mockNotify = jest.fn<(...a: any[]) => Promise<any>>();
-jest.mock('../../services/notificationService', () => ({
-  createNotification: (...a: any[]) => mockNotify(...a),
-  findTenantAdmins: async () => [{ id: 1 }, { id: 2 }],
+jest.mock('../../services/inbox/inboxService', () => ({
+  notify: (...a: any[]) => mockNotify(...a),
 }));
 
 import { checkAdsTokens, metaAdsApiError } from '../../services/metaTokenHealthService';
@@ -33,7 +33,7 @@ describe('checkAdsTokens', () => {
   it('a healthy token changes nothing and sends nothing', async () => {
     (prismaMock.metaAdAccount.findMany as any).mockResolvedValue([row(1)]);
     mockDebug.mockResolvedValue(dbg());
-    await checkAdsTokens();
+    await runInTenant('tenant-a', () => checkAdsTokens());
     expect(prismaMock.metaAdAccount.updateMany).not.toHaveBeenCalled();
     expect(mockNotify).not.toHaveBeenCalled();
   });
@@ -41,13 +41,13 @@ describe('checkAdsTokens', () => {
   it('checks a shared token once and disconnects every row that uses it, with one alert per admin', async () => {
     (prismaMock.metaAdAccount.findMany as any).mockResolvedValue([row(1), row(2)]);
     mockDebug.mockResolvedValue(dbg({ isValid: false }));
-    await checkAdsTokens();
+    await runInTenant('tenant-a', () => checkAdsTokens());
     expect(mockDebug).toHaveBeenCalledTimes(1);
     expect((prismaMock.metaAdAccount.updateMany as any).mock.calls[0][0]).toEqual({
       where: { id: { in: [1, 2] } },
       data: { status: 'disconnected', statusReason: 'Meta access was removed. Reconnect Meta Ads.' },
     });
-    expect(mockNotify).toHaveBeenCalledTimes(2); // owner and admin, once
+    expect(mockNotify).toHaveBeenCalledTimes(1); // one notify to the owner
   });
 
   it('does not alert again while the state stays the same', async () => {
@@ -55,7 +55,7 @@ describe('checkAdsTokens', () => {
       row(1, { status: 'disconnected', statusReason: 'Meta access was removed. Reconnect Meta Ads.' }),
     ]);
     mockDebug.mockResolvedValue(dbg({ isValid: false }));
-    await checkAdsTokens();
+    await runInTenant('tenant-a', () => checkAdsTokens());
     expect(prismaMock.metaAdAccount.updateMany).not.toHaveBeenCalled();
     expect(mockNotify).not.toHaveBeenCalled();
   });
@@ -63,7 +63,7 @@ describe('checkAdsTokens', () => {
   it('missing ads_read disconnects and names the permission', async () => {
     (prismaMock.metaAdAccount.findMany as any).mockResolvedValue([row(1)]);
     mockDebug.mockResolvedValue(dbg({ scopes: ['business_management'] }));
-    await checkAdsTokens();
+    await runInTenant('tenant-a', () => checkAdsTokens());
     expect((prismaMock.metaAdAccount.updateMany as any).mock.calls[0][0].data).toEqual({
       status: 'disconnected', statusReason: 'Missing permission: ads_read',
     });
@@ -76,18 +76,18 @@ describe('checkAdsTokens', () => {
     try {
       (prismaMock.metaAdAccount.findMany as any).mockResolvedValue([row(1)]);
       mockDebug.mockResolvedValue(dbg({ expiresAt }));
-      await checkAdsTokens();
+      await runInTenant('tenant-a', () => checkAdsTokens());
       expect((prismaMock.metaAdAccount.updateMany as any).mock.calls[0][0].data).toEqual({
         status: 'connected', statusReason: 'Expires on 12 Dec 2030. Reconnect Meta Ads.',
       });
-      expect(mockNotify).toHaveBeenCalledTimes(2);
+      expect(mockNotify).toHaveBeenCalledTimes(1);
 
       // same state next day: no second alert
       jest.clearAllMocks();
       (prismaMock.metaAdAccount.findMany as any).mockResolvedValue([
         row(1, { statusReason: 'Expires on 12 Dec 2030. Reconnect Meta Ads.' }),
       ]);
-      await checkAdsTokens();
+      await runInTenant('tenant-a', () => checkAdsTokens());
       expect(mockNotify).not.toHaveBeenCalled();
     } finally {
       jest.useRealTimers();
@@ -99,7 +99,7 @@ describe('checkAdsTokens', () => {
       row(1, { status: 'disconnected', statusReason: 'Missing permission: ads_read' }),
     ]);
     mockDebug.mockResolvedValue(dbg());
-    await checkAdsTokens();
+    await runInTenant('tenant-a', () => checkAdsTokens());
     expect((prismaMock.metaAdAccount.updateMany as any).mock.calls[0][0].data).toEqual({ status: 'connected', statusReason: null });
     expect(mockNotify).not.toHaveBeenCalled();
   });
@@ -107,7 +107,7 @@ describe('checkAdsTokens', () => {
   it('a failed debug_token call (network) changes nothing', async () => {
     (prismaMock.metaAdAccount.findMany as any).mockResolvedValue([row(1)]);
     mockDebug.mockRejectedValue(new Error('boom'));
-    await checkAdsTokens();
+    await runInTenant('tenant-a', () => checkAdsTokens());
     expect(prismaMock.metaAdAccount.updateMany).not.toHaveBeenCalled();
   });
 });
@@ -120,9 +120,9 @@ describe('metaAdsApiError', () => {
 
   it('error 190 marks the account disconnected and alerts once', async () => {
     (prismaMock.metaAdAccount.findFirst as any).mockResolvedValue(row(5));
-    expect(await metaAdsApiError(5, { code: 190 })).toBe(true);
+    expect(await runInTenant('tenant-a', () => metaAdsApiError(5, { code: 190 }))).toBe(true);
     expect((prismaMock.metaAdAccount.updateMany as any).mock.calls[0][0].where).toEqual({ id: { in: [5] } });
-    expect(mockNotify).toHaveBeenCalledTimes(2);
+    expect(mockNotify).toHaveBeenCalledTimes(1);
   });
 
   it('any other error is ignored', async () => {

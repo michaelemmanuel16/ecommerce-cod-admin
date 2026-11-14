@@ -101,7 +101,7 @@ describe('POST /api/inventory/transfers (create)', () => {
       fromLocation: { name: 'Swift' }, toLocation: { name: 'Kofi' }, product: { name: 'Copybook' },
     });
     expect([await level(swift), await level(kofi), await cache()]).toEqual([980, 0, 980]);
-    const note = await prismaBase.notification.findFirstOrThrow({ where: { tenantId, userId: U.kofi.id, type: 'stock' } });
+    const note = await prismaBase.notification.findFirstOrThrow({ where: { tenantId, userId: U.kofi.id, type: 'stock_incoming' } });
     expect(note.message).toBe('20 Copybook are waiting for you');
     expect(await prismaBase.auditLog.count({ where: { tenantId, resource: 'inventory_transfer', resourceId: String(res.body.transfer.id), action: 'create', userId: U.owner.id } })).toBe(1);
   });

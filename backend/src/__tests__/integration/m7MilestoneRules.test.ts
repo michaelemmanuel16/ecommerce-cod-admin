@@ -37,7 +37,7 @@ import payoutService from '../../services/payoutService';
 import orderService from '../../services/orderService';
 import { sendAutoConfirmForOrder } from '../../services/autoConfirmService';
 import { timeToFirstCall } from '../../services/kpi/timeToFirstCall';
-import { createNotification } from '../../services/notificationService';
+import { notify } from '../../services/inbox/inboxService';
 import { registerCustomerStatsListeners } from '../../services/customerStatsService';
 import { CallOutcome, CallSource } from '@prisma/client';
 import * as Money from '../../utils/money';
@@ -1286,10 +1286,10 @@ describe('COD-69, M7-T22: Milestone Integration Tests', () => {
 
       // Create notification for Rep A and notification for Rep B
       await runInTenant(tenant, () =>
-        createNotification(String(repA.id), 'order', 'Assigned to Rep A', 'Order A assigned')
+        notify({ tenantId: tenant, event: 'order_assigned', recipients: [repA.id], title: 'Assigned to Rep A', message: 'Order A assigned' })
       );
       await runInTenant(tenant, () =>
-        createNotification(String(repB.id), 'order', 'Assigned to Rep B', 'Order B assigned')
+        notify({ tenantId: tenant, event: 'order_assigned', recipients: [repB.id], title: 'Assigned to Rep B', message: 'Order B assigned' })
       );
 
       // 1. Rep A queue: sees orderA, never sees orderB

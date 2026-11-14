@@ -8,7 +8,7 @@ import { fullName } from '../utils/nameUtils';
 import { OPEN_COLLECTION_STATUSES } from '../utils/collectionCash';
 import { auditService } from './auditService';
 import { GLAutomationService } from './glAutomationService';
-import { createNotification } from './notificationService';
+import { notify } from './inbox/inboxService';
 import logger from '../utils/logger';
 import { ResolveStatus } from '../validators/findingSchema';
 
@@ -164,8 +164,15 @@ export async function updateFinding(requester: Requester, id: number, change: Fi
   const shouldNotify = !!change.assigneeId && change.assigneeId !== finding.assigneeId && change.assigneeId !== requester.id;
   if (shouldNotify) {
     try {
-      await createNotification(String(change.assigneeId), 'finding', 'Finding assigned to you',
-        `A ${finding.type.replace(/_/g, ' ')} Finding was assigned to you.`, { findingId: id, type: finding.type });
+      await notify({
+        tenantId,
+        event: 'finding_assigned',
+        recipients: [change.assigneeId!],
+        actorId: requester.id,
+        title: 'Finding assigned to you',
+        message: `A ${finding.type.replace(/_/g, ' ')} Finding was assigned to you.`,
+        data: { findingId: id, type: finding.type },
+      });
     } catch (error) {
       logger.warn('Finding assigned but the notification failed', { findingId: id, error: error instanceof Error ? error.message : String(error) });
     }

@@ -7,7 +7,7 @@ import logger from '../utils/logger';
 import { AppError } from '../middleware/errorHandler';
 import * as Money from '../utils/money';
 import { auditService } from './auditService';
-import { createNotification, findTenantAdmins } from './notificationService';
+import { notify, findTenantAdmins } from './inbox/inboxService';
 import { holderSelect, holderStatus, holderView } from './roleService';
 import { failedDeliveryCalls, FAILED_CALLS_METRIC } from './kpi/daily';
 import { DAY_MS, currentMonth, endOfDay, getStoreTimeZone, parseMonth, parseYmd, startOfDay, utcDate, utcDateOfYmd, ymdOfUtc } from './kpi/dates';
@@ -527,8 +527,14 @@ export async function announceRelease(actorId: number, r: ReleasedTargets): Prom
       metadata: { userId: r.userId, returned: r.returned },
     });
     const recipients = new Set([actorId, ...(await findTenantAdmins()).map((a) => a.id)]);
-    await Promise.all([...recipients].map((id) =>
-      createNotification(String(id), 'target_returned', 'Target returned to the role pool', r.notice, { roleId: r.roleId, userId: r.userId, returned: r.returned })));
+    await notify({
+      tenantId: resolveTenantId(),
+      event: 'target_returned',
+      recipients: [...recipients],
+      title: 'Target returned to the role pool',
+      message: r.notice,
+      data: { roleId: r.roleId, userId: r.userId, returned: r.returned },
+    });
   } catch (error) {
     logger.error('Target release: audit or notice failed', { roleId: r.roleId, userId: r.userId, error });
   }

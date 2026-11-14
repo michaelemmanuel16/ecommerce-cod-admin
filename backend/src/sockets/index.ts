@@ -239,6 +239,16 @@ export function emitNotification(io: SocketServer, userId: string, notification:
   emitToUser(io, userId, 'notification', notification, t);
 }
 
+/** A new inbox row for one person (M9-T17). The room is tenant scoped, so it never reaches another tenant. */
+export function emitInboxNew(io: SocketServer, userId: string, item: any, tenantId: string) {
+  emitToUser(io, userId, 'inbox:new', item, tenantId);
+}
+
+/** The person's unread counts per view, after any change (M9-T17). The database stays the source; this only saves a fetch. */
+export function emitInboxCounts(io: SocketServer, userId: string, counts: any, tenantId: string) {
+  emitToUser(io, userId, 'inbox:counts', counts, tenantId);
+}
+
 export function emitPermissionsUpdated(io: SocketServer, updatedRoles: string[]) {
   const t = emitTenant();
   if (!t) return;
