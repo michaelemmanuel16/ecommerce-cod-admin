@@ -18,8 +18,9 @@ describe('listFeed subject lookups', () => {
       row(5, 'order', 10), row(4, 'order', 11), row(3, 'order', 10), row(2, 'customer', 7), row(1, 'customer', 8),
     ]);
     const res = await listFeed({ id: 1, role: 'sales_rep' }, { view: 'all', status: 'open', scope: 'mine' });
-    expect(prismaMock.order.findMany).toHaveBeenCalledTimes(1);
-    expect(prismaMock.customer.findMany).toHaveBeenCalledTimes(1);
+    // one read for "does it exist" and, for a rep, one for "may I still open it" (T20): per page, never per row
+    expect(prismaMock.order.findMany).toHaveBeenCalledTimes(2);
+    expect(prismaMock.customer.findMany).toHaveBeenCalledTimes(1); // both customers are gone, so no scope read
     expect((prismaMock.order.findMany as any).mock.calls[0][0].where.id.in.sort()).toEqual([10, 11]);
     expect(prismaMock.payout.findMany).not.toHaveBeenCalled();
     expect(res.items.map((i) => i.subjectDeleted)).toEqual([false, true, false, true, true]);

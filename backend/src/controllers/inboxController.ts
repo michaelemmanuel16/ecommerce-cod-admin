@@ -34,7 +34,7 @@ export const patch = async (req: AuthRequest, res: Response): Promise<void> => {
   const item = await feed.patchRow(req.user!.id, id, {
     ...rest,
     ...(snoozedUntil !== undefined ? { snoozedUntil: snoozedUntil === null ? null : new Date(snoozedUntil) } : {}),
-  });
+  }, new Date(), req.user!.role);
   await pushInboxCounts(req.user!.id, tenantOf(req));
   res.json({ item, counts: await feed.getCounts(req.user!.id) });
 };

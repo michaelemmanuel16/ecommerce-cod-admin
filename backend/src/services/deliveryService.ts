@@ -13,6 +13,7 @@ import { getSocketInstance } from '../utils/socketInstance';
 import { emitGLEntryCreated } from '../sockets/index';
 import * as Money from '../utils/money';
 import { partnerNetCash } from './feeRuleService';
+import { notifyDeliveryRescheduled } from './inbox/agentEvents';
 import { customerPhoneSearch } from '../utils/phone';
 
 
@@ -162,6 +163,20 @@ export class DeliveryService {
         agent: true
       }
     });
+
+    // The planned time changed: tell the agent (M9-T20). A failed notification never undoes the update.
+    const timeChanged = updateData.scheduledTime !== undefined
+      && (updateData.scheduledTime?.getTime() ?? null) !== (delivery.scheduledTime?.getTime() ?? null);
+    if (timeChanged && updated.agentId) {
+      try {
+        await notifyDeliveryRescheduled({
+          tenantId: resolveTenantId(updated.tenantId), agentId: updated.agentId, orderId: updated.orderId,
+          deliveryId: updated.id, scheduledTime: updated.scheduledTime,
+        });
+      } catch (error) {
+        logger.warn('Delivery rescheduled notification failed', { deliveryId, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
 
     logger.info('Delivery updated', { deliveryId });
     return updated;

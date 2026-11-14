@@ -1,6 +1,7 @@
 import { Notification, NotificationKind, Prisma } from '@prisma/client';
 import prisma from '../../utils/prisma';
 import { AppError } from '../../middleware/errorHandler';
+import { customerScope, orderScope, Requester } from '../../utils/authUtils';
 import { isOwnerRole } from './inboxEvents';
 
 /** Inbox feed (M9-T17): views, status, cursor paging, read, done, snooze, mark all and counts. Every read is from the database. */
@@ -100,7 +101,33 @@ async function subjectDeletedMap(rows: Notification[]): Promise<Set<string>> {
   return gone;
 }
 
-export function present(row: Notification, gone: Set<string>) {
+/**
+ * Subjects this person can no longer open: an order that moved to another rep, a customer who left their scope.
+ * Only the scoped roles (call rep, delivery agent) can lose access; one read per subject type for the page, using the
+ * same `orderScope` and `customerScope` rules as the order and customer APIs.
+ */
+async function subjectNoAccessSet(rows: Notification[], gone: Set<string>, user?: { id: number; role: string }): Promise<Set<string>> {
+  const out = new Set<string>();
+  if (!user) return out;
+  const requester = { id: user.id, role: user.role } as Requester;
+  const idsOf = (type: string) => [...new Set(rows.filter((r) => r.subjectType === type && r.subjectId != null && !gone.has(`${type}:${r.subjectId}`)).map((r) => r.subjectId as number))];
+
+  const oScope = orderScope(requester);
+  const orderIds = Object.keys(oScope).length > 0 ? idsOf('order') : [];
+  if (orderIds.length) {
+    const seen = new Set((await prisma.order.findMany({ where: { id: { in: orderIds }, ...oScope }, select: { id: true } })).map((o) => o.id));
+    for (const id of orderIds) if (!seen.has(id)) out.add(`order:${id}`);
+  }
+  const cScope = customerScope(requester);
+  const customerIds = cScope ? idsOf('customer') : [];
+  if (cScope && customerIds.length) {
+    const seen = new Set((await prisma.customer.findMany({ where: { id: { in: customerIds }, AND: [cScope] }, select: { id: true } })).map((c) => c.id));
+    for (const id of customerIds) if (!seen.has(id)) out.add(`customer:${id}`);
+  }
+  return out;
+}
+
+export function present(row: Notification, gone: Set<string>, noAccess: Set<string> = new Set()) {
   const hasSubject = !!row.subjectType && row.subjectId != null;
   return {
     id: row.id,
@@ -118,6 +145,8 @@ export function present(row: Notification, gone: Set<string>) {
     actorId: row.actorId,
     subject: hasSubject ? { type: row.subjectType, id: row.subjectId } : null,
     subjectDeleted: hasSubject ? gone.has(`${row.subjectType}:${row.subjectId}`) : false,
+    /** false: the link is greyed (the item was deleted, or it now belongs to someone else). */
+    subjectAccessible: hasSubject ? !gone.has(`${row.subjectType}:${row.subjectId}`) && !noAccess.has(`${row.subjectType}:${row.subjectId}`) : true,
   };
 }
 
@@ -147,8 +176,9 @@ export async function listFeed(user: InboxUser, q: FeedQuery, now = new Date()) 
   });
   const page = rows.slice(0, limit);
   const gone = await subjectDeletedMap(page);
+  const noAccess = await subjectNoAccessSet(page, gone, user);
   return {
-    items: page.map((r) => present(r, gone)),
+    items: page.map((r) => present(r, gone, noAccess)),
     nextCursor: rows.length > limit ? encodeCursor(page[page.length - 1]) : null,
   };
 }
@@ -182,7 +212,7 @@ export async function getCounts(userId: number, now = new Date()): Promise<Inbox
 export interface RowPatch { read?: boolean; done?: boolean; snoozedUntil?: Date | null }
 
 /** PATCH /api/inbox/:id: only the person's own rows. */
-export async function patchRow(userId: number, id: number, patch: RowPatch, now = new Date()) {
+export async function patchRow(userId: number, id: number, patch: RowPatch, now = new Date(), role?: string) {
   const row = await prisma.notification.findFirst({ where: { id, userId } });
   if (!row) throw new AppError('Notification not found', 404);
   if (patch.snoozedUntil && patch.snoozedUntil.getTime() <= now.getTime()) {
@@ -196,7 +226,7 @@ export async function patchRow(userId: number, id: number, patch: RowPatch, now 
   if (patch.snoozedUntil !== undefined) Object.assign(data, { snoozedUntil: patch.snoozedUntil });
   const updated = await prisma.notification.update({ where: { id }, data });
   const gone = await subjectDeletedMap([updated]);
-  return present(updated, gone);
+  return present(updated, gone, await subjectNoAccessSet([updated], gone, role ? { id: userId, role } : undefined));
 }
 
 /** POST /api/inbox/mark-all: marks the person's unread open rows of one view as read. */
