@@ -290,7 +290,7 @@ describe('M7-T08: Auto-confirm send and public confirmation API', () => {
     delete process.env.WHATSAPP_ACCESS_TOKEN;
     clearWhatsAppConfigCache();
     try {
-      // No spies: the real services find no config, log the message as pending and send nothing.
+      // No spies: the real services find no config, log the message as skipped (provider_disabled) and send nothing.
       await expect(sendAutoConfirmForOrder(order.id, tenantId)).rejects.toThrow(/could not be sent/);
     } finally {
       if (savedToken !== undefined) process.env.WHATSAPP_ACCESS_TOKEN = savedToken;
@@ -302,7 +302,7 @@ describe('M7-T08: Auto-confirm send and public confirmation API', () => {
     expect(await prismaBase.confirmToken.count({ where: { orderId: order.id } })).toBe(0);
     const logs = await prismaBase.messageLog.findMany({ where: { orderId: order.id }, select: { channel: true, status: true } });
     expect(logs.map((l) => l.channel).sort()).toEqual(['sms', 'whatsapp']);
-    expect(logs.every((l) => l.status === 'pending')).toBe(true);
+    expect(logs.every((l) => l.status === 'skipped')).toBe(true);
   });
 
   it('WhatsApp failure falls back to SMS', async () => {

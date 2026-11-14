@@ -85,10 +85,10 @@ beforeAll(async () => {
       data: { orderId: order.id, token: `tok-${side}-${SUFFIX}`, expiresAt: new Date(Date.now() + 3600_000), tenantId },
     });
     await prismaBase.messageLog.create({
-      data: { tenantId, channel: 'sms', messageBody: 'hi', status: 'sent', providerMessageId: `sms-${side}-${SUFFIX}` },
+      data: { tenantId, channel: 'sms', provider: 'arkesel', messageBody: 'hi', status: 'sent', providerMessageId: `sms-${side}-${SUFFIX}` },
     });
     await prismaBase.messageLog.create({
-      data: { tenantId, channel: 'whatsapp', messageBody: 'hi', status: 'sent', providerMessageId: `wamid.${side}.${SUFFIX}` },
+      data: { tenantId, channel: 'whatsapp', provider: 'whatsapp_cloud', messageBody: 'hi', status: 'sent', providerMessageId: `wamid.${side}.${SUFFIX}` },
     });
     await prismaBase.systemConfig.create({
       data: {
