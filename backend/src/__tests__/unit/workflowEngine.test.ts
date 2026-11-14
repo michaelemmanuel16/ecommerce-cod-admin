@@ -45,8 +45,9 @@ describe('wait is a Bull delayed job', () => {
     expect(data.actions).toEqual(actions);
 
     const waiting = updates().find((d: any) => d.status === 'waiting');
-    expect(waiting.output.steps.map((s: any) => s.action)).toEqual(['http_request', 'wait']);
-    expect(waiting.output.resumeAt).toEqual(expect.any(String));
+    expect(waiting.steps.map((s: any) => s.action)).toEqual(['http_request', 'wait']);
+    expect(waiting.resumeAt).toEqual(expect.any(Date));
+    expect(waiting.output).toEqual({ activeMs: expect.any(Number) });
     expect(updates().some((d: any) => d.status === 'completed')).toBe(false);
   });
 
@@ -78,7 +79,7 @@ describe('wait is a Bull delayed job', () => {
   it('two waits in a row: the second schedules with its own index', async () => {
     const queue = { add: jest.fn<any>().mockResolvedValue({}) };
     (prismaMock.workflowExecution.findUnique as any).mockResolvedValue({
-      id: 7, status: 'waiting', output: { steps: [{ action: 'wait' }], resumeAt: 'x', activeMs: 0 },
+      id: 7, status: 'waiting', steps: [{ action: 'wait' }], resumeAt: new Date(), output: { activeMs: 0 },
     });
     (prismaMock.workflowExecution.updateMany as any).mockResolvedValue({ count: 1 });
     const actions = [wait(10), step(1), wait(20), step(2)];
@@ -95,7 +96,7 @@ describe('wait is a Bull delayed job', () => {
 });
 
 describe('resume', () => {
-  const waitingRow = (steps: any[], activeMs = 0) => ({ id: 5, status: 'waiting', output: { steps, resumeAt: 'x', activeMs } });
+  const waitingRow = (steps: any[], activeMs = 0) => ({ id: 5, status: 'waiting', steps, resumeAt: new Date(), output: { activeMs } });
   const resumeJob = (actions: any[], nextIndex: number) =>
     ({ id: 'wf-resume:5', data: { ...runJob(5, actions).data, nextIndex } }) as any;
 
@@ -113,7 +114,7 @@ describe('resume', () => {
     expect(prismaMock.workflowExecution.updateMany).toHaveBeenCalledWith({ where: { id: 5, status: 'waiting' }, data: { status: 'running' } });
     const done = updates().at(-1);
     expect(done.status).toBe('completed');
-    expect(done.output.steps.map((s: any) => s.action)).toEqual(['http_request', 'wait', 'http_request', 'http_request']);
+    expect(done.steps.map((s: any) => s.action)).toEqual(['http_request', 'wait', 'http_request', 'http_request']);
     expect(queue.add).not.toHaveBeenCalled();
   });
 
@@ -181,7 +182,7 @@ describe('10 minute cap (waits not counted)', () => {
     expect(waiting.output.activeMs).toBe(4 * MIN);
 
     jest.setSystemTime(Date.now() + 2 * 3600_000); // the delayed job fires two hours later
-    (prismaMock.workflowExecution.findUnique as any).mockResolvedValue({ id: 5, status: 'waiting', output: waiting.output });
+    (prismaMock.workflowExecution.findUnique as any).mockResolvedValue({ id: 5, status: 'waiting', steps: waiting.steps, output: waiting.output });
     (prismaMock.workflowExecution.updateMany as any).mockResolvedValue({ count: 1 });
     slow(4 * MIN);
     await processResumeWorkflow({ id: 'r', data: { ...queue.add.mock.calls[0][1] } } as any, queue);
@@ -196,12 +197,29 @@ describe('10 minute cap (waits not counted)', () => {
     const waiting = updates().find((d: any) => d.status === 'waiting');
 
     jest.setSystemTime(Date.now() + 3600_000);
-    (prismaMock.workflowExecution.findUnique as any).mockResolvedValue({ id: 5, status: 'waiting', output: waiting.output });
+    (prismaMock.workflowExecution.findUnique as any).mockResolvedValue({ id: 5, status: 'waiting', steps: waiting.steps, output: waiting.output });
     (prismaMock.workflowExecution.updateMany as any).mockResolvedValue({ count: 1 });
     slow(6 * MIN);
     await processResumeWorkflow({ id: 'r', data: { ...queue.add.mock.calls[0][1] } } as any, queue);
     expect(updates().at(-1)).toMatchObject({ status: 'failed', error: TIME_LIMIT_REASON });
     expect(urlsCalled()).toEqual(['https://example.com/1', 'https://example.com/2']); // step 3 never ran
+  });
+});
+
+describe('run state columns', () => {
+  it('an old execution that kept its steps in output.steps still resumes with them', async () => {
+    (prismaMock.workflowExecution.findUnique as any).mockResolvedValue({
+      id: 5, status: 'waiting', steps: [], output: { steps: [{ action: 'http_request', success: true }, { action: 'wait', success: true }], resumeAt: 'x', activeMs: 0 },
+    });
+    (prismaMock.workflowExecution.updateMany as any).mockResolvedValue({ count: 1 });
+    await processResumeWorkflow({ id: 'r', data: { ...runJob(5, [step(1), wait(60), step(2)]).data, nextIndex: 2 } } as any, { add: jest.fn<any>() });
+    expect(updates().at(-1).steps.map((s: any) => s.action)).toEqual(['http_request', 'wait', 'http_request']);
+  });
+
+  it('a completed run clears resumeAt; failedStepIndex is the step that failed', async () => {
+    mockHttp.mockResolvedValueOnce({ success: true }).mockRejectedValueOnce(new Error('boom'));
+    await expect(processExecuteWorkflow(runJob(1, [step(1), step(2)]), { add: jest.fn<any>() })).rejects.toThrow('boom');
+    expect(updates().at(-1)).toMatchObject({ status: 'failed', failedStepIndex: 1, resumeAt: null });
   });
 });
 
@@ -211,7 +229,8 @@ describe('a failing step', () => {
     await expect(processExecuteWorkflow(runJob(1, [step(1)]), { add: jest.fn<any>() })).rejects.toThrow('private address');
     expect(updates().at(-1)).toMatchObject({
       status: 'failed', error: 'Request refused: "x" points to a private address',
-      output: { steps: [{ action: 'http_request', success: false }] },
+      steps: [{ action: 'http_request', success: false }],
+      failedStepIndex: 0,
     });
   });
 });

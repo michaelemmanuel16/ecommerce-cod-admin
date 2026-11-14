@@ -76,8 +76,8 @@ describe('wait survives a restart', () => {
     // The worker runs step 1 and the wait, then is free: the run is waiting and one delayed job is in Redis.
     await waitFor(async () => (await execution(exec.id)).status === 'waiting', 'the run to wait');
     const waiting = await execution(exec.id);
-    expect((waiting.output as any).steps.map((s: any) => s.action)).toEqual(['add_tag', 'wait']);
-    expect(new Date((waiting.output as any).resumeAt).getTime()).toBeGreaterThan(Date.now() - 500);
+    expect((waiting.steps as any[]).map((s: any) => s.action)).toEqual(['add_tag', 'wait']);
+    expect(waiting.resumeAt!.getTime()).toBeGreaterThan(Date.now() - 500);
     expect(await tags()).toEqual(['before']);
     const delayed = await first.getDelayed();
     expect(delayed.map((j) => j.id)).toEqual([resumeJobId(exec.id, 2)]);
@@ -91,7 +91,7 @@ describe('wait survives a restart', () => {
 
     await waitFor(async () => (await execution(exec.id)).status === 'completed', 'the run to finish');
     const done = await execution(exec.id);
-    expect((done.output as any).steps.map((s: any) => s.action)).toEqual(['add_tag', 'wait', 'add_tag']);
+    expect((done.steps as any[]).map((s: any) => s.action)).toEqual(['add_tag', 'wait', 'add_tag']);
     expect(await tags()).toEqual(['before', 'after']); // each step ran once
     await sleep(500);
     expect(await tags()).toEqual(['before', 'after']);

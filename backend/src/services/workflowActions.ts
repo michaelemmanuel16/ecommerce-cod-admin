@@ -1,5 +1,3 @@
-import prisma from '../utils/prisma';
-import { AppError } from '../middleware/errorHandler';
 import { OrderStatus } from '@prisma/client';
 import { transitionOrder } from './orderStateMachine';
 import { systemActor } from './systemUserService';
@@ -74,17 +72,6 @@ export async function updateOrderByWorkflow(orderId: number, action: any, depth:
   }
 
   return { changed, updates: { status, priority, notes } };
-}
-
-/** Add a tag to an order once, in one write. */
-export async function addOrderTag(orderId: number, tag: string): Promise<void> {
-  const { count } = await prisma.order.updateMany({
-    where: { id: orderId, NOT: { tags: { has: tag } } },
-    data: { tags: { push: tag } },
-  });
-  if (count === 0 && !(await prisma.order.findFirst({ where: { id: orderId }, select: { id: true } }))) {
-    throw new AppError('Order not found', 404);
-  }
 }
 
 /**

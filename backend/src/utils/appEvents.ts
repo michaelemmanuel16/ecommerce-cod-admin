@@ -26,6 +26,8 @@ interface OrderEventBase {
     /** The order came in through a bulk or sheet import. */
     imported?: boolean;
     runWorkflows?: boolean;
+    /** What started it, for the run history: screen | agent | mcp | import | payment | webhook. A listener guesses from the actor when it is missing. */
+    triggerSource?: string;
 }
 
 export interface OrderCreatedEvent extends OrderEventBase {
@@ -71,7 +73,7 @@ export function emitOrderEvent<E extends keyof OrderEventMap>(event: E, payload:
  */
 export function emitOrderCreatedEvent(
     order: { id: number; tenantId?: string | null; status: OrderStatus; customerId?: number },
-    opts: { imported?: boolean; runWorkflows?: boolean } = {},
+    opts: { imported?: boolean; runWorkflows?: boolean; triggerSource?: string } = {},
 ): void {
     emitOrderEvent(AppEvent.ORDER_CREATED, {
         orderId: order.id, tenantId: resolveTenantId(order.tenantId), customerId: order.customerId, status: order.status, ...opts,

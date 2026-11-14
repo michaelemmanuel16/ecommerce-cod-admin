@@ -2,8 +2,8 @@
  * M9-T21 (COD-81): every path that creates an order or moves its status fires the matching workflow ONCE.
  * Created: screen (POST /api/orders), rep app (same route, rep token), spreadsheet upload, webhook import, online payment
  * settlement, public checkout form. Status: screen, MCP, rep call outcome, agent app (delivery complete), digital delivery.
- * The events come from the services (orderService, orderSideEffects, webhookService, paymentSettlementService);
- * the public checkout form is the one path that still emits from its controller (it writes the order itself).
+ * The events come from the services (orderService, orderSideEffects, webhookService, paymentSettlementService,
+ * publicOrderService for the public checkout form).
  * Real DB, real app; the queue's `add` runs the job inline, so an execution row is one fire.
  */
 import { jest, describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from '@jest/globals';
@@ -174,7 +174,7 @@ describe('order created fires once, from every path', () => {
     await expectFiredOnce(wf.id, order.id);
   });
 
-  it('public checkout form (emitted from the controller, which writes the order itself)', async () => {
+  it('public checkout form (emitted from publicOrderService)', async () => {
     const wf = await mkWorkflow('order_created', {});
     const slug = `t21-form-${SUFFIX}`;
     const form = await prismaBase.checkoutForm.create({
