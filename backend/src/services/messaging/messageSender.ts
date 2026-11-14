@@ -1,5 +1,5 @@
 import { MessageChannel, MessageDirection, MessageStatus, Prisma } from '@prisma/client';
-import prisma from '../../utils/prisma';
+import prisma, { prismaBase } from '../../utils/prisma';
 import logger from '../../utils/logger';
 import { getTenantId, runInTenant } from '../../utils/tenantContext';
 import { getProvider } from './providers';
@@ -52,7 +52,13 @@ export function throwIfFailed(result: SendMessageResult): void {
   }
 }
 
-async function run(input: SendMessageInput): Promise<SendMessageResult> {
+/**
+ * Runs inside the short transaction that inserts the log row, before the insert. It may take a lock and check a gate;
+ * a throw means nothing is inserted and nothing is sent. The provider is called only after the commit.
+ */
+export type SendGate = (tx: Prisma.TransactionClient) => Promise<void>;
+
+async function run(input: SendMessageInput, gate?: SendGate): Promise<SendMessageResult> {
   const provider = getProvider(input.channel);
   const base = {
     tenantId: input.tenantId ?? undefined,
@@ -86,24 +92,28 @@ async function run(input: SendMessageInput): Promise<SendMessageResult> {
       logger.warn('Messaging provider disabled or not set up — message logged as skipped', { channel: input.channel });
     }
   }
+  // With a gate the insert runs on a short transaction of its own: the gate checks, the row is written, then commit
+  const insert = (data: Prisma.MessageLogUncheckedCreateInput) => gate
+    ? prismaBase.$transaction(async (tx) => {
+      await gate(tx);
+      return tx.messageLog.create({ data });
+    })
+    : prisma.messageLog.create({ data });
+
   if (skipReason) {
-    const row = await prisma.messageLog.create({
-      data: {
-        ...base,
-        status: MessageStatus.skipped,
-        errorMessage: skipError,
-        metadata: { ...(input.metadata as object | undefined), to: input.to, reason: skipReason },
-      },
+    const row = await insert({
+      ...base,
+      status: MessageStatus.skipped,
+      errorMessage: skipError,
+      metadata: { ...(input.metadata as object | undefined), to: input.to, reason: skipReason },
     });
     return { messageLogId: row.id, status: MessageStatus.skipped, sent: false, skipped: true, error: skipError };
   }
 
-  const row = await prisma.messageLog.create({
-    data: {
-      ...base,
-      status: MessageStatus.pending,
-      metadata: { ...(input.metadata as object | undefined), to: input.to },
-    },
+  const row = await insert({
+    ...base,
+    status: MessageStatus.pending,
+    metadata: { ...(input.metadata as object | undefined), to: input.to },
   });
 
   let result;
@@ -164,12 +174,12 @@ async function run(input: SendMessageInput): Promise<SendMessageResult> {
  * (errorMessage `provider_disabled`) and never throws.
  */
 export const messageSender = {
-  send(input: SendMessageInput): Promise<SendMessageResult> {
+  send(input: SendMessageInput, gate?: SendGate): Promise<SendMessageResult> {
     const ambient = getTenantId();
     if (input.tenantId && ambient !== input.tenantId) {
-      return runInTenant(input.tenantId, () => run(input));
+      return runInTenant(input.tenantId, () => run(input, gate));
     }
-    return run(input);
+    return run(input, gate);
   },
 };
 
