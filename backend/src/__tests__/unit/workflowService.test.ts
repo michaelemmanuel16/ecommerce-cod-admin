@@ -168,7 +168,10 @@ describe('WorkflowService', () => {
       });
 
       expect(result.message).toBe('Workflow conditions not met');
-      expect(prismaMock.workflowExecution.create).not.toHaveBeenCalled();
+      // M9: the skip is written to the history with its reason, and no step runs
+      expect(prismaMock.workflowExecution.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ status: 'skipped', error: 'conditions_not_met' }),
+      }));
     });
   });
 

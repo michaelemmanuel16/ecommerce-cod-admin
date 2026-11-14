@@ -16,6 +16,7 @@ import crypto from 'crypto';
 const LOOP_GUARD_MAX_DEPTH = 3;
 const LOOP_GUARD_WINDOW_MS = 60_000;
 export const LOOP_GUARD_MESSAGE = 'Skipped: loop guard';
+export const CONDITIONS_NOT_MET = 'conditions_not_met';
 const BACKDATED_MS = 24 * 60 * 60 * 1000;
 
 /**
@@ -309,18 +310,8 @@ export class WorkflowService {
     return this.runLoaded(workflow, input, undefined, { triggerSource: 'manual' });
   }
 
-  /** Check the workflow's conditions against the input, then queue a run. `workflow` is already loaded and active. */
+  /** Queue a run. `workflow` is already loaded and active. The conditions are checked once, in `enqueueRun`. */
   private async runLoaded(workflow: Workflow, input: any, guard: RunGuard | undefined, meta: RunMeta) {
-    // For manual execution (no input), skip workflow-level conditions
-    // The queue worker will handle finding orders that match conditions
-    const isManualExecution = !input || Object.keys(input).length === 0;
-
-    // Check conditions only for automatic triggers with input
-    if (!isManualExecution && workflow.conditions && !this.evaluateConditions(workflow.conditions, input)) {
-      logger.info('Workflow conditions not met', { workflowId: workflow.id, input });
-      return { message: 'Workflow conditions not met' };
-    }
-
     return this.enqueueRun(workflow, input, guard, meta);
   }
 
@@ -349,6 +340,18 @@ export class WorkflowService {
    * `guard` is given for runs caused by an order event (M2-T17).
    */
   async enqueueRun(workflow: Workflow, input: any, guard: RunGuard | undefined, meta: RunMeta) {
+    // Every trigger checks the workflow's conditions once, before the first step (M9-T21 fix). A run with no input
+    // (a manual or schedule run with no order) has nothing to read, so it skips the check as before.
+    const hasInput = !!input && Object.keys(input).length > 0;
+    if (hasInput && workflow.conditions && !this.evaluateConditions(workflow.conditions, input)) {
+      // A skip is not a run: it carries no idempotency key, so it never blocks the real run for the same key.
+      const skipped = await this.createExecution(workflow, input, { triggerSource: meta.triggerSource, orderId: meta.orderId ?? input?.orderId ?? null }, {
+        status: 'skipped', error: CONDITIONS_NOT_MET, completedAt: new Date(),
+      });
+      logger.info('Workflow conditions not met', { workflowId: workflow.id, orderId: meta.orderId ?? input?.orderId });
+      return { message: 'Workflow conditions not met', execution: skipped };
+    }
+
     if (guard && await this.loopGuardHit(workflow, input, guard, meta)) {
       return { message: LOOP_GUARD_MESSAGE };
     }
@@ -399,7 +402,7 @@ export class WorkflowService {
     }
 
     // If conditions has an 'id' field, it's the new structure with rules
-    if (conditions.id && conditions.rules) {
+    if (Array.isArray(conditions.rules)) {
       // Use the condition evaluator utility
       return evaluateConditionRules(conditions, input);
     }
@@ -547,21 +550,15 @@ export class WorkflowService {
       return;
     }
 
-    // Load order with products for condition evaluation (e.g. product-specific workflows)
-    const order = await prisma.order.findUnique({
-      where: { id: orderId },
-      select: { orderItems: { select: { product: { select: { name: true } } } } },
-    });
-
+    // The order as the conditions read it (region, total, product names), plus what the move says
+    const order = await this.loadOrderContext(orderId);
     const input = {
+      ...(order ?? {}),
       orderId,
       oldStatus,
       newStatus,
       depth,
-      productName: order?.orderItems
-        ?.map((item: any) => item.product?.name)
-        .filter(Boolean)
-        .join(', ') || '',
+      productName: order?.productName ?? '',
     };
 
     const recent = await this.recentRunIds(workflows.map((w) => w.id), orderId, depth);
@@ -609,7 +606,7 @@ export class WorkflowService {
 
       const recent = await this.recentRunIds(workflows.map((w) => w.id), order.id, 0);
 
-      // Trigger each workflow. Workflow-level conditions are not checked for a new order (as before).
+      // Trigger each workflow. enqueueRun checks the workflow's conditions.
       for (const workflow of workflows) {
         try {
           await this.enqueueRun(workflow, orderContext, { orderId: order.id, depth: 0, recent }, { triggerSource, orderId: order.id });
