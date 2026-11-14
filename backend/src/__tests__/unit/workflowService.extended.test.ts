@@ -150,6 +150,7 @@ describe('WorkflowService (extended branch coverage)', () => {
   // ───────────────────────────── getWorkflowExecutions ─────────────────────────────
   describe('getWorkflowExecutions', () => {
     it('returns executions with default pagination', async () => {
+      (prismaMock.workflow.findUnique as any).mockResolvedValue({ id: 1 } as any);
       (prismaMock.workflowExecution.findMany as any).mockResolvedValue([] as any);
       (prismaMock.workflowExecution.count as any).mockResolvedValue(0);
 
@@ -160,6 +161,7 @@ describe('WorkflowService (extended branch coverage)', () => {
     });
 
     it('paginates executions with custom page and limit', async () => {
+      (prismaMock.workflow.findUnique as any).mockResolvedValue({ id: 1 } as any);
       (prismaMock.workflowExecution.findMany as any).mockResolvedValue([] as any);
       (prismaMock.workflowExecution.count as any).mockResolvedValue(100);
 

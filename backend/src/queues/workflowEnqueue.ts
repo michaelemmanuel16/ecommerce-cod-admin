@@ -28,6 +28,11 @@ export interface WorkflowRunJob {
   conditions: any;
   input: any;
   tenantId: string | null;
+  /** A retry (M9-T24): start at the failed step, with the steps before it kept in the history. */
+  startIndex?: number;
+  priorSteps?: any[];
+  /** The failed execution this run retries; kept in `output.retryOf`. */
+  retryOf?: number;
 }
 
 export const runJobId = (executionId: number) => `wf-run:${executionId}`;

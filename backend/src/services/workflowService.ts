@@ -316,7 +316,7 @@ export class WorkflowService {
   }
 
   /** Insert an execution row. Null when the idempotency key is already taken. */
-  async createExecution(workflow: Workflow, input: any, meta: RunMeta, extra: { status: string; error?: string; completedAt?: Date }) {
+  async createExecution(workflow: Workflow, input: any, meta: RunMeta, extra: { status: string; error?: string; completedAt?: Date; output?: Prisma.InputJsonValue; mode?: 'live' | 'test'; steps?: Prisma.InputJsonValue }) {
     try {
       return await prisma.workflowExecution.create({
         data: {
@@ -336,21 +336,28 @@ export class WorkflowService {
   }
 
   /**
+   * Every trigger checks the workflow's conditions once, before the first step (M9-T21 fix). Null when the run may go on.
+   * A run that does not match writes a `skipped` execution with `conditions_not_met`. A run with no input (a manual or
+   * schedule run with no order) has nothing to read, so it skips the check as before.
+   */
+  async skipUnlessConditionsMet(workflow: Workflow, input: any, meta: RunMeta) {
+    const hasInput = !!input && Object.keys(input).length > 0;
+    if (!hasInput || !workflow.conditions || this.evaluateConditions(workflow.conditions, input)) return null;
+    // A skip is not a run: it carries no idempotency key, so it never blocks the real run for the same key.
+    const skipped = await this.createExecution(workflow, input, { triggerSource: meta.triggerSource, orderId: meta.orderId ?? input?.orderId ?? null }, {
+      status: 'skipped', error: CONDITIONS_NOT_MET, completedAt: new Date(),
+    });
+    logger.info('Workflow conditions not met', { workflowId: workflow.id, orderId: meta.orderId ?? input?.orderId });
+    return { message: 'Workflow conditions not met', execution: skipped };
+  }
+
+  /**
    * Loop guard, execution record, queue: the one place a run is created (manual and triggered).
    * `guard` is given for runs caused by an order event (M2-T17).
    */
   async enqueueRun(workflow: Workflow, input: any, guard: RunGuard | undefined, meta: RunMeta) {
-    // Every trigger checks the workflow's conditions once, before the first step (M9-T21 fix). A run with no input
-    // (a manual or schedule run with no order) has nothing to read, so it skips the check as before.
-    const hasInput = !!input && Object.keys(input).length > 0;
-    if (hasInput && workflow.conditions && !this.evaluateConditions(workflow.conditions, input)) {
-      // A skip is not a run: it carries no idempotency key, so it never blocks the real run for the same key.
-      const skipped = await this.createExecution(workflow, input, { triggerSource: meta.triggerSource, orderId: meta.orderId ?? input?.orderId ?? null }, {
-        status: 'skipped', error: CONDITIONS_NOT_MET, completedAt: new Date(),
-      });
-      logger.info('Workflow conditions not met', { workflowId: workflow.id, orderId: meta.orderId ?? input?.orderId });
-      return { message: 'Workflow conditions not met', execution: skipped };
-    }
+    const skipped = await this.skipUnlessConditionsMet(workflow, input, meta);
+    if (skipped) return skipped;
 
     if (guard && await this.loopGuardHit(workflow, input, guard, meta)) {
       return { message: LOOP_GUARD_MESSAGE };
@@ -467,6 +474,8 @@ export class WorkflowService {
     filters?: { page?: number; limit?: number }
   ) {
     const { page = 1, limit = 20 } = filters || {};
+    // A workflow of another tenant is not found
+    await this.getWorkflowById(workflowId);
     const skip = (page - 1) * limit;
 
     const [executions, total] = await Promise.all([
@@ -481,8 +490,9 @@ export class WorkflowService {
       })
     ]);
 
+    const { presentExecution } = await import('./workflowRunService');
     return {
-      executions,
+      executions: executions.map(presentExecution),
       pagination: {
         page,
         limit,

@@ -9,6 +9,7 @@ import assignmentService from '../services/assignmentService';
 import { systemActor } from '../services/systemUserService';
 import { runHttpRequestAction, updateOrderByWorkflow } from '../services/workflowActions';
 import { runAssignTo } from '../services/workflowAssignTo';
+import crypto from 'crypto';
 
 // Send actions read tenant-scoped provider config (SystemConfig) and write
 // tenant-scoped MessageLog rows. They refuse to run with no tenant context.
@@ -37,8 +38,13 @@ export const DRAIN_OUTBOX_JOB = 'drain-workflow-outbox';
 export const SCHEDULE_JOB = 'run-scheduled-workflow';
 /** One batch of up to 50 orders of a catch-up (M9-T23), see workflowCatchUp.ts. */
 export const CATCH_UP_JOB = 'workflow-catch-up';
+/** One batch of up to 50 orders of a manual Run (M9-T24), see workflowRunService.ts. */
+export const MANUAL_RUN_JOB = 'workflow-manual-run';
 /** Bull keeps a delay in a 32-bit field. */
 const MAX_DELAY_MS = 2 ** 31 - 1;
+
+/** A short fingerprint of a workflow's actions: a retry resumes by step index, so it must see the same steps (M9-T24). */
+export const actionsHash = (actions: unknown) => crypto.createHash('sha256').update(JSON.stringify(actions ?? [])).digest('hex').slice(0, 16);
 
 /** Deterministic: adding the same resume twice does nothing. `stepIndex` is the step the run continues from. */
 export const resumeJobId = (executionId: number, stepIndex: number) => `wf-resume:${executionId}:${stepIndex}`;
@@ -81,14 +87,17 @@ interface RunState {
   steps: any[];
   /** Milliseconds this run has spent executing before this segment (waits not counted). */
   activeMs: number;
+  /** The failed execution this run retries (M9-T24): kept in `output.retryOf`. */
+  retryOf?: number;
 }
 
 /** Run the steps from `startIndex`. A `wait` saves the state, schedules the resume as a delayed job and returns: no worker is held. */
 async function runSteps(state: RunState, queue: ResumeScheduler): Promise<void> {
-  const { executionId, workflowId, actions, conditions, input, tenantId, startIndex } = state;
+  const { executionId, workflowId, actions, conditions, input, tenantId, startIndex, retryOf } = state;
   const steps = [...state.steps];
   const segmentStart = Date.now();
   const spentMs = () => state.activeMs + (Date.now() - segmentStart);
+  const outputNow = () => ({ activeMs: spentMs(), actionsHash: actionsHash(actions), ...(retryOf ? { retryOf } : {}) });
   const io = getSocketInstance();
 
   const emitFinished = (payload: Record<string, unknown>) => {
@@ -98,7 +107,7 @@ async function runSteps(state: RunState, queue: ResumeScheduler): Promise<void> 
     await prisma.workflowExecution.update({
       where: { id: executionId },
       data: {
-        status: 'failed', error: message, steps, output: { activeMs: spentMs() }, resumeAt: null, completedAt: new Date(),
+        status: 'failed', error: message, steps, output: outputNow(), resumeAt: null, completedAt: new Date(),
         ...(failedStepIndex !== undefined ? { failedStepIndex } : {}),
       }
     });
@@ -125,7 +134,7 @@ async function runSteps(state: RunState, queue: ResumeScheduler): Promise<void> 
           // Step state lives in the `steps` and `resumeAt` columns; the time spent so far (waits not counted) in `output.activeMs`.
           await prisma.workflowExecution.update({
             where: { id: executionId },
-            data: { status: 'waiting', steps, resumeAt, output: { activeMs: spentMs() } }
+            data: { status: 'waiting', steps, resumeAt, output: outputNow() }
           });
           await queue.add(RESUME_JOB, {
             executionId, workflowId, actions, conditions, input, tenantId, nextIndex: i + 1,
@@ -158,7 +167,7 @@ async function runSteps(state: RunState, queue: ResumeScheduler): Promise<void> 
       data: {
         status: 'completed',
         steps,
-        output: { activeMs: spentMs() },
+        output: outputNow(),
         resumeAt: null,
         completedAt: new Date()
       }
@@ -174,7 +183,7 @@ async function runSteps(state: RunState, queue: ResumeScheduler): Promise<void> 
 }
 
 export const processExecuteWorkflow = async (job: Bull.Job, queue: ResumeScheduler = workflowQueue) => {
-  const { executionId, workflowId, actions, conditions, input, tenantId } = job.data;
+  const { executionId, workflowId, actions, conditions, input, tenantId, startIndex, priorSteps, retryOf } = job.data;
 
   // Restore tenant context so all Prisma queries (MessageLog, SystemConfig, etc.)
   // are scoped to the correct tenant
@@ -191,7 +200,12 @@ export const processExecuteWorkflow = async (job: Bull.Job, queue: ResumeSchedul
       data: { status: 'running' }
     });
 
-    await runSteps({ executionId, workflowId, actions, conditions, input, tenantId, startIndex: 0, steps: [], activeMs: 0 }, queue);
+    await runSteps({
+      executionId, workflowId, actions, conditions, input, tenantId,
+      startIndex: Number.isInteger(startIndex) ? startIndex : 0,
+      steps: Array.isArray(priorSteps) ? priorSteps : [],
+      activeMs: 0, retryOf,
+    }, queue);
   };
 
   return runJobInTenant(`Workflow job ${job.id} (execution ${executionId})`, tenantId, processJob);
@@ -224,6 +238,7 @@ export const processResumeWorkflow = async (job: Bull.Job, queue: ResumeSchedule
       startIndex: nextIndex,
       steps: columnSteps.length > 0 ? columnSteps : Array.isArray(saved.steps) ? saved.steps : [],
       activeMs: Number(saved.activeMs) || 0,
+      retryOf: Number.isInteger(saved.retryOf) ? saved.retryOf : undefined,
     }, queue);
   };
 
@@ -239,6 +254,7 @@ export function registerWorkflowProcessors(queue: Bull.Queue): void {
   // Same reason: workflowSchedule imports this module
   queue.process(SCHEDULE_JOB, async (job: Bull.Job) => (await import('./workflowSchedule')).processScheduledJob(job));
   queue.process(CATCH_UP_JOB, async (job: Bull.Job) => (await import('../services/workflowCatchUpService')).processCatchUpBatch(job));
+  queue.process(MANUAL_RUN_JOB, async (job: Bull.Job) => (await import('../services/workflowRunService')).processManualRunBatch(job));
 }
 
 /** Start the 30 s outbox drain. Replaces an older repeat of the same job, so a restart never doubles it. */
