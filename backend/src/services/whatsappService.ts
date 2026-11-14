@@ -1,52 +1,15 @@
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
-import { MessageChannel, MessageDirection, MessageStatus, Prisma } from '@prisma/client';
+import { MessageChannel, Prisma, MessageStatus } from '@prisma/client';
 import { decryptProviderSecrets } from '../utils/providerCrypto';
-import { refreshTokenIfNeeded } from './whatsappTokenRefreshService';
 import { getTenantId, withoutTenant } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 import { getStoreTimeZone, parseInclusiveBound } from './kpi/dates';
 import { formatOrderNumber } from '../utils/orderNumber';
+import { messageSender, throwIfFailed } from './messaging/messageSender';
 
-// WhatsApp Business Cloud API configuration
-const WHATSAPP_API_URL = 'https://graph.facebook.com/v21.0';
-
-interface WhatsAppConfig {
-  accessToken: string;
-  phoneNumberId: string;
-  appSecret: string;
-  webhookVerifyToken: string;
-  businessAccountId?: string;
-  isEnabled: boolean;
-  authMode?: 'manual' | 'oauth';
-  oauthTokenExpiry?: string;
-}
-
-// Tenant-aware cached DB config to avoid per-message DB queries
-const configCache = new Map<string, { data: any; fetchedAt: number }>();
-const CACHE_TTL_MS = 60_000; // 60 seconds
-
-export async function getDbWhatsappConfig(): Promise<any | null> {
-  const tenantId = getTenantId() || '__default__';
-  const now = Date.now();
-  const cached = configCache.get(tenantId);
-  if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
-    return cached.data;
-  }
-
-  try {
-    const config = await prisma.systemConfig.findFirst({
-      select: { whatsappProvider: true },
-    });
-    const provider = config?.whatsappProvider as any;
-    const decrypted = provider ? decryptProviderSecrets('whatsappProvider', provider) : null;
-    configCache.set(tenantId, { data: decrypted, fetchedAt: now });
-    return decrypted;
-  } catch (error: any) {
-    logger.warn('Failed to read WhatsApp config from DB, falling back to env vars', { error: error.message });
-    return null;
-  }
-}
+// The WhatsApp Cloud adapter owns the provider call and its config
+export { getDbWhatsappConfig, clearWhatsAppConfigCache } from './messaging/providers/whatsappCloudProvider';
 
 /**
  * Every tenant's decrypted WhatsApp config, read unscoped on purpose: the Meta
@@ -105,39 +68,6 @@ export async function findWhatsappConfigByVerifyToken(
   if (!token) return null;
   const configs = await listTenantWhatsappConfigs();
   return configs.find((c) => c.config?.webhookVerifyToken && c.config.webhookVerifyToken === token) ?? null;
-}
-
-/** Clear cached DB config (call after admin saves new settings). */
-export function clearWhatsAppConfigCache(): void {
-  configCache.clear();
-}
-
-async function getConfig(): Promise<WhatsAppConfig> {
-  const dbConfig = await getDbWhatsappConfig();
-
-  // DB config takes precedence when present and enabled
-  if (dbConfig && dbConfig.accessToken && dbConfig.phoneNumberId) {
-    return {
-      accessToken: dbConfig.accessToken,
-      phoneNumberId: dbConfig.phoneNumberId,
-      appSecret: dbConfig.appSecret || process.env.WHATSAPP_APP_SECRET || '',
-      webhookVerifyToken: dbConfig.webhookVerifyToken || process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || '',
-      businessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID,
-      isEnabled: dbConfig.isEnabled !== false,
-      authMode: dbConfig.authMode,
-      oauthTokenExpiry: dbConfig.oauthTokenExpiry,
-    };
-  }
-
-  // Fall back to env vars
-  return {
-    accessToken: process.env.WHATSAPP_ACCESS_TOKEN || '',
-    phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || '',
-    appSecret: process.env.WHATSAPP_APP_SECRET || '',
-    webhookVerifyToken: process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || '',
-    businessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID,
-    isEnabled: true,
-  };
 }
 
 // Order status → WhatsApp template mapping.
@@ -258,7 +188,7 @@ export async function sendWhatsAppForOrder(
 
     try {
       const { sendSmsForOrder } = await import('./smsService');
-      const smsResult = await sendSmsForOrder(templateKey, orderId);
+      const smsResult = await sendSmsForOrder(templateKey, orderId, error.messageLogId);
       logger.info('SMS fallback succeeded', { orderId, messageLogId: smsResult.messageLogId });
       return smsResult;
     } catch (smsError: any) {
@@ -277,6 +207,9 @@ interface SendTemplateOptions {
   buttonPayloads?: string[];
   orderId?: number;
   customerId?: number;
+  conversationId?: number;
+  inReplyToId?: number;
+  retryOfId?: number;
 }
 
 interface SendTextOptions {
@@ -286,12 +219,9 @@ interface SendTextOptions {
   logBody?: string;
   orderId?: number;
   customerId?: number;
-}
-
-interface WhatsAppApiResponse {
-  messaging_product: string;
-  contacts: Array<{ input: string; wa_id: string }>;
-  messages: Array<{ id: string }>;
+  conversationId?: number;
+  inReplyToId?: number;
+  retryOfId?: number;
 }
 
 /**
@@ -349,82 +279,6 @@ function buildMessageBody(templateName: string, bodyParams: string[]): string {
 
 class WhatsAppService {
   /**
-   * Send the API payload and update the MessageLog accordingly.
-   * Shared by sendTemplate() and sendText().
-   */
-  private async dispatch(
-    messageLogId: number,
-    formattedPhone: string,
-    payload: object,
-  ): Promise<{ sent: boolean; providerMessageId?: string }> {
-    let config = await getConfig();
-
-    if (!config.accessToken || !config.phoneNumberId || !config.isEnabled) {
-      logger.warn('WhatsApp not configured — message logged but not sent', { messageLogId });
-      return { sent: false };
-    }
-
-    // On-demand token refresh for OAuth mode — only triggers when cron has failed
-    // (within 1 day of expiry rather than 7, since cron handles proactive refresh)
-    if (config.authMode === 'oauth' && config.oauthTokenExpiry) {
-      const expiryMs = new Date(config.oauthTokenExpiry).getTime();
-      const oneDay = 24 * 60 * 60 * 1000;
-      if (expiryMs - Date.now() < oneDay) {
-        try {
-          const result = await refreshTokenIfNeeded();
-          if (result.refreshed) {
-            config = await getConfig(); // re-read so this dispatch uses the new token
-          }
-        } catch (err: any) {
-          logger.warn('On-demand token refresh failed, proceeding with current token', { error: err.message });
-        }
-      }
-    }
-
-    try {
-      const response = await fetch(`${WHATSAPP_API_URL}/${config.phoneNumberId}/messages`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${config.accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(`WhatsApp API error ${response.status}: ${errorBody}`);
-      }
-
-      const data = await response.json() as WhatsAppApiResponse;
-      const providerMessageId = data.messages?.[0]?.id;
-
-      await prisma.messageLog.update({
-        where: { id: messageLogId },
-        data: {
-          status: MessageStatus.sent,
-          providerMessageId,
-          sentAt: new Date(),
-        },
-      });
-
-      logger.info('WhatsApp message sent', { messageLogId, to: formattedPhone, providerMessageId });
-      return { sent: true, providerMessageId };
-    } catch (error: any) {
-      await prisma.messageLog.update({
-        where: { id: messageLogId },
-        data: {
-          status: MessageStatus.failed,
-          errorMessage: error.message?.substring(0, 500),
-        },
-      });
-
-      logger.error('Failed to send WhatsApp message', { messageLogId, error: error.message });
-      throw error;
-    }
-  }
-
-  /**
    * Send a template message via WhatsApp Business Cloud API.
    */
   async sendTemplate(options: SendTemplateOptions): Promise<{ messageLogId: number; providerMessageId?: string; sent: boolean }> {
@@ -437,130 +291,49 @@ class WhatsAppService {
       buttonPayloads = [],
       orderId,
       customerId,
+      conversationId,
+      inReplyToId,
+      retryOfId,
     } = options;
     const formattedPhone = formatPhoneNumber(to);
-    const messageBody = buildMessageBody(templateName, bodyParams);
 
-    const messageLog = await prisma.messageLog.create({
-      data: {
-        orderId,
-        customerId,
-        channel: MessageChannel.whatsapp,
-        direction: MessageDirection.outbound,
-        templateName,
-        messageBody,
-        status: MessageStatus.pending,
-        metadata: { bodyParams, headerParams, buttonPayloads, languageCode, to: formattedPhone },
-      },
-    });
-
-    const components: any[] = [];
-    if (headerParams.length > 0) {
-      components.push({
-        type: 'header',
-        parameters: headerParams.map((text) => ({ type: 'text', text })),
-      });
-    }
-    if (bodyParams.length > 0) {
-      components.push({
-        type: 'body',
-        parameters: bodyParams.map((text) => ({ type: 'text', text })),
-      });
-    }
-    if (buttonPayloads.length > 0) {
-      buttonPayloads.forEach((payload, i) => {
-        components.push({
-          type: 'button',
-          sub_type: 'quick_reply',
-          index: String(i),
-          parameters: [{ type: 'payload', payload }],
-        });
-      });
-    }
-
-    const payload = {
-      messaging_product: 'whatsapp',
+    const result = await messageSender.send({
+      tenantId: getTenantId(),
+      channel: MessageChannel.whatsapp,
       to: formattedPhone,
-      type: 'template',
-      template: {
-        name: templateName,
-        language: { code: languageCode },
-        components: components.length > 0 ? components : undefined,
-      },
-    };
-
-    const { sent, providerMessageId } = await this.dispatch(messageLog.id, formattedPhone, payload);
-    return { messageLogId: messageLog.id, providerMessageId, sent };
+      template: { name: templateName, languageCode, bodyParams, headerParams, buttonPayloads },
+      logBody: buildMessageBody(templateName, bodyParams),
+      orderId,
+      customerId,
+      conversationId,
+      inReplyToId,
+      retryOfId,
+      metadata: { bodyParams, headerParams, buttonPayloads, languageCode },
+    });
+    throwIfFailed(result);
+    return { messageLogId: result.messageLogId, providerMessageId: result.providerMessageId, sent: result.sent };
   }
 
   /**
    * Send a free-form text message via WhatsApp.
    */
   async sendText(options: SendTextOptions): Promise<{ messageLogId: number; providerMessageId?: string; sent: boolean }> {
-    const { to, body, logBody, orderId, customerId } = options;
-    const formattedPhone = formatPhoneNumber(to);
+    const { to, body, logBody, orderId, customerId, conversationId, inReplyToId, retryOfId } = options;
 
-    const messageLog = await prisma.messageLog.create({
-      data: {
-        orderId,
-        customerId,
-        channel: MessageChannel.whatsapp,
-        direction: MessageDirection.outbound,
-        messageBody: logBody ?? body,
-        status: MessageStatus.pending,
-        metadata: { to: formattedPhone },
-      },
+    const result = await messageSender.send({
+      tenantId: getTenantId(),
+      channel: MessageChannel.whatsapp,
+      to: formatPhoneNumber(to),
+      body,
+      logBody,
+      orderId,
+      customerId,
+      conversationId,
+      inReplyToId,
+      retryOfId,
     });
-
-    const payload = {
-      messaging_product: 'whatsapp',
-      to: formattedPhone,
-      type: 'text',
-      text: { body },
-    };
-
-    const { sent, providerMessageId } = await this.dispatch(messageLog.id, formattedPhone, payload);
-    return { messageLogId: messageLog.id, providerMessageId, sent };
-  }
-
-  /**
-   * Process inbound webhook status update from WhatsApp.
-   * Updates MessageLog with delivery/read receipts in a single query.
-   */
-  async processStatusUpdate(providerMessageId: string, status: string, timestamp?: number): Promise<void> {
-    const statusMap: Record<string, MessageStatus> = {
-      sent: MessageStatus.sent,
-      delivered: MessageStatus.delivered,
-      read: MessageStatus.read,
-      failed: MessageStatus.failed,
-    };
-
-    const mappedStatus = statusMap[status];
-    if (!mappedStatus) {
-      logger.warn('Unknown WhatsApp status update', { providerMessageId, status });
-      return;
-    }
-
-    const updateData: Prisma.MessageLogUpdateManyMutationInput = { status: mappedStatus };
-    const eventTime = timestamp ? new Date(timestamp * 1000) : new Date();
-
-    if (mappedStatus === MessageStatus.delivered) {
-      updateData.deliveredAt = eventTime;
-    } else if (mappedStatus === MessageStatus.read) {
-      updateData.readAt = eventTime;
-    }
-
-    const result = await prisma.messageLog.updateMany({
-      where: { providerMessageId },
-      data: updateData,
-    });
-
-    if (result.count === 0) {
-      logger.warn('MessageLog not found for status update', { providerMessageId });
-      return;
-    }
-
-    logger.info('WhatsApp message status updated', { providerMessageId, newStatus: mappedStatus });
+    throwIfFailed(result);
+    return { messageLogId: result.messageLogId, providerMessageId: result.providerMessageId, sent: result.sent };
   }
 
   /**

@@ -1,5 +1,7 @@
 import { Request, Response } from 'express';
 import { smsService, getDbSmsConfig } from '../services/smsService';
+import { arkeselSmsProvider } from '../services/messaging/providers';
+import { messageStatus } from '../services/messaging/messageStatus';
 import logger from '../utils/logger';
 
 /**
@@ -10,11 +12,15 @@ export async function handleArkeselWebhook(req: Request, res: Response): Promise
   res.status(200).json({ received: true });
 
   try {
-    const { messageId, status } = req.body;
-    if (messageId && status) {
-      await smsService.processStatusUpdate(messageId, status);
-    } else {
+    const events = arkeselSmsProvider.parseStatusCallback(req);
+    if (events.length === 0) {
       logger.debug('Arkesel webhook: unrecognized payload', { body: req.body });
+    }
+    for (const e of events) {
+      await messageStatus.record(arkeselSmsProvider.name, e.providerMessageId, e.status, e.occurredAt, e.payload, {
+        providerStatus: e.providerStatus,
+        failureReason: e.failureReason,
+      });
     }
   } catch (error: any) {
     logger.error('Error processing Arkesel webhook', { error: error.message });

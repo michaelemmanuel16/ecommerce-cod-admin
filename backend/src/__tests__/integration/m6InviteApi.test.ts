@@ -12,7 +12,7 @@ import { bearer } from './helpers/superAdminToken';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
 import { hashInviteToken } from '../../utils/inviteToken';
 import { superAdminToken } from './helpers/superAdminToken';
-import { smsService } from '../../services/smsService';
+import { arkeselSmsProvider } from '../../services/messaging/providers';
 
 jest.mock('../../services/emailService', () => ({
   ...jest.requireActual('../../services/emailService'),
@@ -300,17 +300,19 @@ describe('channels', () => {
   });
 
   it('with a provider, the provider gets the real link and the message log never holds the token', async () => {
-    const dispatch = jest.spyOn(smsService as unknown as { dispatch: (...a: unknown[]) => Promise<{ sent: boolean; providerMessageId?: string }> }, 'dispatch').mockResolvedValue({ sent: true, providerMessageId: 'provider-msg-1' });
+    const enabled = jest.spyOn(arkeselSmsProvider, 'isEnabled').mockResolvedValue(true);
+    const dispatch = jest.spyOn(arkeselSmsProvider, 'send').mockResolvedValue({ accepted: true, providerMessageId: 'provider-msg-1' });
     try {
       const res = await invite({ channel: 'sms', phoneNumber: '0244000333' });
       expect(res.body.delivery).toEqual({ channel: 'sms', sent: true });
       const raw = tokenOf(res.body.link);
-      expect(dispatch).toHaveBeenCalledWith(expect.any(Number), expect.any(String), expect.stringContaining(raw));
+      expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ body: expect.stringContaining(raw) }));
       expect(await prismaBase.messageLog.count({ where: { messageBody: { contains: raw } } })).toBe(0);
       const row = await prismaBase.messageLog.findFirstOrThrow({ where: { tenantId: pair.a.id, channel: 'sms' }, orderBy: { id: 'desc' } });
       expect(row.messageBody).toContain('[invite link]');
     } finally {
       dispatch.mockRestore();
+      enabled.mockRestore();
     }
   });
 

@@ -1,10 +1,6 @@
 import { maskEmail } from '../utils/mask';
-import sgMail from '@sendgrid/mail';
-import nodemailer from 'nodemailer';
-import { Resend } from 'resend';
-import { MessageChannel, MessageDirection, MessageStatus } from '@prisma/client';
+import { MessageChannel, MessageStatus } from '@prisma/client';
 import prisma from '../utils/prisma';
-import { decryptProviderSecrets } from '../utils/providerCrypto';
 import { escapeHtml } from '../utils/sanitizer';
 import logger from '../utils/logger';
 import { getTenantId } from '../utils/tenantContext';
@@ -13,20 +9,13 @@ import { ensureUnsubscribeToken, buildUnsubscribeUrl, applyUnsubscribe } from '.
 import * as Money from '../utils/money';
 import { getCurrency } from '../utils/currency';
 import { INVITE_TTL_DAYS } from '../utils/inviteToken';
+import { emailProvider } from './messaging/providers/emailProvider';
+import { messageSender } from './messaging/messageSender';
+
+// The email adapter owns the provider calls and their config
+export { getDbEmailConfig, clearEmailConfigCache } from './messaging/providers/emailProvider';
 
 // ---------- Types ----------
-
-interface EmailConfig {
-  provider: 'sendgrid' | 'smtp' | 'resend';
-  /** API key for SendGrid/Resend, or SMTP password when provider is 'smtp'. */
-  apiKey: string;
-  fromEmail: string;
-  fromName: string;
-  // SMTP-specific
-  smtpHost?: string;
-  smtpPort?: number;
-  smtpSecure?: boolean;
-}
 
 interface SendEmailOptions {
   to: string;
@@ -48,217 +37,20 @@ export interface SendEmailMeta {
   as?: 'platform' | 'tenant';
 }
 
-// ---------- Config cache (tenant-keyed, same pattern as smsService) ----------
-
-// Keyed by tenant so one tenant's encrypted provider key/fromEmail is never
-// served to another under per-recipient/bulk cross-tenant sends (C2).
-const configCache = new Map<string, { data: EmailConfig | null; fetchedAt: number }>();
-const CACHE_TTL_MS = 60_000; // 60 seconds
-
-// Exported for unit testing of tenant-keyed cache isolation (mirrors getDbSmsConfig).
-export async function getDbEmailConfig(): Promise<EmailConfig | null> {
-  const tenantId = getTenantId() || '__default__';
-  const now = Date.now();
-  const cached = configCache.get(tenantId);
-  if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
-    return cached.data;
-  }
-
-  try {
-    const config = await prisma.systemConfig.findFirst({
-      select: { emailProvider: true },
-    });
-    const provider = config?.emailProvider as any;
-    const decrypted = provider ? decryptProviderSecrets('emailProvider', provider) : null;
-
-    let result: EmailConfig | null = null;
-    if (decrypted && decrypted.apiKey && decrypted.provider) {
-      result = {
-        provider: decrypted.provider,
-        apiKey: decrypted.apiKey,
-        fromEmail: decrypted.fromEmail || 'noreply@codadminpro.com',
-        fromName: decrypted.fromName || 'COD Admin',
-        smtpHost: decrypted.smtpHost,
-        smtpPort: decrypted.smtpPort,
-        smtpSecure: decrypted.smtpSecure,
-      };
-    }
-
-    configCache.set(tenantId, { data: result, fetchedAt: now });
-    return result;
-  } catch (error: any) {
-    logger.warn('Failed to read email config from DB, falling back to env vars', { error: error.message });
-    return null;
-  }
-}
-
-/** Clear cached config (call after admin saves new settings). */
-export function clearEmailConfigCache(): void {
-  configCache.clear();
-  sgApiKey = null;
-  resendClient = null;
-  resendApiKey = null;
-  smtpTransporter = null;
-  smtpConfigKey = null;
-}
-
-async function getConfig(): Promise<EmailConfig> {
-  const dbConfig = await getDbEmailConfig();
-
-  if (dbConfig) {
-    return dbConfig;
-  }
-
-  // Fall back to env vars
-  if (process.env.SENDGRID_API_KEY) {
-    return {
-      provider: 'sendgrid',
-      apiKey: process.env.SENDGRID_API_KEY,
-      fromEmail: process.env.EMAIL_FROM || 'noreply@codadminpro.com',
-      fromName: process.env.EMAIL_FROM_NAME || 'COD Admin',
-    };
-  }
-
-  if (process.env.RESEND_API_KEY) {
-    return {
-      provider: 'resend',
-      apiKey: process.env.RESEND_API_KEY,
-      fromEmail: process.env.RESEND_FROM_EMAIL || 'noreply@codadminpro.com',
-      fromName: process.env.EMAIL_FROM_NAME || 'COD Admin',
-    };
-  }
-
-  // Return a config that will fail gracefully
-  return {
-    provider: 'sendgrid',
-    apiKey: '',
-    fromEmail: 'noreply@codadminpro.com',
-    fromName: 'COD Admin',
-  };
-}
-
-/**
- * Platform transactional config — env only, never DB/tenant-scoped (C2b).
- * Throws if unset so transactional sends fail loudly instead of silently
- * borrowing a tenant's provider. No caching: it's a cheap env read.
- */
-function getPlatformConfig(): EmailConfig {
-  const provider = (process.env.PLATFORM_EMAIL_PROVIDER || 'resend') as EmailConfig['provider'];
-  const apiKey = process.env.PLATFORM_EMAIL_API_KEY || '';
-  if (!apiKey) {
-    throw new Error('PLATFORM_EMAIL_NOT_CONFIGURED: set PLATFORM_EMAIL_API_KEY to send transactional email.');
-  }
-  return {
-    provider,
-    apiKey,
-    fromEmail: process.env.PLATFORM_EMAIL_FROM || 'noreply@mail.codadminpro.com',
-    fromName: process.env.PLATFORM_EMAIL_FROM_NAME || 'COD Admin',
-    smtpHost: process.env.PLATFORM_EMAIL_SMTP_HOST,
-    smtpPort: process.env.PLATFORM_EMAIL_SMTP_PORT ? parseInt(process.env.PLATFORM_EMAIL_SMTP_PORT, 10) : undefined,
-    smtpSecure: process.env.PLATFORM_EMAIL_SMTP_SECURE === 'true',
-  };
-}
-
-// ---------- Provider-specific senders ----------
-
-// ---------- Provider client caches ----------
-
-let sgApiKey: string | null = null;
-
-let resendClient: Resend | null = null;
-let resendApiKey: string | null = null;
-
-let smtpTransporter: nodemailer.Transporter | null = null;
-let smtpConfigKey: string | null = null;
-
-function getSmtpTransporter(config: EmailConfig): nodemailer.Transporter {
-  const key = `${config.fromEmail}:${config.apiKey}:${config.smtpHost}:${config.smtpPort}`;
-  if (smtpTransporter && smtpConfigKey === key) return smtpTransporter;
-  smtpTransporter = nodemailer.createTransport({
-    host: config.smtpHost || 'smtp.gmail.com',
-    port: config.smtpPort || 587,
-    secure: config.smtpSecure || false,
-    auth: { user: config.fromEmail, pass: config.apiKey },
-  });
-  smtpConfigKey = key;
-  return smtpTransporter;
-}
-
-async function sendViaSendGrid(config: EmailConfig, options: SendEmailOptions): Promise<void> {
-  if (sgApiKey !== config.apiKey) {
-    sgMail.setApiKey(config.apiKey);
-    sgApiKey = config.apiKey;
-  }
-  const from = options.from || `${config.fromName} <${config.fromEmail}>`;
-  await sgMail.send({
-    to: options.to,
-    from,
-    subject: options.subject,
-    html: options.html,
-    headers: options.headers,
-  });
-}
-
-async function sendViaResend(config: EmailConfig, options: SendEmailOptions): Promise<void> {
-  if (!resendClient || resendApiKey !== config.apiKey) {
-    resendClient = new Resend(config.apiKey);
-    resendApiKey = config.apiKey;
-  }
-  const from = options.from || `${config.fromName} <${config.fromEmail}>`;
-  // The Resend SDK does not throw when the API refuses a message: it answers `{ data, error }`. Without this check a refused
-  // send (unverified domain, bad key) read as sent, and the invite said "sent" when nothing went out.
-  const { error } = await resendClient.emails.send({
-    from,
-    to: options.to,
-    subject: options.subject,
-    html: options.html,
-    headers: options.headers,
-  });
-  if (error) throw new Error(`Resend refused the message: ${error.message}`);
-}
-
-async function sendViaSmtp(config: EmailConfig, options: SendEmailOptions): Promise<void> {
-  const transporter = getSmtpTransporter(config);
-  const from = options.from || `${config.fromName} <${config.fromEmail}>`;
-  await transporter.sendMail({
-    from,
-    to: options.to,
-    subject: options.subject,
-    html: options.html,
-    headers: options.headers,
-  });
-}
-
-// ---------- Helpers ----------
-
 // ---------- Unified send function ----------
 
+/** Send one email with no log row (password reset, invites, digital delivery). Throws when it fails. */
 export async function sendEmail(options: SendEmailOptions, meta: SendEmailMeta = {}): Promise<void> {
-  const sendAs = meta.as ?? 'tenant';
-  const config = sendAs === 'platform' ? getPlatformConfig() : await getConfig();
-
-  if (!config.apiKey) {
-    logger.warn('Email not configured — cannot send email', { sendAs, to: maskEmail(options.to), subject: options.subject });
-    throw new Error('Email provider not configured. Please configure email settings in Settings → Integrations.');
-  }
-
-  logger.info('Sending email', { sendAs, provider: config.provider, to: maskEmail(options.to), subject: options.subject });
-
-  switch (config.provider) {
-    case 'sendgrid':
-      await sendViaSendGrid(config, options);
-      break;
-    case 'resend':
-      await sendViaResend(config, options);
-      break;
-    case 'smtp':
-      await sendViaSmtp(config, options);
-      break;
-    default:
-      throw new Error(`Unsupported email provider: ${config.provider}`);
-  }
-
-  logger.info('Email sent successfully', { provider: config.provider, to: maskEmail(options.to) });
+  const result = await emailProvider.send({
+    tenantId: getTenantId(),
+    to: options.to,
+    subject: options.subject,
+    body: options.html,
+    from: options.from,
+    headers: options.headers,
+    sendAs: meta.as ?? 'tenant',
+  });
+  if (!result.accepted) throw new Error(result.error || 'Email send failed');
 }
 
 // ---------- Pre-built email functions ----------
@@ -405,20 +197,18 @@ export async function sendWorkflowEmail(
 
   // Respect opt-out (records a skipped log so the campaign/history can show it).
   if (customer?.emailOptOut) {
-    const log = await prisma.messageLog.create({
-      data: {
-        orderId: order?.id,
-        customerId: customer.id,
-        channel: MessageChannel.email,
-        direction: MessageDirection.outbound,
-        templateName,
-        messageBody: '',
-        status: MessageStatus.skipped,
-        metadata: { to, reason: 'opted_out' },
-      },
+    const skipped = await messageSender.send({
+      tenantId: getTenantId(),
+      channel: MessageChannel.email,
+      to,
+      templateName,
+      orderId: order?.id,
+      customerId: customer.id,
+      sendAs: 'platform',
+      skipReason: 'opted_out',
     });
     logger.info('send_email skipped — customer opted out', { orderId: order?.id, customerId: customer.id });
-    return { sent: false, skipped: true, messageLogId: log.id, reason: 'opted_out' };
+    return { sent: false, skipped: true, messageLogId: skipped.messageLogId, reason: 'opted_out' };
   }
 
   // Idempotency (H1): a prior successful send for this (order, template) wins,
@@ -470,32 +260,21 @@ export async function sendWorkflowEmail(
   // Footer fallback + RFC 8058 one-click headers for the marketing-class send.
   const { html: finalHtml, headers } = applyUnsubscribe(html, unsubscribeToken, unsubscribeUrl);
 
-  const messageLog = await prisma.messageLog.create({
-    data: {
-      orderId: order?.id,
-      customerId: customer?.id,
-      channel: MessageChannel.email,
-      direction: MessageDirection.outbound,
-      templateName,
-      messageBody: finalHtml,
-      status: MessageStatus.pending,
-      metadata: { to, subject },
-    },
+  const result = await messageSender.send({
+    tenantId: getTenantId(),
+    channel: MessageChannel.email,
+    to,
+    subject,
+    body: finalHtml,
+    headers,
+    sendAs: 'platform',
+    templateName,
+    orderId: order?.id,
+    customerId: customer?.id,
+    metadata: { subject },
   });
-
-  try {
-    await sendEmail({ to, subject, html: finalHtml, headers }, { as: 'platform' });
-    await prisma.messageLog.update({
-      where: { id: messageLog.id },
-      data: { status: MessageStatus.sent, sentAt: new Date() },
-    });
-    return { sent: true, messageLogId: messageLog.id };
-  } catch (error: any) {
-    await prisma.messageLog.update({
-      where: { id: messageLog.id },
-      data: { status: MessageStatus.failed, errorMessage: error.message?.substring(0, 500) },
-    });
-    logger.error('send_email failed', { orderId: order?.id, to: maskEmail(to), error: error.message });
-    return { sent: false, messageLogId: messageLog.id, reason: 'send_failed' };
-  }
+  if (result.sent) return { sent: true, messageLogId: result.messageLogId };
+  if (result.skipped) return { sent: false, skipped: true, messageLogId: result.messageLogId, reason: result.error };
+  logger.error('send_email failed', { orderId: order?.id, to: maskEmail(to), error: result.error });
+  return { sent: false, messageLogId: result.messageLogId, reason: 'send_failed' };
 }

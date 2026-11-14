@@ -9,6 +9,9 @@ import whatsappService, {
   findWhatsappConfigByVerifyToken,
 } from '../services/whatsappService';
 import { runInTenant } from '../utils/tenantContext';
+import { whatsappCloudProvider } from '../services/messaging/providers';
+import { parseStatusesFromValue } from '../services/messaging/providers/whatsappCloudProvider';
+import { messageStatus } from '../services/messaging/messageStatus';
 import logger from '../utils/logger';
 import { MessageChannel, MessageDirection, MessageStatus } from '@prisma/client';
 import * as Money from '../utils/money';
@@ -119,11 +122,14 @@ export const handleWebhook = async (req: AuthRequest, res: Response): Promise<vo
           }
 
           // Process status updates (delivery receipts)
-          for (const status of value.statuses || []) {
-            await whatsappService.processStatusUpdate(
-              status.id,
+          for (const status of parseStatusesFromValue(value)) {
+            await messageStatus.record(
+              whatsappCloudProvider.name,
+              status.providerMessageId,
               status.status,
-              status.timestamp ? parseInt(status.timestamp, 10) : undefined
+              status.occurredAt,
+              status.payload,
+              { providerStatus: status.providerStatus, failureReason: status.failureReason, tenantId },
             );
           }
 
