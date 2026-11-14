@@ -23,6 +23,7 @@ router.put('/:id', requirePermission(['super_admin', 'admin']), webhookControlle
 router.delete('/:id', requirePermission(['super_admin', 'admin']), webhookController.deleteWebhook);
 router.get('/:id/stats', requirePermission(['super_admin', 'admin']), webhookController.getWebhookStats);
 router.get('/:id/logs', requirePermission(['super_admin', 'admin']), paginationValidation, validate, webhookController.getWebhookLogs);
+router.post('/:id/logs/:logId/retry', requirePermission(['super_admin', 'admin']), webhookController.retryWebhookLog);
 router.post('/:id/test', requirePermission(['super_admin', 'admin']), webhookController.testWebhook);
 
 export default router;

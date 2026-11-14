@@ -59,6 +59,7 @@ import partnerSettlementRoutes from './routes/partnerSettlementRoutes';
 import payoutRoutes from './routes/payoutRoutes';
 import workflowRoutes from './routes/workflowRoutes';
 import webhookRoutes from './routes/webhookRoutes';
+import { importJsonError } from './controllers/webhookController';
 import analyticsRoutes from './routes/analyticsRoutes';
 import kpiRoutes from './routes/kpiRoutes';
 import dashboardRoutes from './routes/dashboardRoutes';
@@ -235,6 +236,8 @@ app.use(express.json({
     }
   },
 }));
+// A body that is not JSON on the public webhook import URLs: 400 with the place of the error, and a failed log row.
+app.use(importJsonError);
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 app.use(requestTimeout(30000));

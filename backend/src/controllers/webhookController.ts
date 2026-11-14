@@ -1,6 +1,7 @@
 import { Response, Request, NextFunction } from 'express';
 import { AuthRequest } from '../types';
 import webhookService from '../services/webhookService';
+import { webhookLimiter } from '../middleware/rateLimiter';
 
 export const getAllWebhooks = async (_req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -145,6 +146,54 @@ export const testWebhook = async (req: AuthRequest, res: Response, next: NextFun
 
     const result = await webhookService.testWebhook(Number(id), sampleData);
     res.json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const retryWebhookLog = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id, logId } = req.params;
+    const result = await webhookService.retryWebhook(Number(logId), Number(id));
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Error step right after express.json for the public import URLs: a body that is not JSON is a 400 with the
+ * place of the error, and a failed log row. Any other error goes on to the error handler.
+ */
+export const importJsonError = async (err: any, req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const isImport = req.originalUrl?.startsWith('/api/webhooks/import');
+  if (!isImport || err?.type !== 'entity.parse.failed') {
+    next(err);
+    return;
+  }
+  // Same limit as the import routes: a flood of bad bodies must not write a log row each
+  webhookLimiter(req, res, async (limitErr?: unknown) => {
+    if (limitErr) {
+      next(limitErr);
+      return;
+    }
+    await recordParseFailure(err, req, res, next);
+  });
+};
+
+const recordParseFailure = async (err: any, req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const uniqueUrl = /^\/api\/webhooks\/import\/([^/?#]+)/.exec(req.originalUrl)?.[1];
+    const { status, message } = await webhookService.recordInvalidJson({
+      uniqueUrl,
+      apiKey: req.headers['x-api-key'] as string | undefined,
+      rawBody: typeof err.body === 'string' ? err.body : '',
+      parseMessage: err.message,
+      headers: req.headers,
+      endpoint: req.path,
+      method: req.method
+    });
+    res.status(status).json({ message, error: message, status });
   } catch (error) {
     next(error);
   }
