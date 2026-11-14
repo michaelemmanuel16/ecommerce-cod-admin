@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { AuthRequest } from '../types';
 import { UserRole } from '@prisma/client';
 import workflowService, { normalizeTriggerType, SCHEDULE_TRIGGER } from '../services/workflowService';
-import { getExecution, retryExecution, runOnOrders, testRun } from '../services/workflowRunService';
+import { getExecution, retryExecution, runOnOrders, testRun, listWorkflowsWithStats } from '../services/workflowRunService';
 import { previewCatchUp, runCatchUp } from '../services/workflowCatchUpService';
 import { AppError } from '../middleware/errorHandler';
 import { getRegionsForCountry } from '../utils/regions';
@@ -21,12 +21,12 @@ export const getAllWorkflows = async (req: AuthRequest, res: Response): Promise<
   try {
     const { isActive, triggerType } = req.query;
 
-    const workflows = await workflowService.getAllWorkflows({
+    const result = await listWorkflowsWithStats({
       isActive: isActive !== undefined ? isActive === 'true' : undefined,
       triggerType: triggerType ? normalizeTriggerType(triggerType) : undefined
     });
 
-    res.json({ workflows });
+    res.json(result);
   } catch (error) {
     throw error;
   }

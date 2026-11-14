@@ -241,8 +241,8 @@ describe('WorkflowService (extended branch coverage)', () => {
       { type: 'send_sms', config: { message: 'Hello' } },
       { type: 'send_email', config: { subject: 'Test', body: 'Body' } },
       { type: 'send_whatsapp', config: { message: 'Hi' } },
-      { type: 'assign_agent', config: { agentId: '{{agentId}}' } },
-      { type: 'add_tag', config: { tag: 'vip' } },
+      { type: 'assign_to', config: { role: 'delivery_agent', userIds: [1], split: 'even' } },
+      { type: 'update_order', config: { notes: 'Tag: vip' } },
       { type: 'http_request', config: { url: 'https://example.com', method: 'POST' } },
       { type: 'assign_user', config: { userType: 'sales_rep' } },
     ];

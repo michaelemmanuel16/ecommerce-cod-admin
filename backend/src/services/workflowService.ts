@@ -10,6 +10,7 @@ import { onPaymentSettled, PaymentSettledEvent } from './payments/settlementHook
 import { syncWorkflowSchedule, validateSchedule } from '../queues/workflowSchedule';
 import * as Money from '../utils/money';
 import { validateAssignToConfig } from './workflowAssignTo';
+import { assertValidWorkflow } from './workflowValidation';
 import crypto from 'crypto';
 
 /** M2-T17 loop guard: a workflow-caused move stops at this depth; one run per order per workflow per window. */
@@ -152,6 +153,7 @@ export class WorkflowService {
   async createWorkflow(data: CreateWorkflowData) {
 
     // Validate actions
+    assertValidWorkflow({ actions: data.actions, conditions: data.conditions });
     this.validateWorkflowActions(data.actions);
     const triggerType = normalizeTriggerType(data.triggerType);
     const triggerData = await this.validateTrigger(triggerType, data.triggerData, data.conditions);
@@ -212,6 +214,7 @@ export class WorkflowService {
     }
 
     // Validate actions if provided
+    assertValidWorkflow({ actions: updateData.actions, conditions: updateData.conditions });
     if (updateData.actions) {
       this.validateWorkflowActions(updateData.actions);
     }
@@ -438,10 +441,8 @@ export class WorkflowService {
       'send_whatsapp',
       'send_auto_confirm',
       'update_order',
-      'assign_agent',
       'assign_user',
       'assign_to',
-      'add_tag',
       'wait',
       'http_request'
     ];
@@ -758,7 +759,8 @@ export class WorkflowService {
   }
 
   /**
-   * Get workflow templates
+   * Get workflow templates (M9-T25). Each says which connections it needs (`needs`: sms, email, whatsapp, from its actions).
+   * A template that needs WhatsApp is `available: false` with a reason when the store has no WhatsApp connection.
    */
   async getTemplates(category?: string) {
     const {
@@ -766,18 +768,32 @@ export class WorkflowService {
       getTemplateCategories,
       getTemplatesByCategory
     } = await import('../data/workflowTemplates');
+    const { getDbWhatsappConfig } = await import('./whatsappService');
 
     const templates = category
       ? getTemplatesByCategory(category)
       : workflowTemplates;
 
+    const whatsapp = await getDbWhatsappConfig();
+    const hasWhatsapp = !!(whatsapp?.accessToken && whatsapp?.phoneNumberId);
+
     const categories = getTemplateCategories();
 
     return {
-      templates,
+      templates: templates.map((template) => {
+        const needs = templateConnections(template.actions);
+        const missing = needs.includes('whatsapp') && !hasWhatsapp;
+        return { ...template, needs, available: !missing, ...(missing ? { unavailableReason: 'Needs WhatsApp in Connections' } : {}) };
+      }),
       categories
     };
   }
+}
+
+/** The connections the actions use. */
+export function templateConnections(actions: any[]): string[] {
+  const byAction: Record<string, string> = { send_sms: 'sms', send_email: 'email', send_whatsapp: 'whatsapp', send_auto_confirm: 'whatsapp' };
+  return [...new Set((actions ?? []).map((a) => byAction[a?.type]).filter(Boolean))];
 }
 
 const workflowService = new WorkflowService();

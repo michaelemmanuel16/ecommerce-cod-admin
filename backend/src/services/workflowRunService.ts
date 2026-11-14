@@ -9,6 +9,7 @@ import { getTenantId, resolveTenantId, runJobInTenant } from '../utils/tenantCon
 import { workflowQueue, MANUAL_RUN_JOB, actionsHash } from '../queues/workflowQueue';
 import { enqueueWorkflowRun } from '../queues/workflowEnqueue';
 import workflowService from './workflowService';
+import { localDate, startOfDay } from './kpi/dates';
 
 /**
  * Run history, retry, manual Run and test run (M9-T24, F-502, F-503, F-514).
@@ -237,4 +238,49 @@ function workflowHasRules(conditions: any): boolean {
   if (!conditions || typeof conditions !== 'object') return false;
   if (Array.isArray(conditions.rules)) return conditions.rules.length > 0;
   return Object.keys(conditions).length > 0;
+}
+
+const STATS_DAYS = 30;
+
+/**
+ * `GET /api/workflows` (M9-T25): each workflow with its runs of the last 30 days (`runs`, `succeeded`, `failed`) and the time of its
+ * last run, plus a summary of the store (active workflows, runs today, failures today; "today" is the store's day).
+ * Test runs and skipped runs (conditions not met, loop guard) are not runs here.
+ */
+export async function listWorkflowsWithStats(filters: Parameters<typeof workflowService.getAllWorkflows>[0]) {
+  const workflows = await workflowService.getAllWorkflows(filters);
+  const now = new Date();
+  const config = await prisma.systemConfig.findFirst({ select: { timeZone: true } });
+  const dayStart = startOfDay(localDate(now, config?.timeZone || 'Africa/Accra'), config?.timeZone || 'Africa/Accra');
+  const since = new Date(now.getTime() - STATS_DAYS * 24 * 60 * 60 * 1000);
+  const ids = workflows.map((w) => w.id);
+  const base = { workflowId: { in: ids }, mode: 'live' as const, status: { not: 'skipped' } };
+
+  const [byStatus, last, today] = await Promise.all([
+    prisma.workflowExecution.groupBy({ by: ['workflowId', 'status'], where: { ...base, startedAt: { gte: since } }, _count: { _all: true } }),
+    prisma.workflowExecution.groupBy({ by: ['workflowId'], where: base, _max: { startedAt: true } }),
+    prisma.workflowExecution.groupBy({ by: ['status'], where: { ...base, startedAt: { gte: dayStart } }, _count: { _all: true } }),
+  ]);
+
+  const stats = new Map<number, { runs: number; succeeded: number; failed: number }>();
+  for (const row of byStatus) {
+    const entry = stats.get(row.workflowId) ?? { runs: 0, succeeded: 0, failed: 0 };
+    entry.runs += row._count._all;
+    if (row.status === 'completed') entry.succeeded += row._count._all;
+    if (row.status === 'failed') entry.failed += row._count._all;
+    stats.set(row.workflowId, entry);
+  }
+  const lastRun = new Map(last.map((row) => [row.workflowId, row._max.startedAt]));
+
+  return {
+    workflows: workflows.map((w) => ({
+      ...w,
+      stats: { ...(stats.get(w.id) ?? { runs: 0, succeeded: 0, failed: 0 }), days: STATS_DAYS, lastRunAt: lastRun.get(w.id) ?? null },
+    })),
+    summary: {
+      activeCount: workflows.filter((w) => w.isActive).length,
+      runsToday: today.reduce((sum, row) => sum + row._count._all, 0),
+      failuresToday: today.filter((row) => row.status === 'failed').reduce((sum, row) => sum + row._count._all, 0),
+    },
+  };
 }
