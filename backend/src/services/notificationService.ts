@@ -1,55 +1,12 @@
 import { OrderStatus } from '@prisma/client';
 import prisma from '../utils/prisma';
-import { getSocketInstance } from '../utils/socketInstance';
-import { emitNotification } from '../sockets';
-import { getTenantId, resolveTenantId } from '../utils/tenantContext';
+import { resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
-import { HUMAN_USERS_WHERE } from './systemUserService';
 import { fullName } from '../utils/nameUtils';
+import { notify, findTenantAdmins } from './inbox/inboxService';
 
+export { findTenantAdmins };
 
-export async function createNotification(
-  userId: string,
-  type: string,
-  title: string,
-  message: string,
-  data?: any
-) {
-  const id = parseInt(userId, 10);
-  // The request/job tenant first; only a context-less caller (unscoped run) looks the user up
-  const tenantId = getTenantId()
-    ?? (await prisma.user.findUnique({ where: { id }, select: { tenantId: true } }))?.tenantId;
-  const notification = await prisma.notification.create({
-    data: {
-      tenantId: resolveTenantId(tenantId),
-      userId: id,
-      type,
-      title,
-      message,
-      data: data || {},
-    }
-  });
-
-  // Emit real-time notification via Socket.io
-  emitNotification(getSocketInstance() as any, userId, notification);
-
-  return notification;
-}
-
-export async function notifyOrderAssigned(
-  userId: string,
-  orderId: string,
-  orderNumber: string,
-  role: string
-) {
-  return createNotification(
-    userId,
-    'order',
-    'New Order Assigned',
-    `You have been assigned to order ${orderNumber} as ${role}`,
-    { orderId, orderNumber, role }
-  );
-}
 
 export async function notifyLateCallback(
   userId: string | number,
@@ -60,19 +17,21 @@ export async function notifyLateCallback(
   callId?: number
 ) {
   const cbStr = typeof callbackAt === 'string' ? callbackAt : callbackAt.toISOString();
-  return createNotification(
-    String(userId),
-    'late_callback',
-    'Late Call-Back',
-    `Call-back time passed for order ${orderNumber}. The order is still open.`,
-    {
+  return notify({
+    tenantId: resolveTenantId(),
+    event: 'late_callback',
+    subject: { type: 'order', id: Number(orderId) },
+    recipients: [Number(userId)],
+    title: 'Late Call-Back',
+    message: `Call-back time passed for order ${orderNumber}. The order is still open.`,
+    data: {
       orderId: Number(orderId),
       orderNumber: String(orderNumber),
       callbackAt: cbStr,
       customerName,
       callId,
-    }
-  );
+    },
+  });
 }
 
 /** Check for late callbacks (callbackAt in past, order still open) and notify assigned reps. */
@@ -143,20 +102,10 @@ export async function checkAndNotifyLateCallbacks(tenantId?: string): Promise<nu
   return count;
 }
 
-/** Admins of the current tenant only (the scoped query adds tenantId); not the system user. */
-export const findTenantAdmins = () => prisma.user.findMany({
-  where: { role: { in: ['admin', 'super_admin'] }, isActive: true, ...HUMAN_USERS_WHERE },
-  select: { id: true }
-});
-
 export async function notifyAdminsOverdueCollections(
   agents: { agentId: number; agentName: string; totalBalance: Money.Money; warningAmount: Money.Money; criticalAmount: Money.Money }[]
 ) {
   if (agents.length === 0) return;
-
-  // Admins of the current tenant only (the scoped query adds tenantId).
-  // Callers run this once per tenant.
-  const admins = await findTenantAdmins();
 
   const agentSummary = agents
     .map(a => `${a.agentName}: GHS ${Money.toApi(a.totalBalance)} (${a.criticalAmount.gt(0) ? '8+ days' : '4-7 days'})`)
@@ -175,47 +124,43 @@ export async function notifyAdminsOverdueCollections(
     totalOverdue: Money.toApi(totalOverdue)
   };
 
-  for (const admin of admins) {
-    // The job runs daily: refresh the admin's unread alert instead of adding a copy each day (COD-148)
-    const unread = await prisma.notification.findFirst({
-      where: { userId: admin.id, type: 'overdue_collections', isRead: false },
-      select: { id: true }
-    });
-    if (unread) {
-      const notification = await prisma.notification.update({
-        where: { id: unread.id },
-        data: { message, data, createdAt: new Date() }
-      });
-      emitNotification(getSocketInstance() as any, admin.id.toString(), notification);
-    } else {
-      await createNotification(admin.id.toString(), 'overdue_collections', 'Overdue Agent Collections', message, data);
-    }
-  }
+  // The job runs daily: refresh the owner's unread alert instead of adding a copy each day (COD-148).
+  // Callers run this once per tenant.
+  await notify({
+    tenantId: resolveTenantId(),
+    event: 'overdue_collections',
+    recipients: 'owner',
+    title: 'Overdue Agent Collections',
+    message,
+    data,
+    refreshUnread: true,
+  });
 }
 
 export async function notifyAgentBlocked(
   userId: string,
   reason: string
 ) {
-  return createNotification(
-    userId,
-    'agent_blocked',
-    'Account Blocked',
-    `Your account has been blocked: ${reason}`,
-    { reason }
-  );
+  return notify({
+    tenantId: resolveTenantId(),
+    event: 'agent_blocked',
+    recipients: [Number(userId)],
+    title: 'Account Blocked',
+    message: `Your account has been blocked: ${reason}`,
+    data: { reason },
+  });
 }
 
 export async function notifyAgentUnblocked(
   userId: string
 ) {
-  return createNotification(
-    userId,
-    'agent_unblocked',
-    'Account Unblocked',
-    'Your account has been unblocked. You can now receive new deliveries.',
-    {}
-  );
+  return notify({
+    tenantId: resolveTenantId(),
+    event: 'agent_unblocked',
+    recipients: [Number(userId)],
+    title: 'Account Unblocked',
+    message: 'Your account has been unblocked. You can now receive new deliveries.',
+  });
 }
 
 /** One "nobody can take this order" alert per scope per hour, so a busy queue does not flood the inbox (F-1162). */
@@ -228,15 +173,14 @@ export async function notifyAdminsNoAssigneeAvailable(scope: string, role: strin
     select: { id: true }
   });
   if (recent) return;
-  for (const admin of await findTenantAdmins()) {
-    await createNotification(
-      admin.id.toString(),
-      'no_assignee_available',
-      `No ${noun} is available`,
-      `New orders are waiting: every ${noun} is unavailable or away. Set someone to available so orders can be assigned.`,
-      { scope, role }
-    );
-  }
+  await notify({
+    tenantId: resolveTenantId(),
+    event: 'no_assignee_available',
+    recipients: 'owner',
+    title: `No ${noun} is available`,
+    message: `New orders are waiting: every ${noun} is unavailable or away. Set someone to available so orders can be assigned.`,
+    data: { scope, role },
+  });
 }
 
 export { checkQueueWaitAlerts, notifyQueueWaitAlert } from './queueAlertService';

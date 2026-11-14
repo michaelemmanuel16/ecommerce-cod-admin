@@ -14,7 +14,7 @@ import { prismaBase } from '../../utils/prisma';
 import { initializeSocket } from '../../sockets';
 import { setSocketInstance } from '../../utils/socketInstance';
 import { runInTenant } from '../../utils/tenantContext';
-import { createNotification } from '../../services/notificationService';
+import { notify } from '../../services/inbox/inboxService';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
 
 let pair: TwoTenants;
@@ -49,7 +49,7 @@ beforeAll(async () => {
   pair = await createTwoTenants('unread');
   server = http.createServer();
   io = initializeSocket(server);
-  setSocketInstance(io); // importing the app set its own server; createNotification must emit on this one
+  setSocketInstance(io); // importing the app set its own server; notify must emit on this one
   await new Promise<void>((r) => server.listen(0, r));
   url = `http://localhost:${(server.address() as AddressInfo).port}`;
 }, 30000);
@@ -81,8 +81,8 @@ describe('GET /api/notifications/unread-count', () => {
     }
 
     const before = (await count(a.users.admin.token)).unreadCount;
-    await runInTenant(a.id, () => createNotification(String(a.users.admin.id), 'order', 'T1', 'one'));
-    await runInTenant(a.id, () => createNotification(String(a.users.admin.id), 'order', 'T2', 'two'));
+    await runInTenant(a.id, () => notify({ tenantId: a.id, event: 'order_assigned', recipients: [a.users.admin.id], title: 'T1', message: 'one' }));
+    await runInTenant(a.id, () => notify({ tenantId: a.id, event: 'order_assigned', recipients: [a.users.admin.id], title: 'T2', message: 'two' }));
     expect((await count(a.users.admin.token)).unreadCount).toBe(before + 2);
     expect((await count(a.users.admin.token)).unreadCount).toBe(await rowsFor(a.users.admin.id));
     // other users, in the same and in the other tenant, did not change
@@ -103,7 +103,7 @@ describe('socket event notification', () => {
     const bAdmin = await open(b.users.admin.token);
     const got = [aAdmin, aAgent, bAdmin].map((s) => collect(s, 'notification'));
 
-    await runInTenant(a.id, () => createNotification(String(a.users.admin.id), 'order', 'Hello', 'for the A admin'));
+    await runInTenant(a.id, () => notify({ tenantId: a.id, event: 'order_assigned', recipients: [a.users.admin.id], title: 'Hello', message: 'for the A admin' }));
     await until(() => got[0].length === 1);
     await settle();
 

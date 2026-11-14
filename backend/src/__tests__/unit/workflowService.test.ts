@@ -5,6 +5,7 @@ import { AppError } from '../../middleware/errorHandler';
 import { systemActor } from '../../services/systemUserService';
 import { transitionOrder } from '../../services/orderStateMachine';
 import assignmentService from '../../services/assignmentService';
+import { smsService } from '../../services/smsService';
 import { WorkflowTriggerType } from '@prisma/client';
 
 // Mock the workflow queue
@@ -43,6 +44,8 @@ describe('WorkflowService', () => {
   beforeEach(() => {
     workflowService = new WorkflowService();
     (systemActor as jest.Mock).mockResolvedValue({ kind: 'system', userId: 77 } as never);
+    // resetMocks clears the factory's value; the service is now loaded early (the inbox imports it), so set it here
+    (smsService.sendSms as jest.Mock).mockResolvedValue({ messageLogId: 1, sent: true } as never);
   });
 
   describe('createWorkflow', () => {

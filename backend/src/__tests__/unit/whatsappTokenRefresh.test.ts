@@ -18,9 +18,8 @@ jest.mock('../../utils/providerCrypto', () => ({
 }));
 
 const mockNotify = jest.fn<(...a: any[]) => Promise<any>>();
-jest.mock('../../services/notificationService', () => ({
-  createNotification: (...a: any[]) => mockNotify(...a),
-  findTenantAdmins: async () => [{ id: 1 }, { id: 2 }],
+jest.mock('../../services/inbox/inboxService', () => ({
+  notify: (...a: any[]) => mockNotify(...a),
 }));
 
 jest.mock('../../services/whatsappService', () => ({
@@ -80,8 +79,8 @@ describe('refresh failure alert (T04)', () => {
     (prismaMock.systemConfig.findFirst as any).mockResolvedValue(config());
     const result = await runInTenant('tenant-a', () => refreshTokenIfNeeded());
     expect(result.error).toContain('refresh failed');
-    expect(mockNotify).toHaveBeenCalledTimes(2);
-    expect(mockNotify.mock.calls[0][3]).toBe('WhatsApp connection could not refresh. Reconnect WhatsApp in Settings.');
+    expect(mockNotify).toHaveBeenCalledTimes(1);
+    expect(mockNotify.mock.calls[0][0]).toMatchObject({ event: 'system_problem', recipients: 'owner', message: 'WhatsApp connection could not refresh. Reconnect WhatsApp in Settings.' });
     const saved = (prismaMock.systemConfig.update as any).mock.calls[0][0].data.whatsappProvider;
     expect(saved.oauthRefreshFailedAt.slice(0, 10)).toBe(new Date().toISOString().slice(0, 10));
   });
@@ -96,7 +95,7 @@ describe('refresh failure alert (T04)', () => {
   it('alerts again the next day', async () => {
     (prismaMock.systemConfig.findFirst as any).mockResolvedValue(config({ oauthRefreshFailedAt: new Date(Date.now() - 2 * 86400000).toISOString() }));
     await runInTenant('tenant-a', () => refreshTokenIfNeeded());
-    expect(mockNotify).toHaveBeenCalledTimes(2);
+    expect(mockNotify).toHaveBeenCalledTimes(1);
   });
 
   it('clears the marker on success', async () => {

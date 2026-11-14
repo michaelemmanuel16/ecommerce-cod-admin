@@ -341,7 +341,7 @@ describe('M7-T12 (COD-65): Calls stats, upsell leaderboard, rep inbox events', (
       );
 
       const notif = await prismaBase.notification.findFirst({
-        where: { userId: rep1Id, type: 'order' },
+        where: { userId: rep1Id, type: 'order_assigned' },
       });
       expect(notif).toBeDefined();
       expect(notif?.title).toBe('Order assigned to you');

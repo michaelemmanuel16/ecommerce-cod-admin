@@ -6,7 +6,7 @@ import {
   workingMinutesBetween,
   DEFAULT_QUEUE_WAIT_ALERT_MINUTES,
 } from './kpi/workingTime';
-import { createNotification } from './notificationService';
+import { notify } from './inbox/inboxService';
 import { HUMAN_USERS_WHERE } from './systemUserService';
 import { formatOrderNumber } from '../utils/orderNumber';
 
@@ -27,7 +27,7 @@ export async function notifyQueueWaitAlert(order: QueueWaitAlertInput): Promise<
   const existing = await prisma.notification.findFirst({
     where: {
       tenantId: order.tenantId,
-      type: 'queue_wait_alert',
+      type: 'queue_wait',
       data: { path: ['orderId'], equals: order.id },
     },
     select: { id: true },
@@ -46,9 +46,15 @@ export async function notifyQueueWaitAlert(order: QueueWaitAlertInput): Promise<
     alertMinutes: order.alertMinutes,
   };
 
-  for (const recipient of recipients) {
-    await createNotification(recipient.id.toString(), 'queue_wait_alert', title, message, data);
-  }
+  await notify({
+    tenantId: order.tenantId,
+    event: 'queue_wait',
+    subject: { type: 'order', id: order.id },
+    recipients: recipients.map((r) => r.id),
+    title,
+    message,
+    data,
+  });
   return true;
 }
 

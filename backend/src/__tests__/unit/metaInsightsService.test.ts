@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import '../mocks/logger.mock';
 import { prismaMock } from '../mocks/prisma.mock';
+import { runInTenant } from '../../utils/tenantContext';
 import fixture from '../fixtures/metaInsights.json';
 
 // T05 (COD-71): parse, paging, backoff, token error, never delete, window in the account zone. Meta HTTP is mocked.
@@ -10,9 +11,8 @@ jest.mock('../../services/metaTokenHealthService', () => ({
   metaAdsApiError: (...a: any[]) => mockApiError(...a),
 }));
 const mockNotify = jest.fn<(...a: any[]) => Promise<any>>();
-jest.mock('../../services/notificationService', () => ({
-  createNotification: (...a: any[]) => mockNotify(...a),
-  findTenantAdmins: async () => [{ id: 1 }, { id: 2 }],
+jest.mock('../../services/inbox/inboxService', () => ({
+  notify: (...a: any[]) => mockNotify(...a),
 }));
 jest.mock('../../utils/providerCrypto', () => ({
   decryptString: (v: string) => (v ? `plain-${v}` : null),
@@ -199,13 +199,13 @@ describe('pullAccount', () => {
     expect((prismaMock.metaAdAccount.update as any).mock.calls[0][0].data.lastPullError).toMatch(/limiting requests/);
   });
 
-  it('alerts the admins once, at the second failure only', async () => {
+  it('alerts the owner once, at the second failure only', async () => {
     (prismaMock.metaAdAccount.findFirst as any).mockResolvedValue(account());
-    for (const [count, alerts] of [[1, 0], [2, 2], [3, 0]] as const) {
+    for (const [count, alerts] of [[1, 0], [2, 1], [3, 0]] as const) {
       mockNotify.mockClear();
       (prismaMock.metaAdAccount.update as any).mockResolvedValue({ failedPullCount: count });
       replies = [{ ok: false, body: { error: { code: 1 } } }];
-      await pullAccount(7, 3, { sleep });
+      await runInTenant('tenant-a', () => pullAccount(7, 3, { sleep }));
       expect(mockNotify).toHaveBeenCalledTimes(alerts);
     }
   });

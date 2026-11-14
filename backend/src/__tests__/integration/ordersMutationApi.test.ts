@@ -192,7 +192,7 @@ describe('assign', () => {
     const history = await prismaBase.orderHistory.findFirstOrThrow({ where: { orderId: id, notes: { contains: 'Customer rep assigned' } } });
     expect(history.notes).toBe('Customer rep assigned: rep2 Mut by admin Mut');
     const note = await prismaBase.notification.findFirstOrThrow({ where: { userId: U.rep2.id, tenantId } });
-    expect(note).toMatchObject({ type: 'order', title: 'Order assigned to you' });
+    expect(note).toMatchObject({ type: 'order_assigned', title: 'Order assigned to you' });
     expect(note.message).toContain(`#${id}`);
     expect((note.data as any).orderId).toBe(id);
   });
