@@ -5,6 +5,7 @@ import { decryptProviderSecrets } from '../../../utils/providerCrypto';
 import { getTenantId } from '../../../utils/tenantContext';
 import { getBackendUrl } from '../../../utils/url';
 import { CallbackRequest, MessagingProvider, ParsedStatus, ProviderSendInput, ProviderSendResult } from '../types';
+import { recordConnectionEvent } from '../../connections/connectionEventService';
 
 // Arkesel SMS API
 const ARKESEL_API_URL = 'https://sms.arkesel.com/api/v2/sms/send';
@@ -109,10 +110,12 @@ export const arkeselSmsProvider: MessagingProvider = {
       const data: any = await response.json();
       if (!response.ok) {
         const errorMsg = data?.message || JSON.stringify(data);
+        if (input.tenantId) await recordConnectionEvent({ tenantId: input.tenantId, connection: 'sms', level: 'error', message: `Arkesel API error ${response.status}: ${errorMsg}` });
         return { accepted: false, error: `Arkesel API error ${response.status}: ${errorMsg}` };
       }
       return { accepted: true, providerMessageId: data?.data?.[0]?.id || undefined };
     } catch (error: any) {
+      if (input.tenantId) await recordConnectionEvent({ tenantId: input.tenantId, connection: 'sms', level: 'error', message: error.message || 'Arkesel request failed' });
       return { accepted: false, error: error.message || 'Arkesel request failed' };
     }
   },
