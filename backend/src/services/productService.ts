@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import prisma from '../utils/prisma';
+import { archiveThreadsFor } from './threadService';
 import { AppError } from '../middleware/errorHandler';
 import { resolveTenantId } from '../utils/tenantContext';
 import { withSoftDeleted } from '../utils/prismaExtensions';
@@ -337,4 +338,5 @@ export async function deleteProduct(id: number) {
   await findProductOr404(id);
   if ((await prisma.orderItem.count({ where: { productId: id } })) > 0) throw new AppError('This product has orders. Archive it instead.', 409);
   await prisma.product.update({ where: { id }, data: { isActive: false } });
+  await archiveThreadsFor('product', [id]); // M9-T19: team notes on a deleted product are closed
 }

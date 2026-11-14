@@ -3,6 +3,7 @@ import { AppError } from '../middleware/errorHandler';
 import { Prisma } from '@prisma/client';
 import logger from '../utils/logger';
 import { customerScope, isManagerUp, orderScope, Requester } from '../utils/authUtils';
+import { archiveThreadsFor } from './threadService';
 import { fullName } from '../utils/nameUtils';
 import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import { findCustomerByPhoneIncludingArchived } from '../utils/customerLookup';
@@ -533,6 +534,7 @@ export class CustomerService {
       where: { id },
       data: { isActive: false }
     });
+    await archiveThreadsFor('customer', [id]); // M9-T19: team notes on a deleted customer are closed
 
     if (requester) {
       await this.audit(requester, 'deactivate', customer, { isActive: true }, { isActive: false });

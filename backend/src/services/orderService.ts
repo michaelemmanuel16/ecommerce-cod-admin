@@ -1,5 +1,6 @@
 import prisma, { prismaBase } from '../utils/prisma';
 import { withSoftDeleted } from '../utils/prismaExtensions';
+import { archiveThreadsFor } from './threadService';
 import { resolveTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma, OrderStatus, DeclineReason, FailureReason } from '@prisma/client';
@@ -1623,6 +1624,9 @@ export class OrderService {
       });
 
       await tx.order.updateMany({ where: { id: { in: deletedIds } }, data: { deletedAt: new Date() } });
+
+      // Team notes on a deleted order are closed (M9-T19)
+      await archiveThreadsFor('order', deletedIds, tx);
 
       // A draft collection of a deleted order is void. Later stages hold money and stay.
       await tx.agentCollection.deleteMany({ where: { orderId: { in: deletedIds }, status: 'draft' } });
