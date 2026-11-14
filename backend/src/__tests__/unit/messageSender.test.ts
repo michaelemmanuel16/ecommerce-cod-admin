@@ -69,7 +69,7 @@ describe('messageSender.send', () => {
     (prismaMock.pendingMessageEvent.findMany as any).mockResolvedValue([]);
     await messageSender.send(base);
     expect(prismaMock.pendingMessageEvent.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { providerMessageId: 'p-1' } }),
+      expect.objectContaining({ where: { providerMessageId: 'p-1', provider: 'stub' } }),
     );
   });
 

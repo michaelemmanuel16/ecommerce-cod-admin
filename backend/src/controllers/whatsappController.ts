@@ -129,7 +129,7 @@ export const handleWebhook = async (req: AuthRequest, res: Response): Promise<vo
               status.status,
               status.occurredAt,
               status.payload,
-              { providerStatus: status.providerStatus, failureReason: status.failureReason, tenantId },
+              { providerStatus: status.providerStatus, failureReason: status.failureReason, tenantId, authenticated: true },
             );
           }
 

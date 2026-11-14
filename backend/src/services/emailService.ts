@@ -271,7 +271,7 @@ export async function sendWorkflowEmail(
     templateName,
     orderId: order?.id,
     customerId: customer?.id,
-    metadata: { subject },
+    metadata: { subject, sendAs: 'platform' },
   });
   if (result.sent) return { sent: true, messageLogId: result.messageLogId };
   if (result.skipped) return { sent: false, skipped: true, messageLogId: result.messageLogId, reason: result.error };

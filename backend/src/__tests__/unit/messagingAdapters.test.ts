@@ -13,7 +13,7 @@ jest.mock('nodemailer', () => ({
 }));
 
 import { Resend } from 'resend';
-import { emailProvider, clearEmailConfigCache, resolveSenderIdentity, platformFromAddress } from '../../services/messaging/providers/emailProvider';
+import { emailProvider, clearEmailConfigCache, resolveSenderIdentity, platformFromAddress, safeDisplayName } from '../../services/messaging/providers/emailProvider';
 import { whatsappCloudProvider, whatsappFailureReason } from '../../services/messaging/providers/whatsappCloudProvider';
 import { arkeselSmsProvider } from '../../services/messaging/providers/arkeselSmsProvider';
 
@@ -25,6 +25,7 @@ describe('email adapter: sender identity', () => {
     clearEmailConfigCache();
     process.env.PLATFORM_EMAIL_PROVIDER = 'resend';
     process.env.PLATFORM_EMAIL_API_KEY = 'k';
+    delete process.env.PLATFORM_EMAIL_FROM;
     process.env.RESEND_FROM_EMAIL = 'no-reply@codadminpro.com';
     (prismaMock.tenant.findUnique as any).mockResolvedValue({ name: 'Spur Shop' });
     (prismaMock.user.findFirst as any).mockResolvedValue({ email: 'owner@spur.com' });
@@ -35,7 +36,7 @@ describe('email adapter: sender identity', () => {
     const r = await emailProvider.send({ tenantId: 't1', to: 'a@b.com', subject: 's', body: '<p>x</p>', sendAs: 'platform' });
     expect(r).toMatchObject({ accepted: true, providerMessageId: 're_1', provider: 'resend' });
     const arg = resendSend.mock.calls[0][0] as any;
-    expect(arg.from).toBe('Spur Shop <no-reply@codadminpro.com>');
+    expect(arg.from).toBe('"Spur Shop" <no-reply@codadminpro.com>');
     expect(arg.replyTo).toBe('owner@spur.com');
   });
 
@@ -45,11 +46,33 @@ describe('email adapter: sender identity', () => {
     expect(platformFromAddress()).toBe('no-reply@codadminpro.com');
   });
 
+  it('reads the address out of a RESEND_FROM_EMAIL written as Name <address>, and prefers PLATFORM_EMAIL_FROM', () => {
+    process.env.RESEND_FROM_EMAIL = 'COD Admin <no-reply@codadminpro.com>';
+    delete process.env.PLATFORM_EMAIL_FROM;
+    expect(platformFromAddress()).toBe('no-reply@codadminpro.com');
+    process.env.PLATFORM_EMAIL_FROM = 'noreply@mail.codadminpro.com';
+    expect(platformFromAddress()).toBe('noreply@mail.codadminpro.com');
+  });
+
   it('keeps the tenant own from address on tenant SMTP and sets no reply_to', async () => {
     const id = await resolveSenderIdentity(
       { provider: 'smtp', apiKey: 'pw', fromEmail: 'orders@spur.com', fromName: 'Spur' }, 't1',
     );
-    expect(id).toEqual({ from: 'Spur Shop <orders@spur.com>' });
+    expect(id).toEqual({ from: '"Spur Shop" <orders@spur.com>' });
+  });
+
+  it('cleans a store name before it goes into the From header', async () => {
+    (prismaMock.tenant.findUnique as any).mockResolvedValue({ name: 'Evil\r\nBcc: x@y.com" <boss@evil.com>, Shop;' });
+    const id = await resolveSenderIdentity({ provider: 'resend', apiKey: 'k', fromEmail: 'no-reply@codadminpro.com', fromName: 'COD Admin' }, 't1');
+    expect(id.from).not.toMatch(/[\r\n]/);
+    expect(id.from).toBe('"Evil Bcc: x@y.com boss@evil.com Shop" <no-reply@codadminpro.com>');
+    expect(safeDisplayName('a'.repeat(100))).toHaveLength(64);
+  });
+
+  it('falls back to the configured name when the store name is only unsafe characters', async () => {
+    (prismaMock.tenant.findUnique as any).mockResolvedValue({ name: '<>"\r\n' });
+    const id = await resolveSenderIdentity({ provider: 'resend', apiKey: 'k', fromEmail: 'no-reply@codadminpro.com', fromName: 'COD Admin' }, 't1');
+    expect(id.from).toBe('"COD Admin" <no-reply@codadminpro.com>');
   });
 
   it('reports a Resend refusal as accepted: false', async () => {

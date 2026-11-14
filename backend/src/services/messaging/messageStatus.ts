@@ -9,6 +9,8 @@ export interface StatusDetail {
   failureReason?: string;
   /** Set when the callback is already tied to a verified tenant (WhatsApp): only that tenant's rows can match. */
   tenantId?: string;
+  /** The callback proved who sent it (WhatsApp signature, Arkesel token). Only such events are held. */
+  authenticated?: boolean;
   /** Do not hold the event when no row matches (used when applying held events). */
   noHold?: boolean;
 }
@@ -43,6 +45,15 @@ interface HeldEnvelope {
   raw?: unknown;
 }
 
+const MAX_HELD_PAYLOAD_BYTES = 4096;
+
+/** A held event keeps at most 4 KB of the provider payload. */
+function capPayload(payload: unknown): unknown {
+  if (payload === undefined) return undefined;
+  const size = Buffer.byteLength(JSON.stringify(payload) ?? '');
+  return size > MAX_HELD_PAYLOAD_BYTES ? { truncated: true, bytes: size } : payload;
+}
+
 async function record(
   provider: string,
   providerMessageId: string,
@@ -55,19 +66,20 @@ async function record(
   // finds the row by provider id, unscoped on purpose.
   const find = () =>
     prisma.messageLog.findFirst({
-      where: { providerMessageId },
+      // The provider is part of the key: a WhatsApp callback can never change an Arkesel row
+      where: { providerMessageId, provider },
       select: { id: true, tenantId: true, status: true, createdAt: true, sentAt: true, deliveredAt: true, readAt: true },
     });
   const log = detail.tenantId ? await runInTenant(detail.tenantId, find) : await withoutTenant('message-status', find);
 
   if (!log) {
-    if (detail.noHold) return 'ignored';
+    if (detail.noHold || !detail.authenticated) return 'ignored';
     const envelope: HeldEnvelope = {
       occurredAt: occurredAt.toISOString(),
       providerStatus: detail.providerStatus,
       failureReason: detail.failureReason,
       tenantId: detail.tenantId,
-      raw: payload,
+      raw: capPayload(payload),
     };
     await prisma.pendingMessageEvent.create({
       data: {
@@ -119,9 +131,9 @@ async function record(
 }
 
 /** Apply the events held for a provider id, now that its MessageLog row has the id. */
-async function applyPending(providerMessageId: string): Promise<number> {
+async function applyPending(providerMessageId: string, provider: string): Promise<number> {
   const held = await prisma.pendingMessageEvent.findMany({
-    where: { providerMessageId },
+    where: { providerMessageId, provider },
     orderBy: { receivedAt: 'asc' },
   });
   if (!held || held.length === 0) return 0;
@@ -129,7 +141,7 @@ async function applyPending(providerMessageId: string): Promise<number> {
   for (const event of held) {
     const envelope = (event.payload ?? {}) as unknown as HeldEnvelope;
     await record(
-      event.provider,
+      provider,
       providerMessageId,
       event.status,
       envelope.occurredAt ? new Date(envelope.occurredAt) : event.receivedAt,

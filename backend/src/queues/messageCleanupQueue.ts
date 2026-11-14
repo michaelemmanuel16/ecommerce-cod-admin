@@ -3,6 +3,8 @@ import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { forEachTenant } from '../utils/tenantLoop';
 import { AUDIT_RETENTION_DAYS, auditService } from '../services/auditService';
+import { MESSAGE_LOG_RETENTION_DAYS } from '../services/messaging/constants';
+import { messageStatus } from '../services/messaging/messageStatus';
 
 const redisConfig = {
     host: process.env.REDIS_HOST || 'localhost',
@@ -10,7 +12,7 @@ const redisConfig = {
     password: process.env.REDIS_PASSWORD,
 };
 
-const RETENTION_DAYS = parseInt(process.env.MESSAGE_LOG_RETENTION_DAYS || '90', 10);
+const RETENTION_DAYS = MESSAGE_LOG_RETENTION_DAYS;
 
 export const messageCleanupQueue = process.env.NODE_ENV === 'test'
     ? ({
@@ -42,8 +44,9 @@ export const processCleanupOldMessages = async () => {
         await forEachTenant('Message log cleanup', async () => {
             let deleted: number;
             do {
+                // Rows of a campaign stay: the campaign's sent/delivered/failed counters are counted from them
                 const rows = await prisma.messageLog.findMany({
-                    where: { createdAt: { lt: cutoffDate } },
+                    where: { createdAt: { lt: cutoffDate }, campaignId: null },
                     select: { id: true },
                     take: BATCH_SIZE,
                 });
@@ -80,6 +83,18 @@ export const processAuditRetention = async () => {
 };
 messageCleanupQueue.process('purge-old-audit-logs', processAuditRetention);
 
+// M9-T05: status events that nobody claimed within the hour (no MessageLog row matched). Not tenant scoped.
+export const processDropExpiredPendingEvents = async () => {
+    try {
+        const dropped = await messageStatus.dropExpired();
+        if (dropped > 0) logger.info(`Pending status events: ${dropped} expired and dropped.`);
+    } catch (error: any) {
+        logger.error('Pending status event cleanup failed:', error.message);
+        throw error;
+    }
+};
+messageCleanupQueue.process('drop-expired-pending-events', processDropExpiredPendingEvents);
+
 export const setupMessageCleanupCron = async () => {
     if (process.env.NODE_ENV === 'test') return;
 
@@ -99,6 +114,13 @@ export const setupMessageCleanupCron = async () => {
     await messageCleanupQueue.add('purge-old-audit-logs', {}, {
         repeat: {
             cron: '30 4 * * *'
+        }
+    });
+
+    // Held status events: every 10 minutes
+    await messageCleanupQueue.add('drop-expired-pending-events', {}, {
+        repeat: {
+            cron: '*/10 * * * *'
         }
     });
 

@@ -25,9 +25,13 @@ export interface EmailConfig {
 
 export const NOT_CONFIGURED_TEXT = 'Email provider not configured. Please configure email settings in Settings → Integrations.';
 
-/** Platform sender address: RESEND_FROM_EMAIL, else PLATFORM_EMAIL_FROM, else the CodAdmin default. */
+/**
+ * Platform sender address: PLATFORM_EMAIL_FROM (the dedicated sending subdomain) when set, else
+ * RESEND_FROM_EMAIL, else no-reply@codadminpro.com. An env value written as `Name <addr>` gives its address.
+ */
 export function platformFromAddress(): string {
-  return process.env.RESEND_FROM_EMAIL || process.env.PLATFORM_EMAIL_FROM || 'no-reply@codadminpro.com';
+  const raw = process.env.PLATFORM_EMAIL_FROM || process.env.RESEND_FROM_EMAIL || 'no-reply@codadminpro.com';
+  return raw.match(/<([^<>]+)>/)?.[1]?.trim() || raw.trim();
 }
 
 // ---------- Config cache (tenant-keyed) ----------
@@ -144,6 +148,14 @@ function getPlatformConfig(): EmailConfig {
 // ---------- Sender identity ----------
 
 /**
+ * A store name goes into the From header: remove CR, LF and the characters that end or split
+ * a header value or an address (< > " , ; \), then cut it to 64 characters.
+ */
+export function safeDisplayName(name: string | null | undefined): string {
+  return (name ?? '').replace(/[\r\n<>",;\\]/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 64).trim();
+}
+
+/**
  * Who the email is from. Tenant SMTP keeps the tenant's own from address. Every other
  * provider sends with the store name as the display name, and replies go to the store owner.
  */
@@ -167,8 +179,8 @@ export async function resolveSenderIdentity(
       logger.warn('Could not read store name or owner for the email sender', { error: error.message });
     }
   }
-  const displayName = storeName || config.fromName;
-  const from = `${displayName} <${config.fromEmail}>`;
+  const displayName = safeDisplayName(storeName) || safeDisplayName(config.fromName) || 'COD Admin';
+  const from = `"${displayName}" <${config.fromEmail}>`;
   if (config.provider === 'smtp') return { from };
   return { from, replyTo: ownerEmail ?? undefined };
 }

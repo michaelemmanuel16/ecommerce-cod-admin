@@ -149,7 +149,7 @@ async function run(input: SendMessageInput): Promise<SendMessageResult> {
   // A status callback can beat this update: apply what was held for this id
   if (result.providerMessageId) {
     try {
-      await messageStatus.applyPending(result.providerMessageId);
+      await messageStatus.applyPending(result.providerMessageId, providerName ?? provider.name);
     } catch (error: any) {
       logger.error('Could not apply held status events', { messageLogId: row.id, error: error.message });
     }
