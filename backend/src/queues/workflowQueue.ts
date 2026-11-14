@@ -8,6 +8,7 @@ import { runJobInTenant, getTenantId } from '../utils/tenantContext';
 import assignmentService from '../services/assignmentService';
 import { systemActor } from '../services/systemUserService';
 import { runHttpRequestAction, updateOrderByWorkflow } from '../services/workflowActions';
+import { runAssignTo } from '../services/workflowAssignTo';
 
 // Send actions read tenant-scoped provider config (SystemConfig) and write
 // tenant-scoped MessageLog rows. They refuse to run with no tenant context.
@@ -34,6 +35,8 @@ export const RESUME_JOB = 'resume-workflow';
 export const DRAIN_OUTBOX_JOB = 'drain-workflow-outbox';
 /** Repeat job of one schedule workflow (M9-T22), see workflowSchedule.ts. */
 export const SCHEDULE_JOB = 'run-scheduled-workflow';
+/** One batch of up to 50 orders of a catch-up (M9-T23), see workflowCatchUp.ts. */
+export const CATCH_UP_JOB = 'workflow-catch-up';
 /** Bull keeps a delay in a 32-bit field. */
 const MAX_DELAY_MS = 2 ** 31 - 1;
 
@@ -135,7 +138,7 @@ async function runSteps(state: RunState, queue: ResumeScheduler): Promise<void> 
       }
 
       try {
-        const result = await executeAction(action, input, conditions);
+        const result = await executeAction(action, input, conditions, { workflowId, actionIndex: i });
         steps.push({ action: action.type, success: true, result });
       } catch (error: any) {
         steps.push({ action: action.type, success: false, error: error.message });
@@ -235,6 +238,7 @@ export function registerWorkflowProcessors(queue: Bull.Queue): void {
   queue.process(DRAIN_OUTBOX_JOB, async () => (await import('./workflowEnqueue')).drainWorkflowOutbox());
   // Same reason: workflowSchedule imports this module
   queue.process(SCHEDULE_JOB, async (job: Bull.Job) => (await import('./workflowSchedule')).processScheduledJob(job));
+  queue.process(CATCH_UP_JOB, async (job: Bull.Job) => (await import('../services/workflowCatchUpService')).processCatchUpBatch(job));
 }
 
 /** Start the 30 s outbox drain. Replaces an older repeat of the same job, so a restart never doubles it. */
@@ -429,7 +433,7 @@ async function executeAssignUserAction(action: any, input: any, conditions?: any
 }
 
 // Exported for unit testing of the fail-closed tenant guard.
-export async function executeAction(action: any, input: any, conditions?: any): Promise<any> {
+export async function executeAction(action: any, input: any, conditions?: any, ctx: { workflowId?: number; actionIndex?: number } = {}): Promise<any> {
   // Fail closed: never run a tenant-scoped send without tenant context (C1).
   if (TENANT_SCOPED_SEND_ACTIONS.has(action.type) && !getTenantId()) {
     throw new Error(`Refusing to run "${action.type}" with no tenant context`);
@@ -489,6 +493,9 @@ export async function executeAction(action: any, input: any, conditions?: any): 
 
     case 'assign_user':
       return await executeAssignUserAction(action, input, conditions);
+
+    case 'assign_to':
+      return await runAssignTo(action, input, conditions, ctx);
 
     case 'add_tag':
       const customer = await prisma.customer.findUnique({

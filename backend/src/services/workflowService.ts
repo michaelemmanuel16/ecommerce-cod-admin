@@ -9,6 +9,7 @@ import { AppEvent, OrderCreatedEvent, OrderStatusChangedEvent, onOrderEvent } fr
 import { onPaymentSettled, PaymentSettledEvent } from './payments/settlementHooks';
 import { syncWorkflowSchedule, validateSchedule } from '../queues/workflowSchedule';
 import * as Money from '../utils/money';
+import { validateAssignToConfig } from './workflowAssignTo';
 import crypto from 'crypto';
 
 /** M2-T17 loop guard: a workflow-caused move stops at this depth; one run per order per workflow per window. */
@@ -429,6 +430,7 @@ export class WorkflowService {
       'update_order',
       'assign_agent',
       'assign_user',
+      'assign_to',
       'add_tag',
       'wait',
       'http_request'
@@ -438,6 +440,8 @@ export class WorkflowService {
       if (!action.type || !validActionTypes.includes(action.type)) {
         throw new AppError(`Invalid action type: ${action.type}`, 400);
       }
+
+      if (action.type === 'assign_to') validateAssignToConfig(action.config);
 
       // Validate assign_user action
       if (action.type === 'assign_user') {

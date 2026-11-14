@@ -19,7 +19,10 @@ export type ConditionOperator =
   | 'in'
   | 'not_in'
   | 'is_empty'
-  | 'is_not_empty';
+  | 'is_not_empty'
+  // Region rules only (M9-T23): the field `region` compares to the order's delivery state
+  | 'is'
+  | 'is_not';
 
 /**
  * Logic operators for combining multiple rules
@@ -214,7 +217,34 @@ function getNestedValue(obj: any, path: string): any {
  * @param context - Context object containing data to evaluate against
  * @returns True if rule is satisfied, false otherwise
  */
+const normRegion = (value: unknown): string => (typeof value === 'string' ? value.trim().toLowerCase() : '');
+
+/**
+ * "Region is X" (M9-T23): the rule field `region` is compared with the order's delivery state, trimmed and without case.
+ * `is` and `is_not` take one region; `in` takes a list. An order with no region is in no region.
+ */
+export function evaluateRegionRule(operator: ConditionOperator, expected: unknown, deliveryState: unknown): boolean {
+  const actual = normRegion(deliveryState);
+  switch (operator) {
+    case 'is':
+    case 'equals':
+      return actual !== '' && actual === normRegion(expected);
+    case 'is_not':
+    case 'not_equals':
+      return actual !== normRegion(expected);
+    case 'in':
+      return actual !== '' && Array.isArray(expected) && expected.some((r) => normRegion(r) === actual);
+    case 'not_in':
+      return !Array.isArray(expected) || !expected.some((r) => normRegion(r) === actual);
+    default:
+      return false;
+  }
+}
+
 function evaluateSingleRule(rule: ConditionRule, context: any): boolean {
+  if (rule.field === 'region') {
+    return evaluateRegionRule(rule.operator, rule.value, getNestedValue(context, 'region') ?? getNestedValue(context, 'deliveryState'));
+  }
   const actual = getNestedValue(context, rule.field);
 
   const result = evaluateRule(actual, rule.operator, rule.value);
@@ -367,7 +397,9 @@ export function validateConditions(conditions: any): { valid: boolean; errors: s
           'in',
           'not_in',
           'is_empty',
-          'is_not_empty'
+          'is_not_empty',
+          'is',
+          'is_not'
         ];
 
         if (!rule.operator || !validOperators.includes(rule.operator)) {

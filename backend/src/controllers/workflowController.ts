@@ -2,9 +2,13 @@ import { Request, Response } from 'express';
 import { AuthRequest } from '../types';
 import { UserRole } from '@prisma/client';
 import workflowService, { normalizeTriggerType, SCHEDULE_TRIGGER } from '../services/workflowService';
+import { previewCatchUp, runCatchUp } from '../services/workflowCatchUpService';
 import { AppError } from '../middleware/errorHandler';
+import { getRegionsForCountry } from '../utils/regions';
+import { countryCodeOfTenant, countryNameOfTenant } from '../services/locationService';
+import { resolveTenantId } from '../utils/tenantContext';
 
-/** Who may edit a schedule or regenerate a webhook token (M9-T22): the owner, admins and managers. */
+/** Who may edit a schedule, regenerate a webhook token or run a catch-up (M9-T22, T23): the owner, admins and managers. */
 const MANAGER_ROLES: UserRole[] = ['super_admin', 'admin', 'manager'];
 const assertManager = (req: AuthRequest) => {
   if (!req.user || !MANAGER_ROLES.includes(req.user.role)) {
@@ -164,4 +168,33 @@ export const regenerateWebhookToken = async (req: AuthRequest, res: Response): P
 export const triggerWebhook = async (req: Request, res: Response): Promise<void> => {
   const result: any = await workflowService.triggerWebhook(req.params.token, req.body ?? {}, req.get('Idempotency-Key') ?? undefined);
   res.status(202).json({ message: result.message, executionId: result.execution?.id ?? null });
+};
+
+/** `GET /api/workflows/:id/catch-up/preview`. */
+export const getCatchUpPreview = async (req: AuthRequest, res: Response): Promise<void> => {
+  assertManager(req);
+  const workflowId = parseInt(req.params.id, 10);
+  if (isNaN(workflowId)) {
+    res.status(400).json({ error: 'Invalid workflow ID' });
+    return;
+  }
+  res.json(await previewCatchUp(workflowId));
+};
+
+/** `POST /api/workflows/:id/catch-up` with `{ confirm: true }`. */
+export const postCatchUp = async (req: AuthRequest, res: Response): Promise<void> => {
+  assertManager(req);
+  const workflowId = parseInt(req.params.id, 10);
+  if (isNaN(workflowId)) {
+    res.status(400).json({ error: 'Invalid workflow ID' });
+    return;
+  }
+  res.status(202).json(await runCatchUp(workflowId, req.body?.confirm));
+};
+
+/** `GET /api/workflows/meta/regions`: the store country's regions, for the "Region is" condition. */
+export const getWorkflowRegions = async (_req: AuthRequest, res: Response): Promise<void> => {
+  const tenantId = resolveTenantId();
+  const [code, country] = await Promise.all([countryCodeOfTenant(tenantId), countryNameOfTenant(tenantId)]);
+  res.json({ country, countryCode: code, regions: getRegionsForCountry(code) });
 };
