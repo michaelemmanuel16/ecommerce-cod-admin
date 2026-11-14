@@ -23,6 +23,11 @@ export const TENANT_SCOPED_MODELS = new Set([
   'RewardTier', 'BadgeAward', 'AssignmentCursor',
   'UpsellLine', 'ConfirmToken',
   'MetaAdAccount', 'MetaSpendDay', 'MetaCampaignMapping',
+  // M9. PendingMessageEvent is deliberately absent: it is a system holding table with no tenantId.
+  'MessageEvent', 'Conversation', 'MessageTemplate', 'OptOutEvent',
+  'Reminder', 'Thread', 'Comment', 'ThreadRead',
+  'NotificationPreference', 'RoleNotificationDefault',
+  'WorkflowTriggerOutbox', 'ConnectionEvent',
 ]);
 
 /**

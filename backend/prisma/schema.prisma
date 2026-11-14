@@ -33,67 +33,79 @@ model Tenant {
   currentPlan Plan? @relation(fields: [currentPlanId], references: [id])
 
   // Reverse relations for tenant-scoped models
-  users                   User[]
-  customers               Customer[]
-  products                Product[]
-  orders                  Order[]
-  deliveries              Delivery[]
-  transactions            Transaction[]
-  expenses                Expense[]
-  accounts                Account[]
-  journalEntries          JournalEntry[]
-  accountTransactions     AccountTransaction[]
-  workflows               Workflow[]
-  workflowExecutions      WorkflowExecution[]
-  webhookConfigs          WebhookConfig[]
-  notifications           Notification[]
-  checkoutForms           CheckoutForm[]
-  inventoryShipments      InventoryShipment[]
-  agentBalances           AgentBalance[]
-  inventoryTransfers      InventoryTransfer[]
-  agentStocks             AgentStock[]
-  stockLocations          StockLocation[]
-  stockLevels             StockLevel[]
-  stockCounts             StockCount[]
-  stockCountLines         StockCountLine[]
-  deliveryPartnerProfiles DeliveryPartnerProfile[]
-  deliveryAttempts        DeliveryAttempt[]
-  messageLogs             MessageLog[]
-  systemConfigs           SystemConfig[]
-  mcpApiKeys              McpApiKey[]
-  roles                   Role[]
-  roleAssignments         RoleAssignment[]
-  userSessions            UserSession[]
-  paymentConnections      PaymentConnection[]
-  webhookEvents           WebhookEvent[]
-  emailTemplates          EmailTemplate[]
-  emailCampaigns          EmailCampaign[]
-  agentCollections        AgentCollection[]
-  agentDeposits           AgentDeposit[]
-  payouts                 Payout[]
-  calls                   Call[]
-  orderHistories          OrderHistory[]
-  auditLogs               AuditLog[]
-  webhookLogs             WebhookLog[]
-  smsTemplates            SmsTemplate[]
-  downloadTokens          DownloadToken[]
-  formSubmissions         FormSubmission[]
-  productCostEntries      product_cost_entries[]
-  targets                 Target[]
-  findings                Finding[]
-  feeRules                FeeRule[]
-  fxRates                 FxRate[]
-  partnerSettlements      PartnerSettlement[]
-  partnerSettlementLines  PartnerSettlementLine[]
-  commissionEntries       CommissionEntry[]
-  rewardTiers             RewardTier[]
-  badgeAwards             BadgeAward[]
-  assignmentCursors       AssignmentCursor[]
-  upsellLines             UpsellLine[]
-  confirmTokens           ConfirmToken[]
-  metaAdAccounts          MetaAdAccount[]
-  metaSpendDays           MetaSpendDay[]
-  metaCampaignMappings    MetaCampaignMapping[]
+  users                    User[]
+  customers                Customer[]
+  products                 Product[]
+  orders                   Order[]
+  deliveries               Delivery[]
+  transactions             Transaction[]
+  expenses                 Expense[]
+  accounts                 Account[]
+  journalEntries           JournalEntry[]
+  accountTransactions      AccountTransaction[]
+  workflows                Workflow[]
+  workflowExecutions       WorkflowExecution[]
+  webhookConfigs           WebhookConfig[]
+  notifications            Notification[]
+  checkoutForms            CheckoutForm[]
+  inventoryShipments       InventoryShipment[]
+  agentBalances            AgentBalance[]
+  inventoryTransfers       InventoryTransfer[]
+  agentStocks              AgentStock[]
+  stockLocations           StockLocation[]
+  stockLevels              StockLevel[]
+  stockCounts              StockCount[]
+  stockCountLines          StockCountLine[]
+  deliveryPartnerProfiles  DeliveryPartnerProfile[]
+  deliveryAttempts         DeliveryAttempt[]
+  messageLogs              MessageLog[]
+  systemConfigs            SystemConfig[]
+  mcpApiKeys               McpApiKey[]
+  roles                    Role[]
+  roleAssignments          RoleAssignment[]
+  userSessions             UserSession[]
+  paymentConnections       PaymentConnection[]
+  webhookEvents            WebhookEvent[]
+  emailTemplates           EmailTemplate[]
+  emailCampaigns           EmailCampaign[]
+  agentCollections         AgentCollection[]
+  agentDeposits            AgentDeposit[]
+  payouts                  Payout[]
+  calls                    Call[]
+  orderHistories           OrderHistory[]
+  auditLogs                AuditLog[]
+  webhookLogs              WebhookLog[]
+  smsTemplates             SmsTemplate[]
+  downloadTokens           DownloadToken[]
+  formSubmissions          FormSubmission[]
+  productCostEntries       product_cost_entries[]
+  targets                  Target[]
+  findings                 Finding[]
+  feeRules                 FeeRule[]
+  fxRates                  FxRate[]
+  partnerSettlements       PartnerSettlement[]
+  partnerSettlementLines   PartnerSettlementLine[]
+  commissionEntries        CommissionEntry[]
+  rewardTiers              RewardTier[]
+  badgeAwards              BadgeAward[]
+  assignmentCursors        AssignmentCursor[]
+  upsellLines              UpsellLine[]
+  confirmTokens            ConfirmToken[]
+  metaAdAccounts           MetaAdAccount[]
+  metaSpendDays            MetaSpendDay[]
+  metaCampaignMappings     MetaCampaignMapping[]
+  messageEvents            MessageEvent[]
+  conversations            Conversation[]
+  messageTemplates         MessageTemplate[]
+  optOutEvents             OptOutEvent[]
+  reminders                Reminder[]
+  threads                  Thread[]
+  comments                 Comment[]
+  threadReads              ThreadRead[]
+  notificationPreferences  NotificationPreference[]
+  roleNotificationDefaults RoleNotificationDefault[]
+  workflowTriggerOutbox    WorkflowTriggerOutbox[]
+  connectionEvents         ConnectionEvent[]
 
   @@index([paystackCustomerCode])
   @@index([paystackSubscriptionCode])
@@ -133,90 +145,98 @@ model PlatformAnnouncement {
 }
 
 model User {
-  id                      Int                     @id @default(autoincrement())
-  email                   String                  @unique
+  id                      Int                      @id @default(autoincrement())
+  email                   String                   @unique
   password                String
-  phoneNumber             String?                 @map("phone_number")
+  phoneNumber             String?                  @map("phone_number")
   role                    UserRole
-  isActive                Boolean                 @default(true) @map("is_active")
-  isPlatformAdmin         Boolean                 @default(false) @map("is_platform_admin")
-  isAvailable             Boolean                 @default(true) @map("is_available")
-  lastLogin               DateTime?               @map("last_login")
-  refreshToken            String?                 @map("refresh_token")
-  passwordResetToken      String?                 @unique @map("password_reset_token")
-  passwordResetExpires    DateTime?               @map("password_reset_expires")
-  commissionAmount        Decimal?                @default(0) @map("commission_amount") @db.Decimal(19, 4) /// Fixed commission amount per delivery (GHS)
+  isActive                Boolean                  @default(true) @map("is_active")
+  isPlatformAdmin         Boolean                  @default(false) @map("is_platform_admin")
+  isAvailable             Boolean                  @default(true) @map("is_available")
+  lastLogin               DateTime?                @map("last_login")
+  refreshToken            String?                  @map("refresh_token")
+  passwordResetToken      String?                  @unique @map("password_reset_token")
+  passwordResetExpires    DateTime?                @map("password_reset_expires")
+  commissionAmount        Decimal?                 @default(0) @map("commission_amount") @db.Decimal(19, 4) /// Fixed commission amount per delivery (GHS)
   /// M6 (F-1158): invite state; only the token hash is stored.
-  invitedAt               DateTime?               @map("invited_at")
-  inviteTokenHash         String?                 @unique @map("invite_token_hash")
-  inviteExpiresAt         DateTime?               @map("invite_expires_at")
+  invitedAt               DateTime?                @map("invited_at")
+  inviteTokenHash         String?                  @unique @map("invite_token_hash")
+  inviteExpiresAt         DateTime?                @map("invite_expires_at")
   /// M6 (F-1160): set when staff soft-delete a person (also isActive=false); cleared on restore. Not set by a plain deactivate.
-  deletedAt               DateTime?               @map("deleted_at")
+  deletedAt               DateTime?                @map("deleted_at")
   country                 String?
   preferences             Json?
-  vehicleType             String?                 @map("vehicle_type")
-  vehicleId               String?                 @map("vehicle_id")
-  deliveryRate            Float?                  @default(0) @map("delivery_rate")
-  totalEarnings           Decimal?                @default(0) @map("total_earnings") @db.Decimal(19, 4)
-  totalCollected          Decimal                 @default(0) @map("total_collected") @db.Decimal(19, 4)
+  vehicleType             String?                  @map("vehicle_type")
+  vehicleId               String?                  @map("vehicle_id")
+  deliveryRate            Float?                   @default(0) @map("delivery_rate")
+  totalEarnings           Decimal?                 @default(0) @map("total_earnings") @db.Decimal(19, 4)
+  totalCollected          Decimal                  @default(0) @map("total_collected") @db.Decimal(19, 4)
   location                String?
-  createdAt               DateTime                @default(now()) @map("created_at")
-  updatedAt               DateTime                @updatedAt @map("updated_at")
-  firstName               String                  @map("first_name")
-  lastName                String                  @map("last_name")
-  displayName             String?                 @map("display_name")
-  photoUrl                String?                 @map("photo_url")
-  calls                   Call[]                  @relation("CallSalesRep")
+  createdAt               DateTime                 @default(now()) @map("created_at")
+  updatedAt               DateTime                 @updatedAt @map("updated_at")
+  firstName               String                   @map("first_name")
+  lastName                String                   @map("last_name")
+  displayName             String?                  @map("display_name")
+  photoUrl                String?                  @map("photo_url")
+  calls                   Call[]                   @relation("CallSalesRep")
   deliveries              Delivery[]
   expenses                Expense[]
-  notifications           Notification[]
-  createdOrders           Order[]                 @relation("OrderCreatedBy")
-  assignedOrdersAsRep     Order[]                 @relation("OrderCustomerRep")
-  assignedOrdersAsAgent   Order[]                 @relation("OrderDeliveryAgent")
+  notifications           Notification[]           @relation("NotificationUser")
+  createdOrders           Order[]                  @relation("OrderCreatedBy")
+  assignedOrdersAsRep     Order[]                  @relation("OrderCustomerRep")
+  assignedOrdersAsAgent   Order[]                  @relation("OrderDeliveryAgent")
   payouts                 Payout[]
   auditLogs               AuditLog[]
-  journalEntriesCreated   JournalEntry[]          @relation("JournalEntryCreator")
-  journalEntriesVoided    JournalEntry[]          @relation("VoidedByUser")
-  collections             AgentCollection[]       @relation("AgentCollections")
-  verifiedCollections     AgentCollection[]       @relation("VerifiedCollections")
-  approvedCollections     AgentCollection[]       @relation("ApprovedCollections")
+  journalEntriesCreated   JournalEntry[]           @relation("JournalEntryCreator")
+  journalEntriesVoided    JournalEntry[]           @relation("VoidedByUser")
+  collections             AgentCollection[]        @relation("AgentCollections")
+  verifiedCollections     AgentCollection[]        @relation("VerifiedCollections")
+  approvedCollections     AgentCollection[]        @relation("ApprovedCollections")
   balance                 AgentBalance?
-  deposits                AgentDeposit[]          @relation("AgentDeposits")
-  verifiedDeposits        AgentDeposit[]          @relation("VerifiedDeposits")
-  blockedBalances         AgentBalance[]          @relation("BlockedBy")
-  agentStock              AgentStock[]            @relation("AgentStockHoldings")
-  transfersFrom           InventoryTransfer[]     @relation("TransferFrom")
-  transfersTo             InventoryTransfer[]     @relation("TransferTo")
-  transfersCreated        InventoryTransfer[]     @relation("TransferCreator")
-  shipmentsCreated        InventoryShipment[]     @relation("ShipmentCreator")
-  shipmentsReceived       InventoryShipment[]     @relation("ShipmentReceiver")
-  transfersReceived       InventoryTransfer[]     @relation("TransferReceiver")
-  stockLocations          StockLocation[]         @relation("StockLocationHolder")
-  stockCountsMade         StockCount[]            @relation("StockCountCounter")
-  partnerProfile          DeliveryPartnerProfile? @relation("PartnerProfileUser")
-  deliveryAttempts        DeliveryAttempt[]       @relation("DeliveryAttemptPartner")
-  confirmedOrders         Order[]                 @relation("OrderConfirmedBy")
-  targetsAsOwner          Target[]                @relation("TargetUser")
-  feeRules                FeeRule[]               @relation("FeeRulePartner")
-  fxRatesCreated          FxRate[]                @relation("FxRateCreator")
-  metaAdAccountsConnected MetaAdAccount[]         @relation("MetaAdAccountConnector")
-  metaMappingsCreated     MetaCampaignMapping[]   @relation("MetaMappingCreator")
-  feeRulesCreated         FeeRule[]               @relation("FeeRuleCreator")
-  findingsAssigned        Finding[]               @relation("FindingAssignee")
-  findingsResolved        Finding[]               @relation("FindingResolver")
-  partnerSettlements      PartnerSettlement[]     @relation("SettlementPartner")
-  commissionEntries       CommissionEntry[]       @relation("CommissionEntryUser")
-  payoutsRecorded         Payout[]                @relation("PayoutRecorder")
-  kind                    UserKind                @default(person)
-  roleAssignments         RoleAssignment[]        @relation("RoleAssignmentHolder")
-  badgeAwards             BadgeAward[]            @relation("BadgeAwardUser")
+  deposits                AgentDeposit[]           @relation("AgentDeposits")
+  verifiedDeposits        AgentDeposit[]           @relation("VerifiedDeposits")
+  blockedBalances         AgentBalance[]           @relation("BlockedBy")
+  agentStock              AgentStock[]             @relation("AgentStockHoldings")
+  transfersFrom           InventoryTransfer[]      @relation("TransferFrom")
+  transfersTo             InventoryTransfer[]      @relation("TransferTo")
+  transfersCreated        InventoryTransfer[]      @relation("TransferCreator")
+  shipmentsCreated        InventoryShipment[]      @relation("ShipmentCreator")
+  shipmentsReceived       InventoryShipment[]      @relation("ShipmentReceiver")
+  transfersReceived       InventoryTransfer[]      @relation("TransferReceiver")
+  stockLocations          StockLocation[]          @relation("StockLocationHolder")
+  stockCountsMade         StockCount[]             @relation("StockCountCounter")
+  partnerProfile          DeliveryPartnerProfile?  @relation("PartnerProfileUser")
+  deliveryAttempts        DeliveryAttempt[]        @relation("DeliveryAttemptPartner")
+  confirmedOrders         Order[]                  @relation("OrderConfirmedBy")
+  targetsAsOwner          Target[]                 @relation("TargetUser")
+  feeRules                FeeRule[]                @relation("FeeRulePartner")
+  fxRatesCreated          FxRate[]                 @relation("FxRateCreator")
+  metaAdAccountsConnected MetaAdAccount[]          @relation("MetaAdAccountConnector")
+  metaMappingsCreated     MetaCampaignMapping[]    @relation("MetaMappingCreator")
+  feeRulesCreated         FeeRule[]                @relation("FeeRuleCreator")
+  findingsAssigned        Finding[]                @relation("FindingAssignee")
+  findingsResolved        Finding[]                @relation("FindingResolver")
+  partnerSettlements      PartnerSettlement[]      @relation("SettlementPartner")
+  commissionEntries       CommissionEntry[]        @relation("CommissionEntryUser")
+  payoutsRecorded         Payout[]                 @relation("PayoutRecorder")
+  kind                    UserKind                 @default(person)
+  roleAssignments         RoleAssignment[]         @relation("RoleAssignmentHolder")
+  badgeAwards             BadgeAward[]             @relation("BadgeAwardUser")
   sessions                UserSession[]
-  customersCreated        Customer[]              @relation("CustomerCreatedBy")
-  customerCodOverrides    Customer[]              @relation("CustomerCodOverrideBy")
-  upsellLines             UpsellLine[]            @relation("UpsellLineRep")
-  mcpApiKeys              McpApiKey[]             @relation("McpApiKeyUser")
-  tenantId                String?                 @map("tenant_id")
-  tenant                  Tenant?                 @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customersCreated        Customer[]               @relation("CustomerCreatedBy")
+  customerCodOverrides    Customer[]               @relation("CustomerCodOverrideBy")
+  upsellLines             UpsellLine[]             @relation("UpsellLineRep")
+  mcpApiKeys              McpApiKey[]              @relation("McpApiKeyUser")
+  notificationsActed      Notification[]           @relation("NotificationActor")
+  conversationsAssigned   Conversation[]           @relation("ConversationAssignee")
+  optOutEventsActed       OptOutEvent[]            @relation("OptOutEventActor")
+  remindersCreated        Reminder[]               @relation("ReminderCreator")
+  remindersAssigned       Reminder[]               @relation("ReminderAssignee")
+  comments                Comment[]                @relation("CommentAuthor")
+  threadReads             ThreadRead[]             @relation("ThreadReadUser")
+  notificationPreferences NotificationPreference[] @relation("NotificationPreferenceUser")
+  tenantId                String?                  @map("tenant_id")
+  tenant                  Tenant?                  @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([role, isActive])
   @@index([role, isActive, isAvailable])
@@ -267,6 +287,8 @@ model Customer {
   tenant           Tenant?           @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   createdBy        User?             @relation("CustomerCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   codOverrideBy    User?             @relation("CustomerCodOverrideBy", fields: [codOverrideById], references: [id], onDelete: SetNull)
+  conversations    Conversation[]
+  optOutEvents     OptOutEvent[]
 
   @@unique([phoneNumber, tenantId], map: "customers_phone_number_tenant_key")
   @@index([isActive])
@@ -418,6 +440,9 @@ model Order {
   confirmTokens      ConfirmToken[]
   messageLogs        MessageLog[]
   downloadTokens     DownloadToken[]
+  workflowExecutions WorkflowExecution[]
+  webhookLogs        WebhookLog[]
+  isTest             Boolean                 @default(false) @map("is_test")
   tenantId           String?                 @map("tenant_id")
   tenant             Tenant?                 @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -686,19 +711,23 @@ model AccountTransaction {
 }
 
 model Workflow {
-  id          Int                 @id @default(autoincrement())
-  name        String
-  description String?
-  triggerType WorkflowTriggerType @map("trigger_type")
-  triggerData Json                @map("trigger_data")
-  actions     Json
-  conditions  Json?
-  isActive    Boolean             @default(true) @map("is_active")
-  createdAt   DateTime            @default(now()) @map("created_at")
-  updatedAt   DateTime            @updatedAt @map("updated_at")
-  executions  WorkflowExecution[]
-  tenantId    String?             @map("tenant_id")
-  tenant      Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                 Int                 @id @default(autoincrement())
+  name               String
+  description        String?
+  triggerType        WorkflowTriggerType @map("trigger_type")
+  triggerData        Json                @map("trigger_data")
+  actions            Json
+  conditions         Json?
+  isActive           Boolean             @default(true) @map("is_active")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+  executions         WorkflowExecution[]
+  tenantId           String?             @map("tenant_id")
+  tenant             Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  // T22 webhook trigger: sha256 hex of the token, never the token itself
+  webhookTokenHash   String?             @unique @map("webhook_token_hash")
+  // T22 late catch-up for schedule triggers
+  lastScheduledRunAt DateTime?           @map("last_scheduled_run_at")
 
   @@index([isActive])
   @@index([triggerType])
@@ -709,22 +738,36 @@ model Workflow {
 }
 
 model WorkflowExecution {
-  id          Int       @id @default(autoincrement())
-  workflowId  Int       @map("workflow_id")
-  status      String
-  input       Json
-  output      Json?
-  error       String?
-  startedAt   DateTime  @default(now()) @map("started_at")
-  completedAt DateTime? @map("completed_at")
-  workflow    Workflow  @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-  tenantId    String    @map("tenant_id")
-  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id              Int             @id @default(autoincrement())
+  workflowId      Int             @map("workflow_id")
+  status          String
+  input           Json
+  output          Json?
+  error           String?
+  startedAt       DateTime        @default(now()) @map("started_at")
+  completedAt     DateTime?       @map("completed_at")
+  workflow        Workflow        @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  tenantId        String          @map("tenant_id")
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  mode            WorkflowRunMode @default(live)
+  // One entry per step: index, type, status, startedAt, finishedAt, result, error
+  steps           Json            @default("[]")
+  orderId         Int?            @map("order_id")
+  order           Order?          @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  idempotencyKey  String?         @map("idempotency_key")
+  // screen | agent | mcp | import | payment | schedule | webhook | manual | catch_up
+  triggerSource   String?         @map("trigger_source")
+  failedStepIndex Int?            @map("failed_step_index")
+  // Set while a Wait step is pending
+  resumeAt        DateTime?       @map("resume_at")
 
+  // NULL keys are distinct in Postgres, so old rows without a key stay valid
+  @@unique([tenantId, idempotencyKey])
   @@index([workflowId])
   @@index([status])
   @@index([startedAt])
   @@index([tenantId])
+  @@index([orderId])
   @@map("workflow_executions")
 }
 
@@ -767,10 +810,18 @@ model WebhookLog {
   webhookConfig   WebhookConfig? @relation(fields: [webhookConfigId], references: [id])
   tenantId        String         @map("tenant_id")
   tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  // A retry links to the failed row it retries and to the order it made
+  retryOfId       Int?           @map("retry_of_id")
+  retryOf         WebhookLog?    @relation("WebhookLogRetry", fields: [retryOfId], references: [id], onDelete: SetNull)
+  retries         WebhookLog[]   @relation("WebhookLogRetry")
+  orderId         Int?           @map("order_id")
+  order           Order?         @relation(fields: [orderId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
   @@index([webhookConfigId])
   @@index([processedAt])
+  @@index([retryOfId])
+  @@index([orderId])
   @@map("webhook_logs")
 }
 
@@ -795,22 +846,33 @@ model WebhookEvent {
 }
 
 model Notification {
-  id        Int      @id @default(autoincrement())
-  userId    Int      @map("user_id")
-  type      String
-  title     String
-  message   String
-  data      Json?
-  isRead    Boolean  @default(false) @map("is_read")
-  createdAt DateTime @default(now()) @map("created_at")
-  user      User     @relation(fields: [userId], references: [id])
-  tenantId  String   @map("tenant_id")
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id           Int              @id @default(autoincrement())
+  userId       Int              @map("user_id")
+  type         String
+  title        String
+  message      String
+  data         Json?
+  isRead       Boolean          @default(false) @map("is_read")
+  createdAt    DateTime         @default(now()) @map("created_at")
+  user         User             @relation("NotificationUser", fields: [userId], references: [id])
+  tenantId     String           @map("tenant_id")
+  tenant       Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  kind         NotificationKind @default(alert)
+  // order | customer | payout | product | conversation | workflow | connection
+  subjectType  String?          @map("subject_type")
+  subjectId    Int?             @map("subject_id")
+  actorId      Int?             @map("actor_id")
+  actor        User?            @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+  readAt       DateTime?        @map("read_at")
+  snoozedUntil DateTime?        @map("snoozed_until")
+  doneAt       DateTime?        @map("done_at")
 
   @@index([userId])
   @@index([isRead])
   @@index([createdAt])
   @@index([tenantId])
+  @@index([tenantId, userId, doneAt, createdAt])
+  @@index([actorId])
   @@map("notifications")
 }
 
@@ -964,38 +1026,41 @@ model FormSubmission {
 /// pending-checkout cleanup cron. customerId/tenantId are plain scalars (no FK)
 /// since the row is transient.
 model PendingCheckout {
-  id                  Int       @id @default(autoincrement())
-  reference           String    @unique
-  tenantId            String    @map("tenant_id")
-  customerId          Int       @map("customer_id")
-  formId              Int       @map("form_id")
-  paymentMethod       String    @map("payment_method")
-  orderType           String    @map("order_type")
+  id                  Int                @id @default(autoincrement())
+  reference           String             @unique
+  tenantId            String             @map("tenant_id")
+  customerId          Int                @map("customer_id")
+  formId              Int                @map("form_id")
+  paymentMethod       String             @map("payment_method")
+  orderType           String             @map("order_type")
   currency            String
-  subtotal            Decimal   @db.Decimal(19, 4)
-  shippingCost        Decimal   @default(0) @map("shipping_cost") @db.Decimal(19, 4)
-  discount            Decimal   @default(0) @db.Decimal(19, 4)
-  totalAmount         Decimal   @map("total_amount") @db.Decimal(19, 4)
-  codAmount           Decimal?  @map("cod_amount") @db.Decimal(19, 4)
-  balanceDue          Decimal   @default(0) @map("balance_due") @db.Decimal(19, 4)
-  paystackChargeMinor Int       @map("paystack_charge_minor")
-  orderItems          Json      @map("order_items")
-  formData            Json      @map("form_data")
-  selectedPackage     Json      @map("selected_package")
-  selectedUpsells     Json?     @map("selected_upsells")
-  ipAddress           String?   @map("ip_address")
-  userAgent           String?   @map("user_agent")
+  subtotal            Decimal            @db.Decimal(19, 4)
+  shippingCost        Decimal            @default(0) @map("shipping_cost") @db.Decimal(19, 4)
+  discount            Decimal            @default(0) @db.Decimal(19, 4)
+  totalAmount         Decimal            @map("total_amount") @db.Decimal(19, 4)
+  codAmount           Decimal?           @map("cod_amount") @db.Decimal(19, 4)
+  balanceDue          Decimal            @default(0) @map("balance_due") @db.Decimal(19, 4)
+  paystackChargeMinor Int                @map("paystack_charge_minor")
+  orderItems          Json               @map("order_items")
+  formData            Json               @map("form_data")
+  selectedPackage     Json               @map("selected_package")
+  selectedUpsells     Json?              @map("selected_upsells")
+  ipAddress           String?            @map("ip_address")
+  userAgent           String?            @map("user_agent")
   // Meta click identifiers, carried from checkout through to the Order created at
   // settlement so the Paystack Purchase CAPI event gets the same match keys as COD.
-  fbp                 String?   @map("fbp")
-  fbc                 String?   @map("fbc")
+  fbp                 String?            @map("fbp")
+  fbc                 String?            @map("fbc")
   // Provider that holds the payment (F-400). Settlement picks the adapter from it.
-  provider            String    @default("paystack")
+  provider            String             @default("paystack")
+  providerId          Int?               @map("provider_id")
+  paymentConnection   PaymentConnection? @relation(fields: [providerId], references: [id], onDelete: SetNull)
   // initiated | pending | failed | expired | needs_review (F-404)
-  status              String    @default("initiated")
-  lastCheckedAt       DateTime? @map("last_checked_at")
-  createdAt           DateTime  @default(now()) @map("created_at")
+  status              String             @default("initiated")
+  lastCheckedAt       DateTime?          @map("last_checked_at")
+  createdAt           DateTime           @default(now()) @map("created_at")
 
+  @@index([providerId])
   @@index([createdAt])
   @@index([tenantId, status, createdAt])
   @@map("pending_checkouts")
@@ -1578,6 +1643,7 @@ enum MessageStatus {
   read
   failed
   skipped
+  replied
 }
 
 enum TransferType {
@@ -1883,12 +1949,28 @@ model MessageLog {
   readAt            DateTime?        @map("read_at")
   createdAt         DateTime         @default(now()) @map("created_at")
   updatedAt         DateTime         @updatedAt @map("updated_at")
+  // arkesel | whatsapp_cloud | resend | smtp
+  provider          String?
+  repliedAt         DateTime?        @map("replied_at")
+  conversationId    Int?             @map("conversation_id")
+  // The outbound message an inbound reply answers
+  inReplyToId       Int?             @map("in_reply_to_id")
+  fallbackOfId      Int?             @map("fallback_of_id")
+  retryOfId         Int?             @map("retry_of_id")
 
-  order    Order?         @relation(fields: [orderId], references: [id])
-  customer Customer?      @relation(fields: [customerId], references: [id])
-  campaign EmailCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
-  tenantId String?        @map("tenant_id")
-  tenant   Tenant?        @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  conversation Conversation?  @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  inReplyTo    MessageLog?    @relation("MessageReply", fields: [inReplyToId], references: [id], onDelete: SetNull)
+  replies      MessageLog[]   @relation("MessageReply")
+  fallbackOf   MessageLog?    @relation("MessageFallback", fields: [fallbackOfId], references: [id], onDelete: SetNull)
+  fallbacks    MessageLog[]   @relation("MessageFallback")
+  retryOf      MessageLog?    @relation("MessageRetry", fields: [retryOfId], references: [id], onDelete: SetNull)
+  retries      MessageLog[]   @relation("MessageRetry")
+  events       MessageEvent[]
+  order        Order?         @relation(fields: [orderId], references: [id])
+  customer     Customer?      @relation(fields: [customerId], references: [id])
+  campaign     EmailCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  tenantId     String?        @map("tenant_id")
+  tenant       Tenant?        @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([orderId])
   @@index([customerId])
@@ -1896,6 +1978,10 @@ model MessageLog {
   @@index([createdAt])
   @@index([tenantId])
   @@index([campaignId])
+  @@index([conversationId])
+  @@index([inReplyToId])
+  @@index([fallbackOfId])
+  @@index([retryOfId])
   @@map("message_logs")
 }
 
@@ -2224,18 +2310,19 @@ model UserSession {
 // One payment-provider account per tenant and provider (F-400). The secret key is stored
 // encrypted (enc:v1:) and masked on read.
 model PaymentConnection {
-  id                  Int       @id @default(autoincrement())
-  tenantId            String    @map("tenant_id")
-  tenant              Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                  Int               @id @default(autoincrement())
+  tenantId            String            @map("tenant_id")
+  tenant              Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   provider            String
-  mode                String    @default("test")
-  publicKey           String?   @map("public_key")
-  secretKey           String?   @map("secret_key")
-  isEnabled           Boolean   @default(true) @map("is_enabled")
-  supportedCurrencies String[]  @default([]) @map("supported_currencies")
-  lastCheckedAt       DateTime? @map("last_checked_at")
-  createdAt           DateTime  @default(now()) @map("created_at")
-  updatedAt           DateTime  @updatedAt @map("updated_at")
+  mode                String            @default("test")
+  publicKey           String?           @map("public_key")
+  secretKey           String?           @map("secret_key")
+  isEnabled           Boolean           @default(true) @map("is_enabled")
+  supportedCurrencies String[]          @default([]) @map("supported_currencies")
+  lastCheckedAt       DateTime?         @map("last_checked_at")
+  createdAt           DateTime          @default(now()) @map("created_at")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
+  pendingCheckouts    PendingCheckout[]
 
   @@unique([tenantId, provider])
   @@index([tenantId])
@@ -2470,4 +2557,313 @@ model MetaCampaignMapping {
   @@unique([tenantId, adAccountId, campaignId])
   @@index([tenantId])
   @@map("meta_campaign_mappings")
+}
+
+// ---------------------------------------------------------------------------
+// M9: inbox and messages
+// ---------------------------------------------------------------------------
+
+enum ConversationStatus {
+  open
+  done
+}
+
+enum OptOutReason {
+  stop_reply
+  unsubscribe_link
+  staff
+  import
+  resubscribe
+}
+
+enum NotificationKind {
+  alert
+  reply
+  mention
+  reminder
+  note
+  system
+}
+
+enum ReminderStatus {
+  pending
+  sent
+  cancelled
+}
+
+enum WorkflowRunMode {
+  live
+  test
+}
+
+enum ConnectionEventLevel {
+  info
+  warning
+  error
+}
+
+/// One status change for one message. Provider callbacks upsert on (messageLogId, status).
+model MessageEvent {
+  id             Int           @id @default(autoincrement())
+  messageLogId   Int           @map("message_log_id")
+  status         MessageStatus
+  providerStatus String?       @map("provider_status")
+  failureReason  String?       @map("failure_reason")
+  payload        Json?
+  occurredAt     DateTime      @map("occurred_at")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  tenantId       String        @map("tenant_id")
+  tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  messageLog     MessageLog    @relation(fields: [messageLogId], references: [id], onDelete: Cascade)
+
+  @@unique([messageLogId, status])
+  @@index([tenantId])
+  @@index([tenantId, occurredAt])
+  @@map("message_events")
+}
+
+/// Holding table for status events that arrive before the send call returns.
+/// SYSTEM model: it has no tenantId and is NOT in TENANT_SCOPED_MODELS on purpose.
+/// The Arkesel and WhatsApp callbacks can arrive with no tenant, only a provider
+/// message id; the tenant is known once the matching MessageLog is found.
+model PendingMessageEvent {
+  id                Int           @id @default(autoincrement())
+  provider          String
+  providerMessageId String        @map("provider_message_id")
+  status            MessageStatus
+  payload           Json?
+  receivedAt        DateTime      @default(now()) @map("received_at")
+  expiresAt         DateTime      @map("expires_at")
+
+  @@index([providerMessageId])
+  @@index([expiresAt])
+  @@map("pending_message_events")
+}
+
+model Conversation {
+  id            Int                @id @default(autoincrement())
+  channel       MessageChannel
+  // E.164 as stored on Customer
+  phone         String
+  customerId    Int?               @map("customer_id")
+  assignedToId  Int?               @map("assigned_to_id")
+  status        ConversationStatus @default(open)
+  unanswered    Boolean            @default(false)
+  lastMessageAt DateTime           @map("last_message_at")
+  // Start of the 24 hour WhatsApp window
+  lastInboundAt DateTime?          @map("last_inbound_at")
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
+  tenantId      String             @map("tenant_id")
+  tenant        Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customer      Customer?          @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  assignedTo    User?              @relation("ConversationAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  messages      MessageLog[]
+
+  @@unique([tenantId, channel, phone])
+  @@index([tenantId])
+  @@index([tenantId, status, lastMessageAt])
+  @@index([assignedToId])
+  @@index([customerId])
+  @@map("conversations")
+}
+
+/// One template list for all channels. SmsTemplate and EmailTemplate stay until T09 moves their rows.
+model MessageTemplate {
+  id               Int            @id @default(autoincrement())
+  channel          MessageChannel
+  name             String
+  // for example auto_confirm
+  purpose          String?
+  // email only
+  subject          String?
+  body             String
+  variables        String[]       @default([])
+  language         String?
+  category         String?
+  quickReplies     Json?          @map("quick_replies")
+  metaTemplateName String?        @map("meta_template_name")
+  // APPROVED | PENDING | REJECTED | PAUSED
+  metaStatus       String?        @map("meta_status")
+  metaRejectReason String?        @map("meta_reject_reason")
+  // sms_templates | email_templates | notification_templates
+  legacySource     String?        @map("legacy_source")
+  legacyId         Int?           @map("legacy_id")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+  tenantId         String         @map("tenant_id")
+  tenant           Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([tenantId, channel, name])
+  @@index([tenantId])
+  @@map("message_templates")
+}
+
+model OptOutEvent {
+  id         Int            @id @default(autoincrement())
+  customerId Int?           @map("customer_id")
+  phone      String?
+  email      String?
+  channel    MessageChannel
+  optedOut   Boolean        @map("opted_out")
+  reason     OptOutReason
+  actorId    Int?           @map("actor_id")
+  note       String?
+  createdAt  DateTime       @default(now()) @map("created_at")
+  tenantId   String         @map("tenant_id")
+  tenant     Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customer   Customer?      @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  actor      User?          @relation("OptOutEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([tenantId, phone])
+  @@index([customerId])
+  @@map("opt_out_events")
+}
+
+model Reminder {
+  id           Int            @id @default(autoincrement())
+  createdById  Int            @map("created_by_id")
+  assignedToId Int            @map("assigned_to_id")
+  subjectType  String?        @map("subject_type")
+  subjectId    Int?           @map("subject_id")
+  note         String         @db.VarChar(1000)
+  dueAt        DateTime       @map("due_at")
+  status       ReminderStatus @default(pending)
+  sentAt       DateTime?      @map("sent_at")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+  tenantId     String         @map("tenant_id")
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  createdBy    User           @relation("ReminderCreator", fields: [createdById], references: [id])
+  assignedTo   User           @relation("ReminderAssignee", fields: [assignedToId], references: [id])
+
+  @@index([tenantId])
+  @@index([status, dueAt])
+  @@index([assignedToId, status])
+  @@map("reminders")
+}
+
+model Thread {
+  id          Int          @id @default(autoincrement())
+  subjectType String       @map("subject_type")
+  subjectId   Int          @map("subject_id")
+  archivedAt  DateTime?    @map("archived_at")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  tenantId    String       @map("tenant_id")
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  comments    Comment[]
+  reads       ThreadRead[]
+
+  @@unique([tenantId, subjectType, subjectId])
+  @@index([tenantId])
+  @@map("threads")
+}
+
+model Comment {
+  id         Int       @id @default(autoincrement())
+  threadId   Int       @map("thread_id")
+  authorId   Int       @map("author_id")
+  parentId   Int?      @map("parent_id")
+  body       String    @db.VarChar(4000)
+  mentionIds Int[]     @default([]) @map("mention_ids")
+  editedAt   DateTime? @map("edited_at")
+  deletedAt  DateTime? @map("deleted_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  tenantId   String    @map("tenant_id")
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  thread     Thread    @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  author     User      @relation("CommentAuthor", fields: [authorId], references: [id])
+  parent     Comment?  @relation("CommentReply", fields: [parentId], references: [id], onDelete: SetNull)
+  replies    Comment[] @relation("CommentReply")
+
+  @@index([tenantId])
+  @@index([threadId, createdAt])
+  @@index([parentId])
+  @@map("comments")
+}
+
+model ThreadRead {
+  id         Int      @id @default(autoincrement())
+  threadId   Int      @map("thread_id")
+  userId     Int      @map("user_id")
+  lastReadAt DateTime @map("last_read_at")
+  tenantId   String   @map("tenant_id")
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  thread     Thread   @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  user       User     @relation("ThreadReadUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([threadId, userId])
+  @@index([tenantId])
+  @@index([userId])
+  @@map("thread_reads")
+}
+
+model NotificationPreference {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  event     String
+  inApp     Boolean  @default(true) @map("in_app")
+  email     Boolean  @default(false)
+  sms       Boolean  @default(false)
+  whatsapp  Boolean  @default(false)
+  updatedAt DateTime @updatedAt @map("updated_at")
+  tenantId  String   @map("tenant_id")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user      User     @relation("NotificationPreferenceUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, event])
+  @@index([tenantId])
+  @@map("notification_preferences")
+}
+
+model RoleNotificationDefault {
+  id        Int      @id @default(autoincrement())
+  role      UserRole
+  event     String
+  inApp     Boolean  @default(true) @map("in_app")
+  email     Boolean  @default(false)
+  sms       Boolean  @default(false)
+  whatsapp  Boolean  @default(false)
+  updatedAt DateTime @updatedAt @map("updated_at")
+  tenantId  String   @map("tenant_id")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([tenantId, role, event])
+  @@index([tenantId])
+  @@map("role_notification_defaults")
+}
+
+/// Workflow trigger events kept when the queue is down.
+model WorkflowTriggerOutbox {
+  id          Int       @id @default(autoincrement())
+  event       String
+  payload     Json
+  attempts    Int       @default(0)
+  lastError   String?   @map("last_error")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  processedAt DateTime? @map("processed_at")
+  tenantId    String    @map("tenant_id")
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([tenantId])
+  @@index([processedAt, createdAt])
+  @@map("workflow_trigger_outbox")
+}
+
+model ConnectionEvent {
+  id         Int                  @id @default(autoincrement())
+  // sms | whatsapp | email | paystack | meta | checkout | webhook | csv
+  connection String
+  level      ConnectionEventLevel
+  message    String
+  details    Json?
+  createdAt  DateTime             @default(now()) @map("created_at")
+  tenantId   String               @map("tenant_id")
+  tenant     Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, connection, level])
+  @@map("connection_events")
 }
