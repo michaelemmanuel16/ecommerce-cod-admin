@@ -21,6 +21,8 @@ export interface EmailConfig {
   smtpHost?: string;
   smtpPort?: number;
   smtpSecure?: boolean;
+  /** SMTP login name; the from address when empty. */
+  smtpUser?: string;
 }
 
 export const NOT_CONFIGURED_TEXT = 'Email provider not configured. Please configure email settings in Settings → Integrations.';
@@ -67,6 +69,7 @@ export async function getDbEmailConfig(): Promise<EmailConfig | null> {
         smtpHost: decrypted.smtpHost,
         smtpPort: decrypted.smtpPort,
         smtpSecure: decrypted.smtpSecure,
+        smtpUser: decrypted.smtpUser || undefined,
       };
     }
 
@@ -196,13 +199,13 @@ let smtpTransporter: nodemailer.Transporter | null = null;
 let smtpConfigKey: string | null = null;
 
 function getSmtpTransporter(config: EmailConfig): nodemailer.Transporter {
-  const key = `${config.fromEmail}:${config.apiKey}:${config.smtpHost}:${config.smtpPort}`;
+  const key = `${config.smtpUser ?? config.fromEmail}:${config.apiKey}:${config.smtpHost}:${config.smtpPort}`;
   if (smtpTransporter && smtpConfigKey === key) return smtpTransporter;
   smtpTransporter = nodemailer.createTransport({
     host: config.smtpHost || 'smtp.gmail.com',
     port: config.smtpPort || 587,
     secure: config.smtpSecure || false,
-    auth: { user: config.fromEmail, pass: config.apiKey },
+    auth: { user: config.smtpUser || config.fromEmail, pass: config.apiKey },
   });
   smtpConfigKey = key;
   return smtpTransporter;

@@ -103,11 +103,12 @@ export async function saveConnection(input: SaveConnectionInput): Promise<Connec
 
   // The mode must match the key: a live key in test mode (or the reverse) is refused.
   const plainSecret = newSecret ?? (storedSecret ? (decryptString(storedSecret) as string) : null);
-  if (plainSecret) provider.validateCredentials?.(input.mode, plainSecret);
+  const publicKey = input.publicKey === undefined ? existing?.publicKey ?? null : input.publicKey || null;
+  provider.validateCredentials?.(input.mode, plainSecret, publicKey);
 
   const data = {
     mode: input.mode,
-    publicKey: input.publicKey === undefined ? existing?.publicKey ?? null : input.publicKey || null,
+    publicKey,
     secretKey: storedSecret,
     isEnabled: input.isEnabled ?? existing?.isEnabled ?? true,
     // New keys may belong to another account: the old currency list is no longer known.

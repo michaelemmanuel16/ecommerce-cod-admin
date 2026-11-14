@@ -86,18 +86,23 @@ export const paystackAdapter: PaymentProvider = {
     };
   },
 
-  /** A Paystack secret key says its mode: sk_live_ or sk_test_. A mode set against the key would route real money through the wrong account. */
-  validateCredentials(mode, secretKey) {
+  /**
+   * A Paystack key says its mode: sk_live_ / pk_live_ or sk_test_ / pk_test_. A mode set against the key would route real money
+   * through the wrong account. Both keys are checked when given (M9-T27).
+   */
+  validateCredentials(mode, secretKey, publicKey) {
     if (mode !== 'live' && mode !== 'test') return;
-    if (!secretKey.startsWith(`sk_${mode}_`)) {
-      throw new AppError(
-        `Paystack mode is set to ${mode === 'live' ? 'Live' : 'Test'} but the secret key is not a ${mode} key (sk_${mode}_...). Match the mode to the key.`,
-        400,
-        'PAYSTACK_MODE_KEY_MISMATCH',
-      );
+    const label = mode === 'live' ? 'Live' : 'Test';
+    for (const [kind, prefix, key] of [['secret', 'sk', secretKey], ['public', 'pk', publicKey]] as const) {
+      if (key && !key.startsWith(`${prefix}_${mode}_`)) {
+        throw new AppError(
+          `Paystack mode is set to ${label} but the ${kind} key is not a ${mode} key (${prefix}_${mode}_...). Match the mode to the key.`,
+          400,
+          'PAYSTACK_MODE_KEY_MISMATCH',
+        );
+      }
     }
   },
-
 
   getPublicKey: (tenantId) => paystackService.getPublicKey(tenantId),
 

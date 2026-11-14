@@ -67,6 +67,7 @@ async function processTenantWebhook(req: Request, res: Response, provider: Payme
   const isValid = await provider.verifyWebhook(tenantId, rawBody, req.headers);
   if (!isValid) {
     logger.warn('Invalid payment webhook signature', { tenantId, provider: provider.id, event: null, result: 'bad_signature' });
+    // M9: recordConnectionEvent after lane B merges
     res.status(401).json({ error: 'Invalid signature' });
     return;
   }

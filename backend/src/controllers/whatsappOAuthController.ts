@@ -18,19 +18,12 @@ import { adminService } from '../services/adminService';
 import { clearWhatsAppConfigCache } from '../services/whatsappService';
 import { encryptProviderSecrets, decryptProviderSecrets } from '../utils/providerCrypto';
 import prisma from '../utils/prisma';
-import { createOAuthState, consumeOAuthState, sweepOAuthState } from '../utils/oauthState';
+import { getTenantId } from '../utils/tenantContext';
+import { sweepOAuthState } from '../utils/oauthState';
+import { whatsappOAuthStore } from '../utils/whatsappOAuthState';
 
-// In-memory pending OAuth data store (userId → { token, phones, expiresAt })
-interface PendingOAuthData {
-  accessToken: string;
-  expiresAt: number;
-  oauthTokenExpiry: string;
-  oauthUserId: string;
-  phones: WABAPhoneNumber[];
-}
-const pendingOAuthStore = new Map<number, PendingOAuthData>();
-const PENDING_TTL_MS = 5 * 60 * 1000; // 5 minutes
-const MAX_PENDING_ENTRIES = 50;
+/** Where a login that lost its state starts again (M9-T27). */
+const startAgainUrl = (frontendUrl: string) => `${frontendUrl}/connections?error=start_again`;
 
 // Cleanup expired entries periodically
 let cleanupIntervalId: ReturnType<typeof setInterval> | null = null;
@@ -38,11 +31,7 @@ let cleanupIntervalId: ReturnType<typeof setInterval> | null = null;
 export function startCleanupInterval(): void {
   if (cleanupIntervalId) return;
   cleanupIntervalId = setInterval(() => {
-    const now = Date.now();
-    sweepOAuthState();
-    for (const [key, val] of pendingOAuthStore) {
-      if (val.expiresAt < now) pendingOAuthStore.delete(key);
-    }
+    sweepOAuthState(); // the Meta Ads login state; the WhatsApp state expires in Redis
   }, 60_000);
 }
 
@@ -70,7 +59,12 @@ export async function initiateOAuth(req: AuthRequest, res: Response): Promise<vo
     }
 
     const userId = req.user!.id;
-    const state = createOAuthState({ kind: 'whatsapp', userId });
+    const tenantId = getTenantId();
+    if (!tenantId) {
+      res.status(400).json({ error: 'A store is required' });
+      return;
+    }
+    const state = await whatsappOAuthStore().createState(tenantId, userId);
 
     const redirectUri = getRedirectUri();
     const authUrl = generateAuthUrl(redirectUri, state);
@@ -107,16 +101,16 @@ export async function handleOAuthCallback(req: AuthRequest, res: Response): Prom
       return;
     }
 
-    // Consume CSRF state immediately to prevent replay attacks
-    const storedState = consumeOAuthState<{ kind: string; userId: number }>(state);
+    // Consume CSRF state immediately to prevent replay attacks. It lives in Redis, so a restart in between does not lose it.
+    const storedState = await whatsappOAuthStore().consumeState(state);
 
-    if (!storedState || storedState.kind !== 'whatsapp') {
+    if (!storedState) {
       logger.warn('OAuth callback: invalid or expired CSRF state');
-      res.redirect(`${frontendUrl}/settings?oauth=error&message=${encodeURIComponent('Invalid or expired state. Please try again.')}`);
+      res.redirect(startAgainUrl(frontendUrl));
       return;
     }
 
-    const userId = storedState.userId;
+    const { userId, tenantId } = storedState;
 
     // Exchange code for short-lived token
     const redirectUri = getRedirectUri();
@@ -129,16 +123,9 @@ export async function handleOAuthCallback(req: AuthRequest, res: Response): Prom
     const metaUserId = await fetchUserIdFromToken(longToken);
     const phones = await fetchWABAPhoneNumbers(metaUserId, longToken);
 
-    // Evict oldest entries if store is full
-    if (pendingOAuthStore.size >= MAX_PENDING_ENTRIES) {
-      const oldestKey = pendingOAuthStore.keys().next().value;
-      if (oldestKey) pendingOAuthStore.delete(oldestKey);
-    }
-
-    // Store pending data
-    pendingOAuthStore.set(userId, {
+    // Store the pending login (10 minutes, in Redis, the token encrypted)
+    await whatsappOAuthStore().savePending(tenantId, userId, {
       accessToken: longToken,
-      expiresAt: Date.now() + PENDING_TTL_MS,
       oauthTokenExpiry: tokenExpiry || tokenFallbackExpiry(),
       oauthUserId: metaUserId,
       phones,
@@ -158,11 +145,9 @@ export async function handleOAuthCallback(req: AuthRequest, res: Response): Prom
  */
 export async function getPhoneNumbers(req: AuthRequest, res: Response): Promise<void> {
   try {
-    const userId = req.user!.id;
-    const pending = pendingOAuthStore.get(userId);
+    const pending = await whatsappOAuthStore().getPending(getTenantId() ?? '', req.user!.id);
 
-    if (!pending || pending.expiresAt < Date.now()) {
-      pendingOAuthStore.delete(userId);
+    if (!pending) {
       res.status(404).json({ error: 'No pending OAuth session. Please initiate OAuth again.' });
       return;
     }
@@ -182,10 +167,10 @@ export async function getPhoneNumbers(req: AuthRequest, res: Response): Promise<
 export async function selectPhoneNumber(req: AuthRequest, res: Response): Promise<void> {
   try {
     const userId = req.user!.id;
-    const pending = pendingOAuthStore.get(userId);
+    const loginTenantId = getTenantId() ?? '';
+    const pending = await whatsappOAuthStore().getPending(loginTenantId, userId);
 
-    if (!pending || pending.expiresAt < Date.now()) {
-      pendingOAuthStore.delete(userId);
+    if (!pending) {
       res.status(404).json({ error: 'No pending OAuth session. Please initiate OAuth again.' });
       return;
     }
@@ -197,7 +182,7 @@ export async function selectPhoneNumber(req: AuthRequest, res: Response): Promis
     }
 
     // Verify selected phone is in the pending list
-    const selectedPhone = pending.phones.find(p => p.id === phoneNumberId);
+    const selectedPhone = (pending.phones as WABAPhoneNumber[]).find(p => p.id === phoneNumberId);
     if (!selectedPhone) {
       res.status(400).json({ error: 'Selected phone number not found in authorized accounts' });
       return;
@@ -235,7 +220,7 @@ export async function selectPhoneNumber(req: AuthRequest, res: Response): Promis
     });
 
     clearWhatsAppConfigCache();
-    pendingOAuthStore.delete(userId);
+    await whatsappOAuthStore().deletePending(loginTenantId, userId);
 
     // Subscribe WABA to this app so Meta sends webhook events (delivery receipts)
     const effectiveWabaId = wabaId || existingProvider.wabaId;

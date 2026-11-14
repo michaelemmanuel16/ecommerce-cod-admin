@@ -77,7 +77,7 @@ export interface PaymentProvider {
   /** The key the browser may see. Empty when none. */
   getPublicKey(tenantId: string): Promise<string>;
   /** Refuses keys that cannot belong to this mode (a live key in test mode). Throws a 400 AppError. Optional. */
-  validateCredentials?(mode: string, secretKey: string): void;
+  validateCredentials?(mode: string, secretKey: string | null | undefined, publicKey?: string | null): void;
   /** Calls the provider with the stored keys. Never throws for a bad key: it reports ok false. */
   testConnection(tenantId: string): Promise<ConnectionCheck>;
   /** Drops cached credentials after a settings change. No tenant id drops all. */
