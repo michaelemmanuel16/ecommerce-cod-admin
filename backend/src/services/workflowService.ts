@@ -4,8 +4,12 @@ import { WorkflowTriggerType, Prisma, Workflow } from '@prisma/client';
 import logger from '../utils/logger';
 import { enqueueWorkflowRun } from '../queues/workflowEnqueue';
 import { evaluateConditions as evaluateConditionRules } from '../utils/conditionEvaluator';
-import { getTenantId, resolveTenantId, runInTenant } from '../utils/tenantContext';
+import { getTenantId, resolveTenantId, runInTenant, withoutTenant } from '../utils/tenantContext';
 import { AppEvent, OrderCreatedEvent, OrderStatusChangedEvent, onOrderEvent } from '../utils/appEvents';
+import { onPaymentSettled, PaymentSettledEvent } from './payments/settlementHooks';
+import { syncWorkflowSchedule, validateSchedule } from '../queues/workflowSchedule';
+import * as Money from '../utils/money';
+import crypto from 'crypto';
 
 /** M2-T17 loop guard: a workflow-caused move stops at this depth; one run per order per workflow per window. */
 const LOOP_GUARD_MAX_DEPTH = 3;
@@ -40,6 +44,39 @@ interface CreateWorkflowData {
   actions: any[];
   conditions?: any;
 }
+
+/**
+ * The schedule trigger is stored as `time_based` (the schema has no `schedule` value; lane A owns the schema).
+ * The API accepts `schedule` as another word for it.
+ */
+export const SCHEDULE_TRIGGER: WorkflowTriggerType = 'time_based';
+export function normalizeTriggerType(value: unknown): WorkflowTriggerType {
+  return (value === 'schedule' ? SCHEDULE_TRIGGER : value) as WorkflowTriggerType;
+}
+
+/** sha256 hex of a webhook token: the only form that is stored. */
+export const hashWebhookToken = (token: string) => crypto.createHash('sha256').update(token).digest('hex');
+/** 32 random bytes, base64url. */
+export const newWebhookToken = () => crypto.randomBytes(32).toString('base64url');
+
+/** What a workflow looks like to a client: never the token hash. A webhook workflow says whether it has a token. */
+export function publicWorkflow<T extends { webhookTokenHash?: string | null; triggerType?: string }>(workflow: T) {
+  const { webhookTokenHash, ...rest } = workflow;
+  return workflow.triggerType === 'webhook' ? { ...rest, hasWebhookToken: !!webhookTokenHash } : rest;
+}
+
+/** True when the conditions hold at least one rule (the old key-value shape counts each key). */
+export function hasConditionRules(conditions: any): boolean {
+  if (!conditions || typeof conditions !== 'object') return false;
+  if (Array.isArray(conditions.rules)) {
+    return conditions.rules.some((r: any) => (r && Array.isArray(r.rules) ? hasConditionRules(r) : true));
+  }
+  return Object.keys(conditions).some((k) => k !== 'id' && k !== 'logic');
+}
+
+const WEBHOOK_DATA_MAX_CHARS = 64_000;
+const IDEMPOTENCY_HEADER_MAX = 200;
+const UPDATABLE_FIELDS = ['name', 'description', 'triggerType', 'triggerData', 'actions', 'conditions', 'isActive'] as const;
 
 interface WorkflowFilters {
   isActive?: boolean;
@@ -89,7 +126,22 @@ export class WorkflowService {
       orderBy: { createdAt: 'desc' }
     });
 
-    return workflows;
+    return workflows.map(publicWorkflow);
+  }
+
+  /**
+   * The checks a trigger needs at save (M9-T22). A schedule has a valid cron and time zone (the zone defaults to the
+   * store's) and no conditions: it runs with no order, so a rule on an order field could never be true.
+   * Returns the trigger data to store.
+   */
+  private async validateTrigger(triggerType: WorkflowTriggerType, triggerData: any, conditions: any): Promise<any> {
+    if (triggerType !== SCHEDULE_TRIGGER) return triggerData;
+    if (hasConditionRules(conditions)) {
+      throw new AppError('A schedule workflow runs with no order, so it cannot have conditions on order fields', 400);
+    }
+    const config = await prisma.systemConfig.findFirst({ select: { timeZone: true } });
+    const schedule = validateSchedule(triggerData, config?.timeZone || undefined);
+    return { ...(triggerData ?? {}), cron: schedule.cron, timeZone: schedule.timeZone };
   }
 
   /**
@@ -99,17 +151,23 @@ export class WorkflowService {
 
     // Validate actions
     this.validateWorkflowActions(data.actions);
+    const triggerType = normalizeTriggerType(data.triggerType);
+    const triggerData = await this.validateTrigger(triggerType, data.triggerData, data.conditions);
+    // A webhook workflow gets its token now; the raw token is returned once and only its hash is kept.
+    const webhookToken = triggerType === 'webhook' ? newWebhookToken() : undefined;
 
     const workflow = await prisma.workflow.create({
       data: {
         name: data.name,
         description: data.description,
-        triggerType: data.triggerType,
-        triggerData: data.triggerData,
+        triggerType,
+        triggerData,
         actions: data.actions,
         conditions: data.conditions || {},
-              }
+        ...(webhookToken ? { webhookTokenHash: hashWebhookToken(webhookToken) } : {}),
+      }
     });
+    await syncWorkflowSchedule(workflow);
 
     logger.info('Workflow created', {
       workflowId: workflow.id,
@@ -117,7 +175,7 @@ export class WorkflowService {
       triggerType: workflow.triggerType
     });
 
-    return workflow;
+    return { ...publicWorkflow(workflow), ...(webhookToken ? { webhookToken } : {}) };
   }
 
   /**
@@ -135,7 +193,7 @@ export class WorkflowService {
       throw new AppError('Workflow not found', 404);
     }
 
-    return workflow;
+    return publicWorkflow(workflow);
   }
 
   /**
@@ -156,19 +214,33 @@ export class WorkflowService {
       this.validateWorkflowActions(updateData.actions);
     }
 
+    // Only the editable fields are written: never the token hash, the tenant or the schedule bookkeeping.
     // Prisma ignores undefined fields on update. Explicitly convert to null
     // so clearing conditions/description actually persists to the DB.
-    const data: any = { ...updateData };
+    const data: any = {};
+    for (const field of UPDATABLE_FIELDS) if (field in updateData) data[field] = (updateData as any)[field];
     if ('conditions' in data && data.conditions === undefined) data.conditions = null;
     if ('description' in data && data.description === undefined) data.description = null;
+    if ('triggerType' in data) data.triggerType = normalizeTriggerType(data.triggerType);
+
+    // The trigger is checked as it will be saved: new values over the old ones
+    const triggerType: WorkflowTriggerType = data.triggerType ?? workflow.triggerType;
+    const conditions = 'conditions' in data ? data.conditions : workflow.conditions;
+    if ('triggerType' in data || 'triggerData' in data || 'conditions' in data) {
+      data.triggerData = await this.validateTrigger(triggerType, 'triggerData' in data ? data.triggerData : workflow.triggerData, conditions);
+    }
+    // Switching to a webhook trigger on a workflow with no token: it gets one, returned once.
+    const webhookToken = triggerType === 'webhook' && !workflow.webhookTokenHash ? newWebhookToken() : undefined;
+    if (webhookToken) data.webhookTokenHash = hashWebhookToken(webhookToken);
 
     const updated = await prisma.workflow.update({
       where: { id: workflowId },
       data,
     });
+    await syncWorkflowSchedule(updated);
 
     logger.info('Workflow updated', { workflowId });
-    return updated;
+    return { ...publicWorkflow(updated), ...(webhookToken ? { webhookToken } : {}) };
   }
 
   /**
@@ -187,6 +259,7 @@ export class WorkflowService {
     await prisma.workflow.delete({
       where: { id: workflowId }
     });
+    await syncWorkflowSchedule({ ...workflow, isActive: false });
 
     logger.info('Workflow deleted', { workflowId });
     return { message: 'Workflow deleted successfully' };
@@ -209,9 +282,10 @@ export class WorkflowService {
       where: { id: workflowId },
       data: { isActive }
     });
+    await syncWorkflowSchedule(updated);
 
     logger.info('Workflow status toggled', { workflowId, isActive });
-    return updated;
+    return publicWorkflow(updated);
   }
 
   /**
@@ -522,30 +596,12 @@ export class WorkflowService {
         workflows: workflows.map(w => w.id)
       });
 
-      // Fetch full order data with products for workflow evaluation
-      const fullOrder = await prisma.order.findUnique({
-        where: { id: order.id },
-        include: {
-          orderItems: {
-            include: {
-              product: true
-            }
-          },
-          customer: true
-        }
-      });
-
-      if (!fullOrder) {
+      // Full order data with products for workflow evaluation
+      const orderContext = await this.loadOrderContext(order.id);
+      if (!orderContext) {
         logger.error('Order not found for workflow triggering', { orderId: order.id });
         return;
       }
-
-      // Prepare context for workflow evaluation
-      const orderContext = {
-        ...fullOrder,
-        orderId: fullOrder.id,
-        productName: (fullOrder.orderItems || []).map((item: any) => item.product?.name || 'Unknown Product').join(', ')
-      };
 
       const recent = await this.recentRunIds(workflows.map((w) => w.id), order.id, 0);
 
@@ -568,6 +624,95 @@ export class WorkflowService {
       });
       throw error;
     }
+  }
+
+  /**
+   * The order as a workflow run's input: the order with its items and customer, plus `orderId` and `productName`
+   * (what conditions read: `region` reads `deliveryState`). Null when the order is gone.
+   */
+  async loadOrderContext(orderId: number) {
+    const fullOrder = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { orderItems: { include: { product: true } }, customer: true },
+    });
+    if (!fullOrder) return null;
+    return {
+      ...fullOrder,
+      orderId: fullOrder.id,
+      productName: (fullOrder.orderItems || []).map((item: any) => item.product?.name || 'Unknown Product').join(', '),
+    };
+  }
+
+  /**
+   * `payment_received` workflows (M9-T22): fired once when an online payment settles and the order's payment is paid.
+   * `idempotencyKey = payment:<orderId>:<reference>`, so a duplicate webhook that settles the same reference twice runs once.
+   * The workflow's conditions are checked against the order. Never throws: the payment is already booked.
+   */
+  async onPaymentSettled(evt: PaymentSettledEvent): Promise<void> {
+    try {
+      await runInTenant(evt.tenantId, async () => {
+        const workflows = await prisma.workflow.findMany({ where: { isActive: true, triggerType: 'payment_received' } }) || [];
+        if (workflows.length === 0) return;
+        const context = await this.loadOrderContext(evt.orderId);
+        if (!context) return;
+        const input = { ...context, depth: 0, paymentReference: evt.reference, paymentProvider: evt.provider, paymentAmount: Money.toApi(evt.amount) };
+        for (const workflow of workflows) {
+          try {
+            await this.runLoaded(workflow, input, undefined, {
+              triggerSource: 'payment', orderId: evt.orderId, idempotencyKey: `payment:${evt.orderId}:${evt.reference}`,
+            });
+          } catch (error: any) {
+            logger.error('Failed to trigger payment_received workflow', { workflowId: workflow.id, orderId: evt.orderId, error: error.message });
+          }
+        }
+      });
+    } catch (error: any) {
+      logger.error('Failed to trigger payment_received workflows', { orderId: evt.orderId, error: error.message });
+    }
+  }
+
+  /** A new webhook token for a workflow (M9-T22). The old one stops working. Returned once; only its hash is kept. */
+  async regenerateWebhookToken(workflowId: number) {
+    const workflow = await prisma.workflow.findUnique({ where: { id: workflowId } });
+    if (!workflow) throw new AppError('Workflow not found', 404);
+    if (workflow.triggerType !== 'webhook') throw new AppError('Only a webhook workflow has a token', 400);
+    const webhookToken = newWebhookToken();
+    await prisma.workflow.update({ where: { id: workflowId }, data: { webhookTokenHash: hashWebhookToken(webhookToken) } });
+    logger.info('Workflow webhook token regenerated', { workflowId });
+    return { webhookToken };
+  }
+
+  /**
+   * `POST /api/workflows/hooks/:token` (M9-T22), no login: the token finds the workflow by its hash.
+   * Unknown token: 404. Workflow off: 409. An `orderId` that is not an order of the workflow's tenant: 404.
+   * `Idempotency-Key` makes the run `webhook:<workflowId>:<key>`; a second call with it starts nothing.
+   */
+  async triggerWebhook(token: string, body: { orderId?: unknown; data?: unknown }, idempotencyHeader?: string) {
+    const workflow = await withoutTenant('workflow webhook token lookup', () => prisma.workflow.findFirst({
+      where: { webhookTokenHash: hashWebhookToken(token), triggerType: 'webhook' },
+    }));
+    if (!workflow || !workflow.tenantId) throw new AppError('Not found', 404);
+    if (!workflow.isActive) throw new AppError('Workflow is off', 409);
+
+    const { orderId, data } = body ?? {};
+    if (orderId !== undefined && (!Number.isInteger(orderId) || (orderId as number) <= 0)) throw new AppError('orderId must be a whole number', 400);
+    if (data !== undefined && JSON.stringify(data).length > WEBHOOK_DATA_MAX_CHARS) throw new AppError('data is too large', 400);
+    const header = typeof idempotencyHeader === 'string' ? idempotencyHeader.trim() : '';
+    if (header.length > IDEMPOTENCY_HEADER_MAX) throw new AppError('Idempotency-Key is too long', 400);
+
+    return runInTenant(workflow.tenantId, async () => {
+      let input: any = { data: data ?? null };
+      if (orderId !== undefined) {
+        // Tenant-scoped read: another tenant's order is not found
+        const context = await this.loadOrderContext(orderId as number);
+        if (!context) throw new AppError('Order not found', 404);
+        input = { ...context, depth: 0, data: data ?? null };
+      }
+      return this.runLoaded(workflow, input, undefined, {
+        triggerSource: 'webhook', orderId: orderId as number | undefined,
+        ...(header ? { idempotencyKey: `webhook:${workflow.id}:${header}` } : {}),
+      });
+    });
   }
 
   /**
@@ -633,6 +778,7 @@ export function registerWorkflowListeners(): void {
   registered = true;
   onOrderEvent(AppEvent.ORDER_STATUS_CHANGED, (evt) => { void workflowService.onStatusChanged(evt); });
   onOrderEvent(AppEvent.ORDER_CREATED, (evt) => { void workflowService.onOrderCreated(evt); });
+  onPaymentSettled((evt) => workflowService.onPaymentSettled(evt));
 }
 
 export default workflowService;

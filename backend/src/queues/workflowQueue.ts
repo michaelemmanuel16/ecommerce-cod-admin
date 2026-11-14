@@ -32,6 +32,8 @@ export const EXECUTE_JOB = 'execute-workflow';
 export const RESUME_JOB = 'resume-workflow';
 /** Repeat job: add the runs waiting in the trigger outbox (queue was down when they fired). */
 export const DRAIN_OUTBOX_JOB = 'drain-workflow-outbox';
+/** Repeat job of one schedule workflow (M9-T22), see workflowSchedule.ts. */
+export const SCHEDULE_JOB = 'run-scheduled-workflow';
 /** Bull keeps a delay in a 32-bit field. */
 const MAX_DELAY_MS = 2 ** 31 - 1;
 
@@ -231,6 +233,8 @@ export function registerWorkflowProcessors(queue: Bull.Queue): void {
   queue.process(RESUME_JOB, (job: Bull.Job) => processResumeWorkflow(job, queue));
   // Loaded when the job runs: workflowEnqueue imports this module
   queue.process(DRAIN_OUTBOX_JOB, async () => (await import('./workflowEnqueue')).drainWorkflowOutbox());
+  // Same reason: workflowSchedule imports this module
+  queue.process(SCHEDULE_JOB, async (job: Bull.Job) => (await import('./workflowSchedule')).processScheduledJob(job));
 }
 
 /** Start the 30 s outbox drain. Replaces an older repeat of the same job, so a restart never doubles it. */
