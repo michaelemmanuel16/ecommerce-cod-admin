@@ -7,6 +7,7 @@ import logger from '../../../utils/logger';
 import { maskEmail } from '../../../utils/mask';
 import { decryptProviderSecrets } from '../../../utils/providerCrypto';
 import { getTenantId } from '../../../utils/tenantContext';
+import { resolveSmtpHost } from '../../../utils/smtpHost';
 import { CallbackRequest, MessagingProvider, ParsedStatus, ProviderSendInput, ProviderSendResult } from '../types';
 
 // ---------- Types ----------
@@ -198,11 +199,16 @@ let resendApiKey: string | null = null;
 let smtpTransporter: nodemailer.Transporter | null = null;
 let smtpConfigKey: string | null = null;
 
-function getSmtpTransporter(config: EmailConfig): nodemailer.Transporter {
-  const key = `${config.smtpUser ?? config.fromEmail}:${config.apiKey}:${config.smtpHost}:${config.smtpPort}`;
+async function getSmtpTransporter(config: EmailConfig): Promise<nodemailer.Transporter> {
+  // The host is checked on every send (a name can change its DNS answer), so the cache holds only the transport built
+  // from the address checked now: a new answer is a new key.
+  const host = config.smtpHost || 'smtp.gmail.com';
+  const { address, tls } = await resolveSmtpHost(host);
+  const key = `${config.smtpUser ?? config.fromEmail}:${config.apiKey}:${address}:${host}:${config.smtpPort}`;
   if (smtpTransporter && smtpConfigKey === key) return smtpTransporter;
   smtpTransporter = nodemailer.createTransport({
-    host: config.smtpHost || 'smtp.gmail.com',
+    host: address,
+    ...(tls ? { tls } : {}),
     port: config.smtpPort || 587,
     secure: config.smtpSecure || false,
     auth: { user: config.smtpUser || config.fromEmail, pass: config.apiKey },
@@ -274,7 +280,7 @@ export const emailProvider: MessagingProvider = {
           break;
         }
         case 'smtp': {
-          const info = await getSmtpTransporter(config).sendMail(message);
+          const info = await (await getSmtpTransporter(config)).sendMail(message);
           providerMessageId = info?.messageId;
           break;
         }

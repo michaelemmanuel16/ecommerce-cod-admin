@@ -28,6 +28,7 @@ import { ROLE_NAME_BY_USER_ROLE } from '../config/defaultRoles';
 import { assignmentSelect } from './roleService';
 import { emailConflictOf } from '../utils/prismaErrors';
 import { newInviteToken } from '../utils/inviteToken';
+import { resolveSmtpHost } from '../utils/smtpHost';
 import { startOfUtcDay } from '../utils/startOfUtcDay';
 import { formTenantBySlug } from './tenantLookupService';
 import { clearCheckoutFormConfigCache } from './checkoutFormService';
@@ -362,6 +363,10 @@ export const adminService = {
         throw error;
       }
     }
+
+    // A private, loopback or link-local SMTP host is refused at save time (M9 /cso, COD-86).
+    const incomingEmail = data.emailProvider as any;
+    if (incomingEmail?.provider === 'smtp' && incomingEmail.smtpHost?.trim()) await resolveSmtpHost(incomingEmail.smtpHost.trim());
 
     // Strip masked placeholders, preserve OAuth state, then encrypt — keyed off
     // SENSITIVE_FIELDS so adding a new integration is a one-line map update.
