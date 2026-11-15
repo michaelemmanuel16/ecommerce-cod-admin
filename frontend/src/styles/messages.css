@@ -119,6 +119,7 @@
 .v2 .msgs-page .bar2{display:flex;gap:8px;padding:12px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap;align-items:center}
 .v2 .msgs-page .bar2 .srch{min-width:240px;flex:1 1 240px;max-width:360px}
 .v2 .msgs-page .otab td,.v2 .msgs-page .otab th{padding-left:14px;padding-right:14px;white-space:nowrap}
+.v2 .msgs-page .otab .pct.err{white-space:normal;max-width:280px;overflow-wrap:anywhere}
 .v2 .msgs-page .otab td:first-child,.v2 .msgs-page .otab th:first-child{padding-left:20px}
 .v2 .msgs-page .otab td:last-child,.v2 .msgs-page .otab th:last-child{padding-right:20px}
 @media (max-width:760px){.v2 .msgs-page .bar2{padding:12px 16px}.v2 .msgs-page .bar2 .srch{max-width:none}}

@@ -23,3 +23,7 @@ export const initials = (name: string): string => {
 
 /** 94 -> "94%", null -> a dash (nothing was sent). */
 export const rateText = (n: number | null | undefined): string => (n === null || n === undefined ? '-' : `${n}%`);
+
+/** A provider's raw answer can run to hundreds of characters; the row shows the start of it and the title holds all of it. */
+const REASON_MAX = 120;
+export const clipReason = (text: string) => (text.length > REASON_MAX ? `${text.slice(0, REASON_MAX).trimEnd()}...` : text);

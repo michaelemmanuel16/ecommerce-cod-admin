@@ -5,7 +5,7 @@ import { BlockError } from '../dashboard/blocks/Frame';
 import { EmptyState, Pagination, Select, Skeleton, Table, Tag } from '../../components/ui-v2';
 import { messagesService } from '../../services/messages.service';
 import { formatStamp } from '../../utils/format';
-import { CHANNEL_LABEL, STATUS_LABEL, STATUS_TONE } from './format';
+import { CHANNEL_LABEL, STATUS_LABEL, STATUS_TONE, clipReason } from './format';
 import { datesFor, isLogRangeKey, LOG_RANGES, type LogRangeKey } from './range';
 import { useLoad } from './useLoad';
 import type { Channel, LogRow, LogStatus } from './types';
@@ -100,7 +100,7 @@ export function LogTab() {
               { key: 'tpl', header: 'Template', render: (r) => r.templateName ?? '-' },
               {
                 key: 'status', header: 'Status',
-                render: (r) => <><Tag tone={STATUS_TONE[r.status] ?? 'n'}>{STATUS_LABEL[r.status]}</Tag>{r.status === 'failed' && r.errorMessage && <span className="pct">{r.errorMessage}</span>}</>,
+                render: (r) => <><Tag tone={STATUS_TONE[r.status] ?? 'n'}>{STATUS_LABEL[r.status]}</Tag>{r.status === 'failed' && r.errorMessage && <span className="pct err" title={r.errorMessage}>{clipReason(r.errorMessage)}</span>}</>,
               },
               { key: 'order', header: 'Order', render: (r) => (r.order ? <Link className="lnk" to={`/orders/${r.order.id}`}>#{r.order.id}</Link> : '-') },
             ]}

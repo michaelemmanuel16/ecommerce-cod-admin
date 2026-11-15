@@ -104,6 +104,16 @@ describe('Messages page: Message log', () => {
     expect(await screen.findByText('No message matches these filters')).toBeInTheDocument();
   });
 
+  it('clips a long provider error so the row stays inside the page, and keeps the full text in the title', async () => {
+    const raw = `WhatsApp API error 404: ${'{"error":"Template name does not exist in the translation"}'.repeat(6)}`;
+    svc.log.mockResolvedValue({ items: [logRow({ id: 3, status: 'failed', errorMessage: raw })], total: 1, nextCursor: null });
+    renderPage('/messages?tab=log');
+    const reason = await screen.findByTitle(raw);
+    expect(reason.textContent!.length).toBeLessThan(raw.length);
+    expect(reason.textContent).toMatch(/\.\.\.$/);
+    expect(reason).toHaveClass('err');
+  });
+
   it('pages with the cursor from the API and goes back', async () => {
     svc.log.mockResolvedValueOnce({ items: [logRow({ id: 1 })], total: 120, nextCursor: 'CUR2' });
     svc.log.mockResolvedValueOnce({ items: [logRow({ id: 2, customer: { id: 8, name: 'Kofi Page Two' } })], total: 120, nextCursor: null });
