@@ -54,3 +54,4 @@
   .v2 .cdetail .cols{grid-template-columns:1fr}
   .v2 .cdetail dl{grid-template-columns:110px 1fr}
 }
+.v2 .ctwrap .ctpad{padding:16px 20px}

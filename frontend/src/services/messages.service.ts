@@ -1,5 +1,5 @@
 import { apiClient } from './api';
-import type { Assignee, ConversationList, Channel, LogPage, LogStatus, Overview, ReplyTemplate, Thread } from '../pages/messages/types';
+import type { Assignee, ConversationList, Channel, LogPage, LogStatus, Overview, ReplyTemplate, Thread, TrackedMessages } from '../pages/messages/types';
 
 // Every call is quiet: the page shows the server's sentence itself (a toast or an inline line).
 const quiet = { quiet: true } as const;
@@ -61,6 +61,12 @@ export const messagesService = {
 
   async log(filters: MessageFilters & { status?: LogStatus; recipient?: string; cursor?: string; limit?: number }): Promise<LogPage> {
     const { data } = await apiClient.get<LogPage>('/api/messages/log', { params: filters, skipCache: true, ...quiet });
+    return data;
+  },
+
+  /** GET /api/orders/:id/messages or /api/customers/:id/messages: what was sent about one order or to one customer, with status. */
+  async forSubject(type: 'order' | 'customer', id: number): Promise<TrackedMessages> {
+    const { data } = await apiClient.get<TrackedMessages>(`/api/${type}s/${id}/messages`, { skipCache: true, ...quiet });
     return data;
   },
 };

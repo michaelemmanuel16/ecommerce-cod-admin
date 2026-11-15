@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
-import { Pencil, Bell } from 'lucide-react';
+import { Pencil } from 'lucide-react';
 import { Button, Drawer, EmptyState, Modal, Select, Skeleton, Tag, useToast } from '../../../components/ui-v2';
 import { ordersService, type OrderDetail, type OrderListRow, type TimelineEntry } from '../../../services/orders.service';
 import { callsService } from '../../../services/calls.service';
@@ -15,6 +15,9 @@ import { orderNumber } from '../model';
 import { declineReasonLabel, failureReasonLabel } from '../reasons';
 import { useFilterOptions } from '../useFilterOptions';
 import { RunDialog } from '../../workflows/RunDialog';
+import { SubjectReminder } from '../../inbox/SubjectReminder';
+import { ThreadPanel } from '../../inbox/ThreadPanel';
+import { MessagesBlock } from '../../messages/MessagesBlock';
 import { useOrderActions } from '../useOrderActions';
 import { CallsBlock } from './CallsBlock';
 import { CustomerEdit, ItemsEdit, PaymentEdit } from './EditBlocks';
@@ -232,15 +235,7 @@ export function OrderDrawer({ id, onClose }: OrderDrawerProps) {
                     </optgroup>
                   )}
                 </Select>
-                <div className="fl">
-                  <label>Follow up</label>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <Button disabled title="Reminders arrive with the Inbox">
-                      <Bell aria-hidden="true" /> Set reminder
-                    </Button>
-                    <span className="hint" style={{ marginTop: 0 }}>No reminder set.</span>
-                  </div>
-                </div>
+                <SubjectReminder subject={{ type: 'order', id: order.id }} note={`Follow up on ${orderNumber(order.id)}`} />
               </div>
             </div>
 
@@ -346,12 +341,18 @@ export function OrderDrawer({ id, onClose }: OrderDrawerProps) {
 
             <div className="sec">
               <h4>Messages</h4>
-              <p className="hint">No messages yet. Messages sent to this customer about this order show here.</p>
+              <MessagesBlock
+                type="order"
+                id={order.id}
+                phone={order.customer.phoneNumber}
+                canOpenConversation={can('messages', 'view')}
+                emptyText="No messages yet. Messages sent to this customer about this order show here."
+              />
             </div>
 
             <div className="sec">
               <h4>Team notes</h4>
-              <p className="hint">No notes yet. Team notes arrive with the Inbox.</p>
+              <ThreadPanel subject={{ type: 'order', id: order.id }} />
             </div>
           </>
         )}

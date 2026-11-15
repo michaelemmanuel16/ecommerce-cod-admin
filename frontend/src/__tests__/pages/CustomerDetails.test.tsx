@@ -22,6 +22,12 @@ vi.mock('../../services/customers.service', () => ({
   },
 }));
 
+const inboxSvc = vi.hoisted(() => ({ listReminders: vi.fn(), createReminder: vi.fn(), cancelReminder: vi.fn(), getThread: vi.fn(), mentionable: vi.fn(), addComment: vi.fn() }));
+vi.mock('../../services/inbox.service', async (orig) => ({ ...(await orig<typeof import('../../services/inbox.service')>()), inboxService: inboxSvc }));
+const messagesSvc = vi.hoisted(() => ({ forSubject: vi.fn() }));
+vi.mock('../../services/messages.service', () => ({ messagesService: messagesSvc }));
+const EMPTY_THREAD = { id: null, subjectType: 'customer', subjectId: 1, archived: false, unreadCount: 0, comments: [] };
+
 function Where() {
   const loc = useLocation();
   return <output data-testid="where">{loc.pathname + loc.search}</output>;
@@ -47,6 +53,10 @@ const ALL = { customers: ['view', 'create', 'update', 'delete', 'export'], order
 beforeEach(() => {
   [getCustomerDetail, deleteCustomer, updateCustomer, overrideCod].forEach((m) => m.mockReset());
   getCustomerDetail.mockResolvedValue(DETAIL);
+  messagesSvc.forSubject.mockReset().mockResolvedValue({ items: [] });
+  inboxSvc.listReminders.mockReset().mockResolvedValue([]);
+  inboxSvc.getThread.mockReset().mockResolvedValue(EMPTY_THREAD);
+  inboxSvc.mentionable.mockReset().mockResolvedValue([]);
   useConfigStore.setState({ currency: 'GHS', loaded: true });
   useAuthStore.setState({ user: { id: 1, role: 'admin', firstName: 'Manny', lastName: 'A' } as never, permissions: ALL });
 });
@@ -129,13 +139,13 @@ describe('Customer detail: tabs (F-354)', () => {
   });
 
   it.each([
-    ['Messages', 'No messages yet'],
-    ['Calls', 'No calls yet'],
-    ['Notes', 'No notes yet'],
-  ])('%s shows an empty state until M9', async (tab, title) => {
+    ['Messages', /No messages yet/],
+    ['Calls', /No calls yet/],
+    ['Notes', /No notes yet/],
+  ])('%s shows an empty state', async (tab, title) => {
     renderPage();
     await userEvent.click(await screen.findByRole('tab', { name: tab }));
-    expect(screen.getByText(title)).toBeInTheDocument();
+    expect(await screen.findByText(title)).toBeInTheDocument();
   });
 
   it('a customer with no orders says so', async () => {

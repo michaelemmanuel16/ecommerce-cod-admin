@@ -13,6 +13,8 @@ import { ORDER_STATUS_LABELS } from '../utils/orderStatus';
 import type { OrderStatus } from '../types';
 import { RiskTags } from './customers/RiskTags';
 import { CustomerModal } from './customers/CustomerModal';
+import { ThreadPanel } from './inbox/ThreadPanel';
+import { MessagesBlock } from './messages/MessagesBlock';
 import { AVATAR_TONES, initials } from '../utils/people';
 import { customerName, lastOrderDate } from './customers/model';
 import { orderNumber, shortDate, STATUS_TONE } from './orders/model';
@@ -44,7 +46,7 @@ const dash = <span className="mut">—</span>;
 
 /**
  * The customer page (M3-T50, F-354). No mockup: built in the v2 style from the Orders and Dashboard parts.
- * Messages, Calls and Notes wait for M9 and show an empty state.
+ * Messages and Notes (M9-T36) read the message tracking and the team note thread. Calls waits and shows an empty state.
  */
 export function CustomerDetails() {
   useV2Page();
@@ -331,9 +333,13 @@ export function CustomerDetails() {
                 )}
               </>
             ))}
-          {tab === 'messages' && <EmptyState title="No messages yet" text="Messages sent to this customer will show here." />}
+          {tab === 'messages' && (
+            <div className="ctpad">
+              <MessagesBlock type="customer" id={customer.id} phone={customer.phoneNumber} canOpenConversation={can('messages', 'view')} emptyText="No messages yet. Messages sent to this customer show here." />
+            </div>
+          )}
           {tab === 'calls' && <EmptyState title="No calls yet" text="Calls with this customer will show here." />}
-          {tab === 'notes' && <EmptyState title="No notes yet" text="The team's notes on this customer will show here." />}
+          {tab === 'notes' && <div className="ctpad"><ThreadPanel subject={{ type: 'customer', id: customer.id }} /></div>}
         </div>
       </div>
 

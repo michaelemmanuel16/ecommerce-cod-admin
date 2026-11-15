@@ -122,3 +122,14 @@
 .v2 .msgs-page .otab td:first-child,.v2 .msgs-page .otab th:first-child{padding-left:20px}
 .v2 .msgs-page .otab td:last-child,.v2 .msgs-page .otab th:last-child{padding-right:20px}
 @media (max-width:760px){.v2 .msgs-page .bar2{padding:12px 16px}.v2 .msgs-page .bar2 .srch{max-width:none}}
+
+/* M9-T36: the messages block on the order drawer and the customer page */
+.v2 .mtrk ul{list-style:none;display:flex;flex-direction:column}
+.v2 .mtrk li{padding:10px 0;border-bottom:1px solid var(--line)}
+.v2 .mtrk li:last-child{border-bottom:0}
+.v2 .mtrk .r1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.v2 .mtrk .r1 time{margin-left:auto;color:var(--ink-3);font-size:12.5px}
+.v2 .mtrk p{color:var(--ink-2);margin-top:4px;overflow-wrap:anywhere}
+.v2 .mtrk small{color:var(--ink-3);font-size:12.5px}
+.v2 .mtrk li.in{padding-left:12px;border-left:2px solid var(--line)}
+.v2 .mtrk .lnk{display:inline-block;margin-top:8px;color:var(--pine);font-weight:600}
