@@ -111,6 +111,19 @@ describe('Inbox page: row actions', () => {
     expect(useInboxStore.getState().counts?.all).toBe(2); // the server's count
   });
 
+  it('a snoozed row has Mark done (and Stop snooze), and Mark done sends done', async () => {
+    const snoozed = { ...ORDER_ROW, snoozedUntil: new Date(Date.now() + 3600_000).toISOString() };
+    svc.list.mockImplementation(async (q) => ({ items: q.status === 'snoozed' ? [snoozed] : [ORDER_ROW, MENTION_ROW], nextCursor: null }));
+    renderPage();
+    await screen.findByText('Order 12 was assigned to you');
+    await userEvent.click(screen.getByRole('button', { name: /^Snoozed/ }));
+    await waitFor(() => expect(svc.list).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'snoozed' })));
+    const row = await screen.findByTestId('inbox-row');
+    expect(within(row).getByRole('button', { name: 'Stop snooze' })).toBeInTheDocument();
+    await userEvent.click(within(row).getByRole('button', { name: 'Mark done' }));
+    expect(svc.patch).toHaveBeenCalledWith(1, { done: true });
+  });
+
   it('Snooze offers future times and sends the chosen one', async () => {
     renderPage();
     const row = (await screen.findAllByTestId('inbox-row'))[0];

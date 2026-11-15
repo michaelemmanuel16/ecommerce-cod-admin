@@ -93,7 +93,12 @@ export function InboxRow({ item, status, writable, linkFor, onRead, onDone, onSn
               </div>
             </>
           )}
-          {status === 'snoozed' && <button type="button" aria-label="Stop snooze" title="Stop snooze" onClick={() => onSnooze(item, null)}><AlarmClock /></button>}
+          {status === 'snoozed' && (
+            <>
+              <button type="button" aria-label="Mark done" title="Mark done" onClick={() => onDone(item, true)}><Check /></button>
+              <button type="button" aria-label="Stop snooze" title="Stop snooze" onClick={() => onSnooze(item, null)}><AlarmClock /></button>
+            </>
+          )}
           {status === 'done' && <button type="button" aria-label="Reopen" title="Reopen" onClick={() => onDone(item, false)}><Undo2 /></button>}
           <button type="button" aria-label="Set reminder" title="Set reminder" onClick={() => onRemind(item)}><AlarmClockPlus /></button>
         </div>
