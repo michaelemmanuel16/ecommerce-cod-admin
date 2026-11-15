@@ -6,10 +6,11 @@ import { ToastProvider } from '../../components/ui-v2';
 import { Messages } from '../../pages/Messages';
 
 const comm = vi.hoisted(() => ({
-  getTemplates: vi.fn(), getRecipients: vi.fn(), bulkSendSms: vi.fn(), bulkSendWhatsApp: vi.fn(), getCampaigns: vi.fn(),
+  getRecipients: vi.fn(), bulkSendSms: vi.fn(), bulkSendWhatsApp: vi.fn(), getCampaigns: vi.fn(),
 }));
 vi.mock('../../services/communication.service', () => ({ communicationService: comm }));
-vi.mock('../../services/messages.service', () => ({ messagesService: { listConversations: vi.fn().mockResolvedValue({ items: [], nextCursor: null }) } }));
+const msgs = vi.hoisted(() => ({ listConversations: vi.fn(), listTemplates: vi.fn() }));
+vi.mock('../../services/messages.service', () => ({ messagesService: msgs }));
 vi.mock('../../services/products.service', () => ({ productsService: { getProducts: vi.fn().mockResolvedValue([{ id: 3, name: 'Copybook set', isActive: true }]) } }));
 
 let role: 'admin' | 'manager' = 'admin';
@@ -34,7 +35,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   role = 'admin';
   canCreate = true;
-  comm.getTemplates.mockResolvedValue([{ id: 1, name: 'Restock', body: 'Pens are back', createdAt: '', updatedAt: '' }]);
+  msgs.listConversations.mockResolvedValue({ items: [], nextCursor: null });
+  msgs.listTemplates.mockResolvedValue([{ id: 1, channel: 'sms', name: 'Restock', body: 'Pens are back' }]);
   comm.getRecipients.mockResolvedValue([recipient(1, 'Ama'), recipient(2, 'Kofi')]);
   comm.bulkSendSms.mockResolvedValue({ total: 3, skipped: 1, results: [{ customerId: 1, success: true }, { customerId: 2, success: true }, { customerId: 3, success: false, skipped: true }] });
   comm.bulkSendWhatsApp.mockResolvedValue({ total: 2, skipped: 0, results: [{ customerId: 1, success: true }, { customerId: 2, success: false, error: 'x' }] });

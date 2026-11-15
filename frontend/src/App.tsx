@@ -65,7 +65,6 @@ const RepCallPage = lazy(() => import('./pages/rep/RepCallPage'));
 const EarningsHistory = lazy(() => import('./pages/EarningsHistory'));
 const AgentMyInventory = lazy(() => import('./pages/AgentMyInventory'));
 const Inventory = lazy(() => import('./pages/Inventory').then(m => ({ default: m.Inventory })));
-const Communications = lazy(() => import('./pages/Communications'));
 const Messages = lazy(() => import('./pages/Messages').then(m => ({ default: m.Messages })));
 const SubscriptionCallback = lazy(() => import('./pages/SubscriptionCallback').then(m => ({ default: m.SubscriptionCallback })));
 const PlatformLogin = lazy(() => import('./pages/PlatformLogin').then(m => ({ default: m.PlatformLogin })));
@@ -406,9 +405,7 @@ function App() {
             <Route path="messages" element={
               <Suspense fallback={<Loading />}><Messages /></Suspense>
             } />
-            <Route path="communications" element={
-              <Suspense fallback={<Loading />}><Communications /></Suspense>
-            } />
+            <Route path="communications" element={<Navigate to="/messages" replace />} />
             <Route path="settings" element={
               <Suspense fallback={<Loading />}><Settings /></Suspense>
             } />

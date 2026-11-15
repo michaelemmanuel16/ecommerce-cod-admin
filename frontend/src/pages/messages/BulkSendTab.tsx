@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react';
 import { Send, Users } from 'lucide-react';
 import { Button, ConfirmDialog, EmptyState, Input, Select, Table, useToast } from '../../components/ui-v2';
 import { WHATSAPP_TEMPLATE_OPTIONS } from '../../constants/workflow';
-import { communicationService, type BulkSendResult, type Recipient, type SmsTemplate } from '../../services/communication.service';
+import { communicationService, type BulkSendResult, type Recipient } from '../../services/communication.service';
+import { messagesService } from '../../services/messages.service';
 import { productsService } from '../../services/products.service';
 import type { Product } from '../../types';
 import { apiMessage } from '../orders/importText';
 import { countText } from './format';
+import type { MessageTemplate } from './types';
 
 type Channel = 'sms' | 'whatsapp';
 const SHOWN = 50;
@@ -18,7 +20,7 @@ const SHOWN = 50;
 export function BulkSendTab() {
   const say = useToast();
   const [channel, setChannel] = useState<Channel>('sms');
-  const [templates, setTemplates] = useState<SmsTemplate[]>([]);
+  const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [templateId, setTemplateId] = useState('');
   const [text, setText] = useState('');
@@ -34,7 +36,7 @@ export function BulkSendTab() {
   const [result, setResult] = useState<(BulkSendResult & { channel: Channel }) | null>(null);
 
   useEffect(() => {
-    communicationService.getTemplates().then(setTemplates, () => setTemplates([]));
+    messagesService.listTemplates({ channel: 'sms' }).then(setTemplates, () => setTemplates([]));
     productsService.getProducts().then((p) => setProducts(p.filter((x) => x.isActive)), () => setProducts([]));
   }, []);
 

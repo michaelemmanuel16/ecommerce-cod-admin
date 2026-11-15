@@ -122,3 +122,54 @@ export interface TrackedMessages {
   /** Customer route only. */
   optOut?: { whatsapp: boolean; sms: boolean; email: boolean };
 }
+
+/** One template from GET /api/message-templates (backend templateService.toApi). `status` is Meta's, for WhatsApp only. */
+export interface MessageTemplate {
+  id: number;
+  channel: Channel;
+  name: string;
+  key: string | null;
+  subject: string | null;
+  body: string;
+  variables: string[];
+  language: string | null;
+  category: string | null;
+  /** approved, pending, rejected or paused. Null for SMS and email, and for a WhatsApp template not yet read from Meta. */
+  status: string | null;
+  rejectReason: string | null;
+  metaTemplateName: string | null;
+  quickReplies: string[] | null;
+  sendable: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** The body of POST and PUT /api/message-templates. */
+export interface TemplateInput {
+  name?: string;
+  subject?: string | null;
+  body?: string;
+  language?: string;
+  category?: string;
+  metaTemplateName?: string;
+}
+
+/** One row of GET /api/messages/opt-outs: a customer (or a bare phone) opted out of one channel. */
+export interface OptOutRow {
+  key: string;
+  channel: Channel;
+  customerId: number | null;
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+  area: string | null;
+  since: string | null;
+  reason: string | null;
+}
+
+export interface OptOutPage {
+  items: OptOutRow[];
+  total: number;
+  page: number;
+  limit: number;
+}

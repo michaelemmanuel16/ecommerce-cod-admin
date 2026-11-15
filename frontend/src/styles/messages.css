@@ -133,3 +133,32 @@
 .v2 .mtrk small{color:var(--ink-3);font-size:12.5px}
 .v2 .mtrk li.in{padding-left:12px;border-left:2px solid var(--line)}
 .v2 .mtrk .lnk{display:inline-block;margin-top:8px;color:var(--pine);font-weight:600}
+/* Templates and Opt-outs (T34, T35): the mockup's .tgrid .tpl .tags, and the tab bar's right-hand actions */
+.v2 .msgs-page .bar2 .rt{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.v2 .msgs-page .bar2 .note{font-size:13px}
+.v2 .msgs-page .tgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;padding:16px 20px 20px}
+.v2 .msgs-page .tpl{border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:9px;min-width:0}
+.v2 .msgs-page .tpl .tt{display:flex;gap:8px;align-items:flex-start;justify-content:space-between}
+.v2 .msgs-page .tpl .tt b{font-size:14px;overflow-wrap:anywhere}
+.v2 .msgs-page .tpl .tg2{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;flex:none}
+.v2 .msgs-page .tpl p{color:var(--ink-2);font-size:13px;background:var(--hover);padding:9px 11px;border-radius:11px;flex:1;white-space:pre-wrap;overflow-wrap:anywhere;max-height:150px;overflow:hidden}
+.v2 .msgs-page .tpl .acts{display:flex;gap:6px}
+.v2 .msgs-page .tpl .acts .mini{display:inline-flex;align-items:center;gap:5px}
+.v2 .msgs-page .tpl .failnote2{color:var(--coral);font-size:12.5px}
+.tplform{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:20px;align-items:start}
+.tplform .fld{margin-bottom:14px}
+.tplform .fld>.lab,.tplform .tplprev>.lab{display:block;font-weight:600;font-size:13px;margin-bottom:6px}
+.tplform .fld.fl textarea{resize:vertical;min-height:110px;line-height:1.5}
+.tplform .two2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.tplform .tags{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:-4px 0 14px}
+.tplform .tags button{font:600 12px "Plus Jakarta Sans",system-ui,sans-serif;padding:3px 9px;border-radius:99px;background:var(--violet-soft);color:var(--violet)}
+.tplform .tags .ink3,.tplform .hint{font-size:12.5px;color:var(--ink-3)}
+.tplform .tplprev{position:sticky;top:0;display:flex;flex-direction:column;gap:8px;min-width:0}
+.tplform .tplprev .bub{padding:10px 13px;border-radius:14px 14px 14px 4px;background:var(--hover);font-size:13.5px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}
+.tplform .tplprev .sub{font-size:13.5px}
+.tplform .tplprev iframe{width:100%;height:260px;border:1px solid var(--line);border-radius:12px;background:#fff}
+@media (max-width:760px){.tplform{grid-template-columns:1fr}.tplform .tplprev{position:static}.tplform .two2{grid-template-columns:1fr}.v2 .msgs-page .tgrid{padding:16px}}
+/* the same field look inside a dialog of this page (a dialog renders outside .msgs-page) */
+.v2 .dlg .fld{margin-bottom:14px}
+.v2 .dlg .fld>.lab{display:block;font-weight:600;font-size:13px;margin-bottom:6px}
+.v2 .dlg .fld .seg{margin-top:0}

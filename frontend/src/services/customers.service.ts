@@ -1,5 +1,5 @@
 import apiClient from './api';
-import { Customer, PaginationMeta } from '../types';
+import type { Customer, PaginationMeta } from '../types';
 import { samePhone } from '../utils/phone';
 
 export const customersService = {
@@ -88,6 +88,12 @@ export const customersService = {
   /** Override COD status (F-357, M7-T06, M7-T20). */
   async overrideCod(customerId: number, data: { allow: boolean; note: string }): Promise<any> {
     const response = await apiClient.post(`/api/customers/${customerId}/cod-override`, data);
+    return response.data;
+  },
+
+  /** One opt-out flag of a customer (M9-T35). The API changes every customer with the same phone and writes an event for each. */
+  async setOptOut(customerId: number, channel: 'sms' | 'whatsapp' | 'email', optedOut: boolean): Promise<{ flags: { sms: boolean; whatsapp: boolean; email: boolean } }> {
+    const response = await apiClient.put(`/api/customers/${customerId}/opt-outs`, { channel, optedOut }, { quiet: true });
     return response.data;
   },
 

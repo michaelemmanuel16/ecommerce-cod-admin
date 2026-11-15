@@ -45,6 +45,31 @@ describe('Unsubscribe routes (MAN-81)', () => {
     expect((prismaMock.customer.update as any)).not.toHaveBeenCalled();
   });
 
+  it('GET confirm page carries the store name and its button colour, and works on a phone (M9-T35)', async () => {
+    (prismaMock.customer.findUnique as any).mockResolvedValue({ id: 7, emailOptOut: false, tenantId: 't1' });
+    (prismaMock.tenant.findUnique as any).mockResolvedValue({ name: 'Kora <Store>', logo: null });
+    (prismaMock.checkoutForm.findFirst as any).mockResolvedValue({ styling: { buttonColor: '#0A7D5A', accentColor: '#ff0000' } });
+
+    const res = await request(app).get(`/api/public/unsubscribe/${TOKEN}?channel=sms`);
+
+    expect(res.text).toContain('Kora &lt;Store&gt;');
+    expect(res.text).toContain('#0a7d5a');
+    expect(res.text).toContain('emails and SMS');
+    expect(res.text).toContain('width=device-width');
+  });
+
+  it('GET confirm page ignores a colour that is not hex, so nothing reaches the style', async () => {
+    (prismaMock.customer.findUnique as any).mockResolvedValue({ id: 7, emailOptOut: false, tenantId: 't1' });
+    (prismaMock.tenant.findUnique as any).mockResolvedValue({ name: 'Kora', logo: 'javascript:alert(1)' });
+    (prismaMock.checkoutForm.findFirst as any).mockResolvedValue({ styling: { buttonColor: 'red;}</style><script>', accentColor: 'url(x)' } });
+
+    const res = await request(app).get(`/api/public/unsubscribe/${TOKEN}`);
+
+    expect(res.text).not.toContain('<script>');
+    expect(res.text).not.toContain('javascript:');
+    expect(res.text).toContain('#111827');
+  });
+
   it('GET with an unknown/forged token shows the same unsubscribed page (no write)', async () => {
     (prismaMock.customer.findUnique as any).mockResolvedValue(null);
 

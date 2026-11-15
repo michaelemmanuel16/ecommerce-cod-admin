@@ -67,7 +67,7 @@ export function adminLink(s: InboxSubject): string | null {
     case 'customer': return `/customers/${s.id}`;
     case 'payout': return '/finance';
     case 'product': return '/products';
-    case 'conversation': return '/communications';
+    case 'conversation': return '/messages?tab=conversations';
     case 'workflow': return `/workflows/${s.id}`;
     case 'connection': return '/connections';
     default: return null;

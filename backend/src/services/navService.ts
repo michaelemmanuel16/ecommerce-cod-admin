@@ -36,7 +36,8 @@ const MENU_RULES: Array<[key: string, allowed: (c: MenuCtx) => boolean]> = [
   ['orders', (c) => c.has('orders', 'view')],
   ['customers', (c) => c.has('customers', 'view')],
   ['checkoutForms', (c) => MANAGER_UP.includes(c.role)],
-  ['messages', (c) => MANAGER_UP.includes(c.role)],
+  // A call rep opens Messages for Conversations only (M9-T30, P5); the page shows them that one tab
+  ['messages', (c) => MANAGER_UP.includes(c.role) || (c.role === 'sales_rep' && c.has('messages', 'view'))],
   // Reps and agents never saw Products in the old menu; keep that.
   ['products', (c) => c.has('products', 'view') && c.role !== 'sales_rep' && c.role !== 'delivery_agent'],
   ['inventory', (c) => MANAGER_UP.includes(c.role) || c.has('products', 'update_stock') || c.has('inventory', 'view')],

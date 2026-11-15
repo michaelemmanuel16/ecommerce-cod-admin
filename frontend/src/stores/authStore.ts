@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { User, LoginCredentials, UserPreferences, Permissions } from '../types';
+import type { User, LoginCredentials, UserPreferences, Permissions } from '../types';
 import { authService, type LoginResponse } from '../services/auth.service';
 import { usersService } from '../services/users.service';
 import { connectSocket, disconnectSocket, getSocket } from '../services/socket';
