@@ -5,7 +5,7 @@ import { formatDistanceToNow, format } from 'date-fns';
 import toast from 'react-hot-toast';
 import { Button, Card, ConfirmDialog, Tag } from '../../ui-v2';
 import { usePermissions } from '../../../hooks/usePermissions';
-import { metaAdsService, MetaAdAccount, MetaPickAccount } from '../../../services/metaAds.service';
+import { metaAdsService, type MetaAdAccount, type MetaPickAccount } from '../../../services/metaAds.service';
 import { MetaAdsPickerModal } from './MetaAdsPickerModal';
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
