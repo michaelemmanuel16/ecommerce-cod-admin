@@ -6,6 +6,7 @@ import { Country } from 'country-state-city';
 import { useAuthStore } from '../../stores/authStore';
 import { useConfigStore } from '../../stores/configStore';
 import { useShellStore } from '../../stores/shellStore';
+import { useInboxStore } from '../../stores/inboxStore';
 import { getCurrencySymbol } from '../../utils/countries';
 import { initials, personName } from '../../utils/people';
 import { Skeleton } from '../ui-v2';
@@ -31,6 +32,7 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onNavigate }
   const menu = useAuthStore((s) => s.menu);
   const roles = useAuthStore((s) => s.roles);
   const counts = useShellStore((s) => s.counts);
+  const inboxAll = useInboxStore((s) => s.counts?.all);
   const { businessName, currency, loaded } = useConfigStore();
 
   const groups = useMemo<NavGroup[] | null>(() => {
@@ -44,7 +46,8 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onNavigate }
 
   const link = (item: NavItem) => {
     const active = isActive(item.to as string, pathname) && (!item.exact || pathname === item.to);
-    const n = item.count && counts ? counts[item.count] : 0;
+    // The Inbox pill follows the live count (socket, or the 60 s poll); the other pills come from the nav counts
+    const n = item.count === 'inbox' ? inboxAll ?? counts?.inbox ?? 0 : item.count && counts ? counts[item.count] : 0;
     return (
       <Link
         key={item.key}

@@ -58,7 +58,7 @@ export const connectSocket = () => {
     console.log('Socket disconnected');
   });
 
-  // The bell's count is read from the database (notificationsStore listens for `notification`), so these
+  // The bell and the Inbox counts are read from the database (inboxStore listens for `inbox:counts` and `inbox:new`), so these
   // order events only raise a toast. They no longer add to an in-memory list.
   socket.on('order:created', (data) => {
     toast.success(`New order received: ${data.orderNumber}`);

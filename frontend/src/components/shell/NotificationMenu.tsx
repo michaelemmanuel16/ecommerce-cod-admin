@@ -1,24 +1,23 @@
 import { useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Bell } from 'lucide-react';
-import { useNotificationsStore } from '../../stores/notificationsStore';
+import { useInboxStore } from '../../stores/inboxStore';
 import { usePopover } from './usePopover';
 import { notificationText } from './notificationText';
 
-/** The bell. The count is read from the database (GET /api/notifications/unread-count) on load and again on every
- *  socket event `notification`. The popover keeps what the old header bell did (the latest notifications, mark as read)
- *  until the Inbox page arrives (M9); the mockup links the bell to the Inbox. */
+/** The bell. The unread count is the Inbox's "All" count, read from the database (`/api/inbox/counts`) and kept
+ *  current by the socket events `inbox:counts` and `inbox:new`, or by a 60 second poll while the socket is down
+ *  (inboxStore). The popover lists the latest open rows from `/api/inbox`; the full list is on the Inbox page. */
 export function NotificationMenu() {
-  const { notifications, unreadCount, markAsRead, markAllAsRead, fetchUnreadCount, fetchNotifications } = useNotificationsStore();
-  const { open, toggle, wrapRef, triggerRef } = usePopover();
-
-  useEffect(() => {
-    void fetchUnreadCount();
-  }, [fetchUnreadCount]);
+  const unreadCount = useInboxStore((s) => s.counts?.all ?? 0);
+  const recent = useInboxStore((s) => s.recent);
+  const { fetchRecent, markRead, markAllRead } = useInboxStore.getState();
+  const { open, toggle, close, wrapRef, triggerRef } = usePopover();
 
   // The list is read when the popover opens, and again when the count moves while it is open.
   useEffect(() => {
-    if (open) void fetchNotifications();
-  }, [open, unreadCount, fetchNotifications]);
+    if (open) void fetchRecent();
+  }, [open, unreadCount, fetchRecent]);
 
   return (
     <div className="popwrap" ref={wrapRef}>
@@ -38,20 +37,20 @@ export function NotificationMenu() {
         <div className="sx-menu wide" role="menu">
           <div className="sx-who sx-row">
             <b>Notifications</b>
-            <button type="button" className="mini" onClick={markAllAsRead}>Mark all as read</button>
+            <button type="button" className="mini" onClick={() => void markAllRead()}>Mark all as read</button>
           </div>
-          {notifications.length === 0 ? (
+          {recent.length === 0 ? (
             <div className="sx-empty">No notifications</div>
           ) : (
-            notifications.slice(0, 10).map((n) => {
-              const text = notificationText(n);
+            recent.map((n) => {
+              const text = notificationText({ title: n.title, message: n.message, data: n.data, type: n.event });
               return (
                 <button
                   type="button"
                   role="menuitem"
                   key={n.id}
-                  className={n.read ? 'sx-note read' : 'sx-note'}
-                  onClick={() => markAsRead(n.id)}
+                  className={n.isRead ? 'sx-note read' : 'sx-note'}
+                  onClick={() => void markRead(n.id)}
                 >
                   <b>{text.title}</b>
                   <small>{text.message}</small>
@@ -59,6 +58,9 @@ export function NotificationMenu() {
               );
             })
           )}
+          <Link to="/inbox" role="menuitem" className="sx-note" onClick={close}>
+            <b>Open Inbox</b>
+          </Link>
         </div>
       )}
     </div>
