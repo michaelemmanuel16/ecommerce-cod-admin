@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Navigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { useV2Page } from '../components/shell/useV2Page';
-import { Inbox } from 'lucide-react';
-import { Button, Card } from '../components/ui-v2';
+import { ExternalLink, Inbox } from 'lucide-react';
+import { Card } from '../components/ui-v2';
 import { usePermissions } from '../hooks/usePermissions';
 import { adminService, type SystemConfig } from '../services/admin.service';
 import { useConfigStore } from '../stores/configStore';
@@ -45,17 +45,17 @@ function ViewOnly() {
   );
 }
 
-/** Notifications (F-1227): a pointer to Inbox settings. The button turns on when Inbox ships (M9). */
+/** Notifications (F-1227): a pointer to the notification settings, which live in Inbox next to the alerts themselves (M9-T39). */
 function NotificationsPointer() {
   return (
     <Card title="Notifications">
       <div className="linkcard">
         <span className="ico"><Inbox aria-hidden="true" /></span>
         <div>
-          <b>Notification settings will live in Inbox</b>
-          <p>Inbox is coming soon.</p>
+          <b>Notification settings live in Inbox</b>
+          <p>Choose what reaches you, on WhatsApp, email or in the app, next to the alerts themselves.</p>
         </div>
-        <Button variant="primary" disabled>Open Inbox settings</Button>
+        <Link className="btn pri" to="/inbox?view=settings"><ExternalLink aria-hidden="true" /> Open Inbox settings</Link>
       </div>
     </Card>
   );

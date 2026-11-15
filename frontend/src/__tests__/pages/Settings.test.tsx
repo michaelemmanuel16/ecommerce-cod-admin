@@ -112,12 +112,11 @@ describe('Settings shell: tabs by permission (F-1220)', () => {
     expect(screen.getByTestId('where')).toHaveTextContent('/settings?tab=billing');
   });
 
-  it('a sales rep opens Notifications: a pointer card with a disabled button', () => {
+  it('a sales rep opens Notifications: a pointer card with a link to the notification settings', () => {
     signIn('sales_rep');
     renderAt('/settings?tab=notifications');
-    expect(screen.getByText('Notification settings will live in Inbox')).toBeInTheDocument();
-    expect(screen.getByText('Inbox is coming soon.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Open Inbox settings' })).toBeDisabled();
+    expect(screen.getByText('Notification settings live in Inbox')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Open Inbox settings/ })).toHaveAttribute('href', '/inbox?view=settings');
   });
 
   it('an unknown tab opens Profile', () => {
