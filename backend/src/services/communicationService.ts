@@ -148,7 +148,7 @@ export const communicationService = {
 
   async bulkSendSms(customerIds: number[], message: string) {
     const customers = await prisma.customer.findMany({
-      where: { id: { in: customerIds }, smsOptOut: false, isActive: true },
+      where: { id: { in: customerIds }, isActive: true },
       select: { id: true, phoneNumber: true },
     });
 
@@ -160,7 +160,10 @@ export const communicationService = {
           body: message,
           customerId: customer.id,
         });
-        if (!result.sent) {
+        if (result.skipped) {
+          // messageSender skipped it (opted out): counted, not an error
+          results.push({ customerId: customer.id, success: false, skipped: true, messageLogId: result.messageLogId });
+        } else if (!result.sent) {
           results.push({ customerId: customer.id, success: false, messageLogId: result.messageLogId, error: 'not set up' });
         } else {
           results.push({ customerId: customer.id, success: true, messageLogId: result.messageLogId });
@@ -173,14 +176,15 @@ export const communicationService = {
     logger.info('Bulk SMS completed', {
       total: customers.length,
       sent: results.filter((r) => r.success).length,
-      failed: results.filter((r) => !r.success).length,
+      skipped: results.filter((r) => 'skipped' in r).length,
+      failed: results.filter((r) => !r.success && !('skipped' in r)).length,
     });
-    return { total: customers.length, results };
+    return { total: customers.length, skipped: results.filter((r) => 'skipped' in r).length, results };
   },
 
   async bulkSendWhatsApp(customerIds: number[], templateKey: string, customLink?: string) {
     const customers = await prisma.customer.findMany({
-      where: { id: { in: customerIds }, whatsappOptOut: false, isActive: true },
+      where: { id: { in: customerIds }, isActive: true },
       select: { id: true, firstName: true, lastName: true, phoneNumber: true },
     });
 
@@ -204,7 +208,10 @@ export const communicationService = {
           bodyParams,
           customerId: customer.id,
         });
-        if (!result.sent) {
+        if (result.skipped) {
+          // messageSender skipped it (opted out): counted, not an error
+          results.push({ customerId: customer.id, success: false, skipped: true, messageLogId: result.messageLogId });
+        } else if (!result.sent) {
           results.push({ customerId: customer.id, success: false, messageLogId: result.messageLogId, error: 'not set up' });
         } else {
           results.push({ customerId: customer.id, success: true, messageLogId: result.messageLogId });
@@ -217,9 +224,10 @@ export const communicationService = {
     logger.info('Bulk WhatsApp completed', {
       total: customers.length,
       sent: results.filter((r) => r.success).length,
-      failed: results.filter((r) => !r.success).length,
+      skipped: results.filter((r) => 'skipped' in r).length,
+      failed: results.filter((r) => !r.success && !('skipped' in r)).length,
     });
-    return { total: customers.length, results };
+    return { total: customers.length, skipped: results.filter((r) => 'skipped' in r).length, results };
   },
 
   // ---- Bulk email campaigns (queued; tenant BYO provider) ----

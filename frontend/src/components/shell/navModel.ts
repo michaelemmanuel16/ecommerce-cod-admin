@@ -49,7 +49,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { key: 'orders', label: 'Orders', icon: ShoppingBag, to: '/orders', count: 'ordersPending' },
       { key: 'customers', label: 'Customers', icon: Users, to: '/customers' },
       { key: 'checkoutForms', label: 'Checkout forms', icon: FileText, to: '/checkout-forms' },
-      { key: 'messages', label: 'Messages', icon: MessageCircle, to: '/communications' }, // the current Communications page
+      { key: 'messages', label: 'Messages', icon: MessageCircle, to: '/messages' }, // the old Communications page stays at /communications until wave 6
     ],
   },
   {

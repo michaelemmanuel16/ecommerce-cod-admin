@@ -108,7 +108,11 @@ export async function overview(actor: Actor, filters: Pick<LogFilters, 'channel'
     byChannel.set(g.channel, counts);
   }
   const channels = (filters.channel ? [filters.channel] : (['whatsapp', 'sms', 'email'] as MessageChannel[]));
+  // `total` counts every channel under the filters with the same definition, so a screen never adds the channels up itself
+  const all: Partial<Record<MessageStatus, number>> = {};
+  for (const counts of byChannel.values()) for (const [status, n] of Object.entries(counts)) all[status as MessageStatus] = (all[status as MessageStatus] ?? 0) + (n ?? 0);
   return {
     channels: Object.fromEntries(channels.map((c) => [c, computeFigures(byChannel.get(c) ?? {})])) as Record<string, Figures>,
+    total: computeFigures(all),
   };
 }

@@ -6,7 +6,7 @@ export interface UserPreferences {
   northStarDone?: boolean;
 }
 
-export type Resource = 'users' | 'orders' | 'customers' | 'products' | 'financial' | 'payouts' | 'analytics' | 'workflows' | 'settings' | 'gl' | 'journal' | 'expenses' | 'marketing';
+export type Resource = 'users' | 'orders' | 'customers' | 'products' | 'financial' | 'payouts' | 'analytics' | 'workflows' | 'settings' | 'gl' | 'journal' | 'expenses' | 'marketing' | 'messages';
 export type Action = 'create' | 'view' | 'update' | 'delete' | 'bulk_import' | 'assign' | 'update_stock' | 'execute' | 'export' | 'post' | 'void' | 'edit' | 'view_all';
 
 export type Permissions = Record<string, string[]> | string[];

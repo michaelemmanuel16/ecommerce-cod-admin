@@ -287,7 +287,7 @@ class WhatsAppService {
   /**
    * Send a template message via WhatsApp Business Cloud API.
    */
-  async sendTemplate(options: SendTemplateOptions): Promise<{ messageLogId: number; providerMessageId?: string; sent: boolean }> {
+  async sendTemplate(options: SendTemplateOptions): Promise<{ messageLogId: number; providerMessageId?: string; sent: boolean; skipped?: boolean }> {
     const {
       to,
       bodyText,
@@ -320,13 +320,13 @@ class WhatsAppService {
       metadata: { bodyParams, headerParams, buttonPayloads, languageCode },
     });
     throwIfFailed(result);
-    return { messageLogId: result.messageLogId, providerMessageId: result.providerMessageId, sent: result.sent };
+    return { messageLogId: result.messageLogId, providerMessageId: result.providerMessageId, sent: result.sent, ...(result.skipped ? { skipped: true } : {}) };
   }
 
   /**
    * Send a free-form text message via WhatsApp.
    */
-  async sendText(options: SendTextOptions): Promise<{ messageLogId: number; providerMessageId?: string; sent: boolean }> {
+  async sendText(options: SendTextOptions): Promise<{ messageLogId: number; providerMessageId?: string; sent: boolean; skipped?: boolean }> {
     const { to, body, logBody, orderId, customerId, conversationId, inReplyToId, retryOfId, optOutCheckedByCaller } = options;
 
     const result = await messageSender.send({
@@ -343,7 +343,7 @@ class WhatsAppService {
       optOutCheckedByCaller,
     });
     throwIfFailed(result);
-    return { messageLogId: result.messageLogId, providerMessageId: result.providerMessageId, sent: result.sent };
+    return { messageLogId: result.messageLogId, providerMessageId: result.providerMessageId, sent: result.sent, ...(result.skipped ? { skipped: true } : {}) };
   }
 
   /**

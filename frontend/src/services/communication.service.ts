@@ -83,6 +83,13 @@ export interface EmailCampaign {
   stats: CampaignStats;
 }
 
+/** The answer of a bulk SMS or WhatsApp send. `skipped` counts customers messageSender did not send to (opted out). */
+export interface BulkSendResult {
+  total: number;
+  skipped: number;
+  results: Array<{ customerId: number; success: boolean; skipped?: boolean; messageLogId?: number; error?: string }>;
+}
+
 export type AudienceFilter = { state?: string; productId?: number; hasOrdered?: boolean };
 
 export const communicationService = {
@@ -106,12 +113,12 @@ export const communicationService = {
     return res.data;
   },
 
-  async bulkSendSms(customerIds: number[], message: string) {
+  async bulkSendSms(customerIds: number[], message: string): Promise<BulkSendResult> {
     const res = await apiClient.post('/api/communications/bulk-sms', { customerIds, message });
     return res.data;
   },
 
-  async bulkSendWhatsApp(customerIds: number[], templateKey: string, customLink?: string) {
+  async bulkSendWhatsApp(customerIds: number[], templateKey: string, customLink?: string): Promise<BulkSendResult> {
     const res = await apiClient.post('/api/communications/bulk-whatsapp', { customerIds, templateKey, customLink });
     return res.data;
   },
