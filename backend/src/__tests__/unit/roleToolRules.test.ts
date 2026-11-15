@@ -77,6 +77,14 @@ describe('MCP tools follow the grid (F-1153)', () => {
   });
 });
 
+describe('who may reply to customers by default (M9-T07)', () => {
+  it('owner, admin, manager and call rep can send; the other desk roles can only read', () => {
+    const defaults = defaultRolePermissions();
+    for (const role of ['super_admin', 'admin', 'manager', 'sales_rep'] as const) expect(switchesOn(defaults[role])).toContain('message_customers');
+    for (const role of ['accountant', 'inventory_manager', 'delivery_agent'] as const) expect(switchesOn(defaults[role])).not.toContain('message_customers');
+  });
+});
+
 describe('permission grids', () => {
   it('union keeps every action any grid gives, without repeats', () => {
     const union = unionPermissions([{ orders: ['view', 'update'], gl: ['view'] }, { orders: ['view', 'assign'] }, null, undefined]);
