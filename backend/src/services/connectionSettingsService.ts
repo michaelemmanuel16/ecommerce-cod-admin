@@ -37,8 +37,18 @@ export async function sendSmtpTest(callerEmail: string, input: SmtpTestInput) {
   const savedSmtp = saved?.provider === 'smtp' ? saved : null;
   const host = input.smtpHost?.trim() || savedSmtp?.smtpHost;
   const fromEmail = input.fromEmail?.trim() || savedSmtp?.fromEmail;
-  const password = input.password && input.password !== SECRET_MASK ? input.password : savedSmtp?.apiKey;
   const user = input.smtpUser?.trim() || savedSmtp?.smtpUser || fromEmail;
+  const port = input.smtpPort ?? savedSmtp?.smtpPort ?? 587;
+  const typed = input.password && input.password !== SECRET_MASK ? input.password : undefined;
+  // The saved password goes only to the saved server: host, port and user must all match what is saved.
+  const sameServer = !!savedSmtp
+    && host?.toLowerCase() === savedSmtp.smtpHost?.trim().toLowerCase()
+    && port === (savedSmtp.smtpPort ?? 587)
+    && (user ?? '').toLowerCase() === (savedSmtp.smtpUser || savedSmtp.fromEmail || '').toLowerCase();
+  if (!typed && savedSmtp && !sameServer) {
+    throw new AppError('Type the password again when you change the server.', 400, 'SECRET_REQUIRED');
+  }
+  const password = typed ?? (sameServer ? savedSmtp?.apiKey : undefined);
   if (!host || !fromEmail || !password) {
     throw new AppError('Enter the SMTP host, the from address and the password first', 400, 'SMTP_FIELDS_MISSING');
   }
@@ -49,7 +59,7 @@ export async function sendSmtpTest(callerEmail: string, input: SmtpTestInput) {
   const transporter = nodemailer.createTransport({
     host: address,
     ...(tls ? { tls } : {}),
-    port: input.smtpPort ?? savedSmtp?.smtpPort ?? 587,
+    port,
     secure: input.smtpSecure ?? savedSmtp?.smtpSecure ?? false,
     auth: { user, pass: password },
     connectionTimeout: SMTP_TIMEOUT_MS,

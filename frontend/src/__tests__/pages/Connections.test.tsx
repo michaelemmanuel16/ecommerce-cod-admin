@@ -150,6 +150,21 @@ describe('Connections page (M9-T44)', () => {
     expect(within(await openCard('Your own email (SMTP)')).getByRole('button', { name: 'Connect' })).toBeInTheDocument();
   });
 
+  it('changing the SMTP server clears the masked password and asks for it again', async () => {
+    admin.getSystemConfig.mockResolvedValue({ ...CONFIG, emailProvider: { provider: 'smtp', apiKey: '••••••••', fromEmail: 'a@shop.com', smtpHost: 'smtp.shop.com', smtpPort: 587, smtpUser: 'a@shop.com' } });
+    renderPage();
+    await userEvent.click(within(await openCard('Your own email (SMTP)')).getByRole('button', { name: 'Edit' }));
+    const pw = await screen.findByLabelText('Password');
+    expect(pw).toHaveValue('••••••••');
+    expect(pw).not.toBeRequired();
+    const host = screen.getByLabelText('Host');
+    await userEvent.clear(host);
+    await userEvent.type(host, 'mail.other.com');
+    await waitFor(() => expect(screen.getByLabelText('Password')).toHaveValue(''));
+    expect(screen.getByLabelText('Password')).toBeRequired();
+    expect(screen.getByText('Type the password again when you change the server.')).toBeInTheDocument();
+  });
+
   it('SMTP test shows the server error text', async () => {
     svc.testSmtp.mockRejectedValue({ isAxiosError: true, response: { data: { error: 'Invalid login: 535 Authentication failed' } } });
     renderPage();

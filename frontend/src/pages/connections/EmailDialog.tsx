@@ -4,6 +4,7 @@ import { adminService, type SystemConfig } from '../../services/admin.service';
 import { connectionsService } from '../../services/connections.service';
 import { useAuthStore } from '../../stores/authStore';
 import { apiErrorMessage } from '../../utils/apiError';
+import { SECRET_MASK } from '../../utils/secretMask';
 import { useDialogForm } from './useDialogForm';
 
 interface Props {
@@ -46,6 +47,13 @@ export function EmailDialog({ open, config, onClose, onSaved }: Props) {
   }, [open, config]);
 
   const smtp = provider === 'smtp';
+  // Where the password goes changed: it must be typed again (the API refuses the saved one)
+  const saved = config?.emailProvider;
+  const serverChanged = !!saved?.apiKey && (
+    provider !== (saved.provider || 'sendgrid')
+    || (smtp && (host.trim() !== (saved.smtpHost ?? '') || (Number(port) || 587) !== (saved.smtpPort ?? 587) || user.trim() !== (saved.smtpUser ?? '')))
+  );
+  useEffect(() => { if (serverChanged && apiKey === SECRET_MASK) setApiKey(''); }, [serverChanged, apiKey]);
 
   const save = async () => {
     setError(null);
@@ -117,7 +125,7 @@ export function EmailDialog({ open, config, onClose, onSaved }: Props) {
             </label>
           </>
         )}
-        <Input label={smtp ? 'Password' : 'API key'} type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} hint="Saved keys are hidden. Leave this as it is to keep the saved one." />
+        <Input label={smtp ? 'Password' : 'API key'} type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} required={serverChanged} hint={serverChanged ? 'Type the password again when you change the server.' : 'Saved keys are hidden. Leave this as it is to keep the saved one.'} />
         <div className="row2">
           <Input label="From name" value={fromName} onChange={(e) => setFromName(e.target.value)} />
           <Input label="From email" type="email" value={fromEmail} onChange={(e) => setFromEmail(e.target.value)} />

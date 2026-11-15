@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { SECRET_MASK } from '../../utils/secretMask';
 import { CheckCircle2 } from 'lucide-react';
 import { Button, Input, Modal, useToast } from '../../components/ui-v2';
 import { adminService, type SystemConfig, type WABAPhoneNumber } from '../../services/admin.service';
@@ -30,6 +31,9 @@ export function WhatsAppDialog({ open, config, onClose, onSaved }: Props) {
 
   const wa = config?.whatsappProvider;
   const viaMeta = wa?.authMode === 'oauth';
+  // The number the token is used for changed: the token must be typed again (the API refuses the saved one)
+  const numberChanged = !!wa?.accessToken && phoneNumberId.trim() !== (wa.phoneNumberId ?? '');
+  useEffect(() => { if (numberChanged && accessToken === SECRET_MASK) setAccessToken(''); }, [numberChanged, accessToken]);
 
   useEffect(() => {
     if (!open) return;
@@ -144,7 +148,7 @@ export function WhatsAppDialog({ open, config, onClose, onSaved }: Props) {
 
         {mode === 'manual' && (
           <>
-            <Input label="Access token" type="password" autoComplete="off" value={accessToken} onChange={(e) => setAccessToken(e.target.value)} placeholder="EAAx..." />
+            <Input label="Access token" type="password" autoComplete="off" value={accessToken} onChange={(e) => setAccessToken(e.target.value)} placeholder="EAAx..." required={numberChanged} hint={numberChanged ? 'Type the access token again when you change the connection details.' : undefined} />
             <div className="row2">
               <Input label="Phone number ID" value={phoneNumberId} onChange={(e) => setPhoneNumberId(e.target.value)} />
               <Input label="App secret" optional type="password" autoComplete="off" value={appSecret} onChange={(e) => setAppSecret(e.target.value)} />

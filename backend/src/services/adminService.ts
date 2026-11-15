@@ -13,6 +13,7 @@ import {
   decryptProviderSecrets,
   maskProviderSecrets,
   preserveMaskedSecrets,
+  secretKeptAcrossEndpointChange,
   SENSITIVE_FIELDS,
 } from '../utils/providerCrypto';
 import { getTenantId, resolveTenantId, withoutTenant } from '../utils/tenantContext';
@@ -367,6 +368,16 @@ export const adminService = {
       } catch (error) {
         if (error instanceof RangeError) throw new AppError(error.message, 400, 'INVALID_OPERATING_HOURS');
         throw error;
+      }
+    }
+
+    // The server a secret goes to changed: the mask is not reused, the secret must be typed again (checked before any host lookup).
+    for (const providerType of Object.keys(SENSITIVE_FIELDS)) {
+      const incoming = (data as any)[providerType];
+      if (!incoming) continue;
+      if (secretKeptAcrossEndpointChange(providerType, incoming, (config as any)[providerType] || {})) {
+        const what = providerType === 'emailProvider' ? 'password' : providerType === 'whatsappProvider' ? 'access token' : 'API key';
+        throw new AppError(`Type the ${what} again when you change the ${providerType === 'emailProvider' ? 'server' : 'connection details'}.`, 400, 'SECRET_REQUIRED');
       }
     }
 

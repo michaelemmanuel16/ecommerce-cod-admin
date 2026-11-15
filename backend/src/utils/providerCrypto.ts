@@ -52,6 +52,30 @@ export function preserveMaskedSecrets(providerType: string, incoming: any, exist
   return result;
 }
 
+/** Fields that decide WHERE a provider's secret is sent. Changing one needs the secret typed again, so a masked secret never travels to a new host. */
+export const ENDPOINT_FIELDS: Record<string, string[]> = {
+  whatsappProvider: ['phoneNumberId', 'businessAccountId', 'wabaId', 'baseUrl', 'apiUrl', 'apiBaseUrl'],
+  smsProvider: ['provider', 'baseUrl', 'apiUrl', 'apiBaseUrl', 'endpoint'],
+  emailProvider: ['provider', 'smtpHost', 'smtpPort', 'smtpUser', 'smtpSecure', 'baseUrl', 'apiUrl'],
+};
+
+const norm = (v: unknown): string => (v === undefined || v === null ? '' : String(v).trim().toLowerCase());
+
+/** True when the incoming config sets an endpoint field to a value different from the stored one (a field left out is not a change). */
+export function endpointChanged(providerType: string, incoming: any, existing: any): boolean {
+  const fields = ENDPOINT_FIELDS[providerType];
+  if (!fields || !incoming || !existing) return false;
+  return fields.some((f) => incoming[f] !== undefined && norm(incoming[f]) !== norm(existing[f]));
+}
+
+/** After an endpoint change, a secret that is still the mask (or empty) while one is stored is refused: the caller must type it again. */
+export function secretKeptAcrossEndpointChange(providerType: string, incoming: any, existing: any): boolean {
+  if (!endpointChanged(providerType, incoming, existing)) return false;
+  // Only the secrets that are sent out to the provider; the app secret and verify token only check what comes in
+  const outbound: Record<string, string[]> = { whatsappProvider: ['accessToken'], smsProvider: ['authToken'], emailProvider: ['apiKey'] };
+  return (outbound[providerType] ?? []).some((f) => existing[f] && (!incoming[f] || incoming[f] === SECRET_MASK));
+}
+
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12;
 const PREFIX = 'enc:v1:';
