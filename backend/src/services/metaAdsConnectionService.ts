@@ -30,9 +30,9 @@ export class MetaAdsError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 
-const settingsUrl = () =>
-  `${process.env.FRONTEND_URL || 'http://localhost:5173'}/settings?tab=integrations&section=meta-ads`;
-const errorUrl = (message: string) => `${settingsUrl()}&metaAds=error&message=${encodeURIComponent(message)}`;
+// The Meta card lives on the Connections page (M9-T44)
+const connectionsUrl = () => `${process.env.FRONTEND_URL || 'http://localhost:5173'}/connections`;
+const errorUrl = (message: string) => `${connectionsUrl()}?metaAds=error&message=${encodeURIComponent(message)}`;
 
 export function initiateAdsOAuth(userId: number, tenantId: string): string {
   const state = createOAuthState({ kind: 'ads', userId, tenantId } satisfies AdsStatePayload);
@@ -73,7 +73,7 @@ export async function completeAdsCallback(query: Record<string, string | undefin
       tokenExpiresAt: info.expiresAt ? info.expiresAt.toISOString() : null,
       scopes: info.scopes,
     } satisfies PickPayload);
-    return `${settingsUrl()}&metaAds=pick&pick=${pickId}`;
+    return `${connectionsUrl()}?metaAds=pick&pick=${pickId}`;
   } catch (err: any) {
     logger.error('Meta Ads OAuth callback failed', { error: safeErrorMessage(err) });
     return errorUrl('Meta Ads connection failed. Please try again.');

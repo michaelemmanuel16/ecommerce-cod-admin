@@ -171,7 +171,7 @@ describe('Marketing page', () => {
     meta.getAccounts.mockResolvedValue([]);
     renderPage();
     const link = await screen.findByRole('link', { name: 'Connect Meta Ads' });
-    expect(link).toHaveAttribute('href', '/settings?tab=integrations&section=meta-ads');
+    expect(link).toHaveAttribute('href', '/connections');
     expect(screen.queryByText('Ad spend')).not.toBeInTheDocument();
     expect(svc.summary).not.toHaveBeenCalled();
     expect(svc.campaigns).not.toHaveBeenCalled();

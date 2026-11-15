@@ -97,7 +97,7 @@ export function NotificationSettings({ user }: Props) {
               {hints.filter((h) => h.hint).map((h) => (
                 <li key={h.ch}><b>{CHANNEL_LABEL[h.ch]}:</b> {h.hint}</li>
               ))}
-              {isOwner && <li><Link to="/settings?tab=integrations">Open Connections</Link></li>}
+              {isOwner && <li><Link to="/connections">Open Connections</Link></li>}
             </ul>
           )}
           <div className="tablewrap">

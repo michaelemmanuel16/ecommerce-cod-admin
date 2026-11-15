@@ -31,6 +31,7 @@ import './styles/collections.css';
 import './styles/rep.css';
 import './styles/workflows.css';
 import './styles/inbox.css';
+import './styles/connections.css';
 
 if (import.meta.env.VITE_SENTRY_DSN) {
   Sentry.init({

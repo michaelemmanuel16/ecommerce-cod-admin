@@ -1,6 +1,6 @@
 import {
   LayoutGrid, Inbox, ShoppingBag, Users, FileText, MessageCircle, Package, Boxes, Truck, Wallet,
-  Megaphone, BarChart3, Target, Trophy, UserCog, Workflow, Plug, Settings, Flag, Phone, Webhook, History, PackageOpen,
+  Megaphone, BarChart3, Target, Trophy, UserCog, Workflow, Plug, Settings, Flag, Phone, History, PackageOpen,
   type LucideIcon,
 } from 'lucide-react';
 import type { NavCounts } from '../../services/nav.service';
@@ -86,9 +86,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Setup',
     items: [
       { key: 'workflows', label: 'Workflows', icon: Workflow, to: '/workflows' },
-      { key: 'connections', label: 'Connections', icon: Plug, to: null },
-      // Webhooks page: replaced by Connections (M9). Guard in App.tsx: owner and admin.
-      { key: 'webhooks', label: 'Webhooks', icon: Webhook, to: '/webhooks', oldPageFor: (r) => r === 'super_admin' || r === 'admin' },
+      { key: 'connections', label: 'Connections', icon: Plug, to: '/connections' },
       { key: 'settings', label: 'Settings', icon: Settings, to: '/settings' },
       { key: 'setupNorthStar', label: 'Set up North Star', icon: Flag, to: '/onboarding' }, // the wizard resumes at its saved step; the menu drops it when step 6 is done
     ],

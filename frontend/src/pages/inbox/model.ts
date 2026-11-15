@@ -69,7 +69,7 @@ export function adminLink(s: InboxSubject): string | null {
     case 'product': return '/products';
     case 'conversation': return '/communications';
     case 'workflow': return `/workflows/${s.id}`;
-    case 'connection': return '/settings?tab=integrations';
+    case 'connection': return '/connections';
     default: return null;
   }
 }

@@ -100,13 +100,15 @@ export const workflowTemplates: WorkflowTemplate[] = [
       },
       {
         type: 'send_sms',
-        phoneNumber: '+1234567890',
+        // Left empty: the person who sets the workflow up types the manager's number (a blank number sends nothing)
+        phoneNumber: '',
         message: 'High-value order alert! Order #{{orderNumber}} - ${{totalAmount}}'
       }
     ]
   },
 
-  // Needs the WhatsApp connection (M9-T25): the gallery shows it as unavailable until the store has one
+  // Needs the WhatsApp connection (M9-T25): the gallery shows it as unavailable until the store has one.
+  // `order_created` is one of the five template keys the builder offers (Order received); the person can pick another.
   {
     id: 'whatsapp-order-confirmation',
     name: 'WhatsApp Order Confirmation',
@@ -117,7 +119,7 @@ export const workflowTemplates: WorkflowTemplate[] = [
     actions: [
       {
         type: 'send_whatsapp',
-        config: { templateKey: 'order_confirmation' }
+        config: { templateKey: 'order_created' }
       }
     ]
   },
@@ -141,61 +143,31 @@ export const workflowTemplates: WorkflowTemplate[] = [
     ]
   },
 
-  // Template 4: Auto-Assign by Delivery Area
+  // Template 4: Auto-Assign Delivery Agent by Region
+  // "Region is X" reads the order's delivery state; "Assign to" has the agents picked when the workflow is set up.
   {
     id: 'assign-by-area',
-    name: 'Auto-Assign Delivery Agent by Area',
-    description: 'Automatically assign delivery agents based on the delivery area using round-robin',
+    name: 'Auto-Assign Delivery Agent by Region',
+    description: 'When an order is ready for pickup in one region, assign it to the delivery agents you pick, split evenly',
     category: 'Assignment',
     triggerType: 'status_change',
     triggerData: {
       status: 'ready_for_pickup'
     },
+    conditions: {
+      logic: 'AND',
+      rules: [
+        {
+          field: 'region',
+          operator: 'is',
+          value: 'Greater Accra'
+        }
+      ]
+    },
     actions: [
       {
-        type: 'assign_user',
-        conditions: {
-          logic: 'AND',
-          rules: [
-            {
-              field: 'deliveryArea',
-              operator: 'equals',
-              value: 'Downtown'
-            }
-          ]
-        },
-        userRole: 'delivery_agent',
-        targetField: 'deliveryAgentId',
-        assignmentMethod: 'round_robin',
-        area: 'Downtown',
-        elseBranch: [
-          {
-            type: 'assign_user',
-            conditions: {
-              logic: 'AND',
-              rules: [
-                {
-                  field: 'deliveryArea',
-                  operator: 'equals',
-                  value: 'Suburbs'
-                }
-              ]
-            },
-            userRole: 'delivery_agent',
-            targetField: 'deliveryAgentId',
-            assignmentMethod: 'round_robin',
-            area: 'Suburbs',
-            elseBranch: [
-              {
-                type: 'assign_user',
-                userRole: 'delivery_agent',
-                targetField: 'deliveryAgentId',
-                assignmentMethod: 'round_robin',
-                area: 'Other'
-              }
-            ]
-          }
-        ]
+        type: 'assign_to',
+        config: { role: 'delivery_agent', userIds: [], split: 'even' }
       },
       {
         type: 'send_sms',
@@ -272,7 +244,7 @@ export const workflowTemplates: WorkflowTemplate[] = [
       {
         type: 'send_sms',
         phoneNumber: '{{customer.phoneNumber}}',
-        message: 'We attempted to deliver your order #{{orderNumber}} but were unsuccessful. Please call us at 1-800-DELIVERY to reschedule.'
+        message: 'We attempted to deliver your order #{{orderNumber}} but were unsuccessful. Please call us to arrange a new delivery.'
       },
       {
         type: 'send_email',

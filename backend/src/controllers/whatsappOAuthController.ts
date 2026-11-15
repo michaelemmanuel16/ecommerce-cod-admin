@@ -92,12 +92,12 @@ export async function handleOAuthCallback(req: AuthRequest, res: Response): Prom
     if (oauthError) {
       logger.warn('OAuth callback received error from Meta');
       const msg = (error_description || oauthError).substring(0, 200);
-      res.redirect(`${frontendUrl}/settings?oauth=error&message=${encodeURIComponent(msg)}`);
+      res.redirect(`${frontendUrl}/connections?oauth=error&message=${encodeURIComponent(msg)}`);
       return;
     }
 
     if (!code || !state) {
-      res.redirect(`${frontendUrl}/settings?oauth=error&message=${encodeURIComponent('Missing code or state')}`);
+      res.redirect(`${frontendUrl}/connections?oauth=error&message=${encodeURIComponent('Missing code or state')}`);
       return;
     }
 
@@ -132,10 +132,10 @@ export async function handleOAuthCallback(req: AuthRequest, res: Response): Prom
     });
 
     logger.info('WhatsApp OAuth callback successful', { userId, phoneCount: phones.length });
-    res.redirect(`${frontendUrl}/settings?oauth=success`);
+    res.redirect(`${frontendUrl}/connections?oauth=success`);
   } catch (error: any) {
     logger.error('WhatsApp OAuth callback failed', { error: error.message });
-    res.redirect(`${frontendUrl}/settings?oauth=error&message=${encodeURIComponent('OAuth failed. Please try again.')}`);
+    res.redirect(`${frontendUrl}/connections?oauth=error&message=${encodeURIComponent('OAuth failed. Please try again.')}`);
   }
 }
 

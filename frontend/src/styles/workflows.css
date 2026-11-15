@@ -147,6 +147,9 @@
 .v2 .wf .hist .steps2 ul{margin:0;padding:0}
 .v2 .wf .hist .steps2 pre{margin:2px 0 0;font:500 12px ui-monospace,monospace;color:var(--ink-2);white-space:pre-wrap;overflow-wrap:anywhere}
 .v2 .wf .hist .err{color:var(--coral);font-weight:600}
+/* new: the last column (Steps, Retry) stays in view when the table scrolls sideways */
+.v2 .wf .hist th:last-child,.v2 .wf .hist td:last-child:not(.steps2){position:sticky;right:0;background:var(--card);box-shadow:-8px 0 8px -8px var(--line)}
+.v2 .wf .hist tr:hover td:last-child:not(.steps2){background:var(--hover)}
 
 /* run dialog */
 .v2 .wfd .stack{display:grid;gap:14px}

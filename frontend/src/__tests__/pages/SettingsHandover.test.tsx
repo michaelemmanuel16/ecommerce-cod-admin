@@ -4,7 +4,6 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import fs from 'fs';
 import path from 'path';
 import { Settings } from '../../pages/Settings';
-import { SettingsTabRedirect } from '../../pages/settings/SettingsTabRedirect';
 import { SETTINGS_TABS } from '../../pages/settings/tabs';
 import { ToastProvider } from '../../components/ui-v2';
 import { useAuthStore } from '../../stores/authStore';
@@ -17,13 +16,6 @@ vi.mock('../../components/admin/UserManagementTable', () => ({ UserManagementTab
 vi.mock('../../components/admin/RolePermissionsMatrix', () => ({ RolePermissionsMatrix: () => <div>ROLES PANEL</div> }));
 vi.mock('../../components/settings/CurrenciesFxPanel', () => ({ CurrenciesFxPanel: () => <div>CURRENCIES PANEL</div> }));
 vi.mock('../../pages/settings/BillingTab', () => ({ BillingTab: () => <div>BILLING PANEL</div> }));
-// Integrations: the real panel, with its cards stubbed
-vi.mock('../../components/settings/integrations/SmsIntegration', () => ({ SmsIntegration: () => <div>SMS CARD</div> }));
-vi.mock('../../components/settings/integrations/WhatsAppIntegration', () => ({ WhatsAppIntegration: () => <div>WHATSAPP CARD</div> }));
-vi.mock('../../components/settings/integrations/EmailIntegration', () => ({ EmailIntegration: () => <div>EMAIL CARD</div> }));
-vi.mock('../../components/settings/integrations/PaystackIntegration', () => ({ PaystackIntegration: () => <div>PAYSTACK CARD</div> }));
-vi.mock('../../components/settings/integrations/WebhooksOverview', () => ({ WebhooksOverview: () => <div>WEBHOOKS CARD</div> }));
-vi.mock('../../components/settings/integrations/McpIntegration', () => ({ McpIntegration: () => <div>AI ASSISTANT CARD</div> }));
 
 function Where() {
   const loc = useLocation();
@@ -37,7 +29,7 @@ function renderAt(url: string) {
         <Where />
         <Routes>
           <Route path="/settings" element={<Settings />} />
-          <Route path="/connections" element={<SettingsTabRedirect tab="integrations" />} />
+          <Route path="/connections" element={<div>CONNECTIONS PAGE</div>} />
           <Route path="/checkout-forms" element={<div>CHECKOUT FORMS PAGE</div>} />
         </Routes>
       </ToastProvider>
@@ -53,30 +45,25 @@ beforeEach(() => {
 });
 
 describe('old URLs keep their parameters (F-1215, F-1237)', () => {
-  it('/connections opens Integrations and keeps section and oauth parameters', async () => {
-    renderAt('/connections?section=whatsapp&oauth=success');
-    expect(await screen.findByText('WHATSAPP CARD')).toBeInTheDocument();
-    const where = screen.getByTestId('where').textContent!;
-    expect(where).toContain('/settings?');
-    expect(where).toContain('tab=integrations');
-    expect(where).toContain('section=whatsapp');
-    expect(where).toContain('oauth=success');
+  it('?tab=integrations goes to the Connections page and drops the tab and section', () => {
+    renderAt('/settings?tab=integrations&section=whatsapp&from=email');
+    expect(screen.getByText('CONNECTIONS PAGE')).toBeInTheDocument();
+    expect(screen.getByTestId('where')).toHaveTextContent('/connections?from=email');
   });
 
-  it('/connections without parameters opens Integrations', async () => {
-    renderAt('/connections');
-    expect(await screen.findByText('SMS CARD')).toBeInTheDocument();
-    expect(screen.getByTestId('where')).toHaveTextContent('/settings?tab=integrations');
+  it('a WhatsApp login return (?oauth=) goes to the Connections page with its parameters', () => {
+    renderAt('/settings?oauth=error&message=Nope');
+    expect(screen.getByText('CONNECTIONS PAGE')).toBeInTheDocument();
+    expect(screen.getByTestId('where')).toHaveTextContent('/connections?oauth=error&message=Nope');
   });
 
-  it('?oauth= alone still lands on Integrations with its section', () => {
-    renderAt('/settings?oauth=success&section=whatsapp');
-    expect(screen.getByText('WHATSAPP CARD')).toBeInTheDocument();
+  it('?tab=integrations alone goes to /connections', () => {
+    renderAt('/settings?tab=integrations');
+    expect(screen.getByTestId('where')).toHaveTextContent(/^\/connections$/);
   });
 
-  it('?tab=integrations stays; the AI Assistant card is reachable in the shell', () => {
-    renderAt('/settings?tab=integrations&section=ai-assistant');
-    expect(screen.getByText('AI ASSISTANT CARD')).toBeInTheDocument();
+  it('the Settings menu has no Integrations tab any more', () => {
+    expect(SETTINGS_TABS.find((t) => (t.id as string) === 'integrations')).toBeUndefined();
   });
 
   it('?tab=users stays on User management until Staff ships (M6)', () => {
@@ -107,6 +94,7 @@ describe('old URLs keep their parameters (F-1215, F-1237)', () => {
  * lives now. A field whose new home ships later carries the milestone and stays reachable on its old tab.
  */
 type Home = { page: string; milestone: 'M3' | 'M6' | 'M9' };
+// Fields of the old Integrations tab: tab 'connections' means the Connections page (M9-T44), not a Settings tab.
 const CHECKLIST: { field: string; tab: string; stores: string; source: string; home: Home }[] = [
   ...['Business name', 'Contact person', 'Contact email', 'Business phone', 'Customer support WhatsApp', 'Tax ID (TIN)', 'Business address', 'Time zone']
     .map((field) => ({ field, tab: 'business', stores: '/api/admin/settings', source: 'services/admin.service.ts', home: { page: 'Settings, Business details', milestone: 'M3' as const } })),
@@ -117,12 +105,12 @@ const CHECKLIST: { field: string; tab: string; stores: string; source: string; h
   { field: 'Cancel subscription', tab: 'billing', stores: '/api/billing/cancel-subscription', source: 'services/billing.service.ts', home: { page: 'Settings, Billing & plans', milestone: 'M3' } },
   { field: 'User create and edit', tab: 'users', stores: '/api/admin/users', source: 'services/admin.service.ts', home: { page: 'Staff', milestone: 'M6' } },
   { field: 'Role permission matrix', tab: 'permissions', stores: '/api/admin/permissions', source: 'services/admin.service.ts', home: { page: 'Staff', milestone: 'M6' } },
-  { field: 'SMS provider', tab: 'integrations', stores: '/api/admin/settings', source: 'services/admin.service.ts', home: { page: 'Connections', milestone: 'M9' } },
-  { field: 'WhatsApp provider', tab: 'integrations', stores: '/api/admin/settings', source: 'services/admin.service.ts', home: { page: 'Connections', milestone: 'M9' } },
-  { field: 'Email provider', tab: 'integrations', stores: '/api/admin/settings', source: 'services/admin.service.ts', home: { page: 'Connections', milestone: 'M9' } },
-  { field: 'Paystack keys', tab: 'integrations', stores: '/api/admin/settings', source: 'services/admin.service.ts', home: { page: 'Connections', milestone: 'M9' } },
-  { field: 'AI Assistant key (MCP)', tab: 'integrations', stores: '/api/mcp-keys', source: 'components/settings/integrations/McpIntegration.tsx', home: { page: 'Connections', milestone: 'M9' } },
-  { field: 'Inbound order webhooks', tab: 'integrations', stores: '/api/webhooks', source: 'services/webhooks.service.ts', home: { page: 'Connections', milestone: 'M9' } },
+  { field: 'SMS provider', tab: 'connections', stores: '/api/admin/settings', source: 'services/admin.service.ts', home: { page: 'Connections', milestone: 'M9' } },
+  { field: 'WhatsApp provider', tab: 'connections', stores: '/api/admin/settings', source: 'services/admin.service.ts', home: { page: 'Connections', milestone: 'M9' } },
+  { field: 'Email provider', tab: 'connections', stores: '/api/admin/settings', source: 'services/admin.service.ts', home: { page: 'Connections', milestone: 'M9' } },
+  { field: 'Paystack keys', tab: 'connections', stores: '/api/payment-connections', source: 'services/connections.service.ts', home: { page: 'Connections', milestone: 'M9' } },
+  { field: 'AI Assistant key (MCP)', tab: 'connections', stores: '/api/mcp-keys', source: 'components/settings/integrations/McpIntegration.tsx', home: { page: 'Connections', milestone: 'M9' } },
+  { field: 'Inbound order webhooks', tab: 'connections', stores: '/api/webhooks', source: 'services/webhooks.service.ts', home: { page: 'Connections', milestone: 'M9' } },
 ];
 
 describe('handover checklist (F-1237)', () => {
@@ -131,6 +119,7 @@ describe('handover checklist (F-1237)', () => {
 
   it.each(CHECKLIST.map((c) => [c.field, c] as const))('%s: its endpoint is in the service and its tab is open to the owner', (_name, c) => {
     expect(fs.readFileSync(path.join(SRC, c.source), 'utf8')).toContain(c.stores);
+    if (c.tab === 'connections') return;
     const tab = SETTINGS_TABS.find((t) => t.id === c.tab);
     expect(tab, `tab ${c.tab}`).toBeDefined();
     expect(tab!.visible(owner)).toBe(true);
@@ -139,7 +128,8 @@ describe('handover checklist (F-1237)', () => {
   it('every field names its new home and a milestone; fields that move later stay on their old tab', () => {
     for (const c of CHECKLIST) {
       expect(c.home.milestone).toMatch(/^M\d+$/);
-      if (c.home.milestone !== 'M3') expect(SETTINGS_TABS.find((t) => t.id === c.tab)?.group).toBe('moving');
+      if (c.tab === 'connections') expect(c.home.page).toBe('Connections');
+      else if (c.home.milestone !== 'M3') expect(SETTINGS_TABS.find((t) => t.id === c.tab)?.group).toBe('moving');
     }
     expect(CHECKLIST.filter((c) => c.home.milestone === 'M6').length).toBeGreaterThan(0);
     expect(CHECKLIST.filter((c) => c.home.milestone === 'M9').length).toBeGreaterThan(0);

@@ -112,6 +112,21 @@ describe('template gallery', () => {
     expect(types).not.toContain('add_tag');
     expect(types).not.toContain('assign_agent');
   });
+
+  it('has no placeholder phone number, uses a WhatsApp template key the builder offers, and assigns by region', async () => {
+    const res = await request(app).get('/api/workflows/templates').set(adminAuth());
+    const text = JSON.stringify(res.body.templates);
+    expect(text).not.toContain('1234567890');
+    expect(text).not.toContain('1-800');
+    const keys = res.body.templates.flatMap((t: any) => t.actions).filter((a: any) => a.type === 'send_whatsapp').map((a: any) => a.config.templateKey);
+    expect(keys.length).toBeGreaterThan(0);
+    for (const k of keys) expect(['order_created', 'confirmed', 'out_for_delivery', 'delivered', 'failed_delivery']).toContain(k);
+    const area = res.body.templates.find((t: any) => t.id === 'assign-by-area');
+    expect(area.conditions.rules).toEqual([{ field: 'region', operator: 'is', value: 'Greater Accra' }]);
+    expect(area.actions[0]).toEqual({ type: 'assign_to', config: { role: 'delivery_agent', userIds: [], split: 'even' } });
+    expect(text).not.toContain('"area"');
+    expect(text).not.toContain('deliveryArea","operator');
+  });
 });
 
 describe('validation on save', () => {

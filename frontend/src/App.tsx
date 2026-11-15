@@ -25,6 +25,7 @@ import { AcceptInvite } from './pages/AcceptInvite';
 import { DynamicDashboard } from './pages/DynamicDashboard';
 import { Dashboard } from './pages/Dashboard';
 import { SettingsTabRedirect } from './pages/settings/SettingsTabRedirect';
+import { WebhooksRedirect } from './pages/connections/WebhooksRedirect';
 import { ProductEditRedirect } from './pages/products/ProductEditRedirect';
 // Lazy load all other pages for better initial load performance
 const Pricing = lazy(() => import('./pages/Pricing').then(m => ({ default: m.Pricing })));
@@ -48,7 +49,7 @@ const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.S
 const CheckoutForms = lazy(() => import('./pages/CheckoutForms').then(m => ({ default: m.CheckoutForms })));
 const CheckoutFormEditor = lazy(() => import('./pages/CheckoutFormEditor').then(m => ({ default: m.CheckoutFormEditor })));
 const CheckoutFormPreview = lazy(() => import('./pages/CheckoutFormPreview').then(m => ({ default: m.CheckoutFormPreview })));
-const Webhooks = lazy(() => import('./pages/Webhooks').then(m => ({ default: m.Webhooks })));
+const Connections = lazy(() => import('./pages/Connections').then(m => ({ default: m.Connections })));
 const PublicCheckout = lazy(() => import('./pages/PublicCheckout').then(m => ({ default: m.PublicCheckout })));
 const PaymentCallback = lazy(() => import('./pages/PaymentCallback').then(m => ({ default: m.PaymentCallback })));
 // Dev-only design-system gallery. The DEV flag is replaced at build time, so production bundles drop the import.
@@ -340,8 +341,8 @@ function App() {
             <Route path="financial" element={<Navigate to="/finance" replace />} />
             {/* The old Analytics page is gone (M3-T60): old links and bookmarks land on Reports. */}
             <Route path="analytics" element={<Navigate to="/reports" replace />} />
-            {/* /connections is the future Connections page (M9); until then it opens Integrations with its query (M3-T66). */}
-            <Route path="connections" element={<SettingsTabRedirect tab="integrations" />} />
+            {/* The old Webhooks page is the Webhooks tab of Connections (M9-T45). Outside the guard so the redirect always runs. */}
+            <Route path="webhooks" element={<WebhooksRedirect />} />
             {/* Every page below needs its menu item (F-102); platform pages use PlatformGuard instead. */}
             <Route element={<AccessGate />}>
             <Route index element={<DashboardIndex />} />
@@ -425,8 +426,8 @@ function App() {
             <Route path="checkout-forms/:id/edit" element={
               <Suspense fallback={<Loading />}><CheckoutFormEditor /></Suspense>
             } />
-            <Route path="webhooks" element={
-              <Suspense fallback={<Loading />}><Webhooks /></Suspense>
+            <Route path="connections" element={
+              <Suspense fallback={<Loading />}><Connections /></Suspense>
             } />
             <Route path="earnings-history" element={
               <Suspense fallback={<Loading />}><EarningsHistoryRoute /></Suspense>

@@ -32,7 +32,6 @@ vi.mock('../../services/account.service', () => ({
 // The old tabs open big panels with their own API calls; they are not under test here
 vi.mock('../../components/admin/UserManagementTable', () => ({ UserManagementTable: () => <div>USERS PANEL</div> }));
 vi.mock('../../components/admin/RolePermissionsMatrix', () => ({ RolePermissionsMatrix: () => <div>ROLES PANEL</div> }));
-vi.mock('../../components/settings/IntegrationsPanel', () => ({ IntegrationsPanel: () => <div>INTEGRATIONS PANEL</div> }));
 vi.mock('../../components/settings/CurrenciesFxPanel', () => ({ CurrenciesFxPanel: () => <div>CURRENCIES PANEL</div> }));
 vi.mock('../../pages/settings/BillingTab', () => ({ BillingTab: () => <div>BILLING PANEL</div> }));
 vi.mock('../../pages/settings/StatusesTab', () => ({ StatusesTab: () => <div>STATUSES PANEL</div> }));
@@ -92,7 +91,7 @@ describe('Settings shell: tabs by permission (F-1220)', () => {
     renderAt();
     expect(tabNames()).toEqual([
       'Profile', 'Security', 'Business details', 'Operations', 'North Star & targets', 'Rewards', 'Currencies & FX', 'Order statuses', 'Notifications', 'Billing & plans',
-      'User management', 'Role permissions', 'Integrations', 'Checkout forms',
+      'User management', 'Role permissions', 'Checkout forms',
     ]);
     expect(screen.getByText('Moving soon')).toBeInTheDocument();
   });
