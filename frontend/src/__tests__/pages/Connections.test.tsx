@@ -22,7 +22,9 @@ vi.mock('../../services/webhooks.service', () => ({ webhooksService: { getWebhoo
 vi.mock('../../services/products.service', () => ({ productsService: { getProducts: vi.fn().mockResolvedValue([]) } }));
 
 vi.mock('../../components/settings/integrations/MetaAdsIntegration', () => ({ MetaAdsIntegration: () => <div>META ADS CARD</div> }));
-vi.mock('../../components/settings/integrations/McpIntegration', () => ({ McpIntegration: () => <div>AI KEYS CARD</div> }));
+vi.mock('../../components/settings/integrations/McpIntegration', () => ({ McpIntegration: () => <div>AI KEYS LIST</div> }));
+const api = vi.hoisted(() => ({ get: vi.fn() }));
+vi.mock('../../services/api', () => ({ default: api }));
 
 let role: 'super_admin' | 'admin' | 'manager' = 'super_admin';
 vi.mock('../../hooks/usePermissions', () => ({
@@ -86,6 +88,7 @@ beforeEach(() => {
   admin.getSystemConfig.mockResolvedValue(CONFIG);
   admin.updateSystemConfig.mockResolvedValue({});
   admin.checkWhatsAppOAuthEnabled.mockResolvedValue({ enabled: true });
+  api.get.mockResolvedValue({ data: { keys: [] } });
 });
 
 describe('Connections page (M9-T44)', () => {
@@ -102,8 +105,37 @@ describe('Connections page (M9-T44)', () => {
     expect(screen.queryByTestId('card-Checkout website')).not.toBeInTheDocument();
     expect(screen.queryByTestId('card-CSV upload')).not.toBeInTheDocument();
     expect(screen.getByText('META ADS CARD')).toBeInTheDocument();
-    expect(screen.getByText('AI KEYS CARD')).toBeInTheDocument();
+    expect(screen.getByTestId('card-AI Assistant')).toBeInTheDocument();
     expect(screen.queryByText(/partner key/i)).not.toBeInTheDocument();
+  });
+
+  it('AI Assistant is a normal card: key count, last use, Connected, and its modal holds the key list', async () => {
+    api.get.mockResolvedValue({ data: { keys: [
+      { id: 'a', keyPrefix: 'k1', label: 'Laptop', createdAt: '2026-11-01T00:00:00Z', expiresAt: null, lastUsedAt: new Date(Date.now() - 3600_000).toISOString(), roleName: 'Admin', toolCount: 4 },
+      { id: 'b', keyPrefix: 'k2', label: 'Phone', createdAt: '2026-11-01T00:00:00Z', expiresAt: null, lastUsedAt: null, roleName: 'Admin', toolCount: 4 },
+    ] } });
+    renderPage();
+    const ai = await screen.findByTestId('card-AI Assistant');
+    expect(ai).toHaveAttribute('role', 'button');
+    await waitFor(() => expect(within(ai).getByText('Connected')).toBeInTheDocument());
+    expect(within(ai).getByText('Keys').nextSibling).toHaveTextContent('2');
+    expect(within(ai).getByText('Last used').nextSibling).not.toHaveTextContent('Never');
+    expect(within(ai).getByText('Manage')).toBeInTheDocument();
+    const dlg = await openCard('AI Assistant');
+    expect(within(dlg).getByText('AI KEYS LIST')).toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    ai.focus();
+    await userEvent.keyboard('{Enter}');
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('AI Assistant with no keys says Not connected and Never', async () => {
+    renderPage();
+    const ai = await screen.findByTestId('card-AI Assistant');
+    await waitFor(() => expect(within(ai).getByText('Not connected')).toBeInTheDocument());
+    expect(within(ai).getByText('Keys').nextSibling).toHaveTextContent('0');
+    expect(within(ai).getByText('Last used').nextSibling).toHaveTextContent('Never');
   });
 
   it('shows the delivery-report URL in the SMS modal with a copy button', async () => {
@@ -209,7 +241,7 @@ describe('Connections page (M9-T44)', () => {
     expect(within(await openCard('WhatsApp Business')).getByRole('button', { name: 'Connect' })).toBeInTheDocument();
     await userEvent.keyboard('{Escape}');
     expect(within(await openCard('Your own email (SMTP)')).getByRole('button', { name: 'Edit' })).toBeInTheDocument();
-    expect(screen.queryByText('AI KEYS CARD')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('card-AI Assistant')).not.toBeInTheDocument();
     expect(admin.getSystemConfig).toHaveBeenCalled();
   });
 

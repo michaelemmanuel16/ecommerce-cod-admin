@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { AlertTriangle, CreditCard, Mail, MessageCircle, Smartphone } from 'lucide-react';
 import { Button, Skeleton, useToast } from '../../components/ui-v2';
 import { MetaAdsIntegration } from '../../components/settings/integrations/MetaAdsIntegration';
-import { McpIntegration } from '../../components/settings/integrations/McpIntegration';
+import { McpAssistantCard } from '../../components/settings/integrations/McpAssistantCard';
 import { usePermissions } from '../../hooks/usePermissions';
 import { adminService, type SystemConfig, type WABAPhoneNumber } from '../../services/admin.service';
 import { connectionsService, type ConnectionCards, type PaymentConnection } from '../../services/connections.service';
@@ -169,11 +169,7 @@ export function CardsTab() {
 
         {can('marketing', 'view') && <MetaAdsIntegration />}
 
-        {isSuperAdmin && (
-          <div className="wide setold legacy-light" style={{ borderRadius: 18 }}>
-            <McpIntegration />
-          </div>
-        )}
+        {isSuperAdmin && <McpAssistantCard />}
       </div>
 
       <ConnDetail

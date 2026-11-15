@@ -6,7 +6,7 @@ import { Input } from '../../ui/Input';
 import { Select } from '../../ui/Select';
 import toast from 'react-hot-toast';
 
-interface McpApiKey {
+export interface McpApiKey {
   id: string;
   keyPrefix: string;
   label: string;
@@ -32,7 +32,12 @@ interface GeneratedKey {
   mcpConfig: { remote: Record<string, unknown>; local: Record<string, unknown> };
 }
 
-export const McpIntegration: React.FC = () => {
+interface McpIntegrationProps {
+  /** Called with the key list after every load, so a card outside can show the count and last use. */
+  onKeysChange?: (keys: McpApiKey[]) => void;
+}
+
+export const McpIntegration: React.FC<McpIntegrationProps> = ({ onKeysChange }) => {
   const [keys, setKeys] = useState<McpApiKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -54,14 +59,30 @@ export const McpIntegration: React.FC = () => {
       setError(null);
       const res = await api.get('/api/mcp-keys');
       setKeys(res.data.keys);
+      onKeysChange?.(res.data.keys);
     } catch {
       setError('Failed to load API keys');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [onKeysChange]);
 
   useEffect(() => { fetchKeys(); }, [fetchKeys]);
+
+  // These overlays sit inside the card's dialog. Escape closes only the overlay on top, never the dialog under it
+  // (and never the screen that shows a new key once).
+  const overlayOpen = showGenerateModal || showRevokeConfirm !== null;
+  useEffect(() => {
+    if (!overlayOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      if (showRevokeConfirm) setShowRevokeConfirm(null);
+      else if (!generatedKey) setShowGenerateModal(false);
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [overlayOpen, showRevokeConfirm, generatedKey]);
 
   const openGenerate = () => {
     setLabel('');
@@ -225,7 +246,7 @@ export const McpIntegration: React.FC = () => {
 
       {/* Generate Modal */}
       {showGenerateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={(e) => { if (e.target === e.currentTarget && !generatedKey) setShowGenerateModal(false); }}>
+        <div className="fixed inset-0 flex items-center justify-center bg-black/50" style={{ zIndex: 80 }} onClick={(e) => { if (e.target === e.currentTarget && !generatedKey) setShowGenerateModal(false); }}>
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               {!generatedKey ? (
@@ -339,7 +360,7 @@ export const McpIntegration: React.FC = () => {
 
       {/* Revoke Confirmation */}
       {showRevokeConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div className="fixed inset-0 flex items-center justify-center bg-black/50" style={{ zIndex: 80 }}>
           <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-2">Revoke API Key</h3>
             <p className="text-sm text-gray-600 mb-1">
