@@ -98,6 +98,20 @@ describe('a secret never follows a changed server', () => {
     expect((await put({ emailProvider: { ...SMTP, apiKey: MASK, smtpPort: 25 } })).status).toBe(400);
   });
 
+  it('a changed from address (the login when there is no user), or a save that leaves the host out, with the masked password is 400', async () => {
+    const noUser = { ...SMTP, smtpUser: undefined };
+    await prismaBase.systemConfig.update({ where: { tenantId: pair.a.id }, data: { emailProvider: encryptProviderSecrets('emailProvider', noUser) } });
+    clearEmailConfigCache();
+    const before = JSON.stringify((await stored()).emailProvider);
+    expect((await put({ emailProvider: { ...noUser, apiKey: MASK, fromEmail: 'attacker@example.com' } })).status).toBe(400);
+    await prismaBase.systemConfig.update({ where: { tenantId: pair.a.id }, data: { emailProvider: encryptProviderSecrets('emailProvider', SMTP) } });
+    clearEmailConfigCache();
+    const { smtpHost: _h, ...noHost } = SMTP;
+    expect((await put({ emailProvider: { ...noHost, apiKey: MASK } })).status).toBe(400);
+    expect((await put({ emailProvider: { ...SMTP, apiKey: MASK, smtpSecure: true } })).status).toBe(400);
+    expect(before).toBeTruthy();
+  });
+
   it('a changed host with a new password saves (200)', async () => {
     const res = await put({ emailProvider: { ...SMTP, apiKey: 'new-password', smtpHost: 'smtp.example.org' } });
     expect(res.status).toBe(200);
@@ -116,6 +130,9 @@ describe('a secret never follows a changed server', () => {
     const res = await request(app).post('/api/settings/smtp/test').set(auth(admin())).send({ smtpHost: 'mail.attacker.example', password: MASK });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Type the password again when you change the server.');
+    const secure = await request(app).post('/api/settings/smtp/test').set(auth(admin())).send({ smtpSecure: true });
+    expect(secure.status).toBe(400);
+    expect(secure.body.error).toBe('Type the password again when you change the server.');
     const port = await request(app).post('/api/settings/smtp/test').set(auth(admin())).send({ smtpPort: 25 });
     expect(port.status).toBe(400);
     expect(port.body.error).toBe('Type the password again when you change the server.');

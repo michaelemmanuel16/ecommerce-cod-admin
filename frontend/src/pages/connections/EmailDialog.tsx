@@ -50,8 +50,8 @@ export function EmailDialog({ open, config, onClose, onSaved }: Props) {
   // Where the password goes changed: it must be typed again (the API refuses the saved one)
   const saved = config?.emailProvider;
   const serverChanged = !!saved?.apiKey && (
-    provider !== (saved.provider || 'sendgrid')
-    || (smtp && (host.trim() !== (saved.smtpHost ?? '') || (Number(port) || 587) !== (saved.smtpPort ?? 587) || user.trim() !== (saved.smtpUser ?? '')))
+    provider !== (saved.provider || 'sendgrid') || fromEmail.trim() !== (saved.fromEmail ?? '')
+    || (smtp && (host.trim() !== (saved.smtpHost ?? '') || (Number(port) || 587) !== (saved.smtpPort ?? 587) || secure !== !!saved.smtpSecure || user.trim() !== (saved.smtpUser ?? '')))
   );
   useEffect(() => { if (serverChanged && apiKey === SECRET_MASK) setApiKey(''); }, [serverChanged, apiKey]);
 

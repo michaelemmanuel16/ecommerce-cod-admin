@@ -56,16 +56,25 @@ export function preserveMaskedSecrets(providerType: string, incoming: any, exist
 export const ENDPOINT_FIELDS: Record<string, string[]> = {
   whatsappProvider: ['phoneNumberId', 'businessAccountId', 'wabaId', 'baseUrl', 'apiUrl', 'apiBaseUrl'],
   smsProvider: ['provider', 'baseUrl', 'apiUrl', 'apiBaseUrl', 'endpoint'],
-  emailProvider: ['provider', 'smtpHost', 'smtpPort', 'smtpUser', 'smtpSecure', 'baseUrl', 'apiUrl'],
+  // fromEmail is the SMTP login when smtpUser is empty, so it decides where the password is used too
+  emailProvider: ['provider', 'smtpHost', 'smtpPort', 'smtpSecure', 'smtpUser', 'fromEmail', 'baseUrl', 'apiUrl'],
 };
 
-const norm = (v: unknown): string => (v === undefined || v === null ? '' : String(v).trim().toLowerCase());
+/** What an omitted field means once stored, so leaving it out cannot hide a change. The save keeps the stored WhatsApp wabaId when it is left out. */
+const DEFAULTS: Record<string, string> = { smtpPort: '587', smtpSecure: 'false' };
+const norm = (f: string, v: unknown): string => (v === undefined || v === null || v === '' ? DEFAULTS[f] ?? '' : String(v).trim().toLowerCase());
 
-/** True when the incoming config sets an endpoint field to a value different from the stored one (a field left out is not a change). */
+/**
+ * True when the config that will be stored points a secret somewhere else than the stored one. A field left out counts as
+ * empty (the save replaces the whole config), so omitting smtpHost is a change. One list, used by the save and the SMTP test.
+ */
 export function endpointChanged(providerType: string, incoming: any, existing: any): boolean {
   const fields = ENDPOINT_FIELDS[providerType];
   if (!fields || !incoming || !existing) return false;
-  return fields.some((f) => incoming[f] !== undefined && norm(incoming[f]) !== norm(existing[f]));
+  return fields.some((f) => {
+    if (providerType === 'whatsappProvider' && f === 'wabaId' && incoming[f] === undefined) return false;
+    return norm(f, incoming[f]) !== norm(f, existing[f]);
+  });
 }
 
 /** After an endpoint change, a secret that is still the mask (or empty) while one is stored is refused: the caller must type it again. */

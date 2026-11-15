@@ -2,7 +2,7 @@ import nodemailer from 'nodemailer';
 import { AppError } from '../middleware/errorHandler';
 import { getDbEmailConfig } from './messaging/providers/emailProvider';
 import { arkeselCallbackUrl } from './messaging/providers/arkeselSmsProvider';
-import { SECRET_MASK } from '../utils/providerCrypto';
+import { endpointChanged, SECRET_MASK } from '../utils/providerCrypto';
 import { resolveSmtpHost } from '../utils/smtpHost';
 
 /** Settings helpers of the Connections page (M9-T27, F-1201 to F-1203). */
@@ -41,10 +41,11 @@ export async function sendSmtpTest(callerEmail: string, input: SmtpTestInput) {
   const port = input.smtpPort ?? savedSmtp?.smtpPort ?? 587;
   const typed = input.password && input.password !== SECRET_MASK ? input.password : undefined;
   // The saved password goes only to the saved server: host, port and user must all match what is saved.
-  const sameServer = !!savedSmtp
-    && host?.toLowerCase() === savedSmtp.smtpHost?.trim().toLowerCase()
-    && port === (savedSmtp.smtpPort ?? 587)
-    && (user ?? '').toLowerCase() === (savedSmtp.smtpUser || savedSmtp.fromEmail || '').toLowerCase();
+  const secure = input.smtpSecure ?? savedSmtp?.smtpSecure ?? false;
+  const sameServer = !!savedSmtp && !endpointChanged('emailProvider', {
+    provider: 'smtp', smtpHost: host, smtpPort: port, smtpSecure: secure,
+    smtpUser: input.smtpUser?.trim() || savedSmtp.smtpUser, fromEmail,
+  }, savedSmtp);
   if (!typed && savedSmtp && !sameServer) {
     throw new AppError('Type the password again when you change the server.', 400, 'SECRET_REQUIRED');
   }
@@ -60,7 +61,7 @@ export async function sendSmtpTest(callerEmail: string, input: SmtpTestInput) {
     host: address,
     ...(tls ? { tls } : {}),
     port,
-    secure: input.smtpSecure ?? savedSmtp?.smtpSecure ?? false,
+    secure,
     auth: { user, pass: password },
     connectionTimeout: SMTP_TIMEOUT_MS,
     greetingTimeout: SMTP_TIMEOUT_MS,
