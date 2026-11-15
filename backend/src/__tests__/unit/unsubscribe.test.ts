@@ -27,6 +27,9 @@ const TOKEN = 'a'.repeat(64);
 describe('Unsubscribe routes (MAN-81)', () => {
   beforeEach(() => {
     (prismaMock.customer.update as any).mockResolvedValue({});
+    (prismaMock.customer.findMany as any).mockResolvedValue([{ id: 7 }]);
+    (prismaMock.customer.updateMany as any).mockResolvedValue({ count: 1 });
+    (prismaMock.optOutEvent.createMany as any).mockResolvedValue({ count: 1 });
   });
 
   it('GET renders a confirm page and never writes (H2)', async () => {
@@ -42,25 +45,53 @@ describe('Unsubscribe routes (MAN-81)', () => {
     expect((prismaMock.customer.update as any)).not.toHaveBeenCalled();
   });
 
-  it('GET with an unknown/forged token is rejected (404, no write)', async () => {
+  it('GET confirm page carries the store name and its button colour, and works on a phone (M9-T35)', async () => {
+    (prismaMock.customer.findUnique as any).mockResolvedValue({ id: 7, emailOptOut: false, tenantId: 't1' });
+    (prismaMock.tenant.findUnique as any).mockResolvedValue({ name: 'Kora <Store>', logo: null });
+    (prismaMock.checkoutForm.findFirst as any).mockResolvedValue({ styling: { buttonColor: '#0A7D5A', accentColor: '#ff0000' } });
+
+    const res = await request(app).get(`/api/public/unsubscribe/${TOKEN}?channel=sms`);
+
+    expect(res.text).toContain('Kora &lt;Store&gt;');
+    expect(res.text).toContain('#0a7d5a');
+    expect(res.text).toContain('emails and SMS');
+    expect(res.text).toContain('width=device-width');
+  });
+
+  it('GET confirm page ignores a colour that is not hex, so nothing reaches the style', async () => {
+    (prismaMock.customer.findUnique as any).mockResolvedValue({ id: 7, emailOptOut: false, tenantId: 't1' });
+    (prismaMock.tenant.findUnique as any).mockResolvedValue({ name: 'Kora', logo: 'javascript:alert(1)' });
+    (prismaMock.checkoutForm.findFirst as any).mockResolvedValue({ styling: { buttonColor: 'red;}</style><script>', accentColor: 'url(x)' } });
+
+    const res = await request(app).get(`/api/public/unsubscribe/${TOKEN}`);
+
+    expect(res.text).not.toContain('<script>');
+    expect(res.text).not.toContain('javascript:');
+    expect(res.text).toContain('#111827');
+  });
+
+  it('GET with an unknown/forged token shows the same unsubscribed page (no write)', async () => {
     (prismaMock.customer.findUnique as any).mockResolvedValue(null);
 
     const res = await request(app).get(`/api/public/unsubscribe/${TOKEN}`);
 
-    expect(res.status).toBe(404);
-    expect(res.text).toContain('invalid');
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('You are unsubscribed');
     expect((prismaMock.customer.update as any)).not.toHaveBeenCalled();
+    expect((prismaMock.customer.updateMany as any)).not.toHaveBeenCalled();
   });
 
   it('POST flips emailOptOut to true', async () => {
-    (prismaMock.customer.findUnique as any).mockResolvedValue({ id: 7, emailOptOut: false });
+    (prismaMock.customer.findUnique as any).mockResolvedValue({ id: 7, emailOptOut: false, smsOptOut: false, whatsappOptOut: false, tenantId: 't1', phoneNumber: '+233241110000', email: 'a@b.c' });
 
     const res = await request(app).post(`/api/public/unsubscribe/${TOKEN}`);
 
     expect(res.status).toBe(200);
-    expect(res.text).toContain('unsubscribed');
-    const updateArg = (prismaMock.customer.update as any).mock.calls[0][0];
-    expect(updateArg).toEqual({ where: { id: 7 }, data: { emailOptOut: true } });
+    expect(res.text).toContain('You are unsubscribed');
+    const updateArg = (prismaMock.customer.updateMany as any).mock.calls[0][0];
+    expect(updateArg).toMatchObject({ where: { id: { in: [7] } }, data: { emailOptOut: true } });
+    const events = (prismaMock.optOutEvent.createMany as any).mock.calls[0][0].data;
+    expect(events).toEqual([expect.objectContaining({ customerId: 7, channel: 'email', optedOut: true, reason: 'unsubscribe_link' })]);
   });
 
   it('POST is idempotent — already opted-out customer is not re-written', async () => {
@@ -72,13 +103,16 @@ describe('Unsubscribe routes (MAN-81)', () => {
     expect((prismaMock.customer.update as any)).not.toHaveBeenCalled();
   });
 
-  it('POST with an unknown/forged token is rejected (404, no write)', async () => {
+  it('POST with an unknown/forged token shows the same unsubscribed page and writes nothing', async () => {
     (prismaMock.customer.findUnique as any).mockResolvedValue(null);
 
     const res = await request(app).post(`/api/public/unsubscribe/${TOKEN}`);
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('You are unsubscribed');
     expect((prismaMock.customer.update as any)).not.toHaveBeenCalled();
+    expect((prismaMock.customer.updateMany as any)).not.toHaveBeenCalled();
+    expect((prismaMock.optOutEvent.createMany as any)).not.toHaveBeenCalled();
   });
 });
 

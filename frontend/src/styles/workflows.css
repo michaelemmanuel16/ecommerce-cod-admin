@@ -1,0 +1,172 @@
+/* Workflows list, gallery, builder and run history (M9-T41 to T43, COD-84). Copied from the style block of
+   docs/mockups/v2/workflows.html, with the `.v2` scope added. The wizard frame (.wiz .steps .step .wbody .wfoot) is in onboarding.css.
+   Colours come from tokens.css only. Rules with no mockup counterpart are marked "new". */
+
+.v2 .wf > * + *{margin-top:16px}
+.v2 .wf > .head{margin-bottom:22px}
+.v2 .wf > .head + *{margin-top:0}
+.v2 .wf.busy .kpis,.v2 .wf.busy .card{opacity:.6;transition:opacity .15s}
+.v2 .wf .kpis.three{grid-template-columns:repeat(3,1fr)}
+@media (max-width:1100px){.v2 .wf .kpis.three{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:760px){.v2 .wf .kpis.three{grid-template-columns:1fr}}
+
+/* switch */
+.v2 .wfsw{position:relative;display:inline-block;width:38px;height:22px;flex:none}
+.v2 .wfsw input{position:absolute;inset:0;opacity:0;cursor:pointer;margin:0;z-index:1}
+.v2 .wfsw i{position:absolute;inset:0;border-radius:99px;background:var(--line);transition:background .15s}
+.v2 .wfsw i::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--card);box-shadow:var(--shadow);transition:transform .15s}
+.v2 .wfsw input:checked+i{background:var(--pine)}
+.v2 .wfsw input:checked+i::after{transform:translateX(16px)}
+.v2 .wfsw input:focus-visible+i{outline:2px solid var(--pine);outline-offset:2px}
+.v2 .wfsw input:disabled{cursor:not-allowed}
+.v2 .wfsw input:disabled+i{opacity:.55}
+
+/* fields */
+.v2 .wf .in,.v2 .wf .sel,.v2 .wf .ta,.v2 .wfd .in,.v2 .wfd .sel,.v2 .wfd .ta{width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:11px;background:var(--card);color:var(--ink);font:500 14px "Plus Jakarta Sans",sans-serif}
+.v2 .wf .in:focus-visible,.v2 .wf .sel:focus-visible,.v2 .wf .ta:focus-visible,.v2 .wfd .in:focus-visible,.v2 .wfd .sel:focus-visible,.v2 .wfd .ta:focus-visible{outline:2px solid var(--pine);outline-offset:1px;border-color:var(--pine)}
+.v2 .wf .in[aria-invalid=true],.v2 .wf .sel[aria-invalid=true],.v2 .wf .ta[aria-invalid=true]{border-color:var(--coral)}
+.v2 .wf .ta{resize:vertical;min-height:70px}
+.v2 .wf .lbl{display:block;font-weight:600;margin-bottom:6px}
+.v2 .wf .hint{color:var(--ink-3);font-size:12.5px;margin-top:5px}
+.v2 .wf .ferr{color:var(--coral);font-size:12.5px;font-weight:600;margin-top:5px}
+.v2 .wf .stack{display:grid;gap:16px}
+.v2 .wf .row2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.v2 .wf .mut{color:var(--ink-3)}
+
+.v2 .wf .icn{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;flex:none;background:var(--pine-soft);color:var(--pine)}
+.v2 .wf .icn svg.lucide{width:17px;height:17px}
+.v2 .wf .icn.mint{background:var(--mint-soft);color:var(--ok-ink)}
+.v2 .wf .icn.gold{background:var(--gold-soft);color:var(--warn-ink)}
+.v2 .wf .icn.coral{background:var(--coral-soft);color:var(--coral)}
+.v2 .wf .icn.violet{background:var(--violet-soft);color:var(--violet)}
+.v2 .wf .icn.neutral{background:var(--hover);color:var(--ink-2)}
+
+.v2 .wf .iconbtn{width:32px;height:32px;border-radius:9px;display:inline-grid;place-items:center;color:var(--ink-2);border:1px solid transparent;background:none;cursor:pointer}
+.v2 .wf .iconbtn:hover{background:var(--hover);border-color:var(--line);color:var(--ink)}
+.v2 .wf .iconbtn.dng:hover{color:var(--coral);background:var(--coral-soft)}
+.v2 .wf .iconbtn svg.lucide{width:16px;height:16px}
+.v2 .wf .iconbtn:focus-visible{outline:2px solid var(--pine);outline-offset:1px}
+.v2 .wf .iconbtn:disabled{opacity:.5;cursor:not-allowed}
+
+/* list */
+.v2 .wf .toolbar{display:flex;gap:10px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.v2 .wf .toolbar .srch{flex:1;min-width:200px;max-width:340px}
+.v2 .wf .toolbar .tabs{padding:0;border:0}
+.v2 .wf .tablewrap{overflow-x:auto}
+.v2 .wf .tablewrap td,.v2 .wf .tablewrap th{white-space:nowrap}
+.v2 .wf .wfname{display:flex;gap:12px;align-items:center;min-width:0}
+.v2 .wf .wfname small{display:block;color:var(--ink-3);font-size:12px;white-space:normal;max-width:300px}
+.v2 .wf .wfname a{color:inherit;font-weight:700;text-decoration:none;white-space:normal}
+.v2 .wf .wfname a:hover{text-decoration:underline}
+.v2 .wf .wft td,.v2 .wf .wft th{padding-left:14px;padding-right:14px}
+.v2 .wf .wft td:first-child,.v2 .wf .wft th:first-child{padding-left:20px}
+.v2 .wf .wft td:last-child,.v2 .wf .wft th:last-child{padding-right:20px}
+.v2 .wf .runs b{font-weight:700}
+.v2 .wf .runs small{display:block;color:var(--ink-3);font-size:12px}
+.v2 .wf .rowtools{display:flex;gap:2px;justify-content:flex-end}
+.v2 .wf .foot{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-top:1px solid var(--line);color:var(--ink-3);font-size:13px;gap:12px;flex-wrap:wrap}
+
+/* gallery */
+.v2 .wf .gal{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:14px 20px 20px}
+.v2 .wf .tpl{border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:8px;text-align:left;background:var(--card);color:inherit;font:inherit;cursor:pointer}
+.v2 .wf .tpl:hover:not(:disabled){border-color:var(--pine);background:var(--hover)}
+.v2 .wf .tpl:focus-visible{outline:2px solid var(--pine);outline-offset:2px}
+.v2 .wf .tpl:disabled{cursor:not-allowed;opacity:.75}
+.v2 .wf .tpl b{font-size:14px}
+.v2 .wf .tpl p{color:var(--ink-2);font-size:13px;flex:1}
+.v2 .wf .tpl .meta{display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-3);flex-wrap:wrap}
+.v2 .wf .tpl .why{color:var(--warn-ink);font-weight:600;font-size:12.5px}
+
+/* builder */
+.v2 .wf .bbar{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.v2 .wf .bbar h1{font-size:24px;font-weight:800}
+.v2 .wf .bbar .sp{flex:1}
+.v2 .wf .wiz .step .t{font-size:14px}
+.v2 .wf .wiz .step .bad{margin-left:auto;color:var(--coral);font-weight:800}
+.v2 .wf .pane>h2{font-size:26px;font-weight:800}
+.v2 .wf .pane>h2+p{color:var(--ink-2);margin:4px 0 22px;max-width:620px}
+.v2 .wf .trg{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.v2 .wf .trg button{border:1px solid var(--line);border-radius:14px;padding:13px;text-align:left;display:flex;gap:11px;align-items:flex-start;background:var(--card);color:inherit;font:inherit;cursor:pointer}
+.v2 .wf .trg button:hover{background:var(--hover)}
+.v2 .wf .trg button.on{border-color:var(--pine);box-shadow:0 0 0 3px var(--pine-soft);background:var(--pine-soft)}
+.v2 .wf .trg button:focus-visible{outline:2px solid var(--pine);outline-offset:2px}
+.v2 .wf .trg b{display:block;font-size:14px}
+.v2 .wf .trg small{color:var(--ink-2);font-size:12.5px}
+.v2 .wf .cfg{margin-top:18px;padding:16px;border:1px solid var(--line);border-radius:14px;background:var(--hover)}
+.v2 .wf .cfg .urlbox{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.v2 .wf .cfg .urlbox code{flex:1;min-width:0;overflow-wrap:anywhere;padding:9px 12px;border:1px solid var(--line);border-radius:11px;background:var(--card);font-size:12.5px}
+.v2 .wf .crow{display:grid;grid-template-columns:90px 1.2fr 1fr 1.4fr 34px;gap:8px;align-items:center}
+.v2 .wf .crow .and{font-size:12.5px;font-weight:700;color:var(--ink-3);text-align:center}
+.v2 .wf .seg{display:inline-flex;border:1px solid var(--line);border-radius:11px;padding:3px}
+.v2 .wf .seg button{padding:6px 12px;border-radius:8px;font-weight:600;color:var(--ink-2);background:none;border:0;cursor:pointer;font:inherit}
+.v2 .wf .seg button.on{background:var(--pine-soft);color:var(--pine)}
+.v2 .wf .seg button:focus-visible{outline:2px solid var(--pine);outline-offset:1px}
+.v2 .wf .seq{display:grid;gap:0}
+.v2 .wf .actn{border:1px solid var(--line);border-radius:14px;background:var(--card)}
+.v2 .wf .actn.bad{border-color:var(--coral)}
+.v2 .wf .actn .ah{display:flex;gap:12px;align-items:center;padding:12px 14px}
+.v2 .wf .actn .ah b{display:block}
+.v2 .wf .actn .ah small{color:var(--ink-2);font-size:12.5px}
+.v2 .wf .actn .ah .tx{flex:1;min-width:0}
+.v2 .wf .actn .ah .num2{width:24px;height:24px;border-radius:50%;background:var(--ink);color:var(--bg);display:grid;place-items:center;font-weight:700;font-size:12px;flex:none}
+.v2 .wf .actn .ab{padding:2px 14px 16px 50px}
+.v2 .wf .lnk{width:2px;height:16px;background:var(--line);margin:0 0 0 26px}
+.v2 .wf .addact{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
+.v2 .wf .addact button{border:1px dashed var(--line);border-radius:12px;padding:9px;display:flex;gap:8px;align-items:center;font-weight:600;color:var(--ink-2);font-size:13px;background:none;cursor:pointer;font-family:inherit}
+.v2 .wf .addact button:hover{border-color:var(--pine);color:var(--pine);background:var(--pine-soft)}
+.v2 .wf .addact svg.lucide{width:16px;height:16px}
+.v2 .wf .agl{display:flex;flex-wrap:wrap;gap:8px}
+.v2 .wf .agc{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:12px;padding:6px 8px 6px 10px;background:var(--card)}
+.v2 .wf .agc input{width:54px;border:1px solid var(--line);border-radius:8px;padding:3px 6px;background:var(--bg);color:var(--ink);font:inherit;text-align:right}
+.v2 .wf .agc button{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;color:var(--ink-3);background:none;border:0;cursor:pointer}
+.v2 .wf .agc button:hover{color:var(--coral)}
+.v2 .wf .catchup{display:flex;gap:10px;align-items:center;margin-top:14px}
+.v2 .wf .catchup .hint{display:block;margin:0}
+
+/* review */
+.v2 .wf .wbody{min-width:0}
+.v2 .wf .two2{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+.v2 .wf .hist .tablewrap{overflow-x:auto}
+.v2 .wf .sum{display:grid;gap:10px}
+.v2 .wf .sumrow{display:grid;grid-template-columns:110px 1fr;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.v2 .wf .sumrow:last-child{border:0}
+.v2 .wf .sumrow>span{color:var(--ink-3);font-weight:600;font-size:13px}
+.v2 .wf .chips{display:flex;gap:6px;flex-wrap:wrap}
+.v2 .wf .test{border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:16px}
+.v2 .wf .test .trow2{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.v2 .wf .test .trow2 .in{width:auto;flex:1;min-width:160px}
+.v2 .wf .tstep{display:flex;gap:10px;align-items:flex-start;padding:6px 0;font-size:13.5px}
+.v2 .wf .tstep svg.lucide{width:16px;height:16px;margin-top:2px;flex:none;color:var(--ink-3)}
+.v2 .wf .errlist{margin:0 0 14px;padding:12px 14px;border:1px solid var(--coral);border-radius:12px;background:var(--coral-soft);color:var(--coral);font-weight:600;font-size:13px}
+.v2 .wf .errlist ul{margin:6px 0 0;padding-left:18px;font-weight:500}
+
+/* run history */
+.v2 .wf .hist .ct{padding-bottom:4px}
+.v2 .wf .hist table{font-size:13px}
+.v2 .wf .hist .steps2{padding:6px 20px 14px;background:var(--hover);white-space:normal}
+.v2 .wf .hist .steps2 li{list-style:none;display:flex;gap:8px;align-items:flex-start;padding:4px 0}
+.v2 .wf .hist .steps2 ul{margin:0;padding:0}
+.v2 .wf .hist .steps2 pre{margin:2px 0 0;font:500 12px ui-monospace,monospace;color:var(--ink-2);white-space:pre-wrap;overflow-wrap:anywhere}
+.v2 .wf .hist .err{color:var(--coral);font-weight:600}
+/* new: the last column (Steps, Retry) stays in view when the table scrolls sideways */
+.v2 .wf .hist th:last-child,.v2 .wf .hist td:last-child:not(.steps2){position:sticky;right:0;background:var(--card);box-shadow:-8px 0 8px -8px var(--line)}
+.v2 .wf .hist tr:hover td:last-child:not(.steps2){background:var(--hover)}
+
+/* run dialog */
+.v2 .wfd .stack{display:grid;gap:14px}
+.v2 .wfd .warn{padding:12px 14px;border:1px solid var(--gold);border-radius:12px;background:var(--gold-soft);color:var(--warn-ink);font-weight:600;font-size:13.5px}
+.v2 .wfd .ferr{color:var(--coral);font-size:13px;font-weight:600}
+.v2 .wfd .hint{color:var(--ink-3);font-size:12.5px}
+
+@media (max-width:1100px){
+  .v2 .wf .gal{grid-template-columns:repeat(2,1fr)}
+  .v2 .wf .trg{grid-template-columns:repeat(2,1fr)}
+  .v2 .wf .addact{grid-template-columns:repeat(2,1fr)}
+}
+@media (max-width:760px){
+  .v2 .wf .gal,.v2 .wf .trg,.v2 .wf .row2{grid-template-columns:1fr}
+  .v2 .wf .crow{grid-template-columns:1fr 1fr}
+  .v2 .wf .crow .and{text-align:left}
+  .v2 .wf .actn .ab{padding-left:14px}
+  .v2 .wf .wfname small{max-width:200px}
+}

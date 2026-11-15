@@ -7,7 +7,9 @@ import { emitToTenant } from '../sockets/index';
 import { runJobInTenant, getTenantId } from '../utils/tenantContext';
 import assignmentService from '../services/assignmentService';
 import { systemActor } from '../services/systemUserService';
-import { updateOrderByWorkflow } from '../services/workflowActions';
+import { runHttpRequestAction, updateOrderByWorkflow } from '../services/workflowActions';
+import { runAssignTo } from '../services/workflowAssignTo';
+import crypto from 'crypto';
 
 // Send actions read tenant-scoped provider config (SystemConfig) and write
 // tenant-scoped MessageLog rows. They refuse to run with no tenant context.
@@ -25,16 +27,31 @@ const redisConfig = {
   password: process.env.REDIS_PASSWORD,
 };
 
-// Use dummy queue for tests to avoid Redis connection errors
-export const workflowQueue = process.env.NODE_ENV === 'test'
-  ? ({
-    process: () => { },
-    on: () => { },
-    add: () => { },
-    close: () => Promise.resolve(),
-  } as any)
-  : new Bull('workflow-execution', {
-    redis: redisConfig,
+/** A run that has been executing (waits not counted) for longer than this stops and is marked failed `time_limit` (M9-T21). */
+export const MAX_RUN_ACTIVE_MS = 10 * 60 * 1000;
+export const TIME_LIMIT_REASON = 'time_limit';
+export const EXECUTE_JOB = 'execute-workflow';
+export const RESUME_JOB = 'resume-workflow';
+/** Repeat job: add the runs waiting in the trigger outbox (queue was down when they fired). */
+export const DRAIN_OUTBOX_JOB = 'drain-workflow-outbox';
+/** Repeat job of one schedule workflow (M9-T22), see workflowSchedule.ts. */
+export const SCHEDULE_JOB = 'run-scheduled-workflow';
+/** One batch of up to 50 orders of a catch-up (M9-T23), see workflowCatchUp.ts. */
+export const CATCH_UP_JOB = 'workflow-catch-up';
+/** One batch of up to 50 orders of a manual Run (M9-T24), see workflowRunService.ts. */
+export const MANUAL_RUN_JOB = 'workflow-manual-run';
+/** Bull keeps a delay in a 32-bit field. */
+const MAX_DELAY_MS = 2 ** 31 - 1;
+
+/** A short fingerprint of a workflow's actions: a retry resumes by step index, so it must see the same steps (M9-T24). */
+export const actionsHash = (actions: unknown) => crypto.createHash('sha256').update(JSON.stringify(actions ?? [])).digest('hex').slice(0, 16);
+
+/** Deterministic: adding the same resume twice does nothing. `stepIndex` is the step the run continues from. */
+export const resumeJobId = (executionId: number, stepIndex: number) => `wf-resume:${executionId}:${stepIndex}`;
+
+export function createWorkflowQueue(name = 'workflow-execution', redis: typeof redisConfig = redisConfig): Bull.Queue {
+  return new Bull(name, {
+    redis,
     defaultJobOptions: {
       attempts: 3,
       backoff: {
@@ -43,10 +60,130 @@ export const workflowQueue = process.env.NODE_ENV === 'test'
       }
     }
   });
+}
 
+// Use dummy queue for tests to avoid Redis connection errors
+export const workflowQueue = process.env.NODE_ENV === 'test'
+  ? ({
+    process: () => { },
+    on: () => { },
+    add: () => { },
+    close: () => Promise.resolve(),
+  } as any)
+  : createWorkflowQueue();
 
-export const processExecuteWorkflow = async (job: Bull.Job) => {
-  const { executionId, workflowId, actions, conditions, input, tenantId } = job.data;
+/** What a run needs from the queue: to schedule the resume after a wait. */
+type ResumeScheduler = Pick<Bull.Queue, 'add'>;
+
+interface RunState {
+  executionId: number;
+  workflowId: number;
+  actions: any[];
+  conditions?: any;
+  input: any;
+  tenantId?: string | null;
+  /** Step to start from: 0 for a new run, the step after the wait for a resume. */
+  startIndex: number;
+  steps: any[];
+  /** Milliseconds this run has spent executing before this segment (waits not counted). */
+  activeMs: number;
+  /** The failed execution this run retries (M9-T24): kept in `output.retryOf`. */
+  retryOf?: number;
+}
+
+/** Run the steps from `startIndex`. A `wait` saves the state, schedules the resume as a delayed job and returns: no worker is held. */
+async function runSteps(state: RunState, queue: ResumeScheduler): Promise<void> {
+  const { executionId, workflowId, actions, conditions, input, tenantId, startIndex, retryOf } = state;
+  const steps = [...state.steps];
+  const segmentStart = Date.now();
+  const spentMs = () => state.activeMs + (Date.now() - segmentStart);
+  const outputNow = () => ({ activeMs: spentMs(), actionsHash: actionsHash(actions), ...(retryOf ? { retryOf } : {}) });
+  const io = getSocketInstance();
+
+  const emitFinished = (payload: Record<string, unknown>) => {
+    if (io) emitToTenant(io, 'workflow:execution_completed', { workflowId, executionId, ...payload });
+  };
+  const failRun = async (message: string, failedStepIndex?: number) => {
+    await prisma.workflowExecution.update({
+      where: { id: executionId },
+      data: {
+        status: 'failed', error: message, steps, output: outputNow(), resumeAt: null, completedAt: new Date(),
+        ...(failedStepIndex !== undefined ? { failedStepIndex } : {}),
+      }
+    });
+    emitFinished({ status: 'failed', error: message });
+  };
+
+  let i = startIndex;
+  try {
+    for (; i < actions.length; i++) {
+      if (spentMs() > MAX_RUN_ACTIVE_MS) {
+        logger.warn('Workflow run stopped: time limit', { executionId, workflowId, activeMs: spentMs() });
+        await failRun(TIME_LIMIT_REASON, i);
+        return; // a stopped run is final: no throw, so Bull does not retry it
+      }
+      const action = actions[i];
+
+      if (action.type === 'wait') {
+        // Seconds, as the editor says ("Wait Duration (seconds)")
+        const seconds = Number(action.config?.duration ?? action.duration ?? 0);
+        const delayMs = Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds * 1000, MAX_DELAY_MS) : 0;
+        if (delayMs > 0) {
+          const resumeAt = new Date(Date.now() + delayMs);
+          steps.push({ action: 'wait', success: true, result: { waitSeconds: seconds, resumeAt: resumeAt.toISOString() } });
+          // Step state lives in the `steps` and `resumeAt` columns; the time spent so far (waits not counted) in `output.activeMs`.
+          await prisma.workflowExecution.update({
+            where: { id: executionId },
+            data: { status: 'waiting', steps, resumeAt, output: outputNow() }
+          });
+          await queue.add(RESUME_JOB, {
+            executionId, workflowId, actions, conditions, input, tenantId, nextIndex: i + 1,
+          }, { delay: delayMs, jobId: resumeJobId(executionId, i + 1) });
+          logger.info('Workflow waiting', { executionId, nextIndex: i + 1, resumeAt: resumeAt.toISOString() });
+          return;
+        }
+        steps.push({ action: 'wait', success: true, result: { message: 'No wait time set' } });
+        continue;
+      }
+
+      try {
+        const result = await executeAction(action, input, conditions, { workflowId, actionIndex: i });
+        steps.push({ action: action.type, success: true, result });
+      } catch (error: any) {
+        steps.push({ action: action.type, success: false, error: error.message });
+
+        // If action fails, stop execution
+        throw error;
+      }
+    }
+
+    if (spentMs() > MAX_RUN_ACTIVE_MS) {
+      await failRun(TIME_LIMIT_REASON, actions.length - 1);
+      return;
+    }
+
+    await prisma.workflowExecution.update({
+      where: { id: executionId },
+      data: {
+        status: 'completed',
+        steps,
+        output: outputNow(),
+        resumeAt: null,
+        completedAt: new Date()
+      }
+    });
+
+    logger.info('Workflow execution completed', { executionId });
+    emitFinished({ status: 'completed', completedAt: new Date() });
+  } catch (error: any) {
+    logger.error('Workflow execution failed', { executionId, error: error.message });
+    await failRun(error.message, i);
+    throw error;
+  }
+}
+
+export const processExecuteWorkflow = async (job: Bull.Job, queue: ResumeScheduler = workflowQueue) => {
+  const { executionId, workflowId, actions, conditions, input, tenantId, startIndex, priorSteps, retryOf } = job.data;
 
   // Restore tenant context so all Prisma queries (MessageLog, SystemConfig, etc.)
   // are scoped to the correct tenant
@@ -58,87 +195,79 @@ export const processExecuteWorkflow = async (job: Bull.Job) => {
       emitToTenant(io, 'workflow:execution_started', { workflowId, executionId });
     }
 
-    try {
-      await prisma.workflowExecution.update({
-        where: { id: executionId },
-        data: { status: 'running' }
-      });
+    await prisma.workflowExecution.update({
+      where: { id: executionId },
+      data: { status: 'running' }
+    });
 
-      const output: any = { steps: [] };
-
-      // Execute actions sequentially
-      for (const action of actions) {
-        try {
-          const result = await executeAction(action, input, conditions);
-          output.steps.push({
-            action: action.type,
-            success: true,
-            result
-          });
-
-          // If action has a wait, delay
-          if (action.type === 'wait' && action.config.duration) {
-            await new Promise(resolve => setTimeout(resolve, action.config.duration));
-          }
-        } catch (error: any) {
-          output.steps.push({
-            action: action.type,
-            success: false,
-            error: error.message
-          });
-
-          // If action fails, stop execution
-          throw error;
-        }
-      }
-
-      await prisma.workflowExecution.update({
-        where: { id: executionId },
-        data: {
-          status: 'completed',
-          output,
-          completedAt: new Date()
-        }
-      });
-
-      logger.info('Workflow execution completed', { executionId });
-
-      if (io) {
-        emitToTenant(io, 'workflow:execution_completed', {
-          workflowId,
-          executionId,
-          status: 'completed',
-          completedAt: new Date()
-        });
-      }
-    } catch (error: any) {
-      logger.error('Workflow execution failed', { executionId, error: error.message });
-
-      if (io) {
-        emitToTenant(io, 'workflow:execution_completed', {
-          workflowId,
-          executionId,
-          status: 'failed',
-          error: error.message
-        });
-      }
-
-      await prisma.workflowExecution.update({
-        where: { id: executionId },
-        data: {
-          status: 'failed',
-          error: error.message,
-          completedAt: new Date()
-        }
-      });
-
-      throw error;
-    }
+    await runSteps({
+      executionId, workflowId, actions, conditions, input, tenantId,
+      startIndex: Number.isInteger(startIndex) ? startIndex : 0,
+      steps: Array.isArray(priorSteps) ? priorSteps : [],
+      activeMs: 0, retryOf,
+    }, queue);
   };
 
   return runJobInTenant(`Workflow job ${job.id} (execution ${executionId})`, tenantId, processJob);
 };
-workflowQueue.process('execute-workflow', processExecuteWorkflow);
+
+/**
+ * The delayed job a `wait` leaves behind (M9-T21): load the execution and go on from the step after the wait.
+ * Only a `waiting` execution resumes, and it is claimed in one update, so a double add or a Bull retry cannot run the steps twice.
+ */
+export const processResumeWorkflow = async (job: Bull.Job, queue: ResumeScheduler = workflowQueue) => {
+  const { executionId, workflowId, actions, conditions, input, tenantId, nextIndex } = job.data;
+
+  const resumeJob = async () => {
+    const execution = await prisma.workflowExecution.findUnique({ where: { id: executionId } });
+    if (!execution || execution.status !== 'waiting') {
+      logger.info('Workflow resume skipped: not waiting', { executionId, status: execution?.status ?? 'missing' });
+      return;
+    }
+    const claimed = await prisma.workflowExecution.updateMany({
+      where: { id: executionId, status: 'waiting' },
+      data: { status: 'running' }
+    });
+    if (claimed.count === 0) return;
+
+    // Executions saved before the columns existed kept their steps in `output.steps`: read those when `steps` is empty.
+    const saved: any = execution.output ?? {};
+    const columnSteps = Array.isArray(execution.steps) ? execution.steps : [];
+    await runSteps({
+      executionId, workflowId, actions, conditions, input, tenantId,
+      startIndex: nextIndex,
+      steps: columnSteps.length > 0 ? columnSteps : Array.isArray(saved.steps) ? saved.steps : [],
+      activeMs: Number(saved.activeMs) || 0,
+      retryOf: Number.isInteger(saved.retryOf) ? saved.retryOf : undefined,
+    }, queue);
+  };
+
+  return runJobInTenant(`Workflow resume ${job.id} (execution ${executionId})`, tenantId, resumeJob);
+};
+
+/** Attach both processors to a queue. The module does it for the shared queue; a test does it for its own. */
+export function registerWorkflowProcessors(queue: Bull.Queue): void {
+  queue.process(EXECUTE_JOB, (job: Bull.Job) => processExecuteWorkflow(job, queue));
+  queue.process(RESUME_JOB, (job: Bull.Job) => processResumeWorkflow(job, queue));
+  // Loaded when the job runs: workflowEnqueue imports this module
+  queue.process(DRAIN_OUTBOX_JOB, async () => (await import('./workflowEnqueue')).drainWorkflowOutbox());
+  // Same reason: workflowSchedule imports this module
+  queue.process(SCHEDULE_JOB, async (job: Bull.Job) => (await import('./workflowSchedule')).processScheduledJob(job));
+  queue.process(CATCH_UP_JOB, async (job: Bull.Job) => (await import('../services/workflowCatchUpService')).processCatchUpBatch(job));
+  queue.process(MANUAL_RUN_JOB, async (job: Bull.Job) => (await import('../services/workflowRunService')).processManualRunBatch(job));
+}
+
+/** Start the 30 s outbox drain. Replaces an older repeat of the same job, so a restart never doubles it. */
+export async function setupWorkflowOutboxCron(queue: Bull.Queue = workflowQueue): Promise<void> {
+  if (process.env.NODE_ENV === 'test') return;
+  for (const repeat of await queue.getRepeatableJobs()) {
+    if (repeat.name === DRAIN_OUTBOX_JOB) await queue.removeRepeatableByKey(repeat.key);
+  }
+  const { DRAIN_EVERY_MS } = await import('./workflowEnqueue');
+  await queue.add(DRAIN_OUTBOX_JOB, {}, { repeat: { every: DRAIN_EVERY_MS }, removeOnComplete: true, removeOnFail: true, attempts: 1 });
+  logger.info('Workflow outbox drain scheduled (every 30 s).');
+}
+if (process.env.NODE_ENV !== 'test') registerWorkflowProcessors(workflowQueue);
 
 async function executeAssignUserAction(action: any, input: any, conditions?: any): Promise<any> {
   const config = action.config || {};
@@ -320,7 +449,7 @@ async function executeAssignUserAction(action: any, input: any, conditions?: any
 }
 
 // Exported for unit testing of the fail-closed tenant guard.
-export async function executeAction(action: any, input: any, conditions?: any): Promise<any> {
+export async function executeAction(action: any, input: any, conditions?: any, ctx: { workflowId?: number; actionIndex?: number } = {}): Promise<any> {
   // Fail closed: never run a tenant-scoped send without tenant context (C1).
   if (TENANT_SCOPED_SEND_ACTIONS.has(action.type) && !getTenantId()) {
     throw new Error(`Refusing to run "${action.type}" with no tenant context`);
@@ -381,6 +510,9 @@ export async function executeAction(action: any, input: any, conditions?: any): 
     case 'assign_user':
       return await executeAssignUserAction(action, input, conditions);
 
+    case 'assign_to':
+      return await runAssignTo(action, input, conditions, ctx);
+
     case 'add_tag':
       const customer = await prisma.customer.findUnique({
         where: { id: action.config.customerId }
@@ -396,9 +528,7 @@ export async function executeAction(action: any, input: any, conditions?: any): 
       return { tagged: true };
 
     case 'http_request':
-      logger.info('Making HTTP request', { url: action.config.url });
-      // Make HTTP request here
-      return { success: true };
+      return runHttpRequestAction(action);
 
     default:
       throw new Error(`Unknown action type: ${action.type}`);

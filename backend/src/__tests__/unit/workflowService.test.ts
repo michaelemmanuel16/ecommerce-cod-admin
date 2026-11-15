@@ -3,8 +3,7 @@ import { prismaMock } from '../mocks/prisma.mock';
 import { WorkflowService } from '../../services/workflowService';
 import { AppError } from '../../middleware/errorHandler';
 import { systemActor } from '../../services/systemUserService';
-import { transitionOrder } from '../../services/orderStateMachine';
-import assignmentService from '../../services/assignmentService';
+import { smsService } from '../../services/smsService';
 import { WorkflowTriggerType } from '@prisma/client';
 
 // Mock the workflow queue
@@ -43,6 +42,8 @@ describe('WorkflowService', () => {
   beforeEach(() => {
     workflowService = new WorkflowService();
     (systemActor as jest.Mock).mockResolvedValue({ kind: 'system', userId: 77 } as never);
+    // resetMocks clears the factory's value; the service is now loaded early (the inbox imports it), so set it here
+    (smsService.sendSms as jest.Mock).mockResolvedValue({ messageLogId: 1, sent: true } as never);
   });
 
   describe('createWorkflow', () => {
@@ -167,132 +168,10 @@ describe('WorkflowService', () => {
       });
 
       expect(result.message).toBe('Workflow conditions not met');
-      expect(prismaMock.workflowExecution.create).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('processWorkflowExecution', () => {
-    const executionId = 'execution-1';
-    const workflowId = 'workflow-1';
-
-    it('should process workflow actions sequentially', async () => {
-      const actions = [
-        { type: 'update_order', orderId: 'order-1', status: 'confirmed' },
-        { type: 'send_sms', phoneNumber: '+1234567890', message: 'Test' }
-      ];
-
-      prismaMock.workflowExecution.update.mockResolvedValue({} as any);
-      (transitionOrder as jest.Mock).mockResolvedValue({ changed: true } as never);
-
-      const results = await workflowService.processWorkflowExecution(
-        executionId,
-        workflowId,
-        actions,
-        { orderId: 'order-1' }
-      );
-
-      expect(results).toHaveLength(2);
-      expect(results[0].action).toBe('update_order');
-      expect(results[0].success).toBe(true);
-      expect(results[1].action).toBe('send_sms');
-      expect(results[1].success).toBe(true);
-    });
-
-    it('should handle action errors gracefully', async () => {
-      const actions = [
-        { type: 'update_order', orderId: 'invalid-order', status: 'confirmed' }
-      ];
-
-      prismaMock.workflowExecution.update.mockResolvedValue({} as any);
-      (transitionOrder as jest.Mock).mockRejectedValue(new Error('Order not found') as never);
-
-      const results = await workflowService.processWorkflowExecution(
-        executionId,
-        workflowId,
-        actions,
-        {}
-      );
-
-      expect(results).toHaveLength(1);
-      expect(results[0].success).toBe(false);
-      expect(results[0].error).toBe('Order not found');
-    });
-
-    it('should stop execution on error when stopOnError is true', async () => {
-      const actions = [
-        {
-          type: 'update_order',
-          orderId: 'invalid-order',
-          status: 'confirmed',
-          stopOnError: true
-        }
-      ];
-
-      prismaMock.workflowExecution.update.mockResolvedValue({} as any);
-      (transitionOrder as jest.Mock).mockRejectedValue(new Error('Order not found') as never);
-
-      await expect(
-        workflowService.processWorkflowExecution(
-          executionId,
-          workflowId,
-          actions,
-          {}
-        )
-      ).rejects.toThrow('Order not found');
-    });
-
-    it('should mark execution as completed on success', async () => {
-      const actions = [
-        { type: 'send_sms', phoneNumber: '+1234567890', message: 'Test' }
-      ];
-
-      let finalStatus: string | undefined;
-      prismaMock.workflowExecution.update.mockImplementation((args: any) => {
-        if (args.data.status) {
-          finalStatus = args.data.status;
-        }
-        return Promise.resolve({} as any);
-      });
-
-      await workflowService.processWorkflowExecution(
-        executionId,
-        workflowId,
-        actions,
-        {}
-      );
-
-      expect(finalStatus).toBe('completed');
-    });
-
-    it('should mark execution as failed on error', async () => {
-      const actions = [
-        {
-          type: 'update_order',
-          orderId: 'invalid-order',
-          status: 'confirmed',
-          stopOnError: true
-        }
-      ];
-
-      let finalStatus: string | undefined;
-      prismaMock.workflowExecution.update.mockImplementation((args: any) => {
-        if (args.data.status) {
-          finalStatus = args.data.status;
-        }
-        return Promise.resolve({} as any);
-      });
-      (transitionOrder as jest.Mock).mockRejectedValue(new Error('Order not found') as never);
-
-      await expect(
-        workflowService.processWorkflowExecution(
-          executionId,
-          workflowId,
-          actions,
-          {}
-        )
-      ).rejects.toThrow();
-
-      expect(finalStatus).toBe('failed');
+      // M9: the skip is written to the history with its reason, and no step runs
+      expect(prismaMock.workflowExecution.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ status: 'skipped', error: 'conditions_not_met' }),
+      }));
     });
   });
 
@@ -335,123 +214,6 @@ describe('WorkflowService', () => {
       const result = (workflowService as any).evaluateConditions({}, {});
 
       expect(result).toBe(true);
-    });
-  });
-
-  describe('executeAction - update_order', () => {
-    it('should update order successfully', async () => {
-      const action = {
-        type: 'update_order',
-        orderId: 'order-1',
-        status: 'confirmed',
-        notes: 'Auto-confirmed'
-      };
-
-      (transitionOrder as jest.Mock).mockResolvedValue({ changed: true } as never);
-      (prismaMock.order.findFirst as jest.Mock).mockResolvedValue({ notes: null } as never);
-
-      const result = await (workflowService as any).executeAction(
-        action,
-        { orderId: 'order-1' }
-      );
-
-      expect(result.success).toBe(true);
-      expect(result.orderId).toBe('order-1');
-      // the system user moves it through the state machine; depth 1 = caused by a workflow
-      expect(transitionOrder).toHaveBeenCalledWith(
-        'order-1', 'confirmed', { kind: 'system', userId: 77 },
-        expect.objectContaining({ workflowDepth: 1 })
-      );
-      // notes go in one write that carries no status
-      expect(prismaMock.order.update).toHaveBeenCalledTimes(1);
-      expect(prismaMock.order.update).toHaveBeenCalledWith({ where: { id: 'order-1' }, data: { notes: 'Auto-confirmed' } });
-    });
-
-    it('should throw error when order ID not provided', async () => {
-      const action = {
-        type: 'update_order',
-        status: 'confirmed'
-      };
-
-      await expect(
-        (workflowService as any).executeAction(action, {})
-      ).rejects.toThrow('Order ID not provided');
-    });
-  });
-
-  describe('executeAction - update_order without a field', () => {
-    it('fails with a clear error instead of succeeding silently', async () => {
-      await expect(
-        (workflowService as any).executeAction({ type: 'update_order', orderId: 'order-1' }, {})
-      ).rejects.toThrow('update_order needs a status, priority or notes');
-      expect(transitionOrder).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('executeAction - assign_agent', () => {
-    it('should assign agent to order successfully', async () => {
-      const action = {
-        type: 'assign_agent',
-        orderId: 'order-1',
-        agentId: 'agent-1'
-      };
-
-      const result = await (workflowService as any).executeAction(action, {});
-
-      expect(result.success).toBe(true);
-      expect(result.agentId).toBe('agent-1');
-      expect(assignmentService.assignByRole).toHaveBeenCalledWith('order-1', 'agent-1', 'delivery_agent', { kind: 'system', userId: 77 }, { checkAvailable: true });
-    });
-
-    it('should throw error when agent ID not provided', async () => {
-      const action = {
-        type: 'assign_agent',
-        orderId: 'order-1'
-      };
-
-      await expect(
-        (workflowService as any).executeAction(action, {})
-      ).rejects.toThrow('Order ID or Agent ID not provided');
-    });
-  });
-
-  describe('executeAction - add_tag', () => {
-    it('should add tag to order successfully', async () => {
-      const action = {
-        type: 'add_tag',
-        orderId: 'order-1',
-        tag: 'urgent'
-      };
-
-      prismaMock.order.updateMany.mockResolvedValue({ count: 1 } as any);
-
-      const result = await (workflowService as any).executeAction(action, {});
-
-      expect(result.success).toBe(true);
-      expect(result.tag).toBe('urgent');
-      // one atomic write, never a read-modify-write
-      expect(prismaMock.order.updateMany).toHaveBeenCalledWith({
-        where: { id: 'order-1', NOT: { tags: { has: 'urgent' } } },
-        data: { tags: { push: 'urgent' } },
-      });
-    });
-
-    it('does nothing when the order already has the tag', async () => {
-      const action = { type: 'add_tag', orderId: 'order-1', tag: 'urgent' };
-      prismaMock.order.updateMany.mockResolvedValue({ count: 0 } as any);
-      prismaMock.order.findFirst.mockResolvedValue({ id: 'order-1' } as any);
-
-      const result = await (workflowService as any).executeAction(action, {});
-
-      expect(result.success).toBe(true);
-    });
-
-    it('throws when the order does not exist', async () => {
-      const action = { type: 'add_tag', orderId: 'order-1', tag: 'urgent' };
-      prismaMock.order.updateMany.mockResolvedValue({ count: 0 } as any);
-      prismaMock.order.findFirst.mockResolvedValue(null);
-
-      await expect((workflowService as any).executeAction(action, {})).rejects.toThrow('Order not found');
     });
   });
 

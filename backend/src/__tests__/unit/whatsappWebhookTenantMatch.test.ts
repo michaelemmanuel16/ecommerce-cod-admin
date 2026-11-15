@@ -10,7 +10,8 @@ jest.mock('../../utils/logger', () => ({
 
 import { prismaMock } from '../mocks/prisma.mock';
 import logger from '../../utils/logger';
-import whatsappService, { resolveWhatsappTenantFromPayload } from '../../services/whatsappService';
+import { resolveWhatsappTenantFromPayload } from '../../services/whatsappService';
+import { messageStatus } from '../../services/messaging/messageStatus';
 import { handleWebhook } from '../../controllers/whatsappController';
 
 const payload = (phoneId: string, wabaId = 'waba-x') => ({
@@ -68,7 +69,7 @@ describe('WhatsApp webhook tenant match', () => {
 
   it('handleWebhook processes the event for the one tenant whose secret verifies', async () => {
     twoTenants();
-    const spy = jest.spyOn(whatsappService, 'processStatusUpdate').mockResolvedValue(undefined as any);
+    const spy = jest.spyOn(messageStatus, 'record').mockResolvedValue('applied');
     const body = payload('p1');
     const rawBody = Buffer.from(JSON.stringify(body));
     const res = buildRes();
@@ -78,12 +79,12 @@ describe('WhatsApp webhook tenant match', () => {
     );
     expect(res.status).toHaveBeenCalledWith(200);
     expect(spy).toHaveBeenCalledTimes(1);
-    expect(spy.mock.calls[0][0]).toBe('wamid.1');
+    expect(spy.mock.calls[0][1]).toBe('wamid.1');
   });
 
   it('handleWebhook drops the event and logs an error when no candidate secret verifies', async () => {
     twoTenants();
-    const spy = jest.spyOn(whatsappService, 'processStatusUpdate').mockResolvedValue(undefined as any);
+    const spy = jest.spyOn(messageStatus, 'record').mockResolvedValue('applied');
     const body = payload('p1');
     const rawBody = Buffer.from(JSON.stringify(body));
     const res = buildRes();

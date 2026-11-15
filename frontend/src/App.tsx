@@ -25,6 +25,7 @@ import { AcceptInvite } from './pages/AcceptInvite';
 import { DynamicDashboard } from './pages/DynamicDashboard';
 import { Dashboard } from './pages/Dashboard';
 import { SettingsTabRedirect } from './pages/settings/SettingsTabRedirect';
+import { WebhooksRedirect } from './pages/connections/WebhooksRedirect';
 import { ProductEditRedirect } from './pages/products/ProductEditRedirect';
 // Lazy load all other pages for better initial load performance
 const Pricing = lazy(() => import('./pages/Pricing').then(m => ({ default: m.Pricing })));
@@ -40,6 +41,7 @@ const Staff = lazy(() => import('./pages/Staff').then(m => ({ default: m.Staff }
 const Targets = lazy(() => import('./pages/Targets').then(m => ({ default: m.Targets })));
 const Leaderboard = lazy(() => import('./pages/Leaderboard').then(m => ({ default: m.Leaderboard })));
 const Marketing = lazy(() => import('./pages/Marketing').then(m => ({ default: m.Marketing })));
+const Inbox = lazy(() => import('./pages/Inbox').then(m => ({ default: m.Inbox })));
 const Reports = lazy(() => import('./pages/Reports').then(m => ({ default: m.Reports })));
 const Workflows = lazy(() => import('./pages/Workflows').then(m => ({ default: m.Workflows })));
 const WorkflowWizard = lazy(() => import('./pages/WorkflowWizard').then(m => ({ default: m.WorkflowWizard })));
@@ -47,7 +49,7 @@ const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.S
 const CheckoutForms = lazy(() => import('./pages/CheckoutForms').then(m => ({ default: m.CheckoutForms })));
 const CheckoutFormEditor = lazy(() => import('./pages/CheckoutFormEditor').then(m => ({ default: m.CheckoutFormEditor })));
 const CheckoutFormPreview = lazy(() => import('./pages/CheckoutFormPreview').then(m => ({ default: m.CheckoutFormPreview })));
-const Webhooks = lazy(() => import('./pages/Webhooks').then(m => ({ default: m.Webhooks })));
+const Connections = lazy(() => import('./pages/Connections').then(m => ({ default: m.Connections })));
 const PublicCheckout = lazy(() => import('./pages/PublicCheckout').then(m => ({ default: m.PublicCheckout })));
 const PaymentCallback = lazy(() => import('./pages/PaymentCallback').then(m => ({ default: m.PaymentCallback })));
 // Dev-only design-system gallery. The DEV flag is replaced at build time, so production bundles drop the import.
@@ -55,7 +57,7 @@ const UiGallery = import.meta.env.DEV ? lazy(() => import('./pages/dev/UiGallery
 const RepShell = lazy(() => import('./pages/rep/RepShell'));
 const RepTodayPage = lazy(() => import('./pages/rep/RepTodayPage'));
 const RepQueuePage = lazy(() => import('./pages/rep/RepQueuePage'));
-const RepComingSoon = lazy(() => import('./pages/rep/RepComingSoon'));
+const RepInboxPage = lazy(() => import('./pages/rep/RepInboxPage'));
 const RepOrdersPage = lazy(() => import('./pages/rep/RepOrdersPage'));
 const RepEarningsPage = lazy(() => import('./pages/rep/RepEarningsPage'));
 const RepNumbersPage = lazy(() => import('./pages/rep/RepNumbersPage'));
@@ -63,7 +65,7 @@ const RepCallPage = lazy(() => import('./pages/rep/RepCallPage'));
 const EarningsHistory = lazy(() => import('./pages/EarningsHistory'));
 const AgentMyInventory = lazy(() => import('./pages/AgentMyInventory'));
 const Inventory = lazy(() => import('./pages/Inventory').then(m => ({ default: m.Inventory })));
-const Communications = lazy(() => import('./pages/Communications'));
+const Messages = lazy(() => import('./pages/Messages').then(m => ({ default: m.Messages })));
 const SubscriptionCallback = lazy(() => import('./pages/SubscriptionCallback').then(m => ({ default: m.SubscriptionCallback })));
 const PlatformLogin = lazy(() => import('./pages/PlatformLogin').then(m => ({ default: m.PlatformLogin })));
 const PlatformDashboard = lazy(() => import('./pages/PlatformDashboard').then(m => ({ default: m.PlatformDashboard })));
@@ -322,7 +324,7 @@ function App() {
             <Route path="orders" element={<Suspense fallback={<Loading />}><RepOrdersPage /></Suspense>} />
             <Route path="earnings" element={<Suspense fallback={<Loading />}><RepEarningsPage /></Suspense>} />
             <Route path="numbers" element={<Suspense fallback={<Loading />}><RepNumbersPage /></Suspense>} />
-            <Route path="inbox" element={<Suspense fallback={<Loading />}><RepComingSoon title="Inbox" /></Suspense>} />
+            <Route path="inbox" element={<Suspense fallback={<Loading />}><RepInboxPage /></Suspense>} />
             <Route path="call/:orderId" element={<Suspense fallback={<Loading />}><RepCallPage /></Suspense>} />
           </Route>
 
@@ -338,8 +340,8 @@ function App() {
             <Route path="financial" element={<Navigate to="/finance" replace />} />
             {/* The old Analytics page is gone (M3-T60): old links and bookmarks land on Reports. */}
             <Route path="analytics" element={<Navigate to="/reports" replace />} />
-            {/* /connections is the future Connections page (M9); until then it opens Integrations with its query (M3-T66). */}
-            <Route path="connections" element={<SettingsTabRedirect tab="integrations" />} />
+            {/* The old Webhooks page is the Webhooks tab of Connections (M9-T45). Outside the guard so the redirect always runs. */}
+            <Route path="webhooks" element={<WebhooksRedirect />} />
             {/* Every page below needs its menu item (F-102); platform pages use PlatformGuard instead. */}
             <Route element={<AccessGate />}>
             <Route index element={<DashboardIndex />} />
@@ -376,6 +378,9 @@ function App() {
             <Route path="marketing" element={
               <Suspense fallback={<Loading />}><Marketing /></Suspense>
             } />
+            <Route path="inbox" element={
+              <Suspense fallback={<Loading />}><Inbox /></Suspense>
+            } />
             <Route path="reports" element={
               <Suspense fallback={<Loading />}><Reports /></Suspense>
             } />
@@ -397,9 +402,10 @@ function App() {
             <Route path="workflows/:id" element={
               <Suspense fallback={<Loading />}><WorkflowWizard /></Suspense>
             } />
-            <Route path="communications" element={
-              <Suspense fallback={<Loading />}><Communications /></Suspense>
+            <Route path="messages" element={
+              <Suspense fallback={<Loading />}><Messages /></Suspense>
             } />
+            <Route path="communications" element={<Navigate to="/messages" replace />} />
             <Route path="settings" element={
               <Suspense fallback={<Loading />}><Settings /></Suspense>
             } />
@@ -417,8 +423,8 @@ function App() {
             <Route path="checkout-forms/:id/edit" element={
               <Suspense fallback={<Loading />}><CheckoutFormEditor /></Suspense>
             } />
-            <Route path="webhooks" element={
-              <Suspense fallback={<Loading />}><Webhooks /></Suspense>
+            <Route path="connections" element={
+              <Suspense fallback={<Loading />}><Connections /></Suspense>
             } />
             <Route path="earnings-history" element={
               <Suspense fallback={<Loading />}><EarningsHistoryRoute /></Suspense>

@@ -1,9 +1,9 @@
-import { BadgeDollarSign, Bell, Clock, CreditCard, FileText, Flag, Gift, ListChecks, Puzzle, Shield, ShieldCheck, Store, UserRound, Users, type LucideIcon } from 'lucide-react';
+import { BadgeDollarSign, Bell, Clock, CreditCard, FileText, Flag, Gift, ListChecks, Shield, ShieldCheck, Store, UserRound, Users, type LucideIcon } from 'lucide-react';
 import type { Action, Resource } from '../../types';
 
 export type SettingsTab =
   | 'profile' | 'security' | 'business' | 'operations' | 'currencies' | 'statuses' | 'notifications' | 'billing'
-  | 'users' | 'permissions' | 'integrations' | 'checkout-forms' | 'north-star' | 'rewards';
+  | 'users' | 'permissions' | 'checkout-forms' | 'north-star' | 'rewards';
 
 export interface TabAccess {
   can: (resource: Resource, action: Action) => boolean;
@@ -46,6 +46,5 @@ export const SETTINGS_TABS: TabDef[] = [
   { id: 'billing', label: 'Billing & plans', icon: CreditCard, group: 'main', visible: owner, editable: owner },
   { id: 'users', label: 'User management', icon: Users, group: 'moving', visible: owner, editable: owner },
   { id: 'permissions', label: 'Role permissions', icon: Shield, group: 'moving', visible: owner, editable: owner },
-  { id: 'integrations', label: 'Integrations', icon: Puzzle, group: 'moving', visible: owner, editable: owner },
   { id: 'checkout-forms', label: 'Checkout forms', icon: FileText, group: 'moving', visible: owner, editable: owner },
 ];

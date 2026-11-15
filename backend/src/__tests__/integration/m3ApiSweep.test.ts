@@ -118,14 +118,15 @@ describe('GET /api/dashboard/owner', () => {
 describe('/api/admin/settings (business details)', () => {
   const settings = (method: 'get' | 'put', token: string) => request(app)[method]('/api/admin/settings').set(bearer(token));
 
-  it('the owner reads and writes; an admin and a call rep get 403 on both', async () => {
+  it('the owner reads and writes; an admin reads (for Connections) but cannot write business details; a call rep gets 403 on both', async () => {
     expect((await settings('get', ownerA)).status).toBe(200);
     const saved = await settings('put', ownerA).send({ contactPerson: 'Sweep Owner' });
     expect(saved.status).toBe(200);
     expect(saved.body.contactPerson).toBe('Sweep Owner');
 
+    expect((await settings('get', pair.a.users.admin.token)).status).toBe(200);
+    expect((await settings('get', pair.a.users.salesRep.token)).status).toBe(403);
     for (const token of [pair.a.users.admin.token, pair.a.users.salesRep.token]) {
-      expect((await settings('get', token)).status).toBe(403);
       expect((await settings('put', token).send({ contactPerson: 'Nope' })).status).toBe(403);
     }
     expect((await settings('get', ownerA)).body.contactPerson).toBe('Sweep Owner');

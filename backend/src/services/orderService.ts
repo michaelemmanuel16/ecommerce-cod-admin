@@ -1,5 +1,6 @@
 import prisma, { prismaBase } from '../utils/prisma';
 import { withSoftDeleted } from '../utils/prismaExtensions';
+import { archiveThreadsFor } from './threadService';
 import { resolveTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma, OrderStatus, DeclineReason, FailureReason } from '@prisma/client';
@@ -68,6 +69,11 @@ interface CreateOrderData {
   /** F-317: "Customer already confirmed on this call". The order moves to confirmed through the machine and a manual `Call` is saved. */
   customerConfirmed?: boolean;
   requiresManualCall?: boolean;
+  /**
+   * Inbound order webhook (M9-T28). Marks the order source 'webhook', keeps the sender's id, body and dedup
+   * fingerprint, and does not refuse the order for stock: the customer already ordered, staff sort it out.
+   */
+  webhook?: { externalOrderId?: string; data: unknown; fingerprint: string };
   requester?: Requester;
 }
 
@@ -531,7 +537,7 @@ export class OrderService {
     const created = await prisma.$transaction(async (tx) => {
       // Available to sell: on hand less the units reserved for open orders (M4-T16). A digital product has no stock (absent from the map).
       const availableById = await getAvailableMany(productIds, tx);
-      for (const item of data.orderItems) {
+      for (const item of data.webhook ? [] : data.orderItems) {
         const available = availableById.get(item.productId);
         if (available !== undefined && available < item.quantity) {
           throw new AppError(
@@ -556,6 +562,12 @@ export class OrderService {
           deliveryState: data.deliveryState,
           deliveryArea: data.deliveryArea,
           notes: data.notes,
+          ...(data.webhook ? {
+            source: 'webhook',
+            externalOrderId: data.webhook.externalOrderId,
+            webhookData: data.webhook.data as Prisma.InputJsonValue,
+            webhookFingerprint: data.webhook.fingerprint,
+          } : {}),
           estimatedDelivery: data.estimatedDelivery || null,
           createdById: data.createdById,
           customerRepId,
@@ -574,7 +586,7 @@ export class OrderService {
             create: {
               tenantId: resolveTenantId(customer.tenantId),
               status: 'pending_confirmation',
-              notes: 'Order created',
+              notes: data.webhook ? 'Order imported via webhook' : 'Order created',
               changedBy: data.createdById
             }
           }
@@ -632,7 +644,7 @@ export class OrderService {
     emitOrderCreated(getSocketInstance() as any, order);
 
     // order_created workflows listen to this event (after commit, M2-T17)
-    emitOrderCreatedEvent(order);
+    emitOrderCreatedEvent(order, data.webhook ? { imported: true } : {});
 
     return order;
   }
@@ -1612,6 +1624,9 @@ export class OrderService {
       });
 
       await tx.order.updateMany({ where: { id: { in: deletedIds } }, data: { deletedAt: new Date() } });
+
+      // Team notes on a deleted order are closed (M9-T19)
+      await archiveThreadsFor('order', deletedIds, tx);
 
       // A draft collection of a deleted order is void. Later stages hold money and stay.
       await tx.agentCollection.deleteMany({ where: { orderId: { in: deletedIds }, status: 'draft' } });

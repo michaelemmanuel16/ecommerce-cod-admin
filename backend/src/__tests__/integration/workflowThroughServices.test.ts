@@ -65,12 +65,12 @@ async function waitFor<T>(fn: () => Promise<T>, what: string, timeout = 8000): P
   }
 }
 
-/** An active workflow. `http_request` is a harmless action: the test counts executions. */
+/** An active workflow. A wait with no time set is a harmless action (it completes at once): the test counts executions. */
 const mkWorkflow = (
   name: string,
   triggerType: 'status_change' | 'order_created',
   triggerData: Record<string, unknown>,
-  actions: any[] = [{ type: 'http_request', config: { url: 'https://example.test' } }],
+  actions: any[] = [{ type: 'wait', config: { duration: 0 } }],
 ) =>
   prismaBase.workflow.create({
     data: { name: `${name} ${SUFFIX}`, triggerType, triggerData: triggerData as any, actions, isActive: true, tenantId },
@@ -199,18 +199,16 @@ describe('M2-T16 workflow actions go through the services', () => {
 
   describe('update_order sets status, priority and notes (and nothing else)', () => {
     const viaQueue = (action: any, id: number) => runInTenant(tenantId, () => executeAction(action, { orderId: id }));
-    const viaService = (action: any, id: number) =>
-      runInTenant(tenantId, () => (workflowService as any).executeAction(action, { orderId: id }));
     const row = (id: number) => prismaBase.order.findUniqueOrThrow({ where: { id } });
     const history = (id: number) => prismaBase.orderHistory.count({ where: { orderId: id } });
 
     it('an empty action fails with the three-field message', async () => {
       const id = await mkOrder('confirmed');
       await expect(viaQueue({ type: 'update_order', config: {} }, id)).rejects.toThrow('update_order needs a status, priority or notes');
-      await expect(viaService({ type: 'update_order' }, id)).rejects.toThrow('update_order needs a status, priority or notes');
     });
 
-    it.each([['queue', viaQueue], ['service', viaService]])('priority only (%s): word and integer set priority, no history row, status unchanged', async (_n, run) => {
+    it('priority only: word and integer set priority, no history row, status unchanged', async () => {
+      const run = viaQueue;
       const id = await mkOrder('confirmed');
       const before = await history(id);
       await run({ type: 'update_order', config: { priority: 'high' } }, id);
@@ -237,14 +235,14 @@ describe('M2-T16 workflow actions go through the services', () => {
       await viaQueue({ type: 'update_order', config: { notes: '  VIP customer  ' } }, id);
       expect((await row(id)).notes).toBe('Call before 5pm\nVIP customer');
       const bare = await mkOrder('confirmed');
-      await viaService({ type: 'update_order', notes: 'first note' }, bare);
+      await viaQueue({ type: 'update_order', notes: 'first note' }, bare);
       expect((await row(bare)).notes).toBe('first note');
     });
 
     it('status + priority + notes in one action: one history row, all three set', async () => {
       const id = await mkOrder('pending_confirmation');
       const before = await history(id);
-      const out = await viaService({ type: 'update_order', config: { status: 'confirmed', priority: 'low', notes: 'checked' } }, id);
+      const out = await viaQueue({ type: 'update_order', config: { status: 'confirmed', priority: 'low', notes: 'checked' } }, id);
       const after = await row(id);
       expect([after.status, after.priority, after.notes]).toEqual(['confirmed', 1, 'checked']);
       expect(await history(id)).toBe(before + 1);

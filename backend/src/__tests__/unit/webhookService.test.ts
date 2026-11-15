@@ -10,6 +10,8 @@ jest.mock('../../server', () => {
   return { io: m };
 });
 import { prismaMock } from '../mocks/prisma.mock';
+jest.mock('../../services/orderService', () => ({ __esModule: true, default: { createOrder: jest.fn() } }));
+import orderService from '../../services/orderService';
 import { WebhookService } from '../../services/webhookService';
 import { AppError } from '../../middleware/errorHandler';
 import crypto from 'crypto';
@@ -19,6 +21,8 @@ describe('WebhookService', () => {
 
   beforeEach(() => {
     webhookService = new WebhookService();
+    // resetMocks wipes the implementation between tests
+    (orderService.createOrder as any).mockResolvedValue({ id: 1 });
   });
 
   describe('verifySignature', () => {
@@ -226,7 +230,7 @@ describe('WebhookService', () => {
       const result = await webhookService.processWebhook(multiOrderData);
 
       expect(result.results.success).toBe(2);
-      expect(prismaMock.order.create).toHaveBeenCalledTimes(2);
+      expect(orderService.createOrder).toHaveBeenCalledTimes(2);
     });
 
     it('should log failed orders and continue processing', async () => {
@@ -298,7 +302,7 @@ describe('WebhookService', () => {
     const createData = {
       name: 'Shopify Orders',
       url: 'https://example.com/webhook',
-      secret: 'secret-key',
+      secret: 'secret-key-1234567890',
       apiKey: 'api-key',
       fieldMapping: {
         customerPhone: 'customer_phone',
@@ -325,6 +329,15 @@ describe('WebhookService', () => {
       expect(webhook).toBeDefined();
       expect(webhook.name).toBe('Shopify Orders');
       expect(prismaMock.webhookConfig.create).toHaveBeenCalled();
+      // the API never shows the secret or a header value in full
+      expect(webhook.secret).toBe('********7890');
+      expect(webhook.headers).toEqual({ Authorization: '********oken' });
+    });
+
+    it('should refuse a secret shorter than 16 characters', async () => {
+      await expect(webhookService.createWebhook({ ...createData, secret: 'a'.repeat(15) }))
+        .rejects.toMatchObject({ statusCode: 400, errorCode: 'SECRET_TOO_SHORT' });
+      expect(prismaMock.webhookConfig.create).not.toHaveBeenCalled();
     });
   });
 
@@ -368,6 +381,7 @@ describe('WebhookService', () => {
   describe('retryWebhook', () => {
     const webhookLog = {
       id: 'log-1',
+      webhookConfigId: 1,
       endpoint: '/api/webhooks/receive',
       method: 'POST',
       body: {
@@ -376,54 +390,49 @@ describe('WebhookService', () => {
       },
       headers: {},
       success: false,
+      statusCode: 200,
       webhookConfig: {
-        apiKey: 'test-api-key'
-      }
-    };
-
-    it('should retry failed webhook', async () => {
-      prismaMock.webhookLog.findUnique.mockResolvedValue(webhookLog as any);
-      prismaMock.webhookLog.create.mockResolvedValue({ id: 'log-2' } as any);
-      prismaMock.webhookConfig.findFirst.mockResolvedValue({
-        id: 'config-1',
+        id: 1,
         tenantId: 'tenant-1',
         isActive: true,
         fieldMapping: {}
-      } as any);
+      }
+    };
+
+    it('should retry failed webhook into a new log row', async () => {
+      prismaMock.webhookLog.findUnique.mockResolvedValue(webhookLog as any);
+      prismaMock.webhookLog.create.mockResolvedValue({ id: 'log-2' } as any);
       prismaMock.webhookLog.update.mockResolvedValue({} as any);
+      prismaMock.customer.findMany.mockResolvedValue([{ id: 'customer-1' } as any]);
 
-      prismaMock.customer.findMany.mockResolvedValue([{
-        id: 'customer-1'
-      } as any]);
-      prismaMock.order.count.mockResolvedValue(0);
-      prismaMock.order.create.mockResolvedValue({} as any);
+      const result = await webhookService.retryWebhook('log-1' as any);
 
-      const result = await webhookService.retryWebhook('log-1');
-
-      expect(result).toBeDefined();
+      expect(result.logId).toBe('log-2');
+      expect(prismaMock.webhookLog.create).toHaveBeenCalledTimes(1);
     });
 
     it('should throw error when log not found', async () => {
       prismaMock.webhookLog.findUnique.mockResolvedValue(null);
 
       await expect(
-        webhookService.retryWebhook('log-1')
+        webhookService.retryWebhook('log-1' as any)
       ).rejects.toThrow(new AppError('Webhook log not found', 404));
     });
 
-    it('should throw error when retrying successful webhook', async () => {
-      prismaMock.webhookLog.findUnique.mockResolvedValue({
-        ...webhookLog,
-        success: true
-      } as any);
+    it('should refuse to retry a successful webhook with 409', async () => {
+      prismaMock.webhookLog.findUnique.mockResolvedValue({ ...webhookLog, success: true } as any);
 
       await expect(
-        webhookService.retryWebhook('log-1')
-      ).rejects.toThrow(new AppError('Cannot retry successful webhook', 400));
+        webhookService.retryWebhook('log-1' as any)
+      ).rejects.toMatchObject({ statusCode: 409 });
     });
   });
 
   describe('getWebhookStats', () => {
+    beforeEach(() => {
+      prismaMock.webhookConfig.findUnique.mockResolvedValue({ id: 'webhook-1' } as any);
+    });
+
     it('should calculate webhook statistics correctly', async () => {
       const mockLogs = [
         { processedAt: new Date(), success: true },
@@ -517,6 +526,7 @@ describe('WebhookService', () => {
 
   describe('getWebhookLogs', () => {
     it('should return paginated webhook logs', async () => {
+      prismaMock.webhookConfig.findUnique.mockResolvedValue({ id: 'webhook-1' } as any);
       const mockLogs = [
         { id: 'log-1', endpoint: '/api/webhooks', success: true },
         { id: 'log-2', endpoint: '/api/webhooks', success: false }

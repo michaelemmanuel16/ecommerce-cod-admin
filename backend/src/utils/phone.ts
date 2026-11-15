@@ -154,3 +154,15 @@ export function normalizeInternationalPhone(input: string | null | undefined): s
   const digits = trimmed.replace(/\D/g, '');
   return /^[1-9]\d{7,14}$/.test(digits) ? `+${digits}` : null;
 }
+
+/** A phone as the messaging layer stores it: E.164 from any digits, even for a country outside GH/NG. */
+export function conversationPhone(from: string): string {
+  const digits = from.replace(/\D/g, '');
+  return normalizeInternationalPhone(`+${digits}`) ?? `+${digits}`;
+}
+
+/** Every stored form of a phone: E.164, local with 0, bare digits. */
+export function phoneForms(phone: string): string[] {
+  const digits = phone.replace(/\D/g, '');
+  return Array.from(new Set([...phoneLookupVariants(phone), ...(digits ? phoneLookupVariants(`+${digits}`) : [])]));
+}

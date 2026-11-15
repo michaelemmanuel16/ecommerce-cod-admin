@@ -59,12 +59,16 @@ import partnerSettlementRoutes from './routes/partnerSettlementRoutes';
 import payoutRoutes from './routes/payoutRoutes';
 import workflowRoutes from './routes/workflowRoutes';
 import webhookRoutes from './routes/webhookRoutes';
+import { importJsonError } from './controllers/webhookController';
 import analyticsRoutes from './routes/analyticsRoutes';
 import kpiRoutes from './routes/kpiRoutes';
 import dashboardRoutes from './routes/dashboardRoutes';
 import reportRoutes from './routes/reportRoutes';
 import repRoutes from './routes/repRoutes';
 import notificationRoutes from './routes/notificationRoutes';
+import inboxRoutes from './routes/inboxRoutes';
+import reminderRoutes from './routes/reminderRoutes';
+import threadRoutes, { commentRoutes } from './routes/threadRoutes';
 import healthRoutes from './routes/health.routes';
 import uploadRoutes from './routes/uploadRoutes';
 import adminRoutes from './routes/adminRoutes';
@@ -78,6 +82,7 @@ import agentInventoryRoutes from './routes/agentInventoryRoutes';
 import inventoryRoutes from './routes/inventoryRoutes';
 import shipmentRoutes from './routes/shipmentRoutes';
 import whatsappRoutes from './routes/whatsappRoutes';
+import connectionSettingsRoutes from './routes/connectionSettingsRoutes';
 import metaAdsRoutes from './routes/metaAdsRoutes';
 import smsRoutes from './routes/smsRoutes';
 import emailRoutes from './routes/emailRoutes';
@@ -86,6 +91,11 @@ import paymentRoutes from './routes/paymentRoutes';
 import { registerLedgerPoster } from './services/payments/ledgerPoster';
 import paymentConnectionRoutes from './routes/paymentConnectionRoutes';
 import communicationRoutes from './routes/communicationRoutes';
+import messageRoutes from './routes/messageRoutes';
+import messageReadRoutes from './routes/messageReadRoutes';
+import connectionsRoutes from './routes/connectionsRoutes';
+import conversationRoutes from './routes/conversationRoutes';
+import messageTemplateRoutes from './routes/messageTemplateRoutes';
 import onboardingRoutes from './routes/onboardingRoutes';
 import referenceRoutes from './routes/referenceRoutes';
 import locationRoutes from './routes/locationRoutes';
@@ -115,7 +125,8 @@ import { GLAccountService } from './services/glAccountService';
 import cron from 'node-cron';
 
 // Initialize queue workers
-import './queues/workflowQueue';
+import { setupWorkflowOutboxCron } from './queues/workflowQueue';
+import { setupWorkflowSchedules } from './queues/workflowSchedule';
 import { registerWorkflowListeners } from './services/workflowService';
 import { registerCustomerStatsListeners } from './services/customerStatsService';
 import { registerDashboardCacheListeners } from './services/dashboardService';
@@ -129,6 +140,8 @@ import { setupLedgerCheckCron } from './queues/ledgerCheckQueue';
 import { setupStockCheckCron } from './queues/stockCheckQueue';
 import { setupPeriodCloseCron } from './queues/periodCloseQueue';
 import { setupMessageCleanupCron } from './queues/messageCleanupQueue';
+import { setupConnectionEventCleanupCron } from './queues/connectionEventCleanupQueue';
+import { setupReminderCron } from './queues/reminderQueue';
 import { setupPendingCheckoutCleanupCron } from './queues/pendingCheckoutCleanupQueue';
 import * as Money from './utils/money';
 
@@ -235,6 +248,8 @@ app.use(express.json({
     }
   },
 }));
+// A body that is not JSON on the public webhook import URLs: 400 with the place of the error, and a failed log row.
+app.use(importJsonError);
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 app.use(requestTimeout(30000));
@@ -288,6 +303,10 @@ app.use('/api/dashboard', apiLimiter, dashboardRoutes);
 app.use('/api/reports', apiLimiter, reportRoutes);
 app.use('/api/rep', apiLimiter, repRoutes);
 app.use('/api/notifications', apiLimiter, notificationRoutes);
+app.use('/api/inbox', apiLimiter, inboxRoutes);
+app.use('/api/reminders', apiLimiter, reminderRoutes);
+app.use('/api/threads', apiLimiter, threadRoutes);
+app.use('/api/comments', apiLimiter, commentRoutes);
 app.use('/api/upload', apiLimiter, uploadRoutes);
 app.use('/api/checkout-forms', apiLimiter, checkoutFormRoutes);
 app.use('/api/calls', apiLimiter, callRoutes);
@@ -307,11 +326,17 @@ app.use('/api/whatsapp', apiLimiter, whatsappRoutes);
 app.get('/api/meta-ads/oauth/callback', apiLimiter, metaAdsOAuthCallback);
 app.use('/api/meta-ads', apiLimiter, metaAdsRoutes);
 app.use('/api/sms', apiLimiter, smsRoutes);
+app.use('/api/settings', apiLimiter, connectionSettingsRoutes);
 app.use('/api/email', apiLimiter, emailRoutes);
 app.use('/api/paystack', apiLimiter, paystackRoutes);
 app.use('/api/payments', apiLimiter, paymentRoutes);
 app.use('/api/payment-connections', apiLimiter, paymentConnectionRoutes);
 app.use('/api/communications', apiLimiter, communicationRoutes);
+app.use('/api/messages', apiLimiter, messageRoutes);
+app.use('/api/messages', apiLimiter, messageReadRoutes);
+app.use('/api/connections', apiLimiter, connectionsRoutes);
+app.use('/api/conversations', apiLimiter, conversationRoutes);
+app.use('/api/message-templates', apiLimiter, messageTemplateRoutes);
 app.use('/api/onboarding', apiLimiter, onboardingRoutes);
 app.use('/api/reference', apiLimiter, referenceRoutes);
 app.use('/api/locations', apiLimiter, locationRoutes);
@@ -381,6 +406,12 @@ if (process.env.NODE_ENV !== 'test') {
     // Book settled online payments to the ledger (F-406). Registered once.
     registerLedgerPoster();
 
+    // Drain the workflow trigger outbox every 30 s (M9-T21)
+    await setupWorkflowOutboxCron();
+
+    // One repeat job per schedule workflow, then the late catch-up (M9-T22)
+    await setupWorkflowSchedules();
+
     // Setup Agent Aging Cron Job
     await setupAgingCron();
 
@@ -404,6 +435,10 @@ if (process.env.NODE_ENV !== 'test') {
 
     // Setup Message Log Cleanup Cron Job
     await setupMessageCleanupCron();
+    await setupConnectionEventCleanupCron();
+
+    // Setup reminder due job: every minute (M9-T18)
+    await setupReminderCron();
 
     // Setup abandoned Paystack pending-checkout cleanup
     await setupPendingCheckoutCleanupCron();

@@ -1,7 +1,7 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
-import { checkQueueWaitAlerts, notifyQueueWaitAlert } from '../../services/queueAlertService';
+import { checkQueueWaitAlerts, notifyQueueWaitAlert, formatWaitMinutes } from '../../services/queueAlertService';
 import prisma from '../../utils/prisma';
-import * as notificationService from '../../services/notificationService';
+import * as inboxService from '../../services/inbox/inboxService';
 
 jest.mock('../../utils/prisma', () => ({
   __esModule: true,
@@ -13,14 +13,14 @@ jest.mock('../../utils/prisma', () => ({
   },
 }));
 
-jest.mock('../../services/notificationService', () => ({
+jest.mock('../../services/inbox/inboxService', () => ({
   __esModule: true,
-  createNotification: jest.fn(),
+  notify: jest.fn(),
 }));
 
 describe('M7-T05: Queue wait alert service tests', () => {
   const mockPrisma = prisma as any;
-  const mockCreateNotification = notificationService.createNotification as jest.MockedFunction<typeof notificationService.createNotification>;
+  const mockCreateNotification = inboxService.notify as jest.MockedFunction<typeof inboxService.notify>;
   const tenantId = 'tenant-test-ops';
 
   beforeEach(() => {
@@ -65,21 +65,16 @@ describe('M7-T05: Queue wait alert service tests', () => {
     const alerted = await checkQueueWaitAlerts(tenantId, now);
 
     expect(alerted).toEqual([101]);
-    expect(mockCreateNotification).toHaveBeenCalledTimes(2);
-    expect(mockCreateNotification).toHaveBeenCalledWith(
-      '1',
-      'queue_wait_alert',
-      'Queue wait alert',
-      expect.stringContaining('Order #101 has been waiting 45 min'),
-      expect.objectContaining({ orderId: 101, orderNumber: '101', alertMinutes: 30 })
-    );
-    expect(mockCreateNotification).toHaveBeenCalledWith(
-      '2',
-      'queue_wait_alert',
-      'Queue wait alert',
-      expect.stringContaining('Order #101 has been waiting 45 min'),
-      expect.objectContaining({ orderId: 101, orderNumber: '101', alertMinutes: 30 })
-    );
+    expect(mockCreateNotification).toHaveBeenCalledTimes(1);
+    expect(mockCreateNotification).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId,
+      event: 'queue_wait',
+      subject: { type: 'order', id: 101 },
+      recipients: [1, 2],
+      title: 'Queue wait alert',
+      message: expect.stringContaining('Order #101 has been waiting 45 min'),
+      data: expect.objectContaining({ orderId: 101, orderNumber: '101', alertMinutes: 30 }),
+    }));
   });
 
   it('respects custom settings key for queueWaitAlertMinutes', async () => {
@@ -135,6 +130,16 @@ describe('M7-T05: Queue wait alert service tests', () => {
     expect(mockCreateNotification).not.toHaveBeenCalled();
   });
 
+  it('only looks at orders created in the last 24 hours, so a first sweep does not alert weeks of old orders', async () => {
+    mockPrisma.systemConfig.findUnique.mockResolvedValue({ operatingHours: { queueWaitAlertMinutes: 30 }, timeZone: 'Africa/Accra' });
+    mockPrisma.order.findMany.mockResolvedValue([]);
+    const now = new Date('2026-10-05T12:00:00Z');
+    await checkQueueWaitAlerts(tenantId, now);
+    const where = mockPrisma.order.findMany.mock.calls[0][0].where;
+    expect(where.createdAt.gt).toEqual(new Date('2026-10-04T12:00:00Z'));
+    expect(where.createdAt.lte).toEqual(new Date('2026-10-05T11:30:00Z'));
+  });
+
   it('a said-NO order waiting 31 open minutes alerts; the second run does not alert again', async () => {
     mockPrisma.systemConfig.findUnique.mockResolvedValue({
       operatingHours: {
@@ -169,5 +174,18 @@ describe('M7-T05: Queue wait alert service tests', () => {
     const alertedSecond = await checkQueueWaitAlerts(tenantId, now);
     expect(alertedSecond).toEqual([]);
     expect(mockCreateNotification).toHaveBeenCalledTimes(1); // not called again
+  });
+});
+
+describe('formatWaitMinutes', () => {
+  it('uses plain units', () => {
+    expect(formatWaitMinutes(41)).toBe('41 min');
+    expect(formatWaitMinutes(59.4)).toBe('59 min');
+    expect(formatWaitMinutes(60)).toBe('1 h');
+    expect(formatWaitMinutes(185)).toBe('3 h 5 min');
+    expect(formatWaitMinutes(180)).toBe('3 h');
+    expect(formatWaitMinutes(1439)).toBe('23 h 59 min');
+    expect(formatWaitMinutes(1440)).toBe('1 day');
+    expect(formatWaitMinutes(21 * 1440 + 700)).toBe('21 days');
   });
 });

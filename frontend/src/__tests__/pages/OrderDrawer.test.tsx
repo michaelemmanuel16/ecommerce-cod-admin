@@ -20,10 +20,18 @@ vi.mock('../../services/orders.service', () => ({
     updateOrderStatus: vi.fn(),
   },
 }));
+const workflowsSvc = vi.hoisted(() => ({ getWorkflows: vi.fn(), runOnOrders: vi.fn() }));
+vi.mock('../../services/workflows.service', () => ({ workflowsService: workflowsSvc }));
 vi.mock('../../services/calls.service', () => ({ callsService: { createCall: (...a: unknown[]) => createCall(...a) } }));
 vi.mock('../../services/products.service', () => ({ productsService: { getProducts: () => Promise.resolve([{ id: 1, name: 'Copybook set', isActive: true }, { id: 2, name: 'Refill pens', isActive: true }]) } }));
 vi.mock('../../services/delivery-agents.service', () => ({ deliveryAgentsService: { getDeliveryAgents: () => Promise.resolve([{ id: '5', name: 'Kofi Appiah', isActive: true, isAvailable: true }]) } }));
 vi.mock('../../services/customer-reps.service', () => ({ customerRepsService: { getCustomerReps: () => Promise.resolve([{ id: '2', name: 'Adwoa Darko', isActive: true, isAvailable: true }]) } }));
+
+const inboxSvc = vi.hoisted(() => ({ listReminders: vi.fn(), createReminder: vi.fn(), cancelReminder: vi.fn(), getThread: vi.fn(), mentionable: vi.fn(), addComment: vi.fn() }));
+vi.mock('../../services/inbox.service', async (orig) => ({ ...(await orig<typeof import('../../services/inbox.service')>()), inboxService: inboxSvc }));
+const messagesSvc = vi.hoisted(() => ({ forSubject: vi.fn() }));
+vi.mock('../../services/messages.service', () => ({ messagesService: messagesSvc }));
+const EMPTY_THREAD = { id: null, subjectType: 'order', subjectId: 1, archived: false, unreadCount: 0, comments: [] };
 
 const axiosError = (status: number, data: Record<string, unknown>) =>
   Object.assign(new Error('request failed'), { isAxiosError: true, response: { status, data } });
@@ -44,6 +52,10 @@ beforeEach(() => {
   getTimeline.mockReset().mockResolvedValue(TIMELINE);
   editOrder.mockReset().mockResolvedValue(undefined);
   createCall.mockReset().mockResolvedValue({});
+  messagesSvc.forSubject.mockReset().mockResolvedValue({ items: [] });
+  inboxSvc.listReminders.mockReset().mockResolvedValue([]);
+  inboxSvc.getThread.mockReset().mockResolvedValue(EMPTY_THREAD);
+  inboxSvc.mentionable.mockReset().mockResolvedValue([]);
   useConfigStore.setState({ currency: 'GHS', loaded: true });
   useAuthStore.setState({ user: { id: 1, role: 'admin', firstName: 'Manny', lastName: 'A' } as never, permissions: { orders: ['view', 'update', 'assign'] } });
 });
@@ -87,8 +99,8 @@ describe('Order drawer: frame and blocks (M3-T46, F-321)', () => {
     getOrderDetail.mockResolvedValue({ ...DETAIL, calls: [] });
     renderDrawer();
     expect(await screen.findByText('No calls yet. Log the first one.')).toBeInTheDocument();
-    expect(screen.getByText(/No messages yet/)).toBeInTheDocument();
-    expect(screen.getByText(/No notes yet/)).toBeInTheDocument();
+    expect(await screen.findByText(/No messages yet/)).toBeInTheDocument();
+    expect(await screen.findByText(/No notes yet/)).toBeInTheDocument();
   });
 
   it('Escape closes it, and so does the Close button', async () => {
@@ -236,5 +248,25 @@ describe('Order drawer: edit mode (M3-T47, F-318)', () => {
     renderDrawer();
     expect(await screen.findByText('Failure reason')).toBeInTheDocument();
     expect(screen.getByText('Refused')).toBeInTheDocument();
+  });
+});
+
+describe('Order drawer: Run workflow (M9-T43, F-502)', () => {
+  it('a person who may execute workflows runs an active workflow on this order', async () => {
+    useAuthStore.setState({ user: { id: 1, role: 'admin', firstName: 'Manny', lastName: 'A' } as never, permissions: { orders: ['view', 'update', 'assign'], workflows: ['view', 'execute'] } });
+    workflowsSvc.getWorkflows.mockResolvedValue({ workflows: [{ id: 3, name: 'Confirm SMS' }], summary: {} });
+    workflowsSvc.runOnOrders.mockResolvedValue({ queued: 1, batches: 1 });
+    renderDrawer();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Run workflow' }));
+    expect(await screen.findByText('Runs on 1 order.')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Run' }));
+    await waitFor(() => expect(workflowsSvc.runOnOrders).toHaveBeenCalledWith(3, [24118], false));
+  });
+
+  it('has no Run workflow button without the permission', async () => {
+    renderDrawer();
+    await screen.findByText('Order status');
+    expect(screen.queryByRole('button', { name: 'Run workflow' })).not.toBeInTheDocument();
   });
 });

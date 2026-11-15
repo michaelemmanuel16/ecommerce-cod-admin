@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { User, LoginCredentials, UserPreferences, Permissions } from '../types';
+import type { User, LoginCredentials, UserPreferences, Permissions } from '../types';
 import { authService, type LoginResponse } from '../services/auth.service';
 import { usersService } from '../services/users.service';
 import { connectSocket, disconnectSocket, getSocket } from '../services/socket';
@@ -8,7 +8,7 @@ import { useAnalyticsStore } from './analyticsStore';
 import { useDeliveryAgentsStore } from './deliveryAgentsStore';
 import { useCustomerRepsStore } from './customerRepsStore';
 import { useOrdersStore } from './ordersStore';
-import { useNotificationsStore } from './notificationsStore';
+import { useInboxStore } from './inboxStore';
 import { clearBlockCache } from '../pages/financial/profit/useBlock';
 import toast from 'react-hot-toast';
 
@@ -127,7 +127,7 @@ export const useAuthStore = create<AuthState>()(
           isAuthenticated: false,
         });
         disconnectSocket();
-        useNotificationsStore.getState().clearNotifications(); // the next person to sign in must not see this count
+        useInboxStore.getState().stop(); // the next person to sign in must not see this count
         clearBlockCache(); // nor the cached Finance answers
         if (showToast) {
           toast.success('Logged out successfully');
@@ -230,7 +230,7 @@ export const useAuthStore = create<AuthState>()(
         useDeliveryAgentsStore.getState().setupSocketListeners();
         useCustomerRepsStore.getState().setupSocketListeners();
         useOrdersStore.getState().setupSocketListeners();
-        useNotificationsStore.getState().setupSocketListeners();
+        useInboxStore.getState().start();
 
         console.log('[AuthStore] All socket listeners initialized');
       },

@@ -43,7 +43,7 @@ jest.mock('../../utils/logger', () => ({
 }));
 
 import { prismaMock } from '../mocks/prisma.mock';
-import { communicationService } from '../../services/communicationService';
+import { communicationService, RECIPIENT_LIMIT } from '../../services/communicationService';
 import whatsappService from '../../services/whatsappService';
 import { smsService } from '../../services/smsService';
 import { useTestTenant, TEST_TENANT_ID } from '../mocks/tenant.mock';
@@ -114,6 +114,22 @@ describe('CommunicationService', () => {
       expect(result).toEqual(mockCustomers);
     });
 
+    it('lists at most RECIPIENT_LIMIT customers and counts every match without that cap', async () => {
+      (prismaMock.customer.findMany as jest.Mock).mockResolvedValue(mockCustomers);
+      (prismaMock.customer.count as jest.Mock).mockResolvedValue(1837);
+
+      await communicationService.getRecipients({ channel: 'sms', state: 'Ashanti' });
+      const total = await communicationService.countRecipients({ channel: 'sms', state: 'Ashanti' });
+
+      expect(RECIPIENT_LIMIT).toBe(1000);
+      expect((prismaMock.customer.findMany as jest.Mock).mock.calls.at(-1)![0]).toMatchObject({ take: RECIPIENT_LIMIT });
+      const listWhere = (prismaMock.customer.findMany as jest.Mock).mock.calls.at(-1)![0].where;
+      const countArgs = (prismaMock.customer.count as jest.Mock).mock.calls.at(-1)![0];
+      expect(countArgs.where).toEqual(listWhere); // same audience, same opt-out rule
+      expect(countArgs.take).toBeUndefined();
+      expect(total).toBe(1837);
+    });
+
     it('should return customers filtered for WhatsApp channel (excluding whatsappOptOut)', async () => {
       (prismaMock.customer.findMany as jest.Mock).mockResolvedValue(mockCustomers);
 
@@ -167,7 +183,7 @@ describe('CommunicationService', () => {
   });
 
   describe('bulkSendSms', () => {
-    it('should filter out opted-out customers and send to remaining', async () => {
+    it('should send to each active customer', async () => {
       const activeCustomers = [
         { id: 1, phoneNumber: '+233241111111' },
         { id: 2, phoneNumber: '+233242222222' },
@@ -179,9 +195,9 @@ describe('CommunicationService', () => {
 
       const result = await communicationService.bulkSendSms([1, 2, 3], 'Hello!');
 
-      // Should query only non-opted-out, active customers
+      // Opt-out is not filtered here: messageSender skips an opted-out customer and logs it
       expect(prismaMock.customer.findMany).toHaveBeenCalledWith({
-        where: { id: { in: [1, 2, 3] }, smsOptOut: false, isActive: true },
+        where: { id: { in: [1, 2, 3] }, isActive: true },
         select: { id: true, phoneNumber: true },
       });
 
@@ -209,7 +225,7 @@ describe('CommunicationService', () => {
       expect(result.results[1]).toEqual({ customerId: 2, success: false, error: 'Network error' });
     });
 
-    it('should return empty results when all customers are opted out', async () => {
+    it('should return empty results when no customer is active', async () => {
       (prismaMock.customer.findMany as jest.Mock).mockResolvedValue([]);
 
       const result = await communicationService.bulkSendSms([1, 2], 'Hello!');
@@ -220,8 +236,43 @@ describe('CommunicationService', () => {
     });
   });
 
+  describe('bulk send opt-out skip (M9 T30)', () => {
+    it('SMS: an opted-out customer is skipped and counted, the rest are sent', async () => {
+      (prismaMock.customer.findMany as jest.Mock).mockResolvedValue([
+        { id: 1, phoneNumber: '+233241111111' },
+        { id: 2, phoneNumber: '+233242222222' },
+      ]);
+      // messageSender writes a skipped row for customer 2 and reports skipped
+      (smsService.sendSms as jest.Mock)
+        .mockResolvedValueOnce({ messageLogId: 101, sent: true })
+        .mockResolvedValueOnce({ messageLogId: 102, sent: false, skipped: true });
+
+      const result = await communicationService.bulkSendSms([1, 2], 'Hello!');
+
+      expect(result.total).toBe(2);
+      expect(result.skipped).toBe(1);
+      expect(result.results[1]).toEqual({ customerId: 2, success: false, skipped: true, messageLogId: 102 });
+    });
+
+    it('WhatsApp: an opted-out customer is skipped and counted, the rest are sent', async () => {
+      (prismaMock.customer.findMany as jest.Mock).mockResolvedValue([
+        { id: 1, firstName: 'A', lastName: 'B', phoneNumber: '+233241111111' },
+        { id: 2, firstName: 'C', lastName: 'D', phoneNumber: '+233242222222' },
+      ]);
+      (whatsappService.sendTemplate as jest.Mock)
+        .mockResolvedValueOnce({ messageLogId: 201, sent: true })
+        .mockResolvedValueOnce({ messageLogId: 202, sent: false, skipped: true });
+
+      const result = await communicationService.bulkSendWhatsApp([1, 2], 'confirmed');
+
+      expect(result.total).toBe(2);
+      expect(result.skipped).toBe(1);
+      expect(result.results[1]).toEqual({ customerId: 2, success: false, skipped: true, messageLogId: 202 });
+    });
+  });
+
   describe('bulkSendWhatsApp', () => {
-    it('should filter out opted-out customers and send templates to remaining', async () => {
+    it('should send templates to each active customer', async () => {
       const activeCustomers = [
         { id: 1, firstName: 'John', lastName: 'Doe', phoneNumber: '+233241111111' },
       ];
@@ -231,7 +282,7 @@ describe('CommunicationService', () => {
       const result = await communicationService.bulkSendWhatsApp([1, 2], 'confirmed');
 
       expect(prismaMock.customer.findMany).toHaveBeenCalledWith({
-        where: { id: { in: [1, 2] }, whatsappOptOut: false, isActive: true },
+        where: { id: { in: [1, 2] }, isActive: true },
         select: { id: true, firstName: true, lastName: true, phoneNumber: true },
       });
 

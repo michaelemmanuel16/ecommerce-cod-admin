@@ -66,6 +66,9 @@ function cleanGrid(input: PermissionGrid): PermissionGrid {
     if (bad.length) throw new AppError(`Unknown action on ${resource}: ${bad.join(', ')}`, 400, 'UNKNOWN_PERMISSION');
     clean[resource] = [...new Set(actions)];
   }
+  // A saved grid lists every resource, an empty list for "none". A missing key then only means the role was stored before the
+  // resource existed, which gridOfRole fills from the matrix; a key left out of a save never brings the default back.
+  for (const resource of Object.keys(PERMISSION_CATALOG)) clean[resource] ??= [];
   return clean;
 }
 
@@ -77,7 +80,7 @@ async function otherRoleKeepsUsersUpdate(roleId: number): Promise<boolean> {
   const [roles, matrix] = await Promise.all([
     prisma.role.findMany({
       where: { id: { not: roleId }, assignments: { some: { toDate: null, holder: { isActive: true } } } },
-      select: { permissions: true, presetRole: true },
+      select: { name: true, permissions: true, presetRole: true },
     }),
     tenantMatrix(),
   ]);
@@ -138,7 +141,7 @@ export async function saveMatrix(actor: Requester, byUserRole: Record<string, Pe
  * (every cell of it is in their own union), and never to themselves. Otherwise the union of roles would let an admin lift
  * themselves, or someone else, above their own access. The Owner may assign any role.
  */
-export async function assertGridWithin(actor: Requester, role: { permissions: unknown; presetRole: UserRole | null }, holderId?: number): Promise<void> {
+export async function assertGridWithin(actor: Requester, role: { name: string; permissions: unknown; presetRole: UserRole | null }, holderId?: number): Promise<void> {
   if (isOwner(actor)) return;
   if (holderId === actor.id) throw new AppError('You cannot give a role to yourself', 403, 'SELF_ASSIGN');
   const [own, matrix] = await Promise.all([getUserPermissions(actor), tenantMatrix()]);

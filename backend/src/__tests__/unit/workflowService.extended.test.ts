@@ -150,6 +150,7 @@ describe('WorkflowService (extended branch coverage)', () => {
   // ───────────────────────────── getWorkflowExecutions ─────────────────────────────
   describe('getWorkflowExecutions', () => {
     it('returns executions with default pagination', async () => {
+      (prismaMock.workflow.findUnique as any).mockResolvedValue({ id: 1 } as any);
       (prismaMock.workflowExecution.findMany as any).mockResolvedValue([] as any);
       (prismaMock.workflowExecution.count as any).mockResolvedValue(0);
 
@@ -160,6 +161,7 @@ describe('WorkflowService (extended branch coverage)', () => {
     });
 
     it('paginates executions with custom page and limit', async () => {
+      (prismaMock.workflow.findUnique as any).mockResolvedValue({ id: 1 } as any);
       (prismaMock.workflowExecution.findMany as any).mockResolvedValue([] as any);
       (prismaMock.workflowExecution.count as any).mockResolvedValue(100);
 
@@ -239,8 +241,8 @@ describe('WorkflowService (extended branch coverage)', () => {
       { type: 'send_sms', config: { message: 'Hello' } },
       { type: 'send_email', config: { subject: 'Test', body: 'Body' } },
       { type: 'send_whatsapp', config: { message: 'Hi' } },
-      { type: 'assign_agent', config: { agentId: '{{agentId}}' } },
-      { type: 'add_tag', config: { tag: 'vip' } },
+      { type: 'assign_to', config: { role: 'delivery_agent', userIds: [1], split: 'even' } },
+      { type: 'update_order', config: { notes: 'Tag: vip' } },
       { type: 'http_request', config: { url: 'https://example.com', method: 'POST' } },
       { type: 'assign_user', config: { userType: 'sales_rep' } },
     ];

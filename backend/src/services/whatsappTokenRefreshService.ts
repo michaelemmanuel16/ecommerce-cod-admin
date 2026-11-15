@@ -6,7 +6,8 @@ import { encryptProviderSecrets, decryptProviderSecrets } from '../utils/provide
 import { clearWhatsAppConfigCache } from './whatsappService';
 import { resolveTenantId } from '../utils/tenantContext';
 import { forEachTenant } from '../utils/tenantLoop';
-import { createNotification, findTenantAdmins } from './notificationService';
+import { notify } from './inbox/inboxService';
+import { recordConnectionEvent } from './connections/connectionEventService';
 
 // Tenants with a refresh in flight (one refresh per tenant at a time)
 const refreshing = new Set<string>();
@@ -22,14 +23,15 @@ async function alertRefreshFailed(configId: number, provider: any): Promise<void
     const encrypted = encryptProviderSecrets('whatsappProvider', { ...provider, oauthRefreshFailedAt: new Date().toISOString() });
     await prisma.systemConfig.update({ where: { id: configId }, data: { whatsappProvider: encrypted } });
 
-    for (const admin of await findTenantAdmins()) {
-      await createNotification(
-        String(admin.id),
-        'whatsapp_token_refresh_failed',
-        'WhatsApp connection problem',
-        'WhatsApp connection could not refresh. Reconnect WhatsApp in Settings.'
-      );
-    }
+    await recordConnectionEvent({ tenantId: resolveTenantId(), connection: 'whatsapp', level: 'error', message: 'WhatsApp connection could not refresh. Reconnect WhatsApp.' });
+    await notify({
+      tenantId: resolveTenantId(),
+      event: 'system_problem',
+      recipients: 'owner',
+      title: 'WhatsApp connection problem',
+      message: 'WhatsApp connection could not refresh. Reconnect WhatsApp in Settings.',
+      data: { source: 'whatsapp_token_refresh_failed' },
+    });
   } catch (err: any) {
     logger.error('WhatsApp refresh-failure alert failed', { error: err.message });
   }

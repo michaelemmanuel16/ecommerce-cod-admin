@@ -1,0 +1,165 @@
+/* Messages (M9-T30, M9-T31, F-454 to F-456). Copied from the style block of docs/mockups/v2/messages.html (.inbox .pane .lhead
+   .threads .th .thhead .msgs .b .mst .failnote .compose .send .bulk .fld .sum .ctab), with the `.v2` scope added.
+   Colours come from tokens.css only. Rules with no mockup counterpart are marked "new". */
+
+.v2 .msgs-page > * + *{margin-top:16px}
+.v2 .msgs-page > .head{margin-bottom:22px}
+.v2 .msgs-page > .head + *{margin-top:0}
+
+/* inbox */
+.v2 .inboxcard{overflow:hidden}
+.v2 .inbox{display:grid;grid-template-columns:340px minmax(0,1fr);height:660px}
+.v2 .inbox .pane{min-width:0;display:flex;flex-direction:column;border-right:1px solid var(--line)}
+.v2 .inbox .pane:last-child{border-right:0}
+.v2 .inbox .lhead{padding:12px 14px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:9px}
+.v2 .inbox .lhead .seg{margin-top:0;flex-wrap:wrap}
+.v2 .inbox .lhead .seg button{padding:5px 8px;font-size:12.5px}
+.v2 .inbox .lhead .srch{min-width:0;width:100%}
+.v2 .inbox .threads{overflow:auto;flex:1}
+.v2 .inbox .pad{padding:12px 14px}
+.v2 .inbox .th{display:flex;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line);width:100%;text-align:left;align-items:flex-start}
+.v2 .inbox .th:hover{background:var(--hover)}
+.v2 .inbox .th.on{background:var(--pine-soft)}
+.v2 .inbox .a{flex:none;display:grid;place-items:center;font-weight:700;border-radius:50%;background:var(--pine-soft);color:var(--pine)}
+.v2 .inbox .th .a{width:34px;height:34px;font-size:12px}
+.v2 .inbox .th .tx{min-width:0;flex:1}
+.v2 .inbox .th .r1{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.v2 .inbox .th .r1 b{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.v2 .inbox .th .r1 small{color:var(--ink-3);font-size:11.5px;white-space:nowrap}
+.v2 .inbox .th p{font-size:12.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.v2 .inbox .th .r3{display:flex;gap:6px;align-items:center;margin-top:3px;font-size:11.5px;color:var(--ink-3);flex-wrap:wrap}
+.v2 .inbox .th .tag{font-size:11px;padding:0 7px}
+/* the unanswered dot (the mockup's .th.un .r1 b::after), as an element so a screen reader gets a label */
+.v2 .inbox .udot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--coral);margin-left:6px;vertical-align:1px}
+
+.v2 .inbox .thhead{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.v2 .inbox .thhead .a{width:38px;height:38px;font-size:13px}
+.v2 .inbox .thhead small{display:block;color:var(--ink-3);font-size:12.5px}
+.v2 .inbox .thhead .rt{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.v2 .inbox .thhead .btn{padding:6px 11px;font-size:13px}
+.v2 .inbox .msgs{flex:1;overflow:auto;padding:18px;display:flex;flex-direction:column;gap:12px;background:var(--bg)}
+.v2 .inbox .b{max-width:78%;display:flex;flex-direction:column;gap:3px}
+.v2 .inbox .b .bub{padding:9px 13px;border-radius:14px;font-size:13.5px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}
+.v2 .inbox .b.out{align-self:flex-end;align-items:flex-end}
+.v2 .inbox .b.out .bub{background:var(--pine);color:var(--on-pine);border-radius:14px 14px 4px 14px}
+.v2 .inbox .b.in .bub{background:var(--card);border:1px solid var(--line);border-radius:14px 14px 14px 4px}
+.v2 .inbox .mst{display:inline-flex;gap:5px;align-items:center;font-size:11.5px;color:var(--ink-3);font-weight:600}
+.v2 .inbox .mst svg.lucide{width:13px;height:13px}
+.v2 .inbox .mst.read{color:var(--ok-ink)}
+.v2 .inbox .mst.failed{color:var(--coral)}
+.v2 .inbox .mst.replied{color:var(--violet)}
+.v2 .inbox .failnote{font-size:12px;color:var(--coral);display:flex;gap:6px;align-items:center}
+.v2 .inbox .failnote svg.lucide{width:13px;height:13px;flex:none}
+/* new: the time, the status and the order link on one line under a bubble; the message a reply answers above it */
+.v2 .inbox .mst-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11.5px;color:var(--ink-3)}
+.v2 .inbox .b.out .mst-row{justify-content:flex-end}
+.v2 .inbox .quote{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--ink-3)}
+.v2 .inbox .quote svg.lucide{width:13px;height:13px;flex:none}
+.v2 .inbox .lnk{font-size:12px;font-weight:600;color:var(--pine);text-decoration:none}
+
+.v2 .inbox .compose{border-top:1px solid var(--line);padding:12px 16px;display:flex;flex-direction:column;gap:8px;background:var(--card)}
+.v2 .inbox .compose .row{display:flex;gap:8px;align-items:center}
+.v2 .inbox .compose .row.end{justify-content:flex-end}
+.v2 .inbox .compose .psel{align-self:flex-start;max-width:100%}
+.v2 .inbox .send{width:38px;height:38px;border-radius:11px;background:var(--pine);color:var(--on-pine);display:grid;place-items:center;flex:none}
+.v2 .inbox .send svg{width:17px;height:17px}
+.v2 .inbox .send:disabled{opacity:.5;cursor:default}
+/* new: the reply field (the mockup's .compose .in) and the closed-window notice */
+.v2 .inbox .msgin{flex:1;font:500 14px "Plus Jakarta Sans",system-ui,sans-serif;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:11px;padding:9px 12px;resize:vertical;min-height:40px;max-height:160px}
+.v2 .inbox .winclosed{font-size:13px;font-weight:600;color:var(--warn-ink)}
+.v2 .inbox .tplbody{font-size:13px;color:var(--ink-2);background:var(--hover);padding:9px 11px;border-radius:11px;white-space:pre-wrap}
+
+@media (max-width:1100px){
+  .v2 .inbox{grid-template-columns:280px minmax(0,1fr)}
+}
+@media (max-width:760px){
+  .v2 .inbox{grid-template-columns:1fr;height:auto}
+  .v2 .inbox .pane{border-right:0}
+  .v2 .inbox .threads{max-height:320px}
+  .v2 .inbox .msgs{min-height:340px}
+  .v2 .inbox .b{max-width:92%}
+}
+
+/* bulk send (the mockup's .bulk .fld .sum .lines .sendrow), Campaigns (.ctab .pct) */
+.v2 .msgs-page .bulkform{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:16px;padding:20px;align-items:start}
+.v2 .msgs-page .fld{margin-bottom:16px}
+.v2 .msgs-page .fld>.lab{display:block;font-weight:600;font-size:13px;margin-bottom:6px}
+.v2 .msgs-page .fld .seg{margin-top:0}
+.v2 .msgs-page .fld .two2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.v2 .msgs-page .fld.fl textarea{resize:vertical;min-height:110px;line-height:1.5}
+/* new: the "Has ordered before" switch under the two filters */
+.v2 .msgs-page .bulkchk{margin-top:12px}
+.v2 .msgs-page .sum{position:sticky;top:84px;display:flex;flex-direction:column;gap:14px;padding:18px;box-shadow:none}
+.v2 .msgs-page .sum .big{font-family:"Bricolage Grotesque";font-size:38px;font-weight:800;line-height:1}
+.v2 .msgs-page .lines{font-size:13px;display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.v2 .msgs-page .lines div{display:flex;justify-content:space-between;gap:10px}
+.v2 .msgs-page .lines div span:first-child{color:var(--ink-3)}
+.v2 .msgs-page .sendrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.v2 .msgs-page .sum .tablewrap{max-height:280px;overflow:auto}
+.v2 .msgs-page .pad{padding:20px}
+.v2 .msgs-page .ctab td,.v2 .msgs-page .ctab th{padding-left:14px;padding-right:14px;white-space:nowrap}
+.v2 .msgs-page .ctab td:first-child,.v2 .msgs-page .ctab th:first-child{padding-left:20px}
+.v2 .msgs-page .ctab td:last-child,.v2 .msgs-page .ctab th:last-child{padding-right:20px}
+.v2 .msgs-page .pct{display:block;color:var(--ink-3);font-size:11.5px}
+@media (max-width:1100px){.v2 .msgs-page .bulkform{grid-template-columns:1fr}.v2 .msgs-page .sum{position:static}}
+@media (max-width:760px){.v2 .msgs-page .fld .two2{grid-template-columns:1fr}.v2 .msgs-page .bulkform{padding:16px}}
+
+/* Overview (T31): the date card and tiles reuse the Reports card; a tile has a link into the log */
+.v2 .msgs-page .datecard + *{margin-top:16px}
+.v2 .msgs-page .kpis.k5{grid-template-columns:repeat(5,1fr)}
+@media (max-width:1280px){.v2 .msgs-page .kpis.k5{grid-template-columns:repeat(3,1fr)}}
+@media (max-width:1100px){.v2 .msgs-page .kpis.k5{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:760px){.v2 .msgs-page .kpis.k5{grid-template-columns:1fr}}
+.v2 .msgs-page .kpi .s{gap:8px;flex-wrap:wrap}
+.v2 .msgs-page .busy{opacity:.6;transition:opacity .15s}
+.v2 .msgs-page .lnk{font-size:12.5px;font-weight:600;color:var(--pine);text-decoration:none}
+.v2 .msgs-page .hint{margin-top:12px}
+
+/* Message log (the mockup's .bar2 .otab .pct) */
+.v2 .msgs-page .bar2{display:flex;gap:8px;padding:12px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap;align-items:center}
+.v2 .msgs-page .bar2 .srch{min-width:240px;flex:1 1 240px;max-width:360px}
+.v2 .msgs-page .otab td,.v2 .msgs-page .otab th{padding-left:14px;padding-right:14px;white-space:nowrap}
+.v2 .msgs-page .otab .pct.err{white-space:normal;max-width:280px;overflow-wrap:anywhere}
+.v2 .msgs-page .otab td:first-child,.v2 .msgs-page .otab th:first-child{padding-left:20px}
+.v2 .msgs-page .otab td:last-child,.v2 .msgs-page .otab th:last-child{padding-right:20px}
+@media (max-width:760px){.v2 .msgs-page .bar2{padding:12px 16px}.v2 .msgs-page .bar2 .srch{max-width:none}}
+
+/* M9-T36: the messages block on the order drawer and the customer page */
+.v2 .mtrk ul{list-style:none;display:flex;flex-direction:column}
+.v2 .mtrk li{padding:10px 0;border-bottom:1px solid var(--line)}
+.v2 .mtrk li:last-child{border-bottom:0}
+.v2 .mtrk .r1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.v2 .mtrk .r1 time{margin-left:auto;color:var(--ink-3);font-size:12.5px}
+.v2 .mtrk p{color:var(--ink-2);margin-top:4px;overflow-wrap:anywhere}
+.v2 .mtrk small{color:var(--ink-3);font-size:12.5px}
+.v2 .mtrk li.in{padding-left:12px;border-left:2px solid var(--line)}
+.v2 .mtrk .lnk{display:inline-block;margin-top:8px;color:var(--pine);font-weight:600}
+/* Templates and Opt-outs (T34, T35): the mockup's .tgrid .tpl .tags, and the tab bar's right-hand actions */
+.v2 .msgs-page .bar2 .rt{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.v2 .msgs-page .bar2 .note{font-size:13px}
+.v2 .msgs-page .tgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;padding:16px 20px 20px}
+.v2 .msgs-page .tpl{border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:9px;min-width:0}
+.v2 .msgs-page .tpl .tt{display:flex;gap:8px;align-items:flex-start;justify-content:space-between}
+.v2 .msgs-page .tpl .tt b{font-size:14px;overflow-wrap:anywhere}
+.v2 .msgs-page .tpl .tg2{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;flex:none}
+.v2 .msgs-page .tpl p{color:var(--ink-2);font-size:13px;background:var(--hover);padding:9px 11px;border-radius:11px;flex:1;white-space:pre-wrap;overflow-wrap:anywhere;max-height:150px;overflow:hidden}
+.v2 .msgs-page .tpl .acts{display:flex;gap:6px}
+.v2 .msgs-page .tpl .acts .mini{display:inline-flex;align-items:center;gap:5px}
+.v2 .msgs-page .tpl .failnote2{color:var(--coral);font-size:12.5px}
+.tplform{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:20px;align-items:start}
+.tplform .fld{margin-bottom:14px}
+.tplform .fld>.lab,.tplform .tplprev>.lab{display:block;font-weight:600;font-size:13px;margin-bottom:6px}
+.tplform .fld.fl textarea{resize:vertical;min-height:110px;line-height:1.5}
+.tplform .two2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.tplform .tags{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:-4px 0 14px}
+.tplform .tags button{font:600 12px "Plus Jakarta Sans",system-ui,sans-serif;padding:3px 9px;border-radius:99px;background:var(--violet-soft);color:var(--violet)}
+.tplform .tags .ink3,.tplform .hint{font-size:12.5px;color:var(--ink-3)}
+.tplform .tplprev{position:sticky;top:0;display:flex;flex-direction:column;gap:8px;min-width:0}
+.tplform .tplprev .bub{padding:10px 13px;border-radius:14px 14px 14px 4px;background:var(--hover);font-size:13.5px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}
+.tplform .tplprev .sub{font-size:13.5px}
+.tplform .tplprev iframe{width:100%;height:260px;border:1px solid var(--line);border-radius:12px;background:#fff}
+@media (max-width:760px){.tplform{grid-template-columns:1fr}.tplform .tplprev{position:static}.tplform .two2{grid-template-columns:1fr}.v2 .msgs-page .tgrid{padding:16px}}
+/* the same field look inside a dialog of this page (a dialog renders outside .msgs-page) */
+.v2 .dlg .fld{margin-bottom:14px}
+.v2 .dlg .fld>.lab{display:block;font-weight:600;font-size:13px;margin-bottom:6px}
+.v2 .dlg .fld .seg{margin-top:0}

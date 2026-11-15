@@ -22,8 +22,11 @@ jest.mock('../../services/assignmentCursor', () => ({
 const mockAlert = jest.fn();
 jest.mock('../../services/notificationService', () => ({
   __esModule: true,
-  createNotification: jest.fn(),
   notifyAdminsNoAssigneeAvailable: (...args: unknown[]) => mockAlert(...args),
+}));
+jest.mock('../../services/inbox/inboxService', () => ({
+  __esModule: true,
+  notify: jest.fn(),
 }));
 
 import { prismaMock } from '../mocks/prisma.mock';

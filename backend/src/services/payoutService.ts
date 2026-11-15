@@ -4,6 +4,8 @@ import { currencyOfTenant } from '../utils/currency';
 import { withSoftDeleted } from '../utils/prismaExtensions';
 import prisma, { TransactionClient } from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
+import { notifyPayoutPaid } from './inbox/agentEvents';
+import logger from '../utils/logger';
 import { GLAutomationService } from './glAutomationService';
 import * as Money from '../utils/money';
 import { getStoreTimeZone, localDate, MONTH_RE, monthRange } from './kpi/dates';
@@ -278,7 +280,7 @@ class PayoutService {
   /** Records one payout. See the file header. */
   async record(input: RecordPayoutInput, recordedById: number) {
     try {
-      return await prisma.$transaction(async (tx) => {
+      const payout = await prisma.$transaction(async (tx) => {
         const payee = await this.loadPayee(tx, input.payeeId);
         const method = input.method.trim();
         const reference = input.reference?.trim() || null;
@@ -365,6 +367,13 @@ class PayoutService {
           include: { commissionEntries: { select: { id: true, orderId: true, kind: true, amount: true } } },
         });
       });
+      // Tell the person (M9-T20). After the commit: a failed notification never undoes a payout.
+      try {
+        await notifyPayoutPaid({ tenantId: resolveTenantId(payout.tenantId), payeeId: payout.payeeId, payoutId: payout.id, amount: payout.amount, method: payout.method, recordedById });
+      } catch (error) {
+        logger.warn('Payout notification failed', { payoutId: payout.id, error: error instanceof Error ? error.message : String(error) });
+      }
+      return payout;
     } catch (error: any) {
       // Two payouts with the same reference at the same moment: the unique key (tenant, payee, method, reference) answers the second
       if (error?.code === 'P2002') throw new AppError('This reference was already used for this person and method', 409);

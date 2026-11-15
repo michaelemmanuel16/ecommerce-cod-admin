@@ -1,5 +1,5 @@
 import apiClient from './api';
-import {
+import type {
   Webhook,
   WebhookLog,
   WebhookStats,
@@ -124,10 +124,11 @@ export const webhooksService = {
   },
 
   /**
-   * Retry failed webhook log
+   * Retry a failed delivery. The route is /api/webhooks/:id/logs/:logId/retry; the old path without the webhook id never existed.
+   * The result is a new log row; the failed one stays.
    */
-  async retryWebhook(logId: number): Promise<any> {
-    const response = await apiClient.post(`/api/webhooks/logs/${logId}/retry`);
+  async retryWebhook(webhookId: number, logId: number): Promise<any> {
+    const response = await apiClient.post(`/api/webhooks/${webhookId}/logs/${logId}/retry`);
     return response.data;
   }
 };

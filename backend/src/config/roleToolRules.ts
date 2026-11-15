@@ -1,7 +1,7 @@
 import { UserRole } from '@prisma/client';
 import { ALL_TOOL_NAMES, TOOL_PERMISSIONS } from './toolPermissions';
 import { PermissionGrid } from './defaultRolePermissions';
-import { roleToolList } from './defaultRoles';
+import { isPositionRole, roleToolList } from './defaultRoles';
 
 /**
  * M6-T04 (F-1153): the 16 tool switches of a role. `Role.tools` stores the keys of the switches that are on. Each switch is a
@@ -97,16 +97,22 @@ const normal = (g: PermissionGrid) =>
 
 export const sameGrid = (a: PermissionGrid, b: PermissionGrid): boolean => normal(a) === normal(b);
 
-type GridSource = { permissions: unknown; presetRole: UserRole | null };
+type GridSource = { permissions: unknown; presetRole: UserRole | null; name: string };
 
 const isGrid = (v: unknown): v is PermissionGrid => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /**
  * The grid a role gives its holders: its own `permissions`, else the tenant's matrix for its base role (`matrix`: always the tenant's,
  * from `getTenantMatrix`), else nothing. One rule for the middleware, the checks, the role views and the MCP keys.
+ * A position role (Admin, Manager, ...: `name` says which) seeded before a resource existed has no key for it; that key comes from the
+ * tenant's matrix for the base role. A key the role stores wins, an empty list included. A custom role never borrows keys.
  */
 export function gridOfRole(role: GridSource, matrix: Record<string, PermissionGrid>): PermissionGrid {
-  if (isGrid(role.permissions)) return role.permissions;
+  if (isGrid(role.permissions)) {
+    return role.presetRole && isPositionRole({ name: role.name, presetRole: role.presetRole })
+      ? { ...matrix[role.presetRole], ...role.permissions }
+      : role.permissions;
+  }
   return role.presetRole ? matrix[role.presetRole] ?? {} : {};
 }
 

@@ -23,7 +23,7 @@ const router = Router();
 // (whatsappWebhookLimiter) to handle Meta's burst traffic without apiLimiter blocking.
 
 // OAuth endpoints — callback is registered in server.ts (unauthenticated)
-const superAdminOnly: UserRole[] = ['super_admin'];
+const superAdminOnly: UserRole[] = ['super_admin', 'admin']; // owner and admin connect WhatsApp
 const adminRoles: UserRole[] = ['super_admin', 'admin', 'manager'];
 
 router.post('/oauth/initiate', authenticate, requirePermission(superAdminOnly), initiateOAuth);

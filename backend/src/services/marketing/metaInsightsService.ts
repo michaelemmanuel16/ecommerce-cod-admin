@@ -4,9 +4,11 @@ import * as Money from '../../utils/money';
 import { decryptString } from '../../utils/providerCrypto';
 import { ADS_GRAPH_API_BASE } from '../metaOAuthService';
 import { metaAdsApiError } from '../metaTokenHealthService';
-import { createNotification, findTenantAdmins } from '../notificationService';
+import { notify } from '../inbox/inboxService';
+import { resolveTenantId } from '../../utils/tenantContext';
 import { localDate, shiftYmd, utcDateOfYmd } from '../kpi/dates';
 import { safeErrorMessage } from '../../utils/safeError';
+import { recordConnectionEvent } from '../connections/connectionEventService';
 
 /**
  * M8-T05 (COD-71): pull campaign-level daily insights from Meta and keep them in MetaSpendDay.
@@ -190,15 +192,15 @@ const failureText = (err: unknown): string => {
 
 async function alertTwiceFailed(accountName: string, adAccountId: number): Promise<void> {
   try {
-    for (const admin of await findTenantAdmins()) {
-      await createNotification(
-        String(admin.id),
-        'meta_ads_pull',
-        'Meta Ads pull failed',
-        `Meta Ads pull failed twice for ${accountName}. Check Settings, Integrations.`,
-        { adAccountId },
-      );
-    }
+    await recordConnectionEvent({ tenantId: resolveTenantId(), connection: 'meta', level: 'error', message: `Meta Ads pull failed twice for ${accountName}.`, data: { adAccountId } });
+    await notify({
+      tenantId: resolveTenantId(),
+      event: 'system_problem',
+      recipients: 'owner',
+      title: 'Meta Ads pull failed',
+      message: `Meta Ads pull failed twice for ${accountName}. Check Settings, Integrations.`,
+      data: { source: 'meta_ads_pull', adAccountId },
+    });
   } catch (err: any) {
     logger.error('Meta Ads pull alert failed', { error: safeErrorMessage(err) });
   }

@@ -6,7 +6,7 @@ export interface UserPreferences {
   northStarDone?: boolean;
 }
 
-export type Resource = 'users' | 'orders' | 'customers' | 'products' | 'financial' | 'payouts' | 'analytics' | 'workflows' | 'settings' | 'gl' | 'journal' | 'expenses' | 'marketing';
+export type Resource = 'users' | 'orders' | 'customers' | 'products' | 'financial' | 'payouts' | 'analytics' | 'workflows' | 'settings' | 'gl' | 'journal' | 'expenses' | 'marketing' | 'messages';
 export type Action = 'create' | 'view' | 'update' | 'delete' | 'bulk_import' | 'assign' | 'update_stock' | 'execute' | 'export' | 'post' | 'void' | 'edit' | 'view_all';
 
 export type Permissions = Record<string, string[]> | string[];
@@ -242,17 +242,19 @@ export interface FilterOptions {
   format?: 'csv' | 'xlsx';
 }
 
-export enum CallOutcome {
-  CONFIRMED = 'confirmed',
-  NOT_REACHABLE = 'not_reachable',
-  CALL_BACK_LATER = 'call_back_later',
-  DECLINED = 'declined',
-  WRONG_NUMBER = 'wrong_number',
-  RESCHEDULED = 'rescheduled',
-  NO_ANSWER = 'no_answer',
-  CANCELLED = 'cancelled',
-  OTHER = 'other'
-}
+// A const object with a type of the same name (an `enum` is not allowed under erasableSyntaxOnly)
+export const CallOutcome = {
+  CONFIRMED: 'confirmed',
+  NOT_REACHABLE: 'not_reachable',
+  CALL_BACK_LATER: 'call_back_later',
+  DECLINED: 'declined',
+  WRONG_NUMBER: 'wrong_number',
+  RESCHEDULED: 'rescheduled',
+  NO_ANSWER: 'no_answer',
+  CANCELLED: 'cancelled',
+  OTHER: 'other',
+} as const;
+export type CallOutcome = (typeof CallOutcome)[keyof typeof CallOutcome];
 
 export interface Call {
   id: number;

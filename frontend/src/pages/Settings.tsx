@@ -1,14 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Navigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { useV2Page } from '../components/shell/useV2Page';
-import { Inbox } from 'lucide-react';
-import { Button, Card } from '../components/ui-v2';
+import { ExternalLink, Inbox } from 'lucide-react';
+import { Card } from '../components/ui-v2';
 import { usePermissions } from '../hooks/usePermissions';
 import { adminService, type SystemConfig } from '../services/admin.service';
 import { useConfigStore } from '../stores/configStore';
 import { UserManagementTable } from '../components/admin/UserManagementTable';
 import { RolePermissionsMatrix } from '../components/admin/RolePermissionsMatrix';
-import { IntegrationsPanel } from '../components/settings/IntegrationsPanel';
 import { CurrenciesFxPanel } from '../components/settings/CurrenciesFxPanel';
 import { LegacyCheckoutFormsPanel } from '../components/settings/LegacyCheckoutFormsPanel';
 import { NoAccess } from './NoAccess';
@@ -26,8 +25,8 @@ const KNOWN: SettingsTab[] = SETTINGS_TABS.map((t) => t.id);
 
 /**
  * Old ?tab= names from the handover map (F-1237). "roles" is the old name of Role permissions. "forms" goes to the
- * Checkout forms page, which exists. User management, Role permissions and Integrations stay here until Staff (M6)
- * and Connections (M9) ship; their tabs keep their old content.
+ * Checkout forms page and "integrations" to the Connections page (M9-T44). User management and Role permissions stay here
+ * until Staff (M6) ships; their tabs keep their old content.
  */
 const TAB_ALIASES: Record<string, SettingsTab> = { roles: 'permissions', ops: 'operations' };
 
@@ -45,17 +44,17 @@ function ViewOnly() {
   );
 }
 
-/** Notifications (F-1227): a pointer to Inbox settings. The button turns on when Inbox ships (M9). */
+/** Notifications (F-1227): a pointer to the notification settings, which live in Inbox next to the alerts themselves (M9-T39). */
 function NotificationsPointer() {
   return (
     <Card title="Notifications">
       <div className="linkcard">
         <span className="ico"><Inbox aria-hidden="true" /></span>
         <div>
-          <b>Notification settings will live in Inbox</b>
-          <p>Inbox is coming soon.</p>
+          <b>Notification settings live in Inbox</b>
+          <p>Choose what reaches you, on WhatsApp, email or in the app, next to the alerts themselves.</p>
         </div>
-        <Button variant="primary" disabled>Open Inbox settings</Button>
+        <Link className="btn pri" to="/inbox?view=settings"><ExternalLink aria-hidden="true" /> Open Inbox settings</Link>
       </div>
     </Card>
   );
@@ -64,7 +63,7 @@ function NotificationsPointer() {
 /**
  * The Settings shell (M3-T63, F-1220): a section menu built from the person's permissions, and the open section
  * at the right. The section is in the URL (?tab=), so a link opens the same one. The owner tabs that have no new
- * home yet (User management, Role permissions, Integrations with the AI Assistant card, Checkout forms) keep their
+ * home yet (User management, Role permissions, Checkout forms) keep their
  * old content here (F-1237), and so does Currencies and FX.
  */
 export function Settings() {
@@ -86,8 +85,8 @@ export function Settings() {
     if (isSuperAdmin) loadSystemConfig();
   }, [isSuperAdmin]);
 
-  // OAuth callback goes to integrations; an unknown or removed ?tab= (for example "notifications") opens Profile
-  const raw = params.has('oauth') ? 'integrations' : params.get('tab');
+  // An unknown or removed ?tab= (for example "notifications") opens Profile
+  const raw = params.get('tab');
   const asked = raw && TAB_ALIASES[raw] ? TAB_ALIASES[raw] : raw;
   const tab: SettingsTab = KNOWN.includes(asked as SettingsTab) ? (asked as SettingsTab) : 'profile';
   // ?tab=forms: the Checkout forms page is the new home, so go there and keep the other parameters
@@ -97,6 +96,14 @@ export function Settings() {
     const query = rest.toString();
     return <Navigate to={`/checkout-forms${query ? `?${query}` : ''}`} replace />;
   }
+  // Integrations is the Connections page now; an old WhatsApp login return (?oauth=) goes there too, with its parameters
+  if (raw === 'integrations' || params.has('oauth')) {
+    const rest = new URLSearchParams(params);
+    rest.delete('tab');
+    rest.delete('section');
+    const query = rest.toString();
+    return <Navigate to={`/connections${query ? `?${query}` : ''}`} replace />;
+  }
   const visible = SETTINGS_TABS.filter((t) => t.visible(access));
   const def = SETTINGS_TABS.find((t) => t.id === tab)!;
   const allowed = def.visible(access);
@@ -104,8 +111,7 @@ export function Settings() {
   const open = (id: SettingsTab) => {
     const next = new URLSearchParams(params);
     next.set('tab', id);
-    // The section param belongs to integrations only; oauth params are used up
-    if (id !== 'integrations') next.delete('section');
+    next.delete('section');
     next.delete('oauth');
     next.delete('message');
     setParams(next, { replace: true });
@@ -142,7 +148,6 @@ export function Settings() {
       case 'billing': return <BillingTab />;
       case 'users': return <Old><UserManagementTable /></Old>;
       case 'permissions': return <Old><RolePermissionsMatrix /></Old>;
-      case 'integrations': return <Old><IntegrationsPanel systemConfig={systemConfig} onConfigSaved={loadSystemConfig} /></Old>;
       case 'checkout-forms': return <Old><LegacyCheckoutFormsPanel /></Old>;
     }
   };

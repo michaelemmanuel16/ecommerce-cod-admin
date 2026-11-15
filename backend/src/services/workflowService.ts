@@ -2,19 +2,22 @@ import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { WorkflowTriggerType, Prisma, Workflow } from '@prisma/client';
 import logger from '../utils/logger';
-import { workflowQueue } from '../queues/workflowQueue';
-import assignmentService from './assignmentService';
-import { systemActor } from './systemUserService';
-import { addOrderTag, updateOrderByWorkflow } from './workflowActions';
+import { enqueueWorkflowRun } from '../queues/workflowEnqueue';
 import { evaluateConditions as evaluateConditionRules } from '../utils/conditionEvaluator';
-import crypto from 'crypto';
-import { getTenantId, resolveTenantId, runInTenant } from '../utils/tenantContext';
+import { getTenantId, resolveTenantId, runInTenant, withoutTenant } from '../utils/tenantContext';
 import { AppEvent, OrderCreatedEvent, OrderStatusChangedEvent, onOrderEvent } from '../utils/appEvents';
+import { onPaymentSettled, PaymentSettledEvent } from './payments/settlementHooks';
+import { syncWorkflowSchedule, validateSchedule } from '../queues/workflowSchedule';
+import * as Money from '../utils/money';
+import { validateAssignToConfig } from './workflowAssignTo';
+import { assertValidWorkflow } from './workflowValidation';
+import crypto from 'crypto';
 
 /** M2-T17 loop guard: a workflow-caused move stops at this depth; one run per order per workflow per window. */
 const LOOP_GUARD_MAX_DEPTH = 3;
 const LOOP_GUARD_WINDOW_MS = 60_000;
 export const LOOP_GUARD_MESSAGE = 'Skipped: loop guard';
+export const CONDITIONS_NOT_MET = 'conditions_not_met';
 const BACKDATED_MS = 24 * 60 * 60 * 1000;
 
 /**
@@ -45,6 +48,39 @@ interface CreateWorkflowData {
   conditions?: any;
 }
 
+/**
+ * The schedule trigger is stored as `time_based` (the schema has no `schedule` value; lane A owns the schema).
+ * The API accepts `schedule` as another word for it.
+ */
+export const SCHEDULE_TRIGGER: WorkflowTriggerType = 'time_based';
+export function normalizeTriggerType(value: unknown): WorkflowTriggerType {
+  return (value === 'schedule' ? SCHEDULE_TRIGGER : value) as WorkflowTriggerType;
+}
+
+/** sha256 hex of a webhook token: the only form that is stored. */
+export const hashWebhookToken = (token: string) => crypto.createHash('sha256').update(token).digest('hex');
+/** 32 random bytes, base64url. */
+export const newWebhookToken = () => crypto.randomBytes(32).toString('base64url');
+
+/** What a workflow looks like to a client: never the token hash. A webhook workflow says whether it has a token. */
+export function publicWorkflow<T extends { webhookTokenHash?: string | null; triggerType?: string }>(workflow: T) {
+  const { webhookTokenHash, ...rest } = workflow;
+  return workflow.triggerType === 'webhook' ? { ...rest, hasWebhookToken: !!webhookTokenHash } : rest;
+}
+
+/** True when the conditions hold at least one rule (the old key-value shape counts each key). */
+export function hasConditionRules(conditions: any): boolean {
+  if (!conditions || typeof conditions !== 'object') return false;
+  if (Array.isArray(conditions.rules)) {
+    return conditions.rules.some((r: any) => (r && Array.isArray(r.rules) ? hasConditionRules(r) : true));
+  }
+  return Object.keys(conditions).some((k) => k !== 'id' && k !== 'logic');
+}
+
+const WEBHOOK_DATA_MAX_CHARS = 64_000;
+const IDEMPOTENCY_HEADER_MAX = 200;
+const UPDATABLE_FIELDS = ['name', 'description', 'triggerType', 'triggerData', 'actions', 'conditions', 'isActive'] as const;
+
 interface WorkflowFilters {
   isActive?: boolean;
   triggerType?: WorkflowTriggerType;
@@ -55,6 +91,24 @@ interface RunGuard {
   orderId: number;
   depth: number;
   recent: Set<number>;
+}
+
+/** Where an execution came from, and the key that stops a double run (a second insert with the same key does nothing). */
+export interface RunMeta {
+  triggerSource: string;
+  idempotencyKey?: string;
+  orderId?: number | null;
+}
+
+/** The run history's `triggerSource` for an order event: the event's own word, else a guess from who made it. */
+export function triggerSourceOf(evt: OrderCreatedEvent | OrderStatusChangedEvent): string {
+  if (evt.triggerSource) return evt.triggerSource;
+  if (evt.imported) return 'import';
+  if ('actor' in evt) {
+    if (evt.actor.kind === 'ai') return 'mcp';
+    if (evt.actor.kind === 'integration') return 'webhook';
+  }
+  return 'screen';
 }
 
 export class WorkflowService {
@@ -75,7 +129,22 @@ export class WorkflowService {
       orderBy: { createdAt: 'desc' }
     });
 
-    return workflows;
+    return workflows.map(publicWorkflow);
+  }
+
+  /**
+   * The checks a trigger needs at save (M9-T22). A schedule has a valid cron and time zone (the zone defaults to the
+   * store's) and no conditions: it runs with no order, so a rule on an order field could never be true.
+   * Returns the trigger data to store.
+   */
+  private async validateTrigger(triggerType: WorkflowTriggerType, triggerData: any, conditions: any): Promise<any> {
+    if (triggerType !== SCHEDULE_TRIGGER) return triggerData;
+    if (hasConditionRules(conditions)) {
+      throw new AppError('A schedule workflow runs with no order, so it cannot have conditions on order fields', 400);
+    }
+    const config = await prisma.systemConfig.findFirst({ select: { timeZone: true } });
+    const schedule = validateSchedule(triggerData, config?.timeZone || undefined);
+    return { ...(triggerData ?? {}), cron: schedule.cron, timeZone: schedule.timeZone };
   }
 
   /**
@@ -84,18 +153,25 @@ export class WorkflowService {
   async createWorkflow(data: CreateWorkflowData) {
 
     // Validate actions
+    assertValidWorkflow({ actions: data.actions, conditions: data.conditions });
     this.validateWorkflowActions(data.actions);
+    const triggerType = normalizeTriggerType(data.triggerType);
+    const triggerData = await this.validateTrigger(triggerType, data.triggerData, data.conditions);
+    // A webhook workflow gets its token now; the raw token is returned once and only its hash is kept.
+    const webhookToken = triggerType === 'webhook' ? newWebhookToken() : undefined;
 
     const workflow = await prisma.workflow.create({
       data: {
         name: data.name,
         description: data.description,
-        triggerType: data.triggerType,
-        triggerData: data.triggerData,
+        triggerType,
+        triggerData,
         actions: data.actions,
         conditions: data.conditions || {},
-              }
+        ...(webhookToken ? { webhookTokenHash: hashWebhookToken(webhookToken) } : {}),
+      }
     });
+    await syncWorkflowSchedule(workflow);
 
     logger.info('Workflow created', {
       workflowId: workflow.id,
@@ -103,7 +179,7 @@ export class WorkflowService {
       triggerType: workflow.triggerType
     });
 
-    return workflow;
+    return { ...publicWorkflow(workflow), ...(webhookToken ? { webhookToken } : {}) };
   }
 
   /**
@@ -121,7 +197,7 @@ export class WorkflowService {
       throw new AppError('Workflow not found', 404);
     }
 
-    return workflow;
+    return publicWorkflow(workflow);
   }
 
   /**
@@ -138,23 +214,38 @@ export class WorkflowService {
     }
 
     // Validate actions if provided
+    assertValidWorkflow({ actions: updateData.actions, conditions: updateData.conditions });
     if (updateData.actions) {
       this.validateWorkflowActions(updateData.actions);
     }
 
+    // Only the editable fields are written: never the token hash, the tenant or the schedule bookkeeping.
     // Prisma ignores undefined fields on update. Explicitly convert to null
     // so clearing conditions/description actually persists to the DB.
-    const data: any = { ...updateData };
+    const data: any = {};
+    for (const field of UPDATABLE_FIELDS) if (field in updateData) data[field] = (updateData as any)[field];
     if ('conditions' in data && data.conditions === undefined) data.conditions = null;
     if ('description' in data && data.description === undefined) data.description = null;
+    if ('triggerType' in data) data.triggerType = normalizeTriggerType(data.triggerType);
+
+    // The trigger is checked as it will be saved: new values over the old ones
+    const triggerType: WorkflowTriggerType = data.triggerType ?? workflow.triggerType;
+    const conditions = 'conditions' in data ? data.conditions : workflow.conditions;
+    if ('triggerType' in data || 'triggerData' in data || 'conditions' in data) {
+      data.triggerData = await this.validateTrigger(triggerType, 'triggerData' in data ? data.triggerData : workflow.triggerData, conditions);
+    }
+    // Switching to a webhook trigger on a workflow with no token: it gets one, returned once.
+    const webhookToken = triggerType === 'webhook' && !workflow.webhookTokenHash ? newWebhookToken() : undefined;
+    if (webhookToken) data.webhookTokenHash = hashWebhookToken(webhookToken);
 
     const updated = await prisma.workflow.update({
       where: { id: workflowId },
       data,
     });
+    await syncWorkflowSchedule(updated);
 
     logger.info('Workflow updated', { workflowId });
-    return updated;
+    return { ...publicWorkflow(updated), ...(webhookToken ? { webhookToken } : {}) };
   }
 
   /**
@@ -173,6 +264,7 @@ export class WorkflowService {
     await prisma.workflow.delete({
       where: { id: workflowId }
     });
+    await syncWorkflowSchedule({ ...workflow, isActive: false });
 
     logger.info('Workflow deleted', { workflowId });
     return { message: 'Workflow deleted successfully' };
@@ -195,9 +287,10 @@ export class WorkflowService {
       where: { id: workflowId },
       data: { isActive }
     });
+    await syncWorkflowSchedule(updated);
 
     logger.info('Workflow status toggled', { workflowId, isActive });
-    return updated;
+    return publicWorkflow(updated);
   }
 
   /**
@@ -217,60 +310,81 @@ export class WorkflowService {
       throw new AppError('Workflow is not active', 400);
     }
 
-    return this.runLoaded(workflow, input);
+    return this.runLoaded(workflow, input, undefined, { triggerSource: 'manual' });
   }
 
-  /** Check the workflow's conditions against the input, then queue a run. `workflow` is already loaded and active. */
-  private async runLoaded(workflow: Workflow, input?: any, guard?: RunGuard) {
-    // For manual execution (no input), skip workflow-level conditions
-    // The queue worker will handle finding orders that match conditions
-    const isManualExecution = !input || Object.keys(input).length === 0;
+  /** Queue a run. `workflow` is already loaded and active. The conditions are checked once, in `enqueueRun`. */
+  private async runLoaded(workflow: Workflow, input: any, guard: RunGuard | undefined, meta: RunMeta) {
+    return this.enqueueRun(workflow, input, guard, meta);
+  }
 
-    // Check conditions only for automatic triggers with input
-    if (!isManualExecution && workflow.conditions && !this.evaluateConditions(workflow.conditions, input)) {
-      logger.info('Workflow conditions not met', { workflowId: workflow.id, input });
-      return { message: 'Workflow conditions not met' };
+  /** Insert an execution row. Null when the idempotency key is already taken. */
+  async createExecution(workflow: Workflow, input: any, meta: RunMeta, extra: { status: string; error?: string; completedAt?: Date; output?: Prisma.InputJsonValue; mode?: 'live' | 'test'; steps?: Prisma.InputJsonValue }) {
+    try {
+      return await prisma.workflowExecution.create({
+        data: {
+          tenantId: resolveTenantId(workflow.tenantId),
+          workflowId: workflow.id,
+          input: input || {},
+          orderId: meta.orderId ?? input?.orderId ?? null,
+          triggerSource: meta.triggerSource,
+          idempotencyKey: meta.idempotencyKey ?? null,
+          ...extra,
+        },
+      });
+    } catch (error: any) {
+      if (error?.code === 'P2002' && meta.idempotencyKey) return null;
+      throw error;
     }
+  }
 
-    return this.enqueueRun(workflow, input, guard);
+  /**
+   * Every trigger checks the workflow's conditions once, before the first step (M9-T21 fix). Null when the run may go on.
+   * A run that does not match writes a `skipped` execution with `conditions_not_met`. A run with no input (a manual or
+   * schedule run with no order) has nothing to read, so it skips the check as before.
+   */
+  async skipUnlessConditionsMet(workflow: Workflow, input: any, meta: RunMeta) {
+    const hasInput = !!input && Object.keys(input).length > 0;
+    if (!hasInput || !workflow.conditions || this.evaluateConditions(workflow.conditions, input)) return null;
+    // A skip is not a run: it carries no idempotency key, so it never blocks the real run for the same key.
+    const skipped = await this.createExecution(workflow, input, { triggerSource: meta.triggerSource, orderId: meta.orderId ?? input?.orderId ?? null }, {
+      status: 'skipped', error: CONDITIONS_NOT_MET, completedAt: new Date(),
+    });
+    logger.info('Workflow conditions not met', { workflowId: workflow.id, orderId: meta.orderId ?? input?.orderId });
+    return { message: 'Workflow conditions not met', execution: skipped };
   }
 
   /**
    * Loop guard, execution record, queue: the one place a run is created (manual and triggered).
    * `guard` is given for runs caused by an order event (M2-T17).
    */
-  private async enqueueRun(workflow: Workflow, input?: any, guard?: RunGuard) {
-    if (guard && await this.loopGuardHit(workflow, input, guard)) {
+  async enqueueRun(workflow: Workflow, input: any, guard: RunGuard | undefined, meta: RunMeta) {
+    const skipped = await this.skipUnlessConditionsMet(workflow, input, meta);
+    if (skipped) return skipped;
+
+    if (guard && await this.loopGuardHit(workflow, input, guard, meta)) {
       return { message: LOOP_GUARD_MESSAGE };
     }
 
-    // Create execution record
-    const execution = await prisma.workflowExecution.create({
-      data: {
-        tenantId: resolveTenantId(workflow.tenantId),
-        workflowId: workflow.id,
-        status: 'pending',
-        input: input || {},
-      }
-    });
+    // Create execution record. The unique (tenant, idempotencyKey) index makes a second run for the same key a no-op.
+    const execution = await this.createExecution(workflow, input, meta, { status: 'pending' });
+    if (!execution) {
+      logger.info('Workflow run skipped: duplicate idempotency key', { workflowId: workflow.id, key: meta.idempotencyKey });
+      return { message: 'Duplicate run ignored' };
+    }
 
     // Capture tenant context so the queue worker can restore it
     const tenantId = getTenantId();
 
-    // Add to queue for async processing (with 5s timeout to prevent API hang)
-    await Promise.race([
-      workflowQueue.add('execute-workflow', {
-        executionId: execution.id,
-        workflowId: workflow.id,
-        actions: workflow.actions,
-        conditions: workflow.conditions,
-        input: input || {},
-        tenantId,
-      }),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Workflow queue is currently unavailable. Please try again later.')), 5000)
-      )
-    ]);
+    // Add to queue for async processing. A queue that is down never fails the caller: the run goes to the outbox (M9-T21).
+    await enqueueWorkflowRun({
+      executionId: execution.id,
+      workflowId: workflow.id,
+      actions: workflow.actions as any[],
+      conditions: workflow.conditions,
+      input: input || {},
+      tenantId,
+    });
 
     logger.info('Workflow execution started', {
       workflowId: workflow.id,
@@ -280,393 +394,6 @@ export class WorkflowService {
     return {
       message: 'Workflow execution started',
       execution
-    };
-  }
-
-  /**
-   * Process workflow execution (called by queue worker)
-   */
-  async processWorkflowExecution(executionId: number, workflowId: number, actions: any[], input: any) {
-
-    try {
-      await prisma.workflowExecution.update({
-        where: { id: executionId },
-        data: { status: 'running' }
-      });
-
-      const results: any[] = [];
-
-      // Execute actions sequentially
-      for (const action of actions) {
-        try {
-          const result = await this.executeAction(action, input);
-          results.push({ action: action.type, success: true, result });
-
-          // If action is wait, delay execution
-          if (action.type === 'wait' && action.duration) {
-            await this.delay(action.duration);
-          }
-        } catch (error: any) {
-          results.push({ action: action.type, success: false, error: error.message });
-
-          // Continue or stop based on action config
-          if (action.stopOnError) {
-            throw error;
-          }
-        }
-      }
-
-      // Mark execution as completed
-      await prisma.workflowExecution.update({
-        where: { id: executionId },
-        data: {
-          status: 'completed',
-          output: results,
-          completedAt: new Date()
-        }
-      });
-
-      logger.info('Workflow execution completed', { executionId, workflowId });
-      return results;
-    } catch (error: any) {
-      await prisma.workflowExecution.update({
-        where: { id: executionId },
-        data: {
-          status: 'failed',
-          error: error.message,
-          completedAt: new Date()
-        }
-      });
-
-      logger.error('Workflow execution failed', {
-        executionId,
-        workflowId,
-        error: error.message
-      });
-
-      throw error;
-    }
-  }
-
-  /**
-   * Execute single workflow action
-   */
-  private async executeAction(action: any, context: any): Promise<any> {
-    // Check if action has conditions
-    if (action.conditions) {
-      const conditionsMet = this.evaluateConditions(action.conditions, context);
-
-      if (!conditionsMet) {
-        logger.info('Action conditions not met, skipping', {
-          actionType: action.type,
-          conditions: action.conditions
-        });
-
-        // If conditions not met and there's an else branch, execute it
-        if (action.elseBranch && Array.isArray(action.elseBranch)) {
-          logger.info('Executing else branch', { actionType: action.type });
-          const elseResults = [];
-
-          for (const elseAction of action.elseBranch) {
-            const result = await this.executeAction(elseAction, context);
-            elseResults.push(result);
-          }
-
-          return {
-            conditionsMet: false,
-            elseBranchExecuted: true,
-            results: elseResults
-          };
-        }
-
-        return { conditionsMet: false, skipped: true };
-      }
-
-      logger.info('Action conditions met, proceeding', { actionType: action.type });
-    }
-
-    switch (action.type) {
-      case 'send_sms':
-        return this.executeSendSMS(action, context);
-
-      case 'send_email':
-        return this.executeSendEmail(action, context);
-
-      case 'send_whatsapp':
-        return this.executeSendWhatsApp(action, context);
-
-      case 'send_auto_confirm':
-        return this.executeSendAutoConfirm(action, context);
-
-      case 'update_order':
-        return this.executeUpdateOrder(action, context);
-
-      case 'assign_agent':
-        return this.executeAssignAgent(action, context);
-
-      case 'assign_user':
-        return this.executeAssignUserAction(action, context);
-
-      case 'add_tag':
-        return this.executeAddTag(action, context);
-
-      case 'http_request':
-        return this.executeHttpRequest(action, context);
-
-      case 'wait':
-        return { message: 'Wait action acknowledged' };
-
-      default:
-        throw new Error(`Unknown action type: ${action.type}`);
-    }
-  }
-
-  /**
-   * Execute send SMS action
-   */
-  private async executeSendSMS(action: any, context: any): Promise<any> {
-    const { smsService } = await import('./smsService');
-    const phone = action.phoneNumber || context.phoneNumber;
-    const message = action.message;
-    if (!phone || !message) {
-      logger.warn('executeSendSMS: missing phone or message', { action, context });
-      return { success: false, error: 'Missing phone or message' };
-    }
-    const result = await smsService.sendSms({
-      to: phone,
-      body: message,
-      orderId: context.orderId,
-      customerId: context.customerId,
-    });
-    if (!result.sent) throw new Error('SMS is not set up: message not sent');
-    return { success: true, messageLogId: result.messageLogId, to: phone };
-  }
-
-  /**
-   * Execute send email action.
-   * Delegates to the shared sendWorkflowEmail path (one config shape, one renderer,
-   * MessageLog + idempotency) so this synchronous executor and the BullMQ worker
-   * behave identically.
-   */
-  private async executeSendEmail(action: any, context: any): Promise<any> {
-    const { sendWorkflowEmail } = await import('./emailService');
-    const result = await sendWorkflowEmail(action.config || {}, { orderId: context.orderId });
-    return { success: result.sent, skipped: result.skipped, messageLogId: result.messageLogId, reason: result.reason };
-  }
-
-  /**
-   * Execute send WhatsApp action
-   */
-  private async executeSendWhatsApp(action: any, context: any): Promise<any> {
-    const { sendWhatsAppForOrder } = await import('./whatsappService');
-    const result = await sendWhatsAppForOrder(action.config?.templateKey, context.orderId, action.config?.customLink);
-    // sent === false: channel not set up. (An opted-out customer returns no `sent` field and stays a quiet skip.)
-    if (result.sent === false) throw new Error('WhatsApp is not set up: message not sent');
-
-    logger.info('WhatsApp message sent via workflow', {
-      orderId: context.orderId,
-      messageLogId: result.messageLogId,
-    });
-
-    return { success: true, messageLogId: result.messageLogId };
-  }
-
-  /**
-   * Execute send auto-confirm action (COD-193 M7-R2): WhatsApp template by default, SMS when config.channel is 'sms'.
-   * An ineligible order is skipped, not an error.
-   */
-  private async executeSendAutoConfirm(action: any, context: any): Promise<any> {
-    const { runAutoConfirmAction } = await import('./autoConfirmService');
-    const result = await runAutoConfirmAction(context.orderId, getTenantId(), action.config);
-    if (result.skipped) return { success: true, skipped: true, reason: result.reason };
-    return { success: true, channel: result.channel };
-  }
-
-  /**
-   * Execute update order action
-   */
-  private async executeUpdateOrder(action: any, context: any): Promise<any> {
-    const orderId = action.orderId || context.orderId;
-
-    if (!orderId) {
-      throw new Error('Order ID not provided');
-    }
-
-    // Status moves through the state machine as the system user (M2-T16); `depth` is the loop guard count.
-    const { updates } = await updateOrderByWorkflow(orderId, action, context.depth);
-
-    logger.info('Order updated via workflow', { orderId, ...updates });
-    return { success: true, orderId, updates };
-  }
-
-  /**
-   * Execute assign agent action
-   */
-  private async executeAssignAgent(action: any, context: any): Promise<any> {
-    const orderId = action.orderId || context.orderId;
-    const agentId = action.agentId;
-
-    if (!orderId || !agentId) {
-      throw new Error('Order ID or Agent ID not provided');
-    }
-
-    await assignmentService.assignByRole(orderId, agentId, 'delivery_agent', await systemActor(), { checkAvailable: true });
-
-    logger.info('Agent assigned via workflow', { orderId, agentId });
-    return { success: true, orderId, agentId };
-  }
-
-  /**
-   * Execute add tag action
-   */
-  private async executeAddTag(action: any, context: any): Promise<any> {
-    const orderId = action.orderId || context.orderId;
-    const tag = action.tag;
-
-    if (!orderId || !tag) {
-      throw new Error('Order ID or tag not provided');
-    }
-
-    await addOrderTag(orderId, tag);
-
-    logger.info('Tag added via workflow', { orderId, tag });
-    return { success: true, orderId, tag };
-  }
-
-  /**
-   * Execute HTTP request action
-   */
-  private async executeHttpRequest(action: any, _context: any): Promise<any> {
-    // TODO: Implement HTTP request with proper error handling
-    logger.info('HTTP request action executed (mock)', {
-      url: action.url,
-      method: action.method,
-      headers: action.headers
-    });
-
-    return {
-      success: true,
-      message: 'HTTP request sent (mock)',
-      url: action.url
-    };
-  }
-
-  /**
-   * Execute assign user action (round-robin or weighted)
-   */
-  private async executeAssignUserAction(action: any, context: any): Promise<any> {
-    const config = action.config || {};
-    const orderId = action.orderId || context.orderId;
-    const targetField = action.targetField || (config.userType === 'sales_rep' ? 'customerRepId' : 'deliveryAgentId');
-    const userType = config.userType; // 'sales_rep' | 'delivery_agent'
-    const distributionMode = config.distributionMode || 'even'; // 'even' | 'weighted'
-    const assignments = config.assignments || [];
-    const onlyUnassigned = config.onlyUnassigned !== undefined ? config.onlyUnassigned : true;
-
-    if (!orderId) {
-      throw new Error('Order ID not provided for assign_user action');
-    }
-
-    if (!userType) {
-      throw new Error('User type not specified for assign_user action');
-    }
-
-    // If onlyUnassigned is true, check if order already has an assigned user
-    if (onlyUnassigned) {
-      const order = await prisma.order.findUnique({
-        where: { id: orderId },
-        select: { customerRepId: true, deliveryAgentId: true }
-      });
-
-      if (order) {
-        const hasAssignment = userType === 'sales_rep'
-          ? order.customerRepId !== null
-          : order.deliveryAgentId !== null;
-
-        if (hasAssignment) {
-          logger.info('Order already has assigned user, skipping', { orderId, userType });
-          return {
-            success: true,
-            skipped: true,
-            reason: 'Order already has assigned user'
-          };
-        }
-      }
-    }
-
-    // Get users from assignments
-    if (assignments.length === 0) {
-      throw new Error('No users selected in assignments');
-    }
-
-    // Fetch full user details for selected IDs
-    const userIds = assignments.map((a: any) => a.userId);
-    let users = await prisma.user.findMany({
-      where: {
-        id: { in: userIds },
-        isActive: true,
-        // F-709: an unavailable delivery partner is skipped
-        ...(userType === 'delivery_agent' ? { isAvailable: true } : {}),
-      }
-    });
-
-    if (userType === 'delivery_agent') {
-      // A partner blocked for unpaid cash is skipped like an away partner (T36); no balance row means not blocked
-      const blocked = new Set((await prisma.agentBalance.findMany({ where: { agentId: { in: users.map((u) => u.id) }, isBlocked: true }, select: { agentId: true } })).map((b) => b.agentId));
-      users = users.filter((u) => !blocked.has(u.id));
-    }
-
-    if (users.length === 0) {
-      throw new Error(`No available users with type: ${userType}`);
-    }
-
-    let selectedUser;
-
-    if (distributionMode === 'weighted') {
-      // Use weighted selection based on assignments (a user filtered out above, for example an unavailable partner, carries no weight)
-      const candidates = assignments.filter((a: any) => users.some(u => u.id === a.userId));
-      const totalWeight = candidates.reduce((sum: number, a: any) => sum + a.weight, 0);
-      const random = (crypto.randomInt(0, 1000000) / 1000000) * totalWeight;
-
-      let cumulativeWeight = 0;
-      for (const assignment of candidates) {
-        cumulativeWeight += assignment.weight;
-        if (random <= cumulativeWeight) {
-          selectedUser = users.find(u => u.id === assignment.userId);
-          break;
-        }
-      }
-    } else {
-      // Even distribution - simple round-robin
-      const randomIndex = crypto.randomInt(0, users.length);
-      selectedUser = users[randomIndex];
-    }
-
-    if (!selectedUser) {
-      throw new Error('Failed to select user for assignment');
-    }
-
-    // Assign through the service: order, history row and notification (M2-T16)
-    await assignmentService.assignByRole(
-      orderId, selectedUser.id, targetField === 'customerRepId' ? 'sales_rep' : 'delivery_agent', await systemActor(),
-    );
-
-    logger.info('User assigned via workflow', {
-      orderId,
-      userId: selectedUser.id,
-      userName: `${selectedUser.firstName} ${selectedUser.lastName}`,
-      userType,
-      targetField,
-      distributionMode
-    });
-
-    return {
-      success: true,
-      orderId,
-      assignedUserId: selectedUser.id,
-      assignedUserName: `${selectedUser.firstName} ${selectedUser.lastName}`,
-      targetField,
-      distributionMode
     };
   }
 
@@ -685,7 +412,7 @@ export class WorkflowService {
     }
 
     // If conditions has an 'id' field, it's the new structure with rules
-    if (conditions.id && conditions.rules) {
+    if (Array.isArray(conditions.rules)) {
       // Use the condition evaluator utility
       return evaluateConditionRules(conditions, input);
     }
@@ -714,9 +441,8 @@ export class WorkflowService {
       'send_whatsapp',
       'send_auto_confirm',
       'update_order',
-      'assign_agent',
       'assign_user',
-      'add_tag',
+      'assign_to',
       'wait',
       'http_request'
     ];
@@ -725,6 +451,8 @@ export class WorkflowService {
       if (!action.type || !validActionTypes.includes(action.type)) {
         throw new AppError(`Invalid action type: ${action.type}`, 400);
       }
+
+      if (action.type === 'assign_to') validateAssignToConfig(action.config);
 
       // Validate assign_user action
       if (action.type === 'assign_user') {
@@ -747,6 +475,8 @@ export class WorkflowService {
     filters?: { page?: number; limit?: number }
   ) {
     const { page = 1, limit = 20 } = filters || {};
+    // A workflow of another tenant is not found
+    await this.getWorkflowById(workflowId);
     const skip = (page - 1) * limit;
 
     const [executions, total] = await Promise.all([
@@ -761,8 +491,9 @@ export class WorkflowService {
       })
     ]);
 
+    const { presentExecution } = await import('./workflowRunService');
     return {
-      executions,
+      executions: executions.map(presentExecution),
       pagination: {
         page,
         limit,
@@ -795,19 +526,13 @@ export class WorkflowService {
    * Loop guard (M2-T17): true when this run must not happen, and records the skip in the execution log.
    * Too deep (a chain of workflow-caused moves), or the workflow already ran for this order in the last minute.
    */
-  private async loopGuardHit(workflow: Workflow, input: any, { orderId, depth, recent }: RunGuard): Promise<boolean> {
+  private async loopGuardHit(workflow: Workflow, input: any, { orderId, depth, recent }: RunGuard, meta: RunMeta): Promise<boolean> {
     const tooDeep = depth >= LOOP_GUARD_MAX_DEPTH;
     if (!tooDeep && !recent.has(workflow.id)) return false;
 
-    await prisma.workflowExecution.create({
-      data: {
-        tenantId: resolveTenantId(workflow.tenantId),
-        workflowId: workflow.id,
-        status: 'skipped',
-        input: input || {},
-        error: LOOP_GUARD_MESSAGE,
-        completedAt: new Date(),
-      },
+    // A skip is not a run: it carries no idempotency key, so it never blocks the real run for the same key.
+    await this.createExecution(workflow, input, { triggerSource: meta.triggerSource, orderId }, {
+      status: 'skipped', error: LOOP_GUARD_MESSAGE, completedAt: new Date(),
     });
     logger.warn(LOOP_GUARD_MESSAGE, { workflowId: workflow.id, orderId, depth, tooDeep });
     return true;
@@ -817,7 +542,7 @@ export class WorkflowService {
    * Status change workflows triggered. Runs from the `order.status_changed` event (see `registerWorkflowListeners`).
    * `depth` is how many workflow-caused moves led here; it rides in the execution input so `update_order` can pass it on.
    */
-  async triggerStatusChangeWorkflows(orderId: number, oldStatus: string, newStatus: string, depth: number = 0) {
+  async triggerStatusChangeWorkflows(orderId: number, oldStatus: string, newStatus: string, depth: number = 0, triggerSource: string = 'screen') {
     // Query both 'status' and 'targetStatus' paths since the wizard and editor
     // store the target status under different keys
     const workflows = await prisma.workflow.findMany({
@@ -836,26 +561,20 @@ export class WorkflowService {
       return;
     }
 
-    // Load order with products for condition evaluation (e.g. product-specific workflows)
-    const order = await prisma.order.findUnique({
-      where: { id: orderId },
-      select: { orderItems: { select: { product: { select: { name: true } } } } },
-    });
-
+    // The order as the conditions read it (region, total, product names), plus what the move says
+    const order = await this.loadOrderContext(orderId);
     const input = {
+      ...(order ?? {}),
       orderId,
       oldStatus,
       newStatus,
       depth,
-      productName: order?.orderItems
-        ?.map((item: any) => item.product?.name)
-        .filter(Boolean)
-        .join(', ') || '',
+      productName: order?.productName ?? '',
     };
 
     const recent = await this.recentRunIds(workflows.map((w) => w.id), orderId, depth);
     for (const workflow of workflows) {
-      await this.runLoaded(workflow, input, { orderId, depth, recent });
+      await this.runLoaded(workflow, input, { orderId, depth, recent }, { triggerSource, orderId });
     }
 
     logger.info('Status change workflows triggered', {
@@ -869,7 +588,7 @@ export class WorkflowService {
   /**
    * Trigger workflows with order_created trigger type. Runs from the `order.created` event.
    */
-  async triggerOrderCreatedWorkflows(order: { id: number }) {
+  async triggerOrderCreatedWorkflows(order: { id: number }, triggerSource: string = 'screen') {
     try {
       // Find active workflows with order_created trigger
       const workflows = await prisma.workflow.findMany({
@@ -889,37 +608,19 @@ export class WorkflowService {
         workflows: workflows.map(w => w.id)
       });
 
-      // Fetch full order data with products for workflow evaluation
-      const fullOrder = await prisma.order.findUnique({
-        where: { id: order.id },
-        include: {
-          orderItems: {
-            include: {
-              product: true
-            }
-          },
-          customer: true
-        }
-      });
-
-      if (!fullOrder) {
+      // Full order data with products for workflow evaluation
+      const orderContext = await this.loadOrderContext(order.id);
+      if (!orderContext) {
         logger.error('Order not found for workflow triggering', { orderId: order.id });
         return;
       }
 
-      // Prepare context for workflow evaluation
-      const orderContext = {
-        ...fullOrder,
-        orderId: fullOrder.id,
-        productName: (fullOrder.orderItems || []).map((item: any) => item.product?.name || 'Unknown Product').join(', ')
-      };
-
       const recent = await this.recentRunIds(workflows.map((w) => w.id), order.id, 0);
 
-      // Trigger each workflow. Workflow-level conditions are not checked for a new order (as before).
+      // Trigger each workflow. enqueueRun checks the workflow's conditions.
       for (const workflow of workflows) {
         try {
-          await this.enqueueRun(workflow, orderContext, { orderId: order.id, depth: 0, recent });
+          await this.enqueueRun(workflow, orderContext, { orderId: order.id, depth: 0, recent }, { triggerSource, orderId: order.id });
         } catch (error: any) {
           logger.error('Failed to trigger workflow', {
             workflowId: workflow.id,
@@ -938,6 +639,95 @@ export class WorkflowService {
   }
 
   /**
+   * The order as a workflow run's input: the order with its items and customer, plus `orderId` and `productName`
+   * (what conditions read: `region` reads `deliveryState`). Null when the order is gone.
+   */
+  async loadOrderContext(orderId: number) {
+    const fullOrder = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { orderItems: { include: { product: true } }, customer: true },
+    });
+    if (!fullOrder) return null;
+    return {
+      ...fullOrder,
+      orderId: fullOrder.id,
+      productName: (fullOrder.orderItems || []).map((item: any) => item.product?.name || 'Unknown Product').join(', '),
+    };
+  }
+
+  /**
+   * `payment_received` workflows (M9-T22): fired once when an online payment settles and the order's payment is paid.
+   * `idempotencyKey = payment:<orderId>:<reference>`, so a duplicate webhook that settles the same reference twice runs once.
+   * The workflow's conditions are checked against the order. Never throws: the payment is already booked.
+   */
+  async onPaymentSettled(evt: PaymentSettledEvent): Promise<void> {
+    try {
+      await runInTenant(evt.tenantId, async () => {
+        const workflows = await prisma.workflow.findMany({ where: { isActive: true, triggerType: 'payment_received' } }) || [];
+        if (workflows.length === 0) return;
+        const context = await this.loadOrderContext(evt.orderId);
+        if (!context) return;
+        const input = { ...context, depth: 0, paymentReference: evt.reference, paymentProvider: evt.provider, paymentAmount: Money.toApi(evt.amount) };
+        for (const workflow of workflows) {
+          try {
+            await this.runLoaded(workflow, input, undefined, {
+              triggerSource: 'payment', orderId: evt.orderId, idempotencyKey: `payment:${evt.orderId}:${evt.reference}`,
+            });
+          } catch (error: any) {
+            logger.error('Failed to trigger payment_received workflow', { workflowId: workflow.id, orderId: evt.orderId, error: error.message });
+          }
+        }
+      });
+    } catch (error: any) {
+      logger.error('Failed to trigger payment_received workflows', { orderId: evt.orderId, error: error.message });
+    }
+  }
+
+  /** A new webhook token for a workflow (M9-T22). The old one stops working. Returned once; only its hash is kept. */
+  async regenerateWebhookToken(workflowId: number) {
+    const workflow = await prisma.workflow.findUnique({ where: { id: workflowId } });
+    if (!workflow) throw new AppError('Workflow not found', 404);
+    if (workflow.triggerType !== 'webhook') throw new AppError('Only a webhook workflow has a token', 400);
+    const webhookToken = newWebhookToken();
+    await prisma.workflow.update({ where: { id: workflowId }, data: { webhookTokenHash: hashWebhookToken(webhookToken) } });
+    logger.info('Workflow webhook token regenerated', { workflowId });
+    return { webhookToken };
+  }
+
+  /**
+   * `POST /api/workflows/hooks/:token` (M9-T22), no login: the token finds the workflow by its hash.
+   * Unknown token: 404. Workflow off: 409. An `orderId` that is not an order of the workflow's tenant: 404.
+   * `Idempotency-Key` makes the run `webhook:<workflowId>:<key>`; a second call with it starts nothing.
+   */
+  async triggerWebhook(token: string, body: { orderId?: unknown; data?: unknown }, idempotencyHeader?: string) {
+    const workflow = await withoutTenant('workflow webhook token lookup', () => prisma.workflow.findFirst({
+      where: { webhookTokenHash: hashWebhookToken(token), triggerType: 'webhook' },
+    }));
+    if (!workflow || !workflow.tenantId) throw new AppError('Not found', 404);
+    if (!workflow.isActive) throw new AppError('Workflow is off', 409);
+
+    const { orderId, data } = body ?? {};
+    if (orderId !== undefined && (!Number.isInteger(orderId) || (orderId as number) <= 0)) throw new AppError('orderId must be a whole number', 400);
+    if (data !== undefined && JSON.stringify(data).length > WEBHOOK_DATA_MAX_CHARS) throw new AppError('data is too large', 400);
+    const header = typeof idempotencyHeader === 'string' ? idempotencyHeader.trim() : '';
+    if (header.length > IDEMPOTENCY_HEADER_MAX) throw new AppError('Idempotency-Key is too long', 400);
+
+    return runInTenant(workflow.tenantId, async () => {
+      let input: any = { data: data ?? null };
+      if (orderId !== undefined) {
+        // Tenant-scoped read: another tenant's order is not found
+        const context = await this.loadOrderContext(orderId as number);
+        if (!context) throw new AppError('Order not found', 404);
+        input = { ...context, depth: 0, data: data ?? null };
+      }
+      return this.runLoaded(workflow, input, undefined, {
+        triggerSource: 'webhook', orderId: orderId as number | undefined,
+        ...(header ? { idempotencyKey: `webhook:${workflow.id}:${header}` } : {}),
+      });
+    });
+  }
+
+  /**
    * Listener for `order.status_changed` (M2-T17). Applies the skip rules, then triggers inside the order's tenant.
    * Never throws: the status change is already committed.
    */
@@ -948,7 +738,7 @@ export class WorkflowService {
         logger.info('Status change workflows skipped', { orderId: evt.orderId, to: evt.to, reason: skip });
         return;
       }
-      await runInTenant(evt.tenantId, () => this.triggerStatusChangeWorkflows(evt.orderId, evt.from, evt.to, evt.depth));
+      await runInTenant(evt.tenantId, () => this.triggerStatusChangeWorkflows(evt.orderId, evt.from, evt.to, evt.depth, triggerSourceOf(evt)));
     } catch (error: any) {
       logger.error('Failed to trigger status change workflows', { orderId: evt.orderId, error: error.message });
     }
@@ -962,14 +752,15 @@ export class WorkflowService {
         logger.info('Order created workflows skipped', { orderId: evt.orderId, status: evt.status, reason: skip });
         return;
       }
-      await runInTenant(evt.tenantId, () => this.triggerOrderCreatedWorkflows({ id: evt.orderId }));
+      await runInTenant(evt.tenantId, () => this.triggerOrderCreatedWorkflows({ id: evt.orderId }, triggerSourceOf(evt)));
     } catch (error: any) {
       logger.error('Failed to trigger order_created workflows', { orderId: evt.orderId, error: error.message });
     }
   }
 
   /**
-   * Get workflow templates
+   * Get workflow templates (M9-T25). Each says which connections it needs (`needs`: sms, email, whatsapp, from its actions).
+   * A template that needs WhatsApp is `available: false` with a reason when the store has no WhatsApp connection.
    */
   async getTemplates(category?: string) {
     const {
@@ -977,25 +768,32 @@ export class WorkflowService {
       getTemplateCategories,
       getTemplatesByCategory
     } = await import('../data/workflowTemplates');
+    const { getDbWhatsappConfig } = await import('./whatsappService');
 
     const templates = category
       ? getTemplatesByCategory(category)
       : workflowTemplates;
 
+    const whatsapp = await getDbWhatsappConfig();
+    const hasWhatsapp = !!(whatsapp?.accessToken && whatsapp?.phoneNumberId);
+
     const categories = getTemplateCategories();
 
     return {
-      templates,
+      templates: templates.map((template) => {
+        const needs = templateConnections(template.actions);
+        const missing = needs.includes('whatsapp') && !hasWhatsapp;
+        return { ...template, needs, available: !missing, ...(missing ? { unavailableReason: 'Needs WhatsApp in Connections' } : {}) };
+      }),
       categories
     };
   }
+}
 
-  /**
-   * Utility: Delay execution
-   */
-  private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
+/** The connections the actions use. */
+export function templateConnections(actions: any[]): string[] {
+  const byAction: Record<string, string> = { send_sms: 'sms', send_email: 'email', send_whatsapp: 'whatsapp', send_auto_confirm: 'whatsapp' };
+  return [...new Set((actions ?? []).map((a) => byAction[a?.type]).filter(Boolean))];
 }
 
 const workflowService = new WorkflowService();
@@ -1007,6 +805,7 @@ export function registerWorkflowListeners(): void {
   registered = true;
   onOrderEvent(AppEvent.ORDER_STATUS_CHANGED, (evt) => { void workflowService.onStatusChanged(evt); });
   onOrderEvent(AppEvent.ORDER_CREATED, (evt) => { void workflowService.onOrderCreated(evt); });
+  onPaymentSettled((evt) => workflowService.onPaymentSettled(evt));
 }
 
 export default workflowService;

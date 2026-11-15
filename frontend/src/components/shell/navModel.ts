@@ -1,6 +1,6 @@
 import {
   LayoutGrid, Inbox, ShoppingBag, Users, FileText, MessageCircle, Package, Boxes, Truck, Wallet,
-  Megaphone, BarChart3, Target, Trophy, UserCog, Workflow, Plug, Settings, Flag, Phone, Webhook, History, PackageOpen,
+  Megaphone, BarChart3, Target, Trophy, UserCog, Workflow, Plug, Settings, Flag, Phone, History, PackageOpen,
   type LucideIcon,
 } from 'lucide-react';
 import type { NavCounts } from '../../services/nav.service';
@@ -31,6 +31,9 @@ export interface NavItem {
 export const MANAGER_UP = ['super_admin', 'admin', 'manager'];
 export const isManagerUp = (role: string): boolean => MANAGER_UP.includes(role);
 
+/** Admin and super admin: the owner roles. */
+export const isOwnerRole = (role: string): boolean => ['admin', 'super_admin'].includes(role);
+
 export interface NavGroup {
   label?: string;
   items: NavItem[];
@@ -40,7 +43,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     items: [
       { key: 'dashboard', label: 'Dashboard', icon: LayoutGrid, to: '/' },
-      { key: 'inbox', label: 'Inbox', icon: Inbox, to: null, count: 'inbox' }, // M9
+      { key: 'inbox', label: 'Inbox', icon: Inbox, to: '/inbox', count: 'inbox' },
     ],
   },
   {
@@ -49,7 +52,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { key: 'orders', label: 'Orders', icon: ShoppingBag, to: '/orders', count: 'ordersPending' },
       { key: 'customers', label: 'Customers', icon: Users, to: '/customers' },
       { key: 'checkoutForms', label: 'Checkout forms', icon: FileText, to: '/checkout-forms' },
-      { key: 'messages', label: 'Messages', icon: MessageCircle, to: '/communications' }, // the current Communications page
+      { key: 'messages', label: 'Messages', icon: MessageCircle, to: '/messages' },
     ],
   },
   {
@@ -86,9 +89,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Setup',
     items: [
       { key: 'workflows', label: 'Workflows', icon: Workflow, to: '/workflows' },
-      { key: 'connections', label: 'Connections', icon: Plug, to: null },
-      // Webhooks page: replaced by Connections (M9). Guard in App.tsx: owner and admin.
-      { key: 'webhooks', label: 'Webhooks', icon: Webhook, to: '/webhooks', oldPageFor: (r) => r === 'super_admin' || r === 'admin' },
+      { key: 'connections', label: 'Connections', icon: Plug, to: '/connections' },
       { key: 'settings', label: 'Settings', icon: Settings, to: '/settings' },
       { key: 'setupNorthStar', label: 'Set up North Star', icon: Flag, to: '/onboarding' }, // the wizard resumes at its saved step; the menu drops it when step 6 is done
     ],

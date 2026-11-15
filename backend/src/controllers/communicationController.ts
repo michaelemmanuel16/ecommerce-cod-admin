@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { MessageChannel, MessageStatus, Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { AuthRequest } from '../types';
-import { communicationService } from '../services/communicationService';
+import { communicationService, RECIPIENT_LIMIT } from '../services/communicationService';
 
 const bulkSendSmsSchema = z.object({
   customerIds: z.array(z.number()).min(1).max(5000),
@@ -115,13 +115,17 @@ export const getRecipients = async (req: AuthRequest, res: Response): Promise<vo
       res.status(400).json({ error: 'channel query param is required (sms, whatsapp, or email)' });
       return;
     }
-    const recipients = await communicationService.getRecipients({
+    const filters = {
       state: state as string | undefined,
       productId: productId ? Number(productId) : undefined,
       hasOrdered: hasOrdered === 'true',
       channel: channel as 'sms' | 'whatsapp' | 'email',
-    });
-    res.json(recipients);
+    };
+    const [recipients, total] = await Promise.all([
+      communicationService.getRecipients(filters),
+      communicationService.countRecipients(filters),
+    ]);
+    res.json({ recipients, total, limit: RECIPIENT_LIMIT });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

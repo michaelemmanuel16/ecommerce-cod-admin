@@ -21,6 +21,7 @@ import './styles/products.css';
 import './styles/onboarding.css';
 import './styles/reports.css';
 import './styles/marketing.css';
+import './styles/messages.css';
 import './styles/financeReports.css';
 import './styles/financeAccounting.css';
 import './styles/checkoutForms.css';
@@ -28,6 +29,9 @@ import './styles/orderDrawer.css';
 import './styles/settings.css';
 import './styles/collections.css';
 import './styles/rep.css';
+import './styles/workflows.css';
+import './styles/inbox.css';
+import './styles/connections.css';
 
 if (import.meta.env.VITE_SENTRY_DSN) {
   Sentry.init({

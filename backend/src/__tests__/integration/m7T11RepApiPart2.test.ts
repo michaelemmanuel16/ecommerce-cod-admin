@@ -1011,11 +1011,12 @@ describe('8. Security review fixes', () => {
       data: { email: `mgr-${SUFFIX}@t11.test`, password: 'x', firstName: 'Mgr', lastName: 'NoPay', role: 'manager', tenantId },
     });
     const managerToken = generateAccessToken({ id: manager.id, email: manager.email, role: 'manager', tenantId });
-    // The tenant's manager position role holds the grid the checks use. Take payouts:view out of it for this test.
+    // The tenant's manager position role holds the grid the checks use. Take payouts:view out of it for this test the way a save
+    // does: an empty list. A missing key now falls back to the matrix (a role stored before the resource existed).
     const managerRoles = await prismaBase.role.findMany({ where: { tenantId, presetRole: 'manager' } });
     for (const r of managerRoles) {
       const grid = { ...((r.permissions as Record<string, string[]>) ?? {}) };
-      delete grid.payouts;
+      grid.payouts = [];
       await prismaBase.role.update({ where: { id: r.id }, data: { permissions: grid } });
     }
     expect(managerRoles.length).toBeGreaterThan(0);

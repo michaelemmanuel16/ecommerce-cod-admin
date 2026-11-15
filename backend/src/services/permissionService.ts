@@ -50,7 +50,8 @@ async function loadMatrix(tenantId: string | null): Promise<Matrix> {
   const matrix: Matrix = config?.rolePermissions ? mergeRolePermissions(config.rolePermissions) : defaultRolePermissions();
   if (tenantId) {
     for (const r of mapped) {
-      if (r.presetRole && isPositionRole(r) && hasOwnGrid(r)) matrix[r.presetRole] = r.permissions as PermissionGrid;
+      // Keys the role never stored (a resource added after it was seeded) stay as the saved matrix or the defaults give them.
+      if (r.presetRole && isPositionRole(r) && hasOwnGrid(r)) matrix[r.presetRole] = { ...matrix[r.presetRole], ...(r.permissions as PermissionGrid) };
     }
   }
   return matrix;
@@ -85,8 +86,8 @@ const freshHeld = (tenantId: string, userId: number) => {
   return entry && Date.now() - entry.timestamp < CACHE_TTL ? entry : undefined;
 };
 
-const heldAssignmentSelect = { role: { select: { permissions: true, presetRole: true } } } as const;
-type HeldAssignment = { role: { permissions: unknown; presetRole: UserRole | null } };
+const heldAssignmentSelect = { role: { select: { name: true, permissions: true, presetRole: true } } } as const;
+type HeldAssignment = { role: { name: string; permissions: unknown; presetRole: UserRole | null } };
 
 /** The union of the grids of the held roles, by the one rule (gridOfRole); null when none gives a grid (the Legacy role gives none). */
 function unionOf(assignments: HeldAssignment[], matrix: Matrix): PermissionGrid | null {

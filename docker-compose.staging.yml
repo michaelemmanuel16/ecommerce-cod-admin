@@ -62,6 +62,7 @@ services:
       META_APP_ID: ${META_APP_ID:-}
       META_APP_SECRET: ${META_APP_SECRET:-}
       META_ADS_CONFIG_ID: ${META_ADS_CONFIG_ID:-}
+      ARKESEL_CALLBACK_TOKEN: ${ARKESEL_CALLBACK_TOKEN:-}
       BACKEND_URL: ${BACKEND_URL:-https://staging.codadminpro.com}
     volumes:
       - backend_uploads_staging:/app/uploads

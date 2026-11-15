@@ -20,7 +20,7 @@ export interface AccessFacts {
 export async function loadAccessFacts(actorId: number, roleId: number | null): Promise<AccessFacts> {
   const [user, role, matrix] = await Promise.all([
     prisma.user.findFirst({ where: { id: actorId }, select: { role: true } }),
-    roleId === null ? null : prisma.role.findFirst({ where: { id: roleId }, select: { tools: true, isSystem: true, permissions: true, presetRole: true } }),
+    roleId === null ? null : prisma.role.findFirst({ where: { id: roleId }, select: { name: true, tools: true, isSystem: true, permissions: true, presetRole: true } }),
     getTenantMatrix(getTenantId() ?? null),
   ]);
   return {

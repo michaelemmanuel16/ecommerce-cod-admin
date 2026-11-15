@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, Upload } from 'lucide-react';
 import type { OrderListRow } from '../services/orders.service';
 import { useV2Page } from '../components/shell/useV2Page';
-import { Button, EmptyState, Pagination, Skeleton, Table, Tabs, useToast } from '../components/ui-v2';
+import { Button, EmptyState, Pagination, Skeleton, Table, Tabs } from '../components/ui-v2';
 import { usePermissions } from '../hooks/usePermissions';
 import { buildColumns, type SortField } from './orders/columns';
 import { ColumnsMenu } from './orders/ColumnsMenu';
@@ -12,6 +12,7 @@ import { FloatingMenu } from './orders/FloatingMenu';
 import { BulkBar } from './orders/BulkBar';
 import { ExportMenu } from './orders/ExportMenu';
 import { ImportModal } from './orders/ImportModal';
+import { RunDialog } from './workflows/RunDialog';
 import { RowAssignItems } from './orders/AssignItems';
 import { NewOrderSheet } from './orders/NewOrderSheet';
 import { RowStatus } from './orders/RowStatus';
@@ -37,7 +38,6 @@ interface OrdersProps {
 export function Orders({ onOpen }: OrdersProps) {
   useV2Page();
   const navigate = useNavigate();
-  const say = useToast();
   const { can } = usePermissions();
   const [search, setSearch] = useSearchParams();
   const view = useMemo(() => parseView(search), [search]);
@@ -56,6 +56,7 @@ export function Orders({ onOpen }: OrdersProps) {
   const sheetOpen = formOpen || search.get('new') === '1';
   const [assignFor, setAssignFor] = useState<{ row: OrderListRow; anchor: HTMLElement } | null>(null);
   const [focus, setFocus] = useState<FocusSet | null>(null);
+  const [runOn, setRunOn] = useState<number[] | null>(null);
 
   const go = useCallback((next: ListView, replace = false) => setSearch(writeView(next), { replace }), [setSearch]);
 
@@ -74,6 +75,7 @@ export function Orders({ onOpen }: OrdersProps) {
   const canMove = can('orders', 'update');
   const canAssign = can('orders', 'assign');
   const canDelete = can('orders', 'delete');
+  const canRun = can('workflows', 'execute');
   const selectedRows = useMemo(() => list.rows.filter((r) => selected.has(r.id)), [list.rows, selected]);
   const actions = useOrderActions({ setSelected, refetch: list.refetch, setFocus });
   const shownRows = focus ? list.rows.filter((r) => focus.ids.includes(r.id)) : list.rows;
@@ -176,10 +178,12 @@ export function Orders({ onOpen }: OrdersProps) {
             canMove={canMove}
             canAssign={canAssign}
             canDelete={canDelete}
+            canRun={canRun}
             onStatus={(target) => actions.moveStatus(selectedRows, target, { bulk: true })}
             onRep={(o) => actions.assign(selectedRows, { kind: 'rep', option: o }, { bulk: true })}
             onAgent={(o) => actions.assign(selectedRows, { kind: 'agent', option: o }, { bulk: true })}
             onDelete={() => actions.askDelete(selectedRows)}
+            onRun={() => setRunOn(selectedRows.map((r) => r.id))}
             onClear={() => setSelected(new Set())}
           />
         )}
@@ -257,6 +261,7 @@ export function Orders({ onOpen }: OrdersProps) {
         </FloatingMenu>
       )}
       {actions.dialogs}
+      {runOn && <RunDialog orderIds={runOn} onClose={() => setRunOn(null)} onStarted={() => setSelected(new Set())} />}
       <ImportModal
         open={importOpen}
         onClose={() => setImportOpen(false)}

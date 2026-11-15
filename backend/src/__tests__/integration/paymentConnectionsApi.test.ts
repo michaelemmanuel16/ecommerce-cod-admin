@@ -258,14 +258,19 @@ describe('fallback to SystemConfig.paystackProvider', () => {
   });
 });
 
-describe('old Settings → Integrations panel keeps the connection in step', () => {
-  const putSettings = (body: Record<string, unknown>) =>
-    request(app).put('/api/admin/settings').set(bearer(pair.a.users.admin.token)).send(body);
+describe('the Connections save path (the old Settings panel handler is gone, M9-T27)', () => {
+  it('PUT /api/admin/settings no longer takes Paystack keys: 400, nothing written', async () => {
+    const owner = await (await import('./helpers/superAdminToken')).superAdminToken(pair.a.id, pair.a.slug, 'panel-refused');
+    const res = await request(app).put('/api/admin/settings').set(bearer(owner))
+      .send({ paystackProvider: { publicKey: 'pk_test_X', secretKey: 'sk_test_X', mode: 'test', isEnabled: true } });
+    expect(res.status).toBe(400);
+    expect(res.body.errorCode ?? res.body.code).toBe('PAYSTACK_USE_CONNECTIONS');
+  });
 
-  it('new keys saved through PUT /api/admin/settings reach checkout when a connection row exists', async () => {
+  it('new keys saved through PUT /api/payment-connections reach checkout when a connection row exists', async () => {
     await prismaBase.paymentConnection.updateMany({ where: { tenantId: pair.a.id }, data: { supportedCurrencies: ['GHS'], lastCheckedAt: new Date() } });
-    const res = await request(app).put('/api/admin/settings').set(bearer(await (await import('./helpers/superAdminToken')).superAdminToken(pair.a.id, pair.a.slug, 'panel-owner')))
-      .send({ paystackProvider: { publicKey: 'pk_test_PANEL', secretKey: 'sk_test_PANEL_secret', mode: 'test', isEnabled: true } });
+    const res = await request(app).put('/api/payment-connections').set(tokenA())
+      .send({ provider: 'paystack', publicKey: 'pk_test_PANEL', secretKey: 'sk_test_PANEL_secret', mode: 'test', isEnabled: true });
     expect(res.status).toBe(200);
 
     await runInTenant(pair.a.id, async () => {
@@ -281,9 +286,8 @@ describe('old Settings → Integrations panel keeps the connection in step', () 
 
   it('creates the row for a tenant that has none, so checkout reads the new keys', async () => {
     await prismaBase.paymentConnection.deleteMany({ where: { tenantId: pair.b.id } });
-    const owner = await (await import('./helpers/superAdminToken')).superAdminToken(pair.b.id, pair.b.slug, 'panel-owner');
-    const res = await request(app).put('/api/admin/settings').set(bearer(owner))
-      .send({ paystackProvider: { publicKey: 'pk_test_B2', secretKey: 'sk_test_B2_secret', mode: 'test', isEnabled: true } });
+    const res = await request(app).put('/api/payment-connections').set(tokenB())
+      .send({ provider: 'paystack', publicKey: 'pk_test_B2', secretKey: 'sk_test_B2_secret', mode: 'test', isEnabled: true });
     expect(res.status).toBe(200);
     const row = await prismaBase.paymentConnection.findFirstOrThrow({ where: { tenantId: pair.b.id, provider: 'paystack' } });
     expect(row).toMatchObject({ publicKey: 'pk_test_B2', mode: 'test', isEnabled: true });
@@ -293,9 +297,8 @@ describe('old Settings → Integrations panel keeps the connection in step', () 
   it('saving the panel again with the secret masked keeps the currencies and the secret', async () => {
     const before = await prismaBase.paymentConnection.findFirstOrThrow({ where: { tenantId: pair.b.id, provider: 'paystack' } });
     await prismaBase.paymentConnection.update({ where: { id: before.id }, data: { supportedCurrencies: ['GHS'] } });
-    const owner = await (await import('./helpers/superAdminToken')).superAdminToken(pair.b.id, pair.b.slug, 'panel-owner2');
-    const res = await request(app).put('/api/admin/settings').set(bearer(owner))
-      .send({ paystackProvider: { publicKey: 'pk_test_B2', secretKey: '••••••••', mode: 'test', isEnabled: true } });
+    const res = await request(app).put('/api/payment-connections').set(tokenB())
+      .send({ provider: 'paystack', publicKey: 'pk_test_B2', secretKey: '••••••••', mode: 'test', isEnabled: true });
     expect(res.status).toBe(200);
     const after = await prismaBase.paymentConnection.findFirstOrThrow({ where: { id: before.id } });
     expect(after.supportedCurrencies).toEqual(['GHS']);

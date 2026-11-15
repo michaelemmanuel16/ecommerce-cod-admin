@@ -2,8 +2,10 @@ import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { debugToken } from './metaOAuthService';
 import { decryptString } from '../utils/providerCrypto';
-import { createNotification, findTenantAdmins } from './notificationService';
+import { notify } from './inbox/inboxService';
+import { resolveTenantId } from '../utils/tenantContext';
 import { safeErrorMessage } from '../utils/safeError';
+import { recordConnectionEvent } from './connections/connectionEventService';
 
 const WARN_DAYS = 7;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -35,11 +37,15 @@ async function applyHealth(rows: Row[], next: Health, alert: boolean): Promise<v
   try {
     const names = changed.map((r) => r.name).join(', ');
     const title = next.status === 'disconnected' ? 'Meta Ads disconnected' : 'Meta Ads token expires soon';
-    for (const admin of await findTenantAdmins()) {
-      await createNotification(String(admin.id), 'meta_ads_token', title, `${next.reason} (${names})`, {
-        adAccountIds: changed.map((r) => r.id),
-      });
-    }
+    await recordConnectionEvent({ tenantId: resolveTenantId(), connection: 'meta', level: next.status === 'disconnected' ? 'error' : 'warning', message: `${title}. ${next.reason}`, data: { adAccountIds: changed.map((r) => r.id) } });
+    await notify({
+      tenantId: resolveTenantId(),
+      event: 'system_problem',
+      recipients: 'owner',
+      title,
+      message: `${next.reason} (${names})`,
+      data: { source: 'meta_ads_token', adAccountIds: changed.map((r) => r.id) },
+    });
   } catch (err: any) {
     logger.error('Meta Ads token alert failed', { error: safeErrorMessage(err) });
   }

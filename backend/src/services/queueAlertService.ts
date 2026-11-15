@@ -6,7 +6,7 @@ import {
   workingMinutesBetween,
   DEFAULT_QUEUE_WAIT_ALERT_MINUTES,
 } from './kpi/workingTime';
-import { createNotification } from './notificationService';
+import { notify } from './inbox/inboxService';
 import { HUMAN_USERS_WHERE } from './systemUserService';
 import { formatOrderNumber } from '../utils/orderNumber';
 
@@ -14,6 +14,25 @@ export const findQueueAlertRecipients = (tenantId: string) => prisma.user.findMa
   where: { tenantId, role: { in: ['super_admin', 'admin', 'manager'] }, isActive: true, ...HUMAN_USERS_WHERE },
   select: { id: true },
 });
+
+/**
+ * Only orders that crossed the limit in the last day are alerted. A tenant's first sweep would otherwise alert every order that
+ * has been pending for weeks (one row per recipient each: 19,496 rows in one local run). An order already alerted is never alerted again.
+ */
+export const QUEUE_ALERT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/** A wait in plain units: "41 min", "3 h 5 min", "3 h", "21 days" (days round down). */
+export function formatWaitMinutes(minutes: number): string {
+  const total = Math.round(minutes);
+  if (total < 60) return `${total} min`;
+  if (total < 24 * 60) {
+    const h = Math.floor(total / 60);
+    const m = total % 60;
+    return m === 0 ? `${h} h` : `${h} h ${m} min`;
+  }
+  const days = Math.floor(total / (24 * 60));
+  return `${days} ${days === 1 ? 'day' : 'days'}`;
+}
 
 export interface QueueWaitAlertInput {
   id: number;
@@ -27,7 +46,7 @@ export async function notifyQueueWaitAlert(order: QueueWaitAlertInput): Promise<
   const existing = await prisma.notification.findFirst({
     where: {
       tenantId: order.tenantId,
-      type: 'queue_wait_alert',
+      type: 'queue_wait',
       data: { path: ['orderId'], equals: order.id },
     },
     select: { id: true },
@@ -38,7 +57,7 @@ export async function notifyQueueWaitAlert(order: QueueWaitAlertInput): Promise<
   const rounded = Math.round(order.waitMinutes);
   const orderRef = formatOrderNumber(order.id);
   const title = 'Queue wait alert';
-  const message = `Order ${orderRef} has been waiting ${rounded} min in the call queue (limit: ${order.alertMinutes} min)`;
+  const message = `Order ${orderRef} has been waiting ${formatWaitMinutes(rounded)} in the call queue (limit: ${formatWaitMinutes(order.alertMinutes)})`;
   const data = {
     orderId: order.id,
     orderNumber: order.orderNumber ?? String(order.id),
@@ -46,9 +65,15 @@ export async function notifyQueueWaitAlert(order: QueueWaitAlertInput): Promise<
     alertMinutes: order.alertMinutes,
   };
 
-  for (const recipient of recipients) {
-    await createNotification(recipient.id.toString(), 'queue_wait_alert', title, message, data);
-  }
+  await notify({
+    tenantId: order.tenantId,
+    event: 'queue_wait',
+    subject: { type: 'order', id: order.id },
+    recipients: recipients.map((r) => r.id),
+    title,
+    message,
+    data,
+  });
   return true;
 }
 
@@ -69,7 +94,7 @@ export async function checkQueueWaitAlerts(tenantId: string, now: Date = new Dat
       deletedAt: null,
       status: 'pending_confirmation',
       firstContactAt: null,
-      createdAt: { lte: cutoff },
+      createdAt: { lte: cutoff, gt: new Date(now.getTime() - QUEUE_ALERT_MAX_AGE_MS) },
     },
     select: {
       id: true,

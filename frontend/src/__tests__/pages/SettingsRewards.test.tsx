@@ -15,7 +15,6 @@ vi.mock('../../services/checkout-forms.service', () => ({ checkoutFormsService: 
 vi.mock('../../services/admin.service', () => ({ adminService: { getSystemConfig: vi.fn().mockResolvedValue({}) } }));
 vi.mock('../../components/admin/UserManagementTable', () => ({ UserManagementTable: () => <div /> }));
 vi.mock('../../components/admin/RolePermissionsMatrix', () => ({ RolePermissionsMatrix: () => <div /> }));
-vi.mock('../../components/settings/IntegrationsPanel', () => ({ IntegrationsPanel: () => <div /> }));
 vi.mock('../../components/settings/CurrenciesFxPanel', () => ({ CurrenciesFxPanel: () => <div /> }));
 vi.mock('../../pages/settings/BillingTab', () => ({ BillingTab: () => <div /> }));
 vi.mock('../../pages/settings/StatusesTab', () => ({ StatusesTab: () => <div /> }));

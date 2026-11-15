@@ -1,5 +1,3 @@
-import { getPaymentProvider, clearPaymentConfigCache } from './payments';
-import { saveConnection } from './paymentConnectionService';
 import { parseFeaturePatch, clearTenantFeaturesCache } from './tenantFeatures';
 import prisma, { TransactionClient } from '../utils/prisma';
 import { sessionService } from './sessionService';
@@ -15,8 +13,8 @@ import {
   decryptProviderSecrets,
   maskProviderSecrets,
   preserveMaskedSecrets,
+  secretKeptAcrossEndpointChange,
   SENSITIVE_FIELDS,
-  decryptString,
 } from '../utils/providerCrypto';
 import { getTenantId, resolveTenantId, withoutTenant } from '../utils/tenantContext';
 import { HUMAN_USERS_WHERE, SYSTEM_USER_PASSWORD } from './systemUserService';
@@ -31,6 +29,7 @@ import { ROLE_NAME_BY_USER_ROLE } from '../config/defaultRoles';
 import { assignmentSelect } from './roleService';
 import { emailConflictOf } from '../utils/prismaErrors';
 import { newInviteToken } from '../utils/inviteToken';
+import { resolveSmtpHost } from '../utils/smtpHost';
 import { startOfUtcDay } from '../utils/startOfUtcDay';
 import { formTenantBySlug } from './tenantLookupService';
 import { clearCheckoutFormConfigCache } from './checkoutFormService';
@@ -169,6 +168,7 @@ export const adminService = {
     // adding a new integration is a one-line map update, not a copy-paste.
     const result: any = { ...config };
     delete result.tenant; // strip the include before sending
+    delete result.notificationTemplates; // the text lives in Message templates now (M9-T09, R8)
     for (const providerType of Object.keys(SENSITIVE_FIELDS)) {
       const raw = result[providerType];
       if (!raw) continue;
@@ -314,11 +314,15 @@ export const adminService = {
     smsProvider?: any;
     emailProvider?: any;
     whatsappProvider?: any;
-    paystackProvider?: any;
-    notificationTemplates?: any;
     features?: Record<string, unknown>;
   }) {
-    await this.checkAdminPrivilege(requester, 'super_admin');
+    // An admin saves the SMS, WhatsApp and Email connections (Connections page); every other setting stays with the Owner.
+    const CONNECTION_KEYS = ['smsProvider', 'emailProvider', 'whatsappProvider'];
+    if (requester.role === 'admin' && Object.keys(data).every((k) => CONNECTION_KEYS.includes(k))) {
+      // allowed
+    } else {
+      await this.checkAdminPrivilege(requester, 'super_admin');
+    }
     const tenantId = getTenantId();
     const findConfig = () => tenantId
       ? prisma.systemConfig.findUnique({ where: { tenantId } })
@@ -332,9 +336,15 @@ export const adminService = {
     if (!config) throw new Error('System config not found');
 
     // The store currency is Tenant.currency, not a SystemConfig column (M1-T31). The owner can change it at any time.
-    const { currency, ...configData } = data;
+    // The notification texts moved to Message templates (M9-T09, R8): an old client that still sends them changes nothing.
+    const { currency, notificationTemplates: _moved, ...configData } = data as typeof data & { notificationTemplates?: unknown };
     data = configData;
     if (currency !== undefined && tenantId) await changeStoreCurrency(tenantId, currency);
+
+    // Paystack keys are saved on Connections (PUT /api/payment-connections), never here (M9-T27). The old JSON is not written any more.
+    if ((data as any).paystackProvider !== undefined) {
+      throw new AppError('Paystack keys are saved in Connections, not in Settings', 400, 'PAYSTACK_USE_CONNECTIONS');
+    }
 
     // Business details (M3-T25, F-1230): the support WhatsApp is an international number, the time zone an IANA name.
     if (data.supportWhatsapp) {
@@ -360,6 +370,20 @@ export const adminService = {
         throw error;
       }
     }
+
+    // The server a secret goes to changed: the mask is not reused, the secret must be typed again (checked before any host lookup).
+    for (const providerType of Object.keys(SENSITIVE_FIELDS)) {
+      const incoming = (data as any)[providerType];
+      if (!incoming) continue;
+      if (secretKeptAcrossEndpointChange(providerType, incoming, (config as any)[providerType] || {})) {
+        const what = providerType === 'emailProvider' ? 'password' : providerType === 'whatsappProvider' ? 'access token' : 'API key';
+        throw new AppError(`Type the ${what} again when you change the ${providerType === 'emailProvider' ? 'server' : 'connection details'}.`, 400, 'SECRET_REQUIRED');
+      }
+    }
+
+    // A private, loopback or link-local SMTP host is refused at save time (M9 /cso, COD-86).
+    const incomingEmail = data.emailProvider as any;
+    if (incomingEmail?.provider === 'smtp' && incomingEmail.smtpHost?.trim()) await resolveSmtpHost(incomingEmail.smtpHost.trim());
 
     // Strip masked placeholders, preserve OAuth state, then encrypt — keyed off
     // SENSITIVE_FIELDS so adding a new integration is a one-line map update.
@@ -387,14 +411,6 @@ export const adminService = {
       data.whatsappProvider = wp;
     }
 
-    // Reject mismatched test/live key prefixes before persisting — the mode
-    // toggle is decorative without this; tenants would silently route real
-    // money through their test account or vice versa.
-    if (data.paystackProvider) {
-      const pp = data.paystackProvider as any;
-      if (pp.secretKey) getPaymentProvider('paystack').validateCredentials?.(pp.mode, decryptString(pp.secretKey) as string);
-    }
-
     // Encrypt sensitive fields before writing to DB
     for (const providerType of Object.keys(SENSITIVE_FIELDS)) {
       if ((data as any)[providerType]) {
@@ -420,30 +436,13 @@ export const adminService = {
       const { clearEmailConfigCache } = await import('./emailService');
       clearEmailConfigCache();
     }
-    if (data.paystackProvider !== undefined) {
-      // The PaymentConnection row is what checkout reads, so it follows every save here (created if missing). The JSON
-      // stays for the old Integrations panel until the Connections page (M9) and is display-only.
-      const pp = data.paystackProvider as { mode?: string; publicKey?: string; secretKey?: string; isEnabled?: boolean } | null;
-      if (pp && config.tenantId) {
-        await saveConnection({
-          provider: 'paystack',
-          mode: pp.mode === 'live' ? 'live' : 'test',
-          publicKey: pp.publicKey,
-          secretKey: pp.secretKey ? (decryptString(pp.secretKey) as string) : undefined,
-          isEnabled: pp.isEnabled !== false,
-        });
-      }
-      // saveConnection clears the tenant's cached keys itself. Clearing the JSON (pp null) skips it, so clear here.
-      // Only this tenant's entry: passing undefined would wipe every tenant's cached secret and stampede the DB.
-      if (!pp && config.tenantId) clearPaymentConfigCache(config.tenantId);
-    }
-
     // The public form page caches the support number with the form (5 minutes): a changed number shows at once.
     if (data.supportWhatsapp !== undefined) clearCheckoutFormConfigCache();
 
     await this.createAuditLog(requester, 'update', 'system_config', config.id.toString(), { changes: Object.keys(data) });
 
-    return updatedConfig;
+    const { notificationTemplates: _hidden, ...payload } = updatedConfig as typeof updatedConfig & { notificationTemplates?: unknown };
+    return payload;
   },
 
   // Role Permissions (the Settings matrix). Since M6-T04 it is a thin layer on the grid of the position role mapped from each
@@ -597,7 +596,7 @@ export const adminService = {
     const roleId = data.roleId ?? await positionRoleId(db, data.role);
     // A person below the Owner may not hand out a role whose grid is wider than their own (the base-role rank above is not enough).
     if (roleId !== null) {
-      const role = await db.role.findFirst({ where: { id: roleId }, select: { permissions: true, presetRole: true } });
+      const role = await db.role.findFirst({ where: { id: roleId }, select: { name: true, permissions: true, presetRole: true } });
       if (!role) throw new AppError('Role not found', 404);
       await assertGridWithin(requester, role, undefined);
     }
@@ -703,7 +702,7 @@ export const adminService = {
     const roleChanged = input.role !== undefined && input.role !== targetUser.role;
     // The new position role must sit within the requester's own grid (the rank check above only compares base roles).
     if (roleChanged) {
-      const role = await prisma.role.findFirst({ where: { name: ROLE_NAME_BY_USER_ROLE[input.role!] }, select: { permissions: true, presetRole: true } });
+      const role = await prisma.role.findFirst({ where: { name: ROLE_NAME_BY_USER_ROLE[input.role!] }, select: { name: true, permissions: true, presetRole: true } });
       if (role) await assertGridWithin(requester, role, userId);
     }
     const deactivating = input.isActive === false;

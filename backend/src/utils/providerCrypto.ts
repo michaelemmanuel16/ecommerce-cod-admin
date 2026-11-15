@@ -14,6 +14,9 @@ export const SENSITIVE_FIELDS: Record<string, string[]> = {
   paystackProvider: ['secretKey'],
 };
 
+/** A saved provider is on unless `isEnabled` is explicitly false (configs saved before the toggle have no field). */
+export const isProviderEnabled = (provider: { isEnabled?: boolean }): boolean => provider.isEnabled !== false;
+
 /** Sentinel returned to the client in place of a real secret. */
 export const SECRET_MASK = '••••••••';
 
@@ -47,6 +50,39 @@ export function preserveMaskedSecrets(providerType: string, incoming: any, exist
     if (result[field] === SECRET_MASK) result[field] = prev[field];
   }
   return result;
+}
+
+/** Fields that decide WHERE a provider's secret is sent. Changing one needs the secret typed again, so a masked secret never travels to a new host. */
+export const ENDPOINT_FIELDS: Record<string, string[]> = {
+  whatsappProvider: ['phoneNumberId', 'businessAccountId', 'wabaId', 'baseUrl', 'apiUrl', 'apiBaseUrl'],
+  smsProvider: ['provider', 'baseUrl', 'apiUrl', 'apiBaseUrl', 'endpoint'],
+  // fromEmail is the SMTP login when smtpUser is empty, so it decides where the password is used too
+  emailProvider: ['provider', 'smtpHost', 'smtpPort', 'smtpSecure', 'smtpUser', 'fromEmail', 'baseUrl', 'apiUrl'],
+};
+
+/** What an omitted field means once stored, so leaving it out cannot hide a change. The save keeps the stored WhatsApp wabaId when it is left out. */
+const DEFAULTS: Record<string, string> = { smtpPort: '587', smtpSecure: 'false' };
+const norm = (f: string, v: unknown): string => (v === undefined || v === null || v === '' ? DEFAULTS[f] ?? '' : String(v).trim().toLowerCase());
+
+/**
+ * True when the config that will be stored points a secret somewhere else than the stored one. A field left out counts as
+ * empty (the save replaces the whole config), so omitting smtpHost is a change. One list, used by the save and the SMTP test.
+ */
+export function endpointChanged(providerType: string, incoming: any, existing: any): boolean {
+  const fields = ENDPOINT_FIELDS[providerType];
+  if (!fields || !incoming || !existing) return false;
+  return fields.some((f) => {
+    if (providerType === 'whatsappProvider' && f === 'wabaId' && incoming[f] === undefined) return false;
+    return norm(f, incoming[f]) !== norm(f, existing[f]);
+  });
+}
+
+/** After an endpoint change, a secret that is still the mask (or empty) while one is stored is refused: the caller must type it again. */
+export function secretKeptAcrossEndpointChange(providerType: string, incoming: any, existing: any): boolean {
+  if (!endpointChanged(providerType, incoming, existing)) return false;
+  // Only the secrets that are sent out to the provider; the app secret and verify token only check what comes in
+  const outbound: Record<string, string[]> = { whatsappProvider: ['accessToken'], smsProvider: ['authToken'], emailProvider: ['apiKey'] };
+  return (outbound[providerType] ?? []).some((f) => existing[f] && (!incoming[f] || incoming[f] === SECRET_MASK));
 }
 
 const ALGORITHM = 'aes-256-gcm';

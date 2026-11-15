@@ -5,7 +5,8 @@ import { AppError } from '../middleware/errorHandler';
 import { resolveTenantId } from '../utils/tenantContext';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderAssigned, emitOrderUpdated } from '../sockets';
-import { createNotification, notifyAdminsNoAssigneeAvailable } from './notificationService';
+import { notifyAdminsNoAssigneeAvailable } from './notificationService';
+import { notify } from './inbox/inboxService';
 import { pickWithCursor } from './assignmentCursor';
 
 /**
@@ -383,13 +384,20 @@ export class AssignmentService {
       }
     });
 
-    // Inbox notification for the new holder (F-314); nobody is told about their own assignment.
-    if (actor.userId !== userId) {
-      try {
-        await createNotification(String(userId), 'order', 'Order assigned to you', `Order #${orderId} was assigned to you by ${actorName}`, { orderId, role });
-      } catch (error) {
-        logger.warn('Assignment notification failed', { orderId, userId, error: (error as Error).message });
-      }
+    // Inbox notification for the new holder (F-314); notify never tells the actor about their own assignment.
+    try {
+      await notify({
+        tenantId,
+        event: 'order_assigned',
+        subject: { type: 'order', id: orderId },
+        recipients: [userId],
+        actorId: actor.userId,
+        title: 'Order assigned to you',
+        message: `Order #${orderId} was assigned to you by ${actorName}`,
+        data: { orderId, role },
+      });
+    } catch (error) {
+      logger.warn('Assignment notification failed', { orderId, userId, error: (error as Error).message });
     }
 
     // Emit socket events for real-time updates

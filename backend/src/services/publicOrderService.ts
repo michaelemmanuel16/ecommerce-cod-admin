@@ -2,11 +2,16 @@ import prisma from '../utils/prisma';
 import { resolveTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
-import { Prisma } from '@prisma/client';
+import { OrderStatus, Prisma } from '@prisma/client';
 import * as Money from '../utils/money';
 import { normalizeOrderRegion } from './regionService';
 import { getAvailableToSell } from './stockService';
 import { customerNeedsManualCall } from './refusalRuleService';
+import { emitOrderCreatedEvent } from '../utils/appEvents';
+import { getSocketInstance } from '../utils/socketInstance';
+import { emitOrderCreated } from '../sockets';
+import { metaCapiService } from './metaCapiService';
+import { deliveryAddressOf } from '../utils/checkoutLocation';
 
 interface PublicOrderData {
   // Customer info
@@ -406,6 +411,108 @@ export class PublicOrderService {
 
     return submission;
   }
+}
+
+/** What the public checkout resolved for a cash-on-delivery order. The controller validates; this service writes. */
+export interface CodCheckoutOrderInput {
+  customer: Parameters<typeof customerNeedsManualCall>[0] & { id: number };
+  formId: number;
+  formTenantId: string | null;
+  isDigital: boolean;
+  paymentMethod: any;
+  subtotal: Prisma.Decimal;
+  shippingCost: Prisma.Decimal;
+  discount: Prisma.Decimal;
+  finalTotal: Prisma.Decimal;
+  formData: any;
+  landmark: string | null | undefined;
+  area: string | null | undefined;
+  selectedPackage: unknown;
+  selectedUpsells: unknown;
+  orderItems: Prisma.OrderItemCreateWithoutOrderInput[] | any[];
+  fbp: string | null;
+  fbc: string | null;
+  ip: string | undefined;
+  userAgent: string | undefined;
+}
+
+/**
+ * The public checkout's cash-on-delivery write (M9-T21): the order, its form submission and the customer totals,
+ * then `order.created` (workflows), the socket event and the Meta Purchase event. The order is created at
+ * pending_confirmation because payment settles on delivery. `order.created` fires here, after the writes, once.
+ */
+export async function createCodCheckoutOrder(input: CodCheckoutOrderInput) {
+  const order = await prisma.order.create({
+    data: {
+      customerId: input.customer.id,
+      status: OrderStatus.pending_confirmation,
+      orderType: input.isDigital ? 'digital' : 'physical',
+      paymentMethod: input.paymentMethod,
+      subtotal: input.subtotal,
+      shippingCost: input.shippingCost,
+      discount: input.discount,
+      totalAmount: input.finalTotal,
+      codAmount: input.finalTotal,
+      requiresManualCall: customerNeedsManualCall(input.customer),
+      balanceDue: 0,
+      deliveryAddress: deliveryAddressOf(input.formData.address, input.landmark),
+      deliveryState: input.formData.state || null,
+      deliveryArea: input.area || null,
+      notes: input.formData.notes || null,
+      source: 'checkout_form',
+      fbp: input.fbp,
+      fbc: input.fbc,
+      ...(input.formTenantId ? { tenantId: input.formTenantId } : {}),
+      orderItems: {
+        create: input.orderItems,
+      },
+    },
+    include: {
+      customer: true,
+      orderItems: {
+        include: {
+          product: true,
+        },
+      },
+    },
+  });
+
+  await prisma.formSubmission.create({
+    data: {
+      tenantId: resolveTenantId(input.formTenantId),
+      formId: input.formId,
+      orderId: order.id,
+      formData: input.formData,
+      selectedPackage: input.selectedPackage as any,
+      selectedUpsells: input.selectedUpsells as any,
+      totalAmount: input.finalTotal,
+      ipAddress: input.ip,
+      userAgent: input.userAgent,
+    },
+  });
+
+  await prisma.customer.update({
+    where: { id: input.customer.id },
+    data: {
+      totalOrders: { increment: 1 },
+      totalSpent: { increment: input.finalTotal },
+    },
+  });
+
+  // Trigger workflows (non-blocking)
+  emitOrderCreatedEvent(order);
+
+  // Emit socket event for real-time update
+  emitOrderCreated(getSocketInstance() as any, order);
+
+  // COD orders are "purchased" at creation (payment settles on delivery), so
+  // fire the server-side Meta Purchase event now. Best-effort + idempotent;
+  // Paystack orders fire instead on settlement (see paymentSettlementService).
+  metaCapiService.fireCapiPurchaseEvent(order.id).catch((err) => {
+    console.error('Meta CAPI fire failed for COD order:', err);
+  });
+
+  return order;
 }
 
 export default new PublicOrderService();

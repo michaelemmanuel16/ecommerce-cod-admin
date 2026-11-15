@@ -32,7 +32,6 @@ vi.mock('../../services/account.service', () => ({
 // The old tabs open big panels with their own API calls; they are not under test here
 vi.mock('../../components/admin/UserManagementTable', () => ({ UserManagementTable: () => <div>USERS PANEL</div> }));
 vi.mock('../../components/admin/RolePermissionsMatrix', () => ({ RolePermissionsMatrix: () => <div>ROLES PANEL</div> }));
-vi.mock('../../components/settings/IntegrationsPanel', () => ({ IntegrationsPanel: () => <div>INTEGRATIONS PANEL</div> }));
 vi.mock('../../components/settings/CurrenciesFxPanel', () => ({ CurrenciesFxPanel: () => <div>CURRENCIES PANEL</div> }));
 vi.mock('../../pages/settings/BillingTab', () => ({ BillingTab: () => <div>BILLING PANEL</div> }));
 vi.mock('../../pages/settings/StatusesTab', () => ({ StatusesTab: () => <div>STATUSES PANEL</div> }));
@@ -92,7 +91,7 @@ describe('Settings shell: tabs by permission (F-1220)', () => {
     renderAt();
     expect(tabNames()).toEqual([
       'Profile', 'Security', 'Business details', 'Operations', 'North Star & targets', 'Rewards', 'Currencies & FX', 'Order statuses', 'Notifications', 'Billing & plans',
-      'User management', 'Role permissions', 'Integrations', 'Checkout forms',
+      'User management', 'Role permissions', 'Checkout forms',
     ]);
     expect(screen.getByText('Moving soon')).toBeInTheDocument();
   });
@@ -112,12 +111,11 @@ describe('Settings shell: tabs by permission (F-1220)', () => {
     expect(screen.getByTestId('where')).toHaveTextContent('/settings?tab=billing');
   });
 
-  it('a sales rep opens Notifications: a pointer card with a disabled button', () => {
+  it('a sales rep opens Notifications: a pointer card with a link to the notification settings', () => {
     signIn('sales_rep');
     renderAt('/settings?tab=notifications');
-    expect(screen.getByText('Notification settings will live in Inbox')).toBeInTheDocument();
-    expect(screen.getByText('Inbox is coming soon.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Open Inbox settings' })).toBeDisabled();
+    expect(screen.getByText('Notification settings live in Inbox')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Open Inbox settings/ })).toHaveAttribute('href', '/inbox?view=settings');
   });
 
   it('an unknown tab opens Profile', () => {

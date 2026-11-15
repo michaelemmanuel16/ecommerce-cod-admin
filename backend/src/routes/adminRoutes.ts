@@ -17,8 +17,8 @@ router.use(tenantRateLimiter);
 router.get('/config/me', adminController.getPublicConfig);
 
 // System Configuration
-router.get('/settings', requireSuperAdmin, adminController.getSystemConfig);
-router.put('/settings', requireSuperAdmin, adminController.updateSystemConfig);
+router.get('/settings', requirePermission(['super_admin', 'admin']), adminController.getSystemConfig);
+router.put('/settings', requirePermission(['super_admin', 'admin']), adminController.updateSystemConfig);
 
 // Operations Settings (M7-T05)
 router.get('/settings/operations', requireResourcePermission('settings', 'view'), adminController.getOperationsSettings);

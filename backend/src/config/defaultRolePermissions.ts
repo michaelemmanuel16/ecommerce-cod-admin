@@ -62,7 +62,7 @@ export function defaultRolePermissions() {
       payouts: ['view', 'create'],
       expenses: ['view_all'],
       targets: ['view'],
-      messages: ['view'],
+      messages: ['view', 'create'],
     },
     sales_rep: {
       users: [],

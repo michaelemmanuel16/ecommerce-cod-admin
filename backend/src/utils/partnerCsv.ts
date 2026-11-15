@@ -48,6 +48,9 @@ const COLUMN_ALIASES: Record<'order' | 'phone' | 'status' | 'date' | 'reason' | 
   cash: ['cash', 'cashcollected', 'amount', 'collected'],
 };
 
+/** The columns of a partner file, in order. Each key is also a valid header (the first alias of each). Used for the template download. */
+export const CSV_TEMPLATE_COLUMNS = Object.keys(COLUMN_ALIASES) as Array<keyof typeof COLUMN_ALIASES>;
+
 const STATUS_WORDS: Record<string, CsvStatus> = {
   delivered: 'delivered',
   failed: 'failed_delivery',

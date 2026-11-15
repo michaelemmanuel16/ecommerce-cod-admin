@@ -67,13 +67,21 @@ describe('MCP tools follow the grid (F-1153)', () => {
   });
 
   it('the system role keeps its stored list; other roles use the grid', () => {
-    expect(registryToolsOfRole({ isSystem: true, tools: ['orders_search', 'not_a_tool'], permissions: null, presetRole: null }, defaultRolePermissions())).toEqual(['orders_search']);
-    expect(registryToolsOfRole({ isSystem: false, tools: ['orders_search'], permissions: { customers: ['view'] }, presetRole: null }, defaultRolePermissions())).toEqual(['customers_lookup']);
-    expect(registryToolsOfRole({ isSystem: false, tools: [], permissions: null, presetRole: 'accountant' }, defaultRolePermissions())).toContain('financial_summary');
+    expect(registryToolsOfRole({ name: 'Legacy MCP (14 tools)', isSystem: true, tools: ['orders_search', 'not_a_tool'], permissions: null, presetRole: null }, defaultRolePermissions())).toEqual(['orders_search']);
+    expect(registryToolsOfRole({ name: 'Reader', isSystem: false, tools: ['orders_search'], permissions: { customers: ['view'] }, presetRole: null }, defaultRolePermissions())).toEqual(['customers_lookup']);
+    expect(registryToolsOfRole({ name: 'Finance clerk', isSystem: false, tools: [], permissions: null, presetRole: 'accountant' }, defaultRolePermissions())).toContain('financial_summary');
     // the matrix is the tenant's: a widened matrix widens a role that has no grid of its own
     const widened = { ...defaultRolePermissions(), manager: { ...defaultRolePermissions().manager, financial: ['view', 'update'] } };
-    expect(gridOfRole({ permissions: null, presetRole: 'manager' }, widened).financial).toEqual(['view', 'update']);
-    expect(gridOfRole({ permissions: { orders: ['view'] }, presetRole: 'manager' }, widened)).toEqual({ orders: ['view'] });
+    expect(gridOfRole({ name: 'Manager', permissions: null, presetRole: 'manager' }, widened).financial).toEqual(['view', 'update']);
+    expect(gridOfRole({ name: 'Marketing', permissions: { orders: ['view'] }, presetRole: 'manager' }, widened)).toEqual({ orders: ['view'] });
+  });
+});
+
+describe('who may reply to customers by default (M9-T07)', () => {
+  it('owner, admin, manager and call rep can send; the other desk roles can only read', () => {
+    const defaults = defaultRolePermissions();
+    for (const role of ['super_admin', 'admin', 'manager', 'sales_rep'] as const) expect(switchesOn(defaults[role])).toContain('message_customers');
+    for (const role of ['accountant', 'inventory_manager', 'delivery_agent'] as const) expect(switchesOn(defaults[role])).not.toContain('message_customers');
   });
 });
 

@@ -51,7 +51,19 @@ productsFixtureChecks(() => tenantId);
 // Done when 2: the three named rates.
 describe('KPI rates on the fixture (Done when 2)', () => {
   it('confirmation 71% (1,026 / 1,445), delivery success 48% (376 / 778), yield about 34%', async () => {
-    const r = await rates(tenantId, new Date('2026-10-01T00:00:00Z'), new Date('2026-10-18T00:00:00Z'));
+    // The yield counts a day cohort as closed 30 days after its day ends, measured from now (asOf). Pin the clock to
+    // the day after the fixture, or the figure drifts as real days pass (13 Oct closes on 13 Nov, 14 Oct on 14 Nov).
+    jest.useFakeTimers({
+      now: LEDGER_NOW,
+      doNotFake: ['hrtime', 'nextTick', 'performance', 'queueMicrotask', 'requestAnimationFrame', 'cancelAnimationFrame',
+        'requestIdleCallback', 'cancelIdleCallback', 'setImmediate', 'clearImmediate', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'],
+    });
+    let r: Awaited<ReturnType<typeof rates>>;
+    try {
+      r = await rates(tenantId, new Date('2026-10-01T00:00:00Z'), new Date('2026-10-18T00:00:00Z'));
+    } finally {
+      jest.useRealTimers();
+    }
     expect(r.confirmationRate.detail).toEqual({ confirmed: 1026, placed: 1445 });
     expect(Math.round(r.confirmationRate.value as number)).toBe(71);
     expect(r.deliverySuccessRate.detail).toMatchObject({ delivered: 376, closed: 778 });

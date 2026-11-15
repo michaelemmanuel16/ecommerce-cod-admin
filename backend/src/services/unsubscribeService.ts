@@ -4,6 +4,8 @@ import logger from '../utils/logger';
 import { getBackendUrl } from '../utils/url';
 import { runInTenantOf, withoutTenant } from '../utils/tenantContext';
 import { appendUnsubscribeFooter } from './emailTemplateService';
+import { OPT_OUT_FLAG, setOptOut } from './messaging/optOutService';
+import { MessageChannel } from '@prisma/client';
 
 /**
  * Email unsubscribe plumbing (MAN-81).
@@ -70,35 +72,75 @@ export async function ensureUnsubscribeToken(
  */
 export async function findCustomerByUnsubscribeToken(
   token: string,
-): Promise<{ id: number; emailOptOut: boolean; tenantId: string | null } | null> {
+): Promise<{ id: number; emailOptOut: boolean; smsOptOut: boolean; whatsappOptOut: boolean; phoneNumber: string; email: string | null; tenantId: string | null } | null> {
   if (!token) return null;
   return withoutTenant('unsubscribe', () =>
     prisma.customer.findUnique({
       where: { unsubscribeToken: token },
-      select: { id: true, emailOptOut: true, tenantId: true },
+      select: { id: true, emailOptOut: true, smsOptOut: true, whatsappOptOut: true, phoneNumber: true, email: true, tenantId: true },
     })
   );
 }
 
 /**
- * Perform the opt-out for a token. Idempotent — re-running on an already
- * opted-out customer is a no-op. Returns true if the token resolved to a
- * customer, false if the token is unknown/forged. Only the POST route calls
- * this; GET never mutates.
+ * Perform the opt-out for a token: email always, and the channel the link names when it names one (M9-T10). Each change
+ * is an OptOutEvent with reason `unsubscribe_link`. Idempotent: a channel already opted out is not written again.
+ * Returns true if the token resolved to a customer, false if it is unknown/forged or the customer is gone.
+ * Only the POST route calls this; GET never mutates.
  */
-export async function optOutByUnsubscribeToken(token: string): Promise<boolean> {
+export async function optOutByUnsubscribeToken(token: string, extraChannel?: MessageChannel): Promise<boolean> {
   const customer = await findCustomerByUnsubscribeToken(token);
   if (!customer) return false;
-  if (!customer.emailOptOut) {
-    // The token gave us the tenant: the write itself is scoped to it
-    const optOut = () =>
-      prisma.customer.update({
-        where: { id: customer.id },
-        data: { emailOptOut: true },
-      });
-    // A legacy NULL-tenant customer must still be able to unsubscribe
-    await runInTenantOf(customer.tenantId, 'unsubscribe', optOut);
-    logger.info('Customer unsubscribed from email', { customerId: customer.id });
+  const channels = Array.from(new Set<MessageChannel>([MessageChannel.email, ...(extraChannel ? [extraChannel] : [])]));
+  for (const channel of channels) {
+    if (customer[OPT_OUT_FLAG[channel]]) continue;
+    // The token gave us the tenant: the write itself is scoped to it. A legacy NULL-tenant customer must still be able to unsubscribe.
+    if (!customer.tenantId) {
+      await runInTenantOf(null, 'unsubscribe', () => prisma.customer.update({ where: { id: customer.id }, data: { [OPT_OUT_FLAG[channel]]: true } }));
+      continue;
+    }
+    await runInTenantOf(customer.tenantId, 'unsubscribe', () => setOptOut({
+      tenantId: customer.tenantId!, customerId: customer.id, phone: channel === MessageChannel.email ? null : customer.phoneNumber,
+      email: channel === MessageChannel.email ? customer.email : null, channel, optedOut: true, reason: 'unsubscribe_link',
+    }));
+    logger.info('Customer unsubscribed', { customerId: customer.id, channel });
   }
   return true;
+}
+
+export interface StoreBrand {
+  /** The store name, or null when the customer belongs to no store. */
+  name: string | null;
+  /** An https address, or null. */
+  logo: string | null;
+  /** A 6-digit hex colour (#RRGGBB). */
+  color: string;
+}
+
+export const DEFAULT_BRAND_COLOR = '#111827';
+const HEX = /^#([0-9a-f]{6})$/i;
+const short = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i;
+
+/** `#abc` -> `#aabbcc`; anything that is not a hex colour -> null. Only these ever reach the page's style. */
+export function cleanHex(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const t = v.trim();
+  const m = short.exec(t);
+  if (m) return `#${m[1]}${m[1]}${m[2]}${m[2]}${m[3]}${m[3]}`.toLowerCase();
+  return HEX.test(t) ? t.toLowerCase() : null;
+}
+
+/**
+ * The look of the store for the public unsubscribe page: its name and logo, and the button colour of its latest active
+ * checkout form (the colour its customers already know). A store with no form gets a neutral dark.
+ */
+export async function getStoreBrand(tenantId: string | null): Promise<StoreBrand> {
+  if (!tenantId) return { name: null, logo: null, color: DEFAULT_BRAND_COLOR };
+  const [tenant, form] = await runInTenantOf(tenantId, 'unsubscribe', () => Promise.all([
+    prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true, logo: true } }),
+    prisma.checkoutForm.findFirst({ where: { tenantId, isActive: true, archivedAt: null }, orderBy: { updatedAt: 'desc' }, select: { styling: true } }),
+  ]));
+  const styling = (form?.styling ?? {}) as { buttonColor?: unknown; accentColor?: unknown };
+  const logo = tenant?.logo && /^https:\/\//i.test(tenant.logo) ? tenant.logo : null;
+  return { name: tenant?.name?.trim() || null, logo, color: cleanHex(styling.buttonColor) ?? cleanHex(styling.accentColor) ?? DEFAULT_BRAND_COLOR };
 }

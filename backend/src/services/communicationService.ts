@@ -78,6 +78,26 @@ function campaignStats(
   };
 }
 
+/** How many customers the recipient list returns. The Bulk send tab sends to the customers it lists, so this is also the most one send reaches. */
+export const RECIPIENT_LIMIT = 1000;
+
+interface RecipientFilters {
+  state?: string;
+  productId?: number;
+  hasOrdered?: boolean;
+  channel: 'sms' | 'whatsapp' | 'email';
+}
+
+function recipientWhere(filters: RecipientFilters) {
+  const where: any = buildAudienceWhere({
+    filter: { state: filters.state, productId: filters.productId, hasOrdered: filters.hasOrdered },
+  });
+  if (filters.channel === 'sms') where.smsOptOut = false;
+  if (filters.channel === 'whatsapp') where.whatsappOptOut = false;
+  if (filters.channel === 'email') Object.assign(where, EMAIL_ELIGIBLE);
+  return where;
+}
+
 export const communicationService = {
   async getMessages(params: {
     page?: number;
@@ -96,20 +116,15 @@ export const communicationService = {
     return whatsappService.getStats(startDate, endDate);
   },
 
-  async getRecipients(filters: {
-    state?: string;
-    productId?: number;
-    hasOrdered?: boolean;
-    channel: 'sms' | 'whatsapp' | 'email';
-  }) {
-    const where: any = buildAudienceWhere({
-      filter: { state: filters.state, productId: filters.productId, hasOrdered: filters.hasOrdered },
-    });
-    if (filters.channel === 'sms') where.smsOptOut = false;
-    if (filters.channel === 'whatsapp') where.whatsappOptOut = false;
-    if (filters.channel === 'email') Object.assign(where, EMAIL_ELIGIBLE);
+  /** All customers who match, with no cap (the list below is capped), so the screen can say "1,000 of 1,837". */
+  async countRecipients(filters: RecipientFilters) {
+    return prisma.customer.count({ where: recipientWhere(filters) });
+  },
 
-    // Preview listing only — capped. The bulk send enqueues via cursor pagination
+  async getRecipients(filters: RecipientFilters) {
+    const where = recipientWhere(filters);
+
+    // Capped (RECIPIENT_LIMIT). The email bulk send enqueues via cursor pagination
     // (bulkSendEmail) and is not bounded by this cap.
     const customers = await prisma.customer.findMany({
       where,
@@ -126,7 +141,7 @@ export const communicationService = {
         emailOptOut: true,
       },
       orderBy: { firstName: 'asc' },
-      take: 1000,
+      take: RECIPIENT_LIMIT,
     });
     return customers;
   },
@@ -148,7 +163,7 @@ export const communicationService = {
 
   async bulkSendSms(customerIds: number[], message: string) {
     const customers = await prisma.customer.findMany({
-      where: { id: { in: customerIds }, smsOptOut: false, isActive: true },
+      where: { id: { in: customerIds }, isActive: true },
       select: { id: true, phoneNumber: true },
     });
 
@@ -160,7 +175,10 @@ export const communicationService = {
           body: message,
           customerId: customer.id,
         });
-        if (!result.sent) {
+        if (result.skipped) {
+          // messageSender skipped it (opted out): counted, not an error
+          results.push({ customerId: customer.id, success: false, skipped: true, messageLogId: result.messageLogId });
+        } else if (!result.sent) {
           results.push({ customerId: customer.id, success: false, messageLogId: result.messageLogId, error: 'not set up' });
         } else {
           results.push({ customerId: customer.id, success: true, messageLogId: result.messageLogId });
@@ -173,14 +191,15 @@ export const communicationService = {
     logger.info('Bulk SMS completed', {
       total: customers.length,
       sent: results.filter((r) => r.success).length,
-      failed: results.filter((r) => !r.success).length,
+      skipped: results.filter((r) => 'skipped' in r).length,
+      failed: results.filter((r) => !r.success && !('skipped' in r)).length,
     });
-    return { total: customers.length, results };
+    return { total: customers.length, skipped: results.filter((r) => 'skipped' in r).length, results };
   },
 
   async bulkSendWhatsApp(customerIds: number[], templateKey: string, customLink?: string) {
     const customers = await prisma.customer.findMany({
-      where: { id: { in: customerIds }, whatsappOptOut: false, isActive: true },
+      where: { id: { in: customerIds }, isActive: true },
       select: { id: true, firstName: true, lastName: true, phoneNumber: true },
     });
 
@@ -204,7 +223,10 @@ export const communicationService = {
           bodyParams,
           customerId: customer.id,
         });
-        if (!result.sent) {
+        if (result.skipped) {
+          // messageSender skipped it (opted out): counted, not an error
+          results.push({ customerId: customer.id, success: false, skipped: true, messageLogId: result.messageLogId });
+        } else if (!result.sent) {
           results.push({ customerId: customer.id, success: false, messageLogId: result.messageLogId, error: 'not set up' });
         } else {
           results.push({ customerId: customer.id, success: true, messageLogId: result.messageLogId });
@@ -217,9 +239,10 @@ export const communicationService = {
     logger.info('Bulk WhatsApp completed', {
       total: customers.length,
       sent: results.filter((r) => r.success).length,
-      failed: results.filter((r) => !r.success).length,
+      skipped: results.filter((r) => 'skipped' in r).length,
+      failed: results.filter((r) => !r.success && !('skipped' in r)).length,
     });
-    return { total: customers.length, results };
+    return { total: customers.length, skipped: results.filter((r) => 'skipped' in r).length, results };
   },
 
   // ---- Bulk email campaigns (queued; tenant BYO provider) ----

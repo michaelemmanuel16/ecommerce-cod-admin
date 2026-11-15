@@ -81,7 +81,7 @@ export function isCustomGrid(role: { name: string; presetRole: UserRole | null }
  * reads. The plain list leaves the tool names out.
  */
 export const roleView = ({ tools, permissions, ...role }: RoleRow, holderCount: number, matrix: Matrix, withTools = true) => {
-  const grid = gridOfRole({ permissions, presetRole: role.presetRole }, matrix);
+  const grid = gridOfRole({ permissions, presetRole: role.presetRole, name: role.name }, matrix);
   const list = role.isSystem ? roleToolList(tools) : switchesOn(grid);
   return {
     ...role, ...(withTools && { tools: list, toolCatalog: ROLE_TOOL_CATALOG }), toolCount: list.length, toolTotal: ROLE_TOOL_TOTAL, holderCount,
@@ -181,7 +181,7 @@ export async function createRole(tenantId: string, input: CreateRoleInput) {
     nameTaken(input.name),
     input.copyToolsFromRoleId === undefined
       ? null
-      : prisma.role.findFirst({ where: { id: input.copyToolsFromRoleId }, select: { permissions: true, presetRole: true, isSystem: true } }),
+      : prisma.role.findFirst({ where: { id: input.copyToolsFromRoleId }, select: { name: true, permissions: true, presetRole: true, isSystem: true } }),
   ]);
   if (taken) throw new AppError(NAME_TAKEN, 409);
   if (input.copyToolsFromRoleId !== undefined && !source) throw new AppError('Role to copy from was not found', 400);

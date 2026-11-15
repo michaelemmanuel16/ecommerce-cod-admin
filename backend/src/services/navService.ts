@@ -6,6 +6,7 @@ import { gridOfRole } from '../config/roleToolRules';
 import { resolveTenantId } from '../utils/tenantContext';
 import { startOfUtcDay } from '../utils/startOfUtcDay';
 import { orderScope, Requester } from '../utils/authUtils';
+import { getCounts as getInboxCounts } from './inbox/inboxFeedService';
 
 /** M3-T07: what the app shell needs per user: counts for the pills, menu keys, home route, role names (F-101, F-102, F-104). */
 
@@ -35,7 +36,8 @@ const MENU_RULES: Array<[key: string, allowed: (c: MenuCtx) => boolean]> = [
   ['orders', (c) => c.has('orders', 'view')],
   ['customers', (c) => c.has('customers', 'view')],
   ['checkoutForms', (c) => MANAGER_UP.includes(c.role)],
-  ['messages', (c) => MANAGER_UP.includes(c.role)],
+  // A call rep opens Messages for Conversations only (M9-T30, P5); the page shows them that one tab
+  ['messages', (c) => MANAGER_UP.includes(c.role) || (c.role === 'sales_rep' && c.has('messages', 'view'))],
   // Reps and agents never saw Products in the old menu; keep that.
   ['products', (c) => c.has('products', 'view') && c.role !== 'sales_rep' && c.role !== 'delivery_agent'],
   ['inventory', (c) => MANAGER_UP.includes(c.role) || c.has('products', 'update_stock') || c.has('inventory', 'view')],
@@ -140,7 +142,7 @@ class NavService {
 
   /**
    * Pill counts for the signed-in user. A count the user may not see is 0.
-   * inbox: unread notifications until the M9 inbox exists. ordersPending: orders in pending_confirmation
+   * inbox: the Inbox's own "All" count (open, unread, from the database), the same figure the bell and the live counts show. ordersPending: orders in pending_confirmation
    * (a rep or an agent counts only their own). financeOpen: open Findings.
    */
   async getCounts(user: Requester) {
@@ -148,7 +150,7 @@ class NavService {
     const has = hasIn(user.role, permissions);
 
     const [inbox, ordersPending, financeOpen] = await Promise.all([
-      prisma.notification.count({ where: { userId: user.id, isRead: false } }),
+      getInboxCounts(user.id).then((c) => c.all),
       has('orders', 'view')
         ? prisma.order.count({ where: { status: 'pending_confirmation', deletedAt: null, ...orderScope(user) } })
         : 0,

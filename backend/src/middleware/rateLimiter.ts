@@ -63,6 +63,16 @@ export const whatsappWebhookLimiter = rateLimit({
   ...commonSettings
 });
 
+// Workflow webhook trigger (M9-T22): 60 calls a minute per token (the token is the route param). The same in every
+// environment: the budget is part of the contract, not a dev convenience.
+export const workflowHookLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  message: { message: 'Too many calls for this workflow webhook, please slow down' },
+  keyGenerator: (req) => String(req.params.token ?? 'unknown'),
+  ...commonSettings
+});
+
 export const healthLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: isDevelopment ? 1000 : 30, // Relaxed for development

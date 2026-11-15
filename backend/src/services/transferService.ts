@@ -6,6 +6,8 @@ import * as Money from '../utils/money';
 import { applyMovement, getLocation, lockProduct } from './stockService';
 import { openFindingOnce } from './findingService';
 import { auditService } from './auditService';
+import { notify } from './inbox/inboxService';
+import logger from '../utils/logger';
 import type { StockActor } from '../utils/stockActor';
 
 /**
@@ -67,7 +69,8 @@ export async function createTransfer(actor: StockActor, input: CreateTransferInp
   if (!Number.isInteger(input.quantity) || input.quantity <= 0) throw new AppError('Quantity must be a whole number above 0', 400);
   if (input.fromLocationId === input.toLocationId) throw new AppError('Cannot transfer to the same location', 400);
 
-  return prisma.$transaction(async (tx) => {
+  const pending: { incoming?: { agentId: number; transferId: number; productId: number; productName: string; fromLocationId: number } } = {};
+  const created = await prisma.$transaction(async (tx) => {
     const product = await lockProduct(tx, input.productId);
     const from = await getLocation(tx, input.fromLocationId, true);
     const to = await getLocation(tx, input.toLocationId, true);
@@ -85,15 +88,9 @@ export async function createTransfer(actor: StockActor, input: CreateTransferInp
       fromLocationId: from.id, toLocationId: to.id, status: 'in_transit', requireOnHand: true, lockedProduct: product,
       reason: input.reason ?? null, notes: input.note ?? null,
     });
-    // The agent is told the stock is on its way (inbox row; the push comes from the notification layer).
+    // The agent is told after the commit (below), so a failed notice never undoes the transfer.
     if (to.type === 'agent' && to.userId != null) {
-      await tx.notification.create({
-        data: {
-          tenantId: resolveTenantId(), userId: to.userId, type: 'stock', title: 'Stock waiting for you',
-          message: `${input.quantity} ${product.name} are waiting for you`,
-          data: { transferId: row.id, productId: product.id, quantity: input.quantity, fromLocationId: from.id },
-        },
-      });
+      pending.incoming = { agentId: to.userId, transferId: row.id, productId: product.id, productName: product.name, fromLocationId: from.id };
     }
     await auditService.record({
       tx, actorId: actor.id, actorKind: 'person', channel: 'app', action: 'create', resource: 'inventory_transfer', resourceId: String(row.id),
@@ -101,6 +98,23 @@ export async function createTransfer(actor: StockActor, input: CreateTransferInp
     });
     return fresh(tx, row.id);
   });
+  const n = pending.incoming;
+  if (n) {
+    try {
+      await notify({
+        tenantId: resolveTenantId(),
+        event: 'stock_incoming',
+        recipients: [n.agentId],
+        actorId: actor.id,
+        title: 'Stock waiting for you',
+        message: `${input.quantity} ${n.productName} are waiting for you`,
+        data: { transferId: n.transferId, productId: n.productId, quantity: input.quantity, fromLocationId: n.fromLocationId },
+      });
+    } catch (error) {
+      logger.warn('Transfer created but the stock notice failed', { transferId: n.transferId, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return created;
 }
 
 /**

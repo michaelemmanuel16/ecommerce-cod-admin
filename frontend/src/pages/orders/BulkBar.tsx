@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Phone, RefreshCw, Trash2, Truck } from 'lucide-react';
+import { Phone, Play, RefreshCw, Trash2, Truck } from 'lucide-react';
 import { ordersService, type OrderListRow } from '../../services/orders.service';
 import type { OrderStatus } from '../../types';
 import { ORDER_STATUS_LABELS } from '../../utils/orderStatus';
@@ -51,15 +51,18 @@ interface BulkBarProps {
   canMove: boolean;
   canAssign: boolean;
   canDelete: boolean;
+  /** Run a workflow on the selected orders (workflows: execute). */
+  canRun?: boolean;
   onStatus: (s: OrderStatus) => void;
   onRep: (o: Option) => void;
   onAgent: (o: Option) => void;
   onDelete: () => void;
+  onRun?: () => void;
   onClear: () => void;
 }
 
 /** The bar that appears when orders are selected (F-313 to F-315). */
-export function BulkBar({ rows, reps, agents, canMove, canAssign, canDelete, onStatus, onRep, onAgent, onDelete, onClear }: BulkBarProps) {
+export function BulkBar({ rows, reps, agents, canMove, canAssign, canDelete, canRun, onStatus, onRep, onAgent, onDelete, onRun, onClear }: BulkBarProps) {
   return (
     <div className="bulk" role="region" aria-label="Selected orders">
       <b>{rows.length.toLocaleString('en-GB')} selected</b>
@@ -77,6 +80,12 @@ export function BulkBar({ rows, reps, agents, canMove, canAssign, canDelete, onS
             {(close) => <AgentItems options={agents} onPick={(o) => { close(); onAgent(o); }} />}
           </PopMenu>
         </>
+      )}
+      {canRun && onRun && (
+        <button type="button" className="btn" onClick={onRun}>
+          <Play />
+          Run workflow
+        </button>
       )}
       {canDelete && (
         <button type="button" className="btn del" onClick={onDelete}>
