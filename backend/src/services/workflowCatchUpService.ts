@@ -49,7 +49,7 @@ async function findCatchUpOrderIds(workflow: Awaited<ReturnType<typeof loadWorkf
 
   const orders = await prisma.order.findMany({
     where: { status, deletedAt: null, OR: roles.map((role) => ({ [assigneeFieldOf(role)]: null })) },
-    include: { orderItems: { include: { product: { select: { name: true } } } } },
+    include: { orderItems: { include: { product: true } } },
     orderBy: { id: 'asc' },
     take: CATCH_UP_SCAN_LIMIT,
   });
