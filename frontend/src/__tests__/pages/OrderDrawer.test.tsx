@@ -20,6 +20,8 @@ vi.mock('../../services/orders.service', () => ({
     updateOrderStatus: vi.fn(),
   },
 }));
+const workflowsSvc = vi.hoisted(() => ({ getWorkflows: vi.fn(), runOnOrders: vi.fn() }));
+vi.mock('../../services/workflows.service', () => ({ workflowsService: workflowsSvc }));
 vi.mock('../../services/calls.service', () => ({ callsService: { createCall: (...a: unknown[]) => createCall(...a) } }));
 vi.mock('../../services/products.service', () => ({ productsService: { getProducts: () => Promise.resolve([{ id: 1, name: 'Copybook set', isActive: true }, { id: 2, name: 'Refill pens', isActive: true }]) } }));
 vi.mock('../../services/delivery-agents.service', () => ({ deliveryAgentsService: { getDeliveryAgents: () => Promise.resolve([{ id: '5', name: 'Kofi Appiah', isActive: true, isAvailable: true }]) } }));
@@ -236,5 +238,25 @@ describe('Order drawer: edit mode (M3-T47, F-318)', () => {
     renderDrawer();
     expect(await screen.findByText('Failure reason')).toBeInTheDocument();
     expect(screen.getByText('Refused')).toBeInTheDocument();
+  });
+});
+
+describe('Order drawer: Run workflow (M9-T43, F-502)', () => {
+  it('a person who may execute workflows runs an active workflow on this order', async () => {
+    useAuthStore.setState({ user: { id: 1, role: 'admin', firstName: 'Manny', lastName: 'A' } as never, permissions: { orders: ['view', 'update', 'assign'], workflows: ['view', 'execute'] } });
+    workflowsSvc.getWorkflows.mockResolvedValue({ workflows: [{ id: 3, name: 'Confirm SMS' }], summary: {} });
+    workflowsSvc.runOnOrders.mockResolvedValue({ queued: 1, batches: 1 });
+    renderDrawer();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Run workflow' }));
+    expect(await screen.findByText('Runs on 1 order.')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Run' }));
+    await waitFor(() => expect(workflowsSvc.runOnOrders).toHaveBeenCalledWith(3, [24118], false));
+  });
+
+  it('has no Run workflow button without the permission', async () => {
+    renderDrawer();
+    await screen.findByText('Order status');
+    expect(screen.queryByRole('button', { name: 'Run workflow' })).not.toBeInTheDocument();
   });
 });

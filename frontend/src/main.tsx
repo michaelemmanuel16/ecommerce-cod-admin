@@ -28,6 +28,7 @@ import './styles/orderDrawer.css';
 import './styles/settings.css';
 import './styles/collections.css';
 import './styles/rep.css';
+import './styles/workflows.css';
 
 if (import.meta.env.VITE_SENTRY_DSN) {
   Sentry.init({
