@@ -5,6 +5,7 @@ import { Button, Card, ConfirmDialog, EmptyState, Skeleton, Tabs, Tag, useToast 
 import { webhooksService } from '../../services/webhooks.service';
 import type { Webhook, WebhookLog } from '../../types';
 import { apiErrorMessage } from '../../utils/apiError';
+import { formatStamp } from '../../utils/format';
 import { CopyButton } from './parts';
 import { WebhookDialog } from './WebhookDialog';
 
@@ -12,7 +13,6 @@ type Row = Webhook & { product?: { name: string } | null };
 
 const apiBase = (): string => import.meta.env.VITE_API_URL || window.location.origin;
 const importUrl = (w: Pick<Webhook, 'uniqueUrl'>) => `${apiBase()}/api/webhooks/import/${w.uniqueUrl}`;
-const when = (iso: string) => new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const short = (key: string) => `${key.slice(0, 6)}...${key.slice(-4)}`;
 
 /** Webhooks tab (M9-T45, F-1209 to F-1212): the list, create, edit, delete, and per webhook its logs and how to send. */
@@ -196,13 +196,13 @@ function Logs({ webhook }: { webhook: Row }) {
               {shown.map((l) => (
                 <Fragment key={l.id}>
                   <tr className="row" onClick={() => setExpanded(expanded === l.id ? null : l.id)} aria-expanded={expanded === l.id}>
-                    <td>{when(l.processedAt)}</td>
+                    <td>{formatStamp(l.processedAt)}</td>
                     <td>{l.success ? <Tag tone="ok">Done</Tag> : <Tag tone="bad">Failed</Tag>} <span className="mut">{l.statusCode ?? ''}</span></td>
                     <td>{l.errorMessage ?? <span className="mut">None</span>}</td>
                     <td>
                       <div className="acts-row">
                         {!l.success && l.statusCode !== 401 && (
-                          <Button size="mini" disabled={retrying === l.id} onClick={(e) => { e.stopPropagation(); void retry(l); }} aria-label={`Retry delivery from ${when(l.processedAt)}`}>
+                          <Button size="mini" disabled={retrying === l.id} onClick={(e) => { e.stopPropagation(); void retry(l); }} aria-label={`Retry delivery from ${formatStamp(l.processedAt)}`}>
                             {retrying === l.id ? 'Retrying...' : 'Retry'}
                           </Button>
                         )}

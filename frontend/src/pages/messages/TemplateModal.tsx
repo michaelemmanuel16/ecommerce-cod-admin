@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { Button, Input, Modal, Select, useToast } from '../../components/ui-v2';
 import { messagesService } from '../../services/messages.service';
 import { apiMessage } from '../orders/importText';
+import { formatNumber } from '../../utils/format';
 import { CHANNEL_LABEL } from './format';
 import { BODY_LIMIT, MERGE_TAGS, nextVariable, previewText } from './templateModel';
 import type { Channel, MessageTemplate, TemplateInput } from './types';
@@ -86,7 +87,7 @@ export function TemplateModal({ template, open, onClose, onSaved }: Props) {
           <div className="fld fl">
             <label htmlFor="tpl-body">{channel === 'email' ? 'Message (simple HTML allowed)' : 'Message'}</label>
             <textarea id="tpl-body" ref={area} rows={channel === 'email' ? 9 : 6} value={body} onChange={(e) => setBody(e.target.value)} />
-            <p className={over ? 'err' : 'hint'}>{body.length.toLocaleString('en-US')} of {limit.toLocaleString('en-US')} characters</p>
+            <p className={over ? 'err' : 'hint'}>{formatNumber(body.length)} of {formatNumber(limit)} characters</p>
           </div>
 
           {channel === 'email' && (

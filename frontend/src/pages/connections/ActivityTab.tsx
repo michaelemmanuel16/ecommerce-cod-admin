@@ -3,6 +3,7 @@ import { Activity } from 'lucide-react';
 import { Button, Card, EmptyState, Skeleton, Table, Tabs, Tag, type Column } from '../../components/ui-v2';
 import { connectionsService, type ActivityItem, type ActivityTab as Level } from '../../services/connections.service';
 import { apiErrorMessage } from '../../utils/apiError';
+import { formatStamp } from '../../utils/format';
 
 const CONNECTION_NAMES: Record<string, string> = {
   sms: 'Arkesel SMS', whatsapp: 'WhatsApp Business', email: 'Email', paystack: 'Paystack',
@@ -14,9 +15,6 @@ const LEVELS = {
   warning: { tone: 'warn', label: 'Warning' },
   info: { tone: 'ok', label: 'Done' },
 } as const;
-
-const when = (iso: string) =>
-  new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
 /** Activity log (M9-T45, F-1213): connection problems of the last 90 days, newest first, with the tab counts from the API. */
 export function ActivityTab() {
@@ -57,7 +55,7 @@ export function ActivityTab() {
   };
 
   const columns: Column<ActivityItem>[] = [
-    { key: 'at', header: 'Time', render: (r) => when(r.at) },
+    { key: 'at', header: 'Time', render: (r) => formatStamp(r.at) },
     { key: 'conn', header: 'Connection', render: (r) => <b>{CONNECTION_NAMES[r.connection] ?? r.connection}</b> },
     { key: 'level', header: 'Level', render: (r) => <Tag tone={LEVELS[r.level].tone}>{LEVELS[r.level].label}</Tag> },
     { key: 'msg', header: 'What happened', render: (r) => r.message },

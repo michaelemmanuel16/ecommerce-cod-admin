@@ -83,7 +83,7 @@ export interface Overview {
   total: Figures;
 }
 
-export type LogStatus = 'sent' | 'delivered' | 'read' | 'failed' | 'replied' | 'skipped' | 'pending';
+export type LogStatus = MessageStatus;
 
 export interface LogRow {
   id: number;

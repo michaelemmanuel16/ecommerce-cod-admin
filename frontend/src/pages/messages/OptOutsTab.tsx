@@ -5,7 +5,8 @@ import { BlockError } from '../dashboard/blocks/Frame';
 import { Button, ConfirmDialog, EmptyState, Input, Modal, Pagination, Select, Skeleton, Table, Tag, useToast } from '../../components/ui-v2';
 import { messagesService } from '../../services/messages.service';
 import { apiMessage } from '../orders/importText';
-import { CHANNEL_LABEL, stamp } from './format';
+import { formatNumber, formatStamp } from '../../utils/format';
+import { CHANNEL_LABEL } from './format';
 import { useLoad } from './useLoad';
 import type { Channel, OptOutRow } from './types';
 
@@ -62,7 +63,7 @@ export function OptOutsTab({ canWrite }: { canWrite: boolean }) {
           <option value="">All channels</option>
           {(['sms', 'whatsapp', 'email'] as const).map((c) => <option key={c} value={c}>{CHANNEL_LABEL[c]}</option>)}
         </Select>
-        {data.data && <span className="ink3 note">{data.data.total.toLocaleString('en-US')} opted out. We never send to them on that channel.</span>}
+        {data.data && <span className="ink3 note">{formatNumber(data.data.total)} opted out. We never send to them on that channel.</span>}
         {canWrite && <span className="rt"><Button variant="primary" onClick={() => setAdding(true)}><Plus style={{ width: 15, height: 15 }} />Add opt-out</Button></span>}
       </div>
 
@@ -91,7 +92,7 @@ export function OptOutsTab({ canWrite }: { canWrite: boolean }) {
               },
               { key: 'channel', header: 'Channel', render: (r) => <Tag tone="n">{CHANNEL_LABEL[r.channel]}</Tag> },
               { key: 'area', header: 'City', render: (r) => r.area ?? '-' },
-              { key: 'since', header: 'Opted out', render: (r) => (r.since ? stamp(r.since) : '-') },
+              { key: 'since', header: 'Opted out', render: (r) => (r.since ? formatStamp(r.since) : '-') },
               { key: 'reason', header: 'Reason', render: (r) => (r.reason ? REASON[r.reason] ?? r.reason : '-') },
               ...(canWrite ? [{
                 key: 'act', header: 'Actions', right: true,

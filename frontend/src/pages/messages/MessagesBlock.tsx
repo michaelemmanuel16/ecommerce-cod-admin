@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Skeleton, Tag, type TagTone } from '../../components/ui-v2';
+import { Skeleton, Tag } from '../../components/ui-v2';
 import { messagesService } from '../../services/messages.service';
-import { formatRelativeTime } from '../../utils/format';
-import { CHANNEL_LABEL, STATUS_LABEL, stamp } from './format';
-import type { MessageStatus, TrackedMessages } from './types';
-
-const STATUS_TONE: Record<MessageStatus, TagTone> = { pending: 'n', sent: 'n', delivered: 'ok', read: 'ok', failed: 'bad', replied: 'v', skipped: 'warn' };
+import { formatRelativeTime, formatStamp } from '../../utils/format';
+import { CHANNEL_LABEL, STATUS_LABEL, STATUS_TONE } from './format';
+import type { TrackedMessages } from './types';
 
 interface Props {
   type: 'order' | 'customer';
@@ -50,7 +48,7 @@ export function MessagesBlock({ type, id, phone, canOpenConversation, emptyText 
             <div className="r1">
               <b>{CHANNEL_LABEL[m.channel]}{m.direction === 'inbound' ? ' reply' : ''}</b>
               <Tag tone={STATUS_TONE[m.status] ?? 'n'}>{STATUS_LABEL[m.status] ?? m.status}</Tag>
-              <time dateTime={m.at} title={stamp(m.at)}>{formatRelativeTime(m.at)}</time>
+              <time dateTime={m.at} title={formatStamp(m.at)}>{formatRelativeTime(m.at)}</time>
             </div>
             <p>{m.bodyPreview}</p>
             {m.status === 'failed' && m.errorMessage && <small>{m.errorMessage}</small>}

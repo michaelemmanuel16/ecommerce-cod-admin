@@ -4,7 +4,8 @@ import { Link } from 'react-router-dom';
 import { Button, EmptyState, Select, Skeleton, Tag, useToast } from '../../components/ui-v2';
 import { messagesService } from '../../services/messages.service';
 import { apiMessage } from '../orders/importText';
-import { CHANNEL_LABEL, STATUS_LABEL, initials, stamp } from './format';
+import { formatStamp } from '../../utils/format';
+import { CHANNEL_LABEL, STATUS_LABEL, initials } from './format';
 import { ReplyBox } from './ReplyBox';
 import { useLoad } from './useLoad';
 import type { Assignee, ConversationRow, MessageStatus, ThreadMessage } from './types';
@@ -31,7 +32,7 @@ function Bubble({ m, quoted }: { m: ThreadMessage; quoted: ThreadMessage | undef
       {quoted && <div className="quote"><CornerUpLeft />Replying to: {quoted.messageBody.slice(0, 80)}</div>}
       <div className="bub">{m.messageBody}</div>
       <div className="mst-row">
-        <span className="mst-time">{stamp(m.createdAt)}</span>
+        <span className="mst-time">{formatStamp(m.createdAt)}</span>
         {out && <span className={`mst ${m.status}`}><Icon />{STATUS_LABEL[m.status]}</span>}
         {m.orderId && <Link className="lnk" to={`/orders/${m.orderId}`}>Order #{m.orderId}</Link>}
       </div>
@@ -52,11 +53,12 @@ export function Thread({ row, meId, canWrite, canPickPeople, onChanged }: Props)
 
   const byId = useMemo(() => new Map((messages ?? []).map((m) => [m.id, m])), [messages]);
 
-  const options: Assignee[] = canPickPeople
-    ? (people.data ?? [])
-    : meId !== null ? [{ id: meId, name: 'Me' }] : [];
-  // The person on the conversation may not be in the list (left the store): keep them selectable so the select shows them
-  if (row.assignedTo && !options.some((o) => o.id === row.assignedTo!.id)) options.push({ id: row.assignedTo.id, name: row.assignedTo.name ?? 'Unknown' });
+  const options = useMemo<Assignee[]>(() => {
+    const base: Assignee[] = canPickPeople ? (people.data ?? []) : meId !== null ? [{ id: meId, name: 'Me' }] : [];
+    // The person on the conversation may not be in the list (left the store): keep them selectable so the select shows them
+    const a = row.assignedTo;
+    return a && !base.some((o) => o.id === a.id) ? [...base, { id: a.id, name: a.name ?? 'Unknown' }] : base;
+  }, [canPickPeople, people.data, meId, row.assignedTo]);
 
   const write = async (work: () => Promise<void>, done: string, patch: Partial<ConversationRow>) => {
     setSaving(true);

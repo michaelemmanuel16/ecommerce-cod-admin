@@ -7,7 +7,8 @@ import { messagesService } from '../../services/messages.service';
 import { productsService } from '../../services/products.service';
 import type { Product } from '../../types';
 import { apiMessage } from '../orders/importText';
-import { countText } from './format';
+import { formatNumber } from '../../utils/format';
+import { CHANNEL_LABEL } from './format';
 import type { MessageTemplate } from './types';
 
 type Channel = 'sms' | 'whatsapp';
@@ -69,7 +70,7 @@ export function BulkSendTab() {
       setResult({ ...answer, channel });
       setRecipients(null);
       setConfirm(false);
-      say(`${countText(answer.results.filter((r) => r.success).length)} sent${answer.skipped ? `, ${countText(answer.skipped)} skipped` : ''}`);
+      say(`${formatNumber(answer.results.filter((r) => r.success).length)} sent${answer.skipped ? `, ${formatNumber(answer.skipped)} skipped` : ''}`);
     } catch (err) {
       setConfirm(false);
       say(await apiMessage(err, 'The messages were not sent'));
@@ -148,8 +149,8 @@ export function BulkSendTab() {
           <>
             <div>
               <small className="ink3">Will be sent to</small>
-              <div className="big num" aria-live="polite">{countText(count)}</div>
-              <small className="ink3">Customers who opted out of {channel === 'sms' ? 'SMS' : 'WhatsApp'} are left out.</small>
+              <div className="big num" aria-live="polite">{formatNumber(count)}</div>
+              <small className="ink3">Customers who opted out of {CHANNEL_LABEL[channel]} are left out.</small>
             </div>
             {count > 0 && (
               <Table
@@ -160,7 +161,7 @@ export function BulkSendTab() {
                 ]}
               />
             )}
-            {count > SHOWN && <p className="hint">and {countText(count - SHOWN)} more</p>}
+            {count > SHOWN && <p className="hint">and {formatNumber(count - SHOWN)} more</p>}
             <div className="sendrow">
               <Button variant="primary" disabled={!ready || count === 0 || sending} onClick={() => setConfirm(true)}><Send style={{ width: 15, height: 15 }} />Send now</Button>
               {!ready && <span className="hint">{channel === 'sms' ? 'Write the text first.' : 'Pick a template first.'}</span>}
@@ -171,15 +172,15 @@ export function BulkSendTab() {
           <div role="status">
             <small className="ink3">Last send</small>
             <div className="lines">
-              <div><span>Sent</span><b>{countText(sentCount)}</b></div>
-              <div><span>Skipped (opted out or not sendable)</span><b>{countText(result.skipped)}</b></div>
-              <div><span>Failed</span><b>{countText(failedCount)}</b></div>
+              <div><span>Sent</span><b>{formatNumber(sentCount)}</b></div>
+              <div><span>Skipped (opted out or not sendable)</span><b>{formatNumber(result.skipped)}</b></div>
+              <div><span>Failed</span><b>{formatNumber(failedCount)}</b></div>
             </div>
           </div>
         )}
       </div>
 
-      <ConfirmDialog open={confirm} onClose={() => setConfirm(false)} onConfirm={() => void send()} action="Send" count={count} noun="message" title={`Send ${countText(count)} ${channel === 'sms' ? 'SMS' : 'WhatsApp'} ${count === 1 ? 'message' : 'messages'}?`}>
+      <ConfirmDialog open={confirm} onClose={() => setConfirm(false)} onConfirm={() => void send()} action="Send" count={count} noun="message" title={`Send ${formatNumber(count)} ${CHANNEL_LABEL[channel]} ${count === 1 ? 'message' : 'messages'}?`}>
         Customers who opted out are skipped. You cannot undo a send.
       </ConfirmDialog>
     </div>
