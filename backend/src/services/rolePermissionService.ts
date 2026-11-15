@@ -66,6 +66,9 @@ function cleanGrid(input: PermissionGrid): PermissionGrid {
     if (bad.length) throw new AppError(`Unknown action on ${resource}: ${bad.join(', ')}`, 400, 'UNKNOWN_PERMISSION');
     clean[resource] = [...new Set(actions)];
   }
+  // A saved grid lists every resource, an empty list for "none". A missing key then only means the role was stored before the
+  // resource existed, which gridOfRole fills from the matrix; a key left out of a save never brings the default back.
+  for (const resource of Object.keys(PERMISSION_CATALOG)) clean[resource] ??= [];
   return clean;
 }
 

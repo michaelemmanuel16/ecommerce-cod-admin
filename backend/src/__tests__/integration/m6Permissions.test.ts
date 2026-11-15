@@ -146,6 +146,15 @@ describe('the permission matrix', () => {
     expect(audit.metadata).toMatchObject({ before: {}, after: grid });
   });
 
+  it('a save stores every resource, so a key left out reads as none and never falls back to the matrix', async () => {
+    const role = await newRole(ownerA, { presetRole: 'manager' });
+    expect((await setGrid(ownerA, role.id, { orders: ['view'] })).status).toBe(200);
+    const stored = (await prismaBase.role.findUniqueOrThrow({ where: { id: role.id } })).permissions as Record<string, string[]>;
+    expect(stored.orders).toEqual(['view']);
+    expect(stored.payouts).toEqual([]);
+    expect(stored.messages).toEqual([]);
+  });
+
   it('saving the grid recomputes the switches; a grid that no preset gives reads Custom', async () => {
     const role = await newRole(ownerA);
     const res = await setGrid(ownerA, role.id, { orders: ['view', 'update', 'update_status'], customers: ['view'], gl: ['view'] });
