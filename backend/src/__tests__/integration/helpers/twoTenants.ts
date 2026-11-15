@@ -360,6 +360,19 @@ export async function deleteTenantRows(tenantIds: string[]): Promise<void> {
   // Each level only depends on the ones above it. Deletes run one at a time: rows in the
   // same level can still reference each other, and parallel deletes of linked tables deadlock (COD-130).
   await inSequence([
+    // M9 tables first (PendingMessageEvent has no tenant id): comments and reminders hold restricting keys to users, events to message logs. Children before parents.
+    db.messageEvent.deleteMany({ where: t }),
+    db.comment.deleteMany({ where: t }),
+    db.threadRead.deleteMany({ where: t }),
+    db.thread.deleteMany({ where: t }),
+    db.reminder.deleteMany({ where: t }),
+    db.notificationPreference.deleteMany({ where: t }),
+    db.roleNotificationDefault.deleteMany({ where: t }),
+    db.workflowTriggerOutbox.deleteMany({ where: t }),
+    db.connectionEvent.deleteMany({ where: t }),
+    db.optOutEvent.deleteMany({ where: t }),
+    db.conversation.deleteMany({ where: t }),
+    db.messageTemplate.deleteMany({ where: t }),
     db.orderItem.deleteMany({ where: { order: t } }),
     db.formSubmission.deleteMany({ where: t }),
     db.pendingCheckout.deleteMany({ where: t }),
