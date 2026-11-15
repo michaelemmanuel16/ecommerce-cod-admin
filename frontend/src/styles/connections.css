@@ -38,6 +38,11 @@
 .v2 .cx .urlrow{display:flex;gap:8px;align-items:center;min-width:0}
 .v2 .cx .urlrow .mono{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
+/* new: Meta Ads takes one column like the other cards; its account list scrolls inside the card */
+.v2 .cx .conns > .metacard{min-width:0;display:flex;flex-direction:column}
+.v2 .cx .metacard .ct{gap:10px}
+.v2 .cx .metacard .metalist{max-height:340px;overflow-y:auto;padding-right:4px;overscroll-behavior:contain}
+
 /* switch (mockup .sw) */
 .v2 .cx .sw,.v2 .cxd .sw{flex:none;width:36px;height:20px;border-radius:99px;background:var(--line);position:relative;transition:background .15s}
 .v2 .cx .sw::after,.v2 .cxd .sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--ink-3);transition:transform .15s,background .15s}

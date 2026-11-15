@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import { AlertTriangle, CreditCard, Download, FileSpreadsheet, Mail, MessageCircle, Smartphone, ShoppingCart } from 'lucide-react';
-import { Button, Skeleton, Tag, useToast } from '../../components/ui-v2';
+import { useSearchParams } from 'react-router-dom';
+import { AlertTriangle, CreditCard, Mail, MessageCircle, Smartphone } from 'lucide-react';
+import { Button, Skeleton, useToast } from '../../components/ui-v2';
 import { MetaAdsIntegration } from '../../components/settings/integrations/MetaAdsIntegration';
 import { McpIntegration } from '../../components/settings/integrations/McpIntegration';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -18,7 +18,7 @@ import { WhatsAppDialog, WhatsAppPhonePicker } from './WhatsAppDialog';
 type Dialog = 'sms' | 'whatsapp' | 'email' | 'paystack' | null;
 
 const ago = (iso: string | null) => (iso ? formatRelativeTime(iso) : 'Never');
-const EMAIL_NAMES: Record<string, string> = { platform: 'CodAdmin sender (Resend)', sendgrid: 'SendGrid', resend: 'Resend', smtp: 'SMTP' };
+const EMAIL_NAMES: Record<string, string> = { sendgrid: 'SendGrid', resend: 'Resend', smtp: 'SMTP' };
 
 /** Connections tab (M9-T44): one card per connection, from GET /api/connections. The owner edits SMS, WhatsApp and Email; the owner and admins edit Paystack. */
 export function CardsTab() {
@@ -115,19 +115,6 @@ export function CardsTab() {
     }
   };
 
-  const downloadTemplate = async () => {
-    try {
-      const url = URL.createObjectURL(await connectionsService.getCsvTemplate());
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'partner-status-template.csv';
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      say(apiErrorMessage(e, 'The template could not be downloaded.'));
-    }
-  };
-
   if (failed) return <div className="opserr top" role="alert">{failed} <Button size="mini" onClick={loadCards}>Retry</Button></div>;
   if (!cards) return <div aria-busy="true" aria-label="Loading connections"><Skeleton height={200} className="skelcard" /></div>;
 
@@ -176,11 +163,11 @@ export function CardsTab() {
         </ConnCard>
 
         <ConnCard
-          icon={Mail} tone="violet" title="Email" sub="Receipts, guides and campaigns" card={cards.email}
-          rows={[['Sender', EMAIL_NAMES[cards.email.provider ?? ''] ?? 'Not set'], ...(emailFrom ? [['From', emailFrom] as [string, string]] : []), ['Last activity', ago(cards.email.lastEventAt)]]}
+          icon={Mail} tone="violet" title="Your own email (SMTP)" sub="Receipts, guides and campaigns" card={cards.email}
+          rows={cards.email.status === 'not_connected' ? [] : [['Sender', EMAIL_NAMES[cards.email.provider ?? ''] ?? 'Not set'], ...(emailFrom ? [['From', emailFrom] as [string, string]] : []), ['Last activity', ago(cards.email.lastEventAt)]]}
           onRetry={() => retry('email')} retrying={retrying === 'email'}
         >
-          {owner('Edit', () => setDialog('email'))}
+          {owner(cards.email.status === 'not_connected' ? 'Connect' : 'Edit', () => setDialog('email'))}
         </ConnCard>
 
         <ConnCard
@@ -193,22 +180,7 @@ export function CardsTab() {
           {paystackHook && <CopyButton text={paystackHook} label="Copy webhook URL" />}
         </ConnCard>
 
-        {can('marketing', 'view') && <div className="wide"><MetaAdsIntegration /></div>}
-
-        <ConnCard
-          icon={ShoppingCart} tone="pine" title="Checkout website" sub="Orders from your checkout forms" card={cards.checkout}
-          rows={[['Forms', String(cards.checkout.forms)], ['Last order', ago(cards.checkout.lastOrderAt)]]}
-        >
-          <Link className="btn pri" to="/checkout-forms">Open Checkout forms</Link>
-        </ConnCard>
-
-        <ConnCard
-          icon={FileSpreadsheet} tone="plain" title="CSV upload" sub="For 3PLs and riders without a dashboard" card={cards.csv} tag={<Tag>Manual</Tag>}
-          rows={[['Matches by', 'Order number or phone'], ['Columns', 'Order, phone, status, date']]}
-        >
-          <Button onClick={downloadTemplate}><Download size={14} /> Download template</Button>
-          <Link className="btn" to="/delivery-agents">Open Deliveries</Link>
-        </ConnCard>
+        {can('marketing', 'view') && <MetaAdsIntegration />}
 
         {isSuperAdmin && (
           <div className="wide setold legacy-light" style={{ borderRadius: 18 }}>

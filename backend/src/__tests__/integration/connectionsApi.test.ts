@@ -64,10 +64,11 @@ describe('GET /api/connections', () => {
     const res = await request(app).get('/api/connections').set(bearer(ownerBare.token));
     expect(res.status).toBe(200);
     expect(Object.keys(res.body).sort()).toEqual(['checkout', 'csv', 'email', 'meta', 'paystack', 'sms', 'whatsapp']);
-    for (const key of ['sms', 'whatsapp', 'paystack', 'meta']) {
+    for (const key of ['sms', 'whatsapp', 'email', 'paystack', 'meta']) {
       expect(res.body[key]).toMatchObject({ status: 'not_connected', lastEventAt: null });
       expect(res.body[key].reason).toEqual(expect.any(String));
     }
+    expect(res.body.email.provider).toBeNull(); // the CodAdmin sender is not a connection, even when the app has one
     expect(res.body.checkout).toMatchObject({ status: 'not_connected', reason: 'Create a checkout form' });
     expect(JSON.stringify(res.body)).not.toMatch(/partner.*sync|syncStatus/i);
   });

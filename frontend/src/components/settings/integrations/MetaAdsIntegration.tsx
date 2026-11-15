@@ -142,11 +142,12 @@ export const MetaAdsIntegration: React.FC = () => {
   };
 
   const hasDisconnected = accounts.some((a) => a.status === 'disconnected');
+  const status = accounts.length === 0 ? <Tag>Not connected</Tag> : hasDisconnected ? <Tag tone="bad">Needs attention</Tag> : <Tag tone="ok">Connected</Tag>;
 
   return (
     <>
-      <Card title="Meta Ads" aside="Ad spend">
-        <div style={{ padding: '12px 20px 20px', display: 'grid', gap: 14 }}>
+      <Card className="metacard" title="Meta Ads" aside={loading ? undefined : status}>
+        <div style={{ padding: '12px 20px 20px', display: 'grid', gap: 14, minHeight: 0 }}>
           {connectError && (
             <div role="alert" className="opserr" style={{ margin: 0 }}>{connectError}</div>
           )}
@@ -168,7 +169,10 @@ export const MetaAdsIntegration: React.FC = () => {
             </div>
           ) : (
             <>
-              <div style={{ display: 'grid', gap: 10 }}>
+              <p data-testid="meta-summary" style={{ color: 'var(--ink-2)', fontSize: 13 }}>
+                {accounts.length} ad {accounts.length === 1 ? 'account' : 'accounts'}
+              </p>
+              <div className="metalist" style={{ display: 'grid', gap: 10 }}>
                 {accounts.map((a) => (
                   <div
                     key={a.id}

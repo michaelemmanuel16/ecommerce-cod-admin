@@ -98,13 +98,11 @@ export async function listConnectionCards(tenantId: string, now: Date = new Date
     at('whatsapp'),
   );
 
-  // Email: the tenant's own sender wins; else the platform Resend sender
-  const platformEmail = !!process.env.PLATFORM_EMAIL_API_KEY || !!process.env.RESEND_API_KEY;
-  const emailSource = email ? email.provider : platformEmail ? 'platform' : null;
+  // Email: only the tenant's own sender is a connection. The CodAdmin (Resend) sender is the app default and never shows here.
   const emailCard = card(
-    { configured: emailSource !== null, notConnectedReason: 'Add an email sender', lastEvent: lastOf('email'), now },
+    { configured: !!email, notConnectedReason: 'Until you add one, emails go out from CodAdmin\'s sender.', lastEvent: lastOf('email'), now },
     at('email'),
-    { provider: emailSource },
+    { provider: email?.provider ?? null },
   );
 
   // Paystack

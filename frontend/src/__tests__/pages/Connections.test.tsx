@@ -38,7 +38,7 @@ const card = (over = {}) => ({ status: 'connected', reason: null, lastEventAt: n
 const CARDS = {
   sms: card({ lastEventAt: new Date().toISOString() }),
   whatsapp: card({ status: 'not_connected', reason: 'Connect your WhatsApp Business number' }),
-  email: card({ provider: 'platform' }),
+  email: card({ provider: 'smtp' }),
   paystack: card({ mode: 'test' }),
   meta: card({ accounts: 1 }),
   checkout: card({ forms: 2, lastOrderAt: null }),
@@ -91,8 +91,11 @@ describe('Connections page (M9-T44)', () => {
     expect(within(sms).getByText('Connected')).toBeInTheDocument();
     expect(within(cardOf('Paystack')).getByText('Test mode')).toBeInTheDocument();
     expect(within(cardOf('Paystack')).getByText('pk_test_abc')).toBeInTheDocument();
-    expect(within(cardOf('Email')).getByText('CodAdmin sender (Resend)')).toBeInTheDocument();
-    expect(within(cardOf('Checkout website')).getByText('2')).toBeInTheDocument();
+    expect(within(cardOf('Your own email (SMTP)')).getByText('Connected')).toBeInTheDocument();
+    expect(within(cardOf('Your own email (SMTP)')).getByText('SMTP')).toBeInTheDocument();
+    expect(screen.queryByText('CodAdmin sender (Resend)')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('card-Checkout website')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('card-CSV upload')).not.toBeInTheDocument();
     expect(screen.getByText('META ADS CARD')).toBeInTheDocument();
     expect(screen.getByText('AI KEYS CARD')).toBeInTheDocument();
     expect(screen.queryByText(/partner key/i)).not.toBeInTheDocument();
@@ -130,10 +133,20 @@ describe('Connections page (M9-T44)', () => {
     expect(screen.getByTestId('where')).toHaveTextContent(/^\/connections$/);
   });
 
+  it('the email card is Not connected until the store saves its own sender, and says where mail goes meanwhile', async () => {
+    svc.getCards.mockResolvedValue({ ...CARDS, email: card({ status: 'not_connected', provider: null, reason: "Until you add one, emails go out from CodAdmin's sender." }) });
+    renderPage();
+    const email = await screen.findByTestId('card-Your own email (SMTP)');
+    expect(within(email).getByText('Not connected')).toBeInTheDocument();
+    expect(within(email).getByText("Until you add one, emails go out from CodAdmin's sender.")).toBeInTheDocument();
+    expect(within(email).queryByText('CodAdmin sender (Resend)')).not.toBeInTheDocument();
+    expect(within(email).getByRole('button', { name: 'Connect' })).toBeInTheDocument();
+  });
+
   it('SMTP test shows the server error text', async () => {
     svc.testSmtp.mockRejectedValue({ isAxiosError: true, response: { data: { error: 'Invalid login: 535 Authentication failed' } } });
     renderPage();
-    await userEvent.click(within(await screen.findByTestId('card-Email')).getByRole('button', { name: 'Edit' }));
+    await userEvent.click(within(await screen.findByTestId('card-Your own email (SMTP)')).getByRole('button', { name: 'Edit' }));
     await userEvent.selectOptions(await screen.findByLabelText('Sender'), 'smtp');
     await userEvent.type(screen.getByLabelText('Host'), 'smtp.mail.example');
     await userEvent.type(screen.getByLabelText('Password'), 'secret');
@@ -170,7 +183,7 @@ describe('Connections page (M9-T44)', () => {
     expect(within(cardOf('Paystack')).getByRole('button', { name: 'Edit keys' })).toBeInTheDocument();
     expect(within(cardOf('Arkesel SMS')).queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
     expect(within(cardOf('WhatsApp Business')).queryByRole('button', { name: 'Connect' })).not.toBeInTheDocument();
-    expect(within(cardOf('Email')).queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    expect(within(cardOf('Your own email (SMTP)')).queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
     expect(screen.queryByText('AI KEYS CARD')).not.toBeInTheDocument();
     expect(admin.getSystemConfig).not.toHaveBeenCalled();
   });

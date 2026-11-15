@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import { MetaAdsIntegration } from '../../components/settings/integrations/MetaAdsIntegration';
 import { metaAdsService, MetaAdAccount } from '../../services/metaAds.service';
 
@@ -42,6 +42,24 @@ describe('MetaAdsIntegration', () => {
     renderCard();
     expect(await screen.findByRole('button', { name: /Connect Meta Ads/i })).toBeInTheDocument();
     expect(screen.getByText('CodAdmin reads your ad spend each day at 05:00. It never changes your ads.')).toBeInTheDocument();
+  });
+
+  it('says Not connected with no accounts, and Connected with the number of ad accounts and a scrolling list', async () => {
+    renderCard();
+    expect(await screen.findByText('Not connected')).toBeInTheDocument();
+    svc.getAccounts.mockResolvedValue([account({ id: 1 }), account({ id: 2, name: 'Second' })]);
+    cleanup();
+    renderCard();
+    expect(await screen.findByText('Connected', { selector: '.ct *' })).toBeInTheDocument();
+    expect(screen.getByTestId('meta-summary')).toHaveTextContent('2 ad accounts');
+    expect(screen.getByTestId('meta-account-1').parentElement).toHaveClass('metalist');
+  });
+
+  it('says Needs attention when an account is disconnected', async () => {
+    svc.getAccounts.mockResolvedValue([account({ status: 'disconnected', statusReason: 'Token revoked' })]);
+    renderCard();
+    expect(await screen.findByText('Needs attention')).toBeInTheDocument();
+    expect(screen.getByTestId('meta-summary')).toHaveTextContent('1 ad account');
   });
 
   it('opens the picker on metaAds=pick and saves the ticked accounts', async () => {
