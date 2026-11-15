@@ -47,7 +47,8 @@ export async function listLog(actor: Actor, q: LogQuery) {
     and.push({ OR: [{ createdAt: { lt: at } }, { createdAt: at, id: { lt: id } }] });
   }
   const limit = q.limit ?? PAGE_SIZE;
-  const rows = await prisma.messageLog.findMany({
+  // `total` counts every row under the filters, not the page: with a status figure it is the tile of the overview
+  const [total, rows] = await Promise.all([prisma.messageLog.count({ where: logWhere(actor, q) }), prisma.messageLog.findMany({
     where: { AND: and },
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: limit + 1,
@@ -55,7 +56,7 @@ export async function listLog(actor: Actor, q: LogQuery) {
       id: true, channel: true, status: true, createdAt: true, sentAt: true, templateName: true, errorMessage: true, metadata: true,
       orderId: true, customerId: true,
     },
-  });
+  })]);
   const page = rows.slice(0, limit);
 
   // Looked up apart so a deleted order or customer (hidden by the soft-delete rules) simply has no link
@@ -86,5 +87,5 @@ export async function listLog(actor: Actor, q: LogQuery) {
       customer: customer ? { id: customer.id, name: nameOf(customer) } : null,
     };
   });
-  return { items, nextCursor: rows.length > limit ? encodeCursor(page[page.length - 1]) : null };
+  return { items, total, nextCursor: rows.length > limit ? encodeCursor(page[page.length - 1]) : null };
 }

@@ -79,6 +79,8 @@ export interface Figures {
 
 export interface Overview {
   channels: Partial<Record<Channel, Figures>>;
+  /** Every channel under the filters, from the same definition. The tiles show this. */
+  total: Figures;
 }
 
 export type LogStatus = 'sent' | 'delivered' | 'read' | 'failed' | 'replied' | 'skipped' | 'pending';

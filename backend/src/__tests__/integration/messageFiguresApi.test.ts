@@ -98,6 +98,23 @@ describe('contract: tiles equal the log rows under the same filters', () => {
     }
   });
 
+  it('the log total is the tile of the same filters, whatever the page size', async () => {
+    const ov = await request(app).get('/api/messages/overview?channel=whatsapp').set(bearer(owner.token));
+    for (const figure of FIGURES) {
+      const res = await request(app).get(`/api/messages/log?limit=1&channel=whatsapp&status=${figure}`).set(bearer(owner.token));
+      expect(res.body.total).toBe(ov.body.channels.whatsapp[figure]);
+    }
+  });
+
+  it('the overview total (all channels) equals the log total of each figure', async () => {
+    const ov = await request(app).get('/api/messages/overview').set(bearer(owner.token));
+    expect(ov.body.channels.whatsapp.sent + ov.body.channels.sms.sent + ov.body.channels.email.sent).toBe(ov.body.total.sent);
+    for (const figure of FIGURES) {
+      const res = await request(app).get(`/api/messages/log?limit=1&status=${figure}`).set(bearer(owner.token));
+      expect(res.body.total).toBe(ov.body.total[figure]);
+    }
+  });
+
   it('excludes test orders and inbound rows from both', async () => {
     const all = await request(app).get('/api/messages/log?limit=100').set(bearer(owner.token));
     expect(all.body.items.find((i: any) => i.order?.id === testOrderId)).toBeUndefined();

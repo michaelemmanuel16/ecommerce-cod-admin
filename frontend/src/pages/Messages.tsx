@@ -5,11 +5,13 @@ import { usePermissions } from '../hooks/usePermissions';
 import { BulkSendTab } from './messages/BulkSendTab';
 import { CampaignsTab } from './messages/CampaignsTab';
 import { ConversationsTab } from './messages/ConversationsTab';
+import { LogTab } from './messages/LogTab';
+import { OverviewTab } from './messages/OverviewTab';
 import { TABS, type TabKey } from './messages/tabs';
 
 /**
  * Messages (M9-T30, F-454), built from docs/mockups/v2/messages.html: every message sent to customers and what they
- * send back. The page does no arithmetic: every figure and status comes from the API. Bulk send and Campaigns are the old tabs moved over (no email composer). Templates and Opt-outs are the next
+ * send back. The page does no arithmetic: every figure and status comes from the API. Overview and Message log (M9-T31) read the same API definition, so a tile equals the log rows behind it. Bulk send and Campaigns are the old tabs moved over (no email composer). Templates and Opt-outs are the next
  * wave; the agent cards and Scheduled of the mockup have no backend yet and are left out.
  */
 export function Messages() {
@@ -36,6 +38,10 @@ export function Messages() {
         items={tabs.map((t) => ({ id: t.key, label: <><t.icon />{t.label}</> }))}
       />
 
+      {tab === 'overview' && (
+        <OverviewTab logHref={(figure, range, channel) => `/messages?tab=log&status=${figure}&range=${range}${channel ? `&channel=${channel}` : ''}`} />
+      )}
+      {tab === 'log' && <div className="card"><LogTab /></div>}
       {tab === 'bulk' && <div className="card"><BulkSendTab /></div>}
       {tab === 'campaigns' && <div className="card"><CampaignsTab /></div>}
       {tab === 'conversations' && (
