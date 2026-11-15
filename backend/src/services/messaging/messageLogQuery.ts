@@ -41,14 +41,15 @@ export function logWhere(actor: Actor, q: LogFilters): Prisma.MessageLogWhereInp
 
 /** Newest first. A message to a deleted customer keeps the stored phone and gets no customer link. */
 export async function listLog(actor: Actor, q: LogQuery) {
-  const and: Prisma.MessageLogWhereInput[] = [logWhere(actor, q)];
+  const logFilter = logWhere(actor, q);
+  const and: Prisma.MessageLogWhereInput[] = [logFilter];
   if (q.cursor) {
     const { at, id } = decodeCursor(q.cursor);
     and.push({ OR: [{ createdAt: { lt: at } }, { createdAt: at, id: { lt: id } }] });
   }
   const limit = q.limit ?? PAGE_SIZE;
   // `total` counts every row under the filters, not the page: with a status figure it is the tile of the overview
-  const [total, rows] = await Promise.all([prisma.messageLog.count({ where: logWhere(actor, q) }), prisma.messageLog.findMany({
+  const [total, rows] = await Promise.all([prisma.messageLog.count({ where: logFilter }), prisma.messageLog.findMany({
     where: { AND: and },
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: limit + 1,

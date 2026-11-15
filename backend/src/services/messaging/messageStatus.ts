@@ -3,6 +3,7 @@ import prisma from '../../utils/prisma';
 import logger from '../../utils/logger';
 import { runInTenant, runInTenantOf, withoutTenant } from '../../utils/tenantContext';
 import { MESSAGE_LOG_RETENTION_DAYS, PENDING_EVENT_TTL_MS } from './constants';
+import { DAY_MS } from '../kpi/dates';
 
 export interface StatusDetail {
   providerStatus?: string;
@@ -94,7 +95,7 @@ async function record(
     return 'held';
   }
 
-  const cutoff = Date.now() - MESSAGE_LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  const cutoff = Date.now() - MESSAGE_LOG_RETENTION_DAYS * DAY_MS;
   if (log.createdAt.getTime() < cutoff) {
     logger.info('Status event ignored: message is older than the retention', { provider, providerMessageId, status });
     return 'ignored';

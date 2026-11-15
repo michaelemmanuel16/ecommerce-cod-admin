@@ -1,12 +1,13 @@
 import { MessageChannel, MessageStatus } from '@prisma/client';
 import prisma from '../../../utils/prisma';
 import logger from '../../../utils/logger';
-import { decryptProviderSecrets } from '../../../utils/providerCrypto';
+import { decryptProviderSecrets, isProviderEnabled } from '../../../utils/providerCrypto';
 import { getTenantId } from '../../../utils/tenantContext';
 import { refreshTokenIfNeeded } from '../../whatsappTokenRefreshService';
 import {
   CallbackRequest, MessagingProvider, ParsedInbound, ParsedStatus, ProviderSendInput, ProviderSendResult,
 } from '../types';
+import { DAY_MS } from '../../kpi/dates';
 
 // WhatsApp Business Cloud API configuration
 export const WHATSAPP_API_URL = 'https://graph.facebook.com/v21.0';
@@ -64,7 +65,7 @@ async function getConfig(): Promise<WhatsAppConfig> {
       appSecret: dbConfig.appSecret || process.env.WHATSAPP_APP_SECRET || '',
       webhookVerifyToken: dbConfig.webhookVerifyToken || process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || '',
       businessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID,
-      isEnabled: dbConfig.isEnabled !== false,
+      isEnabled: isProviderEnabled(dbConfig),
       authMode: dbConfig.authMode,
       oauthTokenExpiry: dbConfig.oauthTokenExpiry,
     };
@@ -167,8 +168,7 @@ export const whatsappCloudProvider: MessagingProvider = {
     // (within 1 day of expiry rather than 7, since cron handles proactive refresh)
     if (config.authMode === 'oauth' && config.oauthTokenExpiry) {
       const expiryMs = new Date(config.oauthTokenExpiry).getTime();
-      const oneDay = 24 * 60 * 60 * 1000;
-      if (expiryMs - Date.now() < oneDay) {
+      if (expiryMs - Date.now() < DAY_MS) {
         try {
           const result = await refreshTokenIfNeeded();
           if (result.refreshed) {

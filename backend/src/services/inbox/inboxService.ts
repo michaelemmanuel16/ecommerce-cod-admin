@@ -8,7 +8,7 @@ import { HUMAN_USERS_WHERE } from '../systemUserService';
 import { sendEmail } from '../emailService';
 import { smsService } from '../smsService';
 import { whatsappService } from '../whatsappService';
-import { ChannelSet, InboxEventName, getEventDef, isOwnerRole } from './inboxEvents';
+import { ChannelSet, getEventDef, isOwnerRole } from './inboxEvents';
 import { getTenantChannels } from './inboxChannels';
 import { pushInboxNew } from './inboxRealtime';
 import { resolveChannelsFor } from './inboxPreferences';
@@ -21,7 +21,7 @@ export const findTenantAdmins = () => prisma.user.findMany({
 
 export interface NotifyInput {
   tenantId: string;
-  event: InboxEventName;
+  event: string;
   /** Overrides the event's default kind. */
   kind?: Notification['kind'];
   /** What the row is about: the UI links to it. */
@@ -127,19 +127,20 @@ export async function notify(input: NotifyInput): Promise<Notification[]> {
     const people = await resolveRecipients(input.recipients, input.actorId ?? null);
     if (people.length === 0) return [];
     const resolved = await resolveChannelsFor(people, input.event);
-    const rows: Notification[] = [];
-    const external: Person[] = [];
-
-    for (const person of people) {
+    // One person's row, push and socket event do not depend on another's: write them together, rows kept in recipient order
+    const written = await Promise.all(people.map(async (person) => {
       const channels = resolved.get(person.id)!.channels;
-      if (channels.inApp || (event.ownerInAppRequired && isOwnerRole(person.role))) {
-        const row = await writeRow(person, input, kind);
-        rows.push(row);
-        emitNotification(getSocketInstance() as any, String(person.id), row);
-        await pushInboxNew(row);
-      }
-      if (channels.email || channels.sms || channels.whatsapp) external.push(person);
-    }
+      if (!channels.inApp && !(event.ownerInAppRequired && isOwnerRole(person.role))) return null;
+      const row = await writeRow(person, input, kind);
+      emitNotification(getSocketInstance() as any, String(person.id), row);
+      await pushInboxNew(row);
+      return row;
+    }));
+    const rows = written.filter((r): r is Notification => r !== null);
+    const external = people.filter((p) => {
+      const c = resolved.get(p.id)!.channels;
+      return c.email || c.sms || c.whatsapp;
+    });
 
     if (external.length > 0) {
       try {

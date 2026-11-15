@@ -11,13 +11,14 @@ import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { resolveTenantId, runInTenant, withoutTenant } from '../utils/tenantContext';
 import { workflowQueue } from './workflowQueue';
+import { DAY_MS } from '../services/kpi/dates';
 
 export const ENQUEUE_TIMEOUT_MS = 5000;
 export const DRAIN_EVERY_MS = 30_000;
 export const MAX_ATTEMPTS = 10;
 export const DRAIN_BATCH = 100;
 /** Processed outbox rows older than this are deleted by the drain job. */
-export const OUTBOX_KEEP_MS = 7 * 24 * 60 * 60 * 1000;
+export const OUTBOX_KEEP_MS = 7 * DAY_MS;
 export const QUEUE_DOWN_ERROR = 'Workflow queue is unavailable';
 export const OUTBOX_EVENT = 'execute-workflow';
 

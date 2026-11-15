@@ -1,5 +1,6 @@
 import { UserRole } from '@prisma/client';
 import { z } from 'zod';
+import { positiveInt } from './common';
 import { INBOX_STATUSES, INBOX_VIEWS } from '../services/inbox/inboxFeedService';
 
 const channelItem = z.object({
@@ -23,8 +24,6 @@ export const roleDefaultsPutSchema = z.object({
   role: z.enum(Object.values(UserRole) as [UserRole, ...UserRole[]], { message: 'Unknown role' }),
   defaults: z.array(channelItem).min(1).max(100),
 });
-
-const positiveInt = z.coerce.number().int().positive();
 
 /** GET /api/inbox */
 export const inboxFeedQuerySchema = z.object({

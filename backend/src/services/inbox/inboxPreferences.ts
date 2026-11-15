@@ -108,14 +108,14 @@ export async function savePreferences(user: { id: number; role: UserRole }, item
   assertKnownAndAllowed(user.role, items);
   const current = await resolveCurrent(user, items.map((i) => i.event));
   const tenantId = resolveTenantId();
-  for (const item of items) {
+  await prisma.$transaction(items.map((item) => {
     const next = merge(current.get(item.event)!, item);
-    await prisma.notificationPreference.upsert({
+    return prisma.notificationPreference.upsert({
       where: { userId_event: { userId: user.id, event: item.event } },
       create: { tenantId, userId: user.id, event: item.event, ...next },
       update: next,
     });
-  }
+  }));
   return getMyPreferences(user);
 }
 

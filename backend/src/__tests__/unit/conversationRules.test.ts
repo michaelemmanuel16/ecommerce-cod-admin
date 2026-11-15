@@ -1,7 +1,7 @@
 /** M9-T07 (COD-78): the 24 hour window and the rep visibility rule. */
 import { describe, it, expect } from '@jest/globals';
 import { windowOpen, visibilityWhere, WINDOW_MS } from '../../services/messaging/conversationService';
-import { conversationPhone } from '../../services/messaging/inbound';
+import { conversationPhone } from '../../utils/phone';
 
 describe('windowOpen', () => {
   const now = Date.now();

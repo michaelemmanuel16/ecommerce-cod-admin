@@ -14,6 +14,9 @@ export const SENSITIVE_FIELDS: Record<string, string[]> = {
   paystackProvider: ['secretKey'],
 };
 
+/** A saved provider is on unless `isEnabled` is explicitly false (configs saved before the toggle have no field). */
+export const isProviderEnabled = (provider: { isEnabled?: boolean }): boolean => provider.isEnabled !== false;
+
 /** Sentinel returned to the client in place of a real secret. */
 export const SECRET_MASK = '••••••••';
 

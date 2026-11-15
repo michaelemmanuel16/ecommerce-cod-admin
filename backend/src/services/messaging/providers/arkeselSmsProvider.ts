@@ -1,7 +1,7 @@
 import { MessageChannel, MessageStatus } from '@prisma/client';
 import prisma from '../../../utils/prisma';
 import logger from '../../../utils/logger';
-import { decryptProviderSecrets } from '../../../utils/providerCrypto';
+import { decryptProviderSecrets, isProviderEnabled } from '../../../utils/providerCrypto';
 import { getTenantId } from '../../../utils/tenantContext';
 import { getBackendUrl } from '../../../utils/url';
 import { CallbackRequest, MessagingProvider, ParsedStatus, ProviderSendInput, ProviderSendResult } from '../types';
@@ -41,7 +41,7 @@ export async function getDbSmsConfig(): Promise<SmsConfig | null> {
     const smsConfig: SmsConfig = {
       apiKey: decrypted.authToken,
       senderId: decrypted.senderId || 'CODAdmin',
-      isEnabled: decrypted.isEnabled !== false,
+      isEnabled: isProviderEnabled(decrypted),
     };
 
     configCache.set(tenantId, { data: smsConfig, fetchedAt: now });

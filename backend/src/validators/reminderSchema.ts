@@ -1,7 +1,7 @@
 import { z } from 'zod';
+import { positiveInt } from './common';
 import { NOTE_SUBJECT_TYPES } from '../services/inbox/subjectAccess';
 
-const positiveInt = z.coerce.number().int().positive();
 const isoDate = (what: string) => z.string().datetime({ offset: true, message: `${what} must be an ISO date and time` });
 
 /** POST /api/reminders */
