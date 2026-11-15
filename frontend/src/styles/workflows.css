@@ -52,10 +52,11 @@
 .v2 .wf .toolbar{display:flex;gap:10px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap}
 .v2 .wf .toolbar .srch{flex:1;min-width:200px;max-width:340px}
 .v2 .wf .toolbar .tabs{padding:0;border:0}
+.v2 .wf .tablewrap{overflow-x:auto}
 .v2 .wf .tablewrap td,.v2 .wf .tablewrap th{white-space:nowrap}
 .v2 .wf .wfname{display:flex;gap:12px;align-items:center;min-width:0}
 .v2 .wf .wfname small{display:block;color:var(--ink-3);font-size:12px;white-space:normal;max-width:300px}
-.v2 .wf .wfname a{color:inherit;font-weight:700;text-decoration:none}
+.v2 .wf .wfname a{color:inherit;font-weight:700;text-decoration:none;white-space:normal}
 .v2 .wf .wfname a:hover{text-decoration:underline}
 .v2 .wf .wft td,.v2 .wf .wft th{padding-left:14px;padding-right:14px}
 .v2 .wf .wft td:first-child,.v2 .wf .wft th:first-child{padding-left:20px}
