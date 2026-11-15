@@ -1,5 +1,5 @@
 import apiClient from './api';
-import { Customer, PaginationMeta } from '../types';
+import type { Customer, PaginationMeta } from '../types';
 import { samePhone } from '../utils/phone';
 
 export const customersService = {

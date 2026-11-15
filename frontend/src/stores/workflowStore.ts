@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { WorkflowNode, WorkflowEdge, Workflow } from '../types';
+import type { WorkflowNode, WorkflowEdge, Workflow } from '../types';
 import apiClient from '../services/api';
 
 interface WorkflowState {

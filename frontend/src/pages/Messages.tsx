@@ -9,7 +9,7 @@ import { LogTab } from './messages/LogTab';
 import { OptOutsTab } from './messages/OptOutsTab';
 import { OverviewTab } from './messages/OverviewTab';
 import { TemplatesTab } from './messages/TemplatesTab';
-import { TABS, type TabKey } from './messages/tabs';
+import { tabsFor, type TabKey } from './messages/tabs';
 
 /**
  * Messages (M9-T30, F-454), built from docs/mockups/v2/messages.html: every message sent to customers and what they
@@ -20,8 +20,7 @@ export function Messages() {
   useV2Page();
   const { user, can, isManager, isAdmin } = usePermissions();
   const [search, setSearch] = useSearchParams();
-  // Bulk send is the API's owner and admin only, and needs messages:create
-  const tabs = TABS.filter((t) => (t.key !== 'bulk' || (isAdmin && can('messages', 'create'))) && (!['templates', 'optouts'].includes(t.key) || isManager));
+  const tabs = tabsFor({ isManager, isAdmin, canCreate: can('messages', 'create') });
   const tab: TabKey = tabs.find((t) => t.key === search.get('tab'))?.key ?? tabs[0].key;
 
   const open = (key: TabKey) => setSearch((prev) => { const next = new URLSearchParams(prev); next.set('tab', key); return next; }, { replace: true });

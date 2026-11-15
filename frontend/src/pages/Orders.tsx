@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, Upload } from 'lucide-react';
 import type { OrderListRow } from '../services/orders.service';
 import { useV2Page } from '../components/shell/useV2Page';
-import { Button, EmptyState, Pagination, Skeleton, Table, Tabs, useToast } from '../components/ui-v2';
+import { Button, EmptyState, Pagination, Skeleton, Table, Tabs } from '../components/ui-v2';
 import { usePermissions } from '../hooks/usePermissions';
 import { buildColumns, type SortField } from './orders/columns';
 import { ColumnsMenu } from './orders/ColumnsMenu';
@@ -38,7 +38,6 @@ interface OrdersProps {
 export function Orders({ onOpen }: OrdersProps) {
   useV2Page();
   const navigate = useNavigate();
-  const say = useToast();
   const { can } = usePermissions();
   const [search, setSearch] = useSearchParams();
   const view = useMemo(() => parseView(search), [search]);

@@ -26,6 +26,11 @@ describe('menuKeysForRoles: seeded roles keep their menu', () => {
     expect(menuKeysForRoles('inventory_manager', defaults.inventory_manager, [seeded('inventory_manager', 'Stock keeper')]))
       .toEqual(['inbox', 'orders', 'customers', 'products', 'inventory', 'leaderboard', 'settings']);
   });
+  it('Call rep sees Messages (Conversations only on the page), the other desk roles below manager do not', () => {
+    expect(menuKeysForRoles('sales_rep', defaults.sales_rep, [seeded('sales_rep', 'Call rep')])).toContain('messages');
+    expect(menuKeysForRoles('sales_rep', { ...defaults.sales_rep, messages: [] }, [{ ...seeded('sales_rep', 'Call rep'), grid: { ...defaults.sales_rep, messages: [] } }])).not.toContain('messages');
+    for (const role of ['accountant', 'inventory_manager', 'delivery_agent'] as const) expect(menuKeysForRoles(role, defaults[role], [])).not.toContain('messages');
+  });
   it('a person with no role follows the base role', () => {
     expect(menuKeysForRoles('accountant', defaults.accountant, [])).toContain('finance');
   });
