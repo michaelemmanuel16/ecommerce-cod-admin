@@ -30,6 +30,8 @@
 .v2 .cx .copy:hover,.v2 .cxd .copy:hover{background:var(--hover)}
 .v2 .cx a.btn{text-decoration:none;color:var(--ink)}
 .v2 .cx a.btn:hover{background:var(--hover)}
+.v2 .cx a.btn.pri{color:var(--on-pine)}
+.v2 .cx a.btn.pri:hover{background:var(--pine)}
 /* new: grey line on a card that is not set up */
 .v2 .cx .cn-off{color:var(--ink-3);font-size:13px}
 /* new: the report URL line on the SMS card */
