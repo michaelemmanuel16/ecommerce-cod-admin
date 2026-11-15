@@ -21,6 +21,7 @@ import * as rewardService from './rewardService';
 import { hasPermission } from './permissionService';
 import payoutService, { summarize } from './payoutService';
 import { teamReport } from './teamReportService';
+import { getCounts as getInboxCounts } from './inbox/inboxFeedService';
 import { CONFIRMED, ratePercent, wholeRate } from './kpi/rates';
 import {
   currentMonth,
@@ -716,13 +717,8 @@ export async function getShellSummary(tenantId: string, repId: number) {
         deletedAt: null,
       },
     }),
-    prisma.notification.count({
-      where: {
-        tenantId,
-        userId: repId,
-        isRead: false,
-      },
-    }),
+    // The Inbox's own "All" count, so the badge matches the Inbox screen and the live counts
+    getInboxCounts(repId).then((c) => c.all),
     prisma.call.count({
       where: {
         tenantId,

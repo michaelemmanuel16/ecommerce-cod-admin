@@ -142,6 +142,31 @@ describe('role permission', () => {
   });
 });
 
+describe('GET /api/threads/by-subject/:type/:id/mentionable', () => {
+  const mentionable = (token: string, type: string, id: number) => request(app).get(`/api/threads/by-subject/${type}/${id}/mentionable`).set(auth(token));
+
+  it('lists active people who can see the subject, never the caller, and hides a deactivated person', async () => {
+    const res = await mentionable(rep().token, 'order', orderId);
+    expect(res.status).toBe(200);
+    const ids = res.body.people.map((p: { id: number }) => p.id);
+    expect(ids).toContain(owner().id);
+    expect(ids).not.toContain(rep().id);
+    expect(res.body.people[0]).toEqual(expect.objectContaining({ id: expect.any(Number), name: expect.any(String), role: expect.any(String) }));
+
+    await prismaBase.user.update({ where: { id: rep2.id }, data: { isActive: false } });
+    const after = await mentionable(owner().token, 'order', orderId);
+    expect(after.body.people.map((p: { id: number }) => p.id)).not.toContain(rep2.id);
+  });
+
+  it('leaves out a person who cannot see the subject, and refuses a caller who cannot', async () => {
+    await prismaBase.order.update({ where: { id: orderId }, data: { customerRepId: rep().id } });
+    const res = await mentionable(owner().token, 'order', orderId);
+    expect(res.body.people.map((p: { id: number }) => p.id)).not.toContain(rep2.id);
+    expect((await mentionable(rep2.token, 'order', orderId)).status).toBe(403);
+    expect((await request(app).get(`/api/threads/by-subject/order/${orderId}/mentionable`)).status).toBe(401);
+  });
+});
+
 describe('POST comments', () => {
   it('text over 4000 characters is 400; exactly 4000 is fine; an empty comment is 400', async () => {
     expect((await comment(rep().token, 'order', orderId, { body: 'a'.repeat(4001) })).status).toBe(400);
@@ -177,6 +202,13 @@ describe('POST comments', () => {
     // the mention shows in the Mentions view of the feed
     const feed = await request(app).get('/api/inbox?view=mentions').set(auth(owner().token));
     expect(feed.body.items).toHaveLength(1);
+  });
+
+  it('the feed row names the person who mentioned you (actorName)', async () => {
+    await comment(rep().token, 'order', orderId, { body: 'look', mentionIds: [owner().id] });
+    const feed = await request(app).get('/api/inbox?view=mentions').set(auth(owner().token));
+    const repUser = await prismaBase.user.findUniqueOrThrow({ where: { id: rep().id } });
+    expect(feed.body.items[0].actorName).toBe(`${repUser.firstName} ${repUser.lastName}`.trim());
   });
 
   it('only active people of my tenant can be mentioned: inactive, other tenant and unknown ids are 400, nothing is saved', async () => {

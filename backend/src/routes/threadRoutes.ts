@@ -8,6 +8,7 @@ const router = Router();
 router.use(authenticate);
 router.use(tenantRateLimiter);
 router.get('/by-subject/:type/:id', controller.getBySubject);
+router.get('/by-subject/:type/:id/mentionable', controller.getMentionable);
 router.post('/by-subject/:type/:id/comments', controller.addComment);
 
 export const commentRoutes = Router();

@@ -40,6 +40,7 @@ const Staff = lazy(() => import('./pages/Staff').then(m => ({ default: m.Staff }
 const Targets = lazy(() => import('./pages/Targets').then(m => ({ default: m.Targets })));
 const Leaderboard = lazy(() => import('./pages/Leaderboard').then(m => ({ default: m.Leaderboard })));
 const Marketing = lazy(() => import('./pages/Marketing').then(m => ({ default: m.Marketing })));
+const Inbox = lazy(() => import('./pages/Inbox').then(m => ({ default: m.Inbox })));
 const Reports = lazy(() => import('./pages/Reports').then(m => ({ default: m.Reports })));
 const Workflows = lazy(() => import('./pages/Workflows').then(m => ({ default: m.Workflows })));
 const WorkflowWizard = lazy(() => import('./pages/WorkflowWizard').then(m => ({ default: m.WorkflowWizard })));
@@ -55,7 +56,7 @@ const UiGallery = import.meta.env.DEV ? lazy(() => import('./pages/dev/UiGallery
 const RepShell = lazy(() => import('./pages/rep/RepShell'));
 const RepTodayPage = lazy(() => import('./pages/rep/RepTodayPage'));
 const RepQueuePage = lazy(() => import('./pages/rep/RepQueuePage'));
-const RepComingSoon = lazy(() => import('./pages/rep/RepComingSoon'));
+const RepInboxPage = lazy(() => import('./pages/rep/RepInboxPage'));
 const RepOrdersPage = lazy(() => import('./pages/rep/RepOrdersPage'));
 const RepEarningsPage = lazy(() => import('./pages/rep/RepEarningsPage'));
 const RepNumbersPage = lazy(() => import('./pages/rep/RepNumbersPage'));
@@ -322,7 +323,7 @@ function App() {
             <Route path="orders" element={<Suspense fallback={<Loading />}><RepOrdersPage /></Suspense>} />
             <Route path="earnings" element={<Suspense fallback={<Loading />}><RepEarningsPage /></Suspense>} />
             <Route path="numbers" element={<Suspense fallback={<Loading />}><RepNumbersPage /></Suspense>} />
-            <Route path="inbox" element={<Suspense fallback={<Loading />}><RepComingSoon title="Inbox" /></Suspense>} />
+            <Route path="inbox" element={<Suspense fallback={<Loading />}><RepInboxPage /></Suspense>} />
             <Route path="call/:orderId" element={<Suspense fallback={<Loading />}><RepCallPage /></Suspense>} />
           </Route>
 
@@ -375,6 +376,9 @@ function App() {
             } />
             <Route path="marketing" element={
               <Suspense fallback={<Loading />}><Marketing /></Suspense>
+            } />
+            <Route path="inbox" element={
+              <Suspense fallback={<Loading />}><Inbox /></Suspense>
             } />
             <Route path="reports" element={
               <Suspense fallback={<Loading />}><Reports /></Suspense>

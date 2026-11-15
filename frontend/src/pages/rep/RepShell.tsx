@@ -18,6 +18,7 @@ import { isManagerUp } from '../../components/shell/navModel';
 import { useTheme } from '../../hooks/useTheme';
 import { UserMenu } from '../../components/shell/UserMenu';
 import { ToastProvider } from '../../components/ui-v2';
+import { useInboxStore } from '../../stores/inboxStore';
 import { useRepSummary } from './useRepSummary';
 import { personName } from '../../utils/people';
 
@@ -25,6 +26,8 @@ export const RepShell: React.FC = () => {
   const user = useAuthStore((s) => s.user);
   const [theme, toggleTheme] = useTheme();
   const { summary, refetch } = useRepSummary();
+  // The live Inbox count (socket, or the 60 s poll); the summary's figure is the first answer
+  const inboxCount = useInboxStore((s) => s.counts?.all ?? summary.inbox);
   const location = useLocation();
 
   const isManager = user ? isManagerUp(user.role) : false;
@@ -122,9 +125,9 @@ export const RepShell: React.FC = () => {
                   data-testid="rep-inbox-bell"
                 >
                   <Bell size={17} />
-                  {summary.inbox > 0 && (
+                  {inboxCount > 0 && (
                     <span className="bcnt" data-testid="rep-inbox-badge">
-                      {summary.inbox > 99 ? '99+' : summary.inbox}
+                      {inboxCount > 99 ? '99+' : inboxCount}
                     </span>
                   )}
                 </Link>

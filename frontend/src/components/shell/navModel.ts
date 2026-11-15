@@ -40,7 +40,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     items: [
       { key: 'dashboard', label: 'Dashboard', icon: LayoutGrid, to: '/' },
-      { key: 'inbox', label: 'Inbox', icon: Inbox, to: null, count: 'inbox' }, // M9
+      { key: 'inbox', label: 'Inbox', icon: Inbox, to: '/inbox', count: 'inbox' },
     ],
   },
   {
