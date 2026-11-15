@@ -1,5 +1,5 @@
 import { apiClient } from './api';
-import type { Assignee, ConversationList, Channel, LogPage, LogStatus, Overview, ReplyTemplate, Thread } from '../pages/messages/types';
+import type { Assignee, ConversationList, Channel, LogPage, LogStatus, MessageTemplate, Overview, ReplyTemplate, TemplateInput, Thread } from '../pages/messages/types';
 
 // Every call is quiet: the page shows the server's sentence itself (a toast or an inline line).
 const quiet = { quiet: true } as const;
@@ -61,6 +61,32 @@ export const messagesService = {
 
   async log(filters: MessageFilters & { status?: LogStatus; recipient?: string; cursor?: string; limit?: number }): Promise<LogPage> {
     const { data } = await apiClient.get<LogPage>('/api/messages/log', { params: filters, skipCache: true, ...quiet });
+    return data;
+  },
+
+  /** GET /api/message-templates: every channel in one list. */
+  async listTemplates(query: { channel?: Channel; q?: string } = {}): Promise<MessageTemplate[]> {
+    const { data } = await apiClient.get<{ items: MessageTemplate[] }>('/api/message-templates', { params: query, skipCache: true, ...quiet });
+    return data.items;
+  },
+
+  async createTemplate(input: TemplateInput & { channel: Channel; name: string; body: string }): Promise<MessageTemplate> {
+    const { data } = await apiClient.post<MessageTemplate>('/api/message-templates', input, quiet);
+    return data;
+  },
+
+  async updateTemplate(id: number, input: TemplateInput): Promise<MessageTemplate> {
+    const { data } = await apiClient.put<MessageTemplate>(`/api/message-templates/${id}`, input, quiet);
+    return data;
+  },
+
+  async deleteTemplate(id: number): Promise<void> {
+    await apiClient.delete(`/api/message-templates/${id}`, quiet);
+  },
+
+  /** POST /api/message-templates/sync: reads the WhatsApp templates and their approval status from Meta. */
+  async syncTemplates(): Promise<{ created: number; updated: number; total: number }> {
+    const { data } = await apiClient.post<{ created: number; updated: number; total: number }>('/api/message-templates/sync', {}, quiet);
     return data;
   },
 };

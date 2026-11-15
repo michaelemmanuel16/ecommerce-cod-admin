@@ -104,3 +104,34 @@ export interface LogPage {
   total: number;
   nextCursor: string | null;
 }
+
+/** One template from GET /api/message-templates (backend templateService.toApi). `status` is Meta's, for WhatsApp only. */
+export interface MessageTemplate {
+  id: number;
+  channel: Channel;
+  name: string;
+  key: string | null;
+  subject: string | null;
+  body: string;
+  variables: string[];
+  language: string | null;
+  category: string | null;
+  /** approved, pending, rejected or paused. Null for SMS and email, and for a WhatsApp template not yet read from Meta. */
+  status: string | null;
+  rejectReason: string | null;
+  metaTemplateName: string | null;
+  quickReplies: string[] | null;
+  sendable: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** The body of POST and PUT /api/message-templates. */
+export interface TemplateInput {
+  name?: string;
+  subject?: string | null;
+  body?: string;
+  language?: string;
+  category?: string;
+  metaTemplateName?: string;
+}
