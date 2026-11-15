@@ -10,12 +10,14 @@ import { onPaymentSettled, PaymentSettledEvent } from './payments/settlementHook
 import { syncWorkflowSchedule, validateSchedule } from '../queues/workflowSchedule';
 import * as Money from '../utils/money';
 import { validateAssignToConfig } from './workflowAssignTo';
+import { assertValidWorkflow } from './workflowValidation';
 import crypto from 'crypto';
 
 /** M2-T17 loop guard: a workflow-caused move stops at this depth; one run per order per workflow per window. */
 const LOOP_GUARD_MAX_DEPTH = 3;
 const LOOP_GUARD_WINDOW_MS = 60_000;
 export const LOOP_GUARD_MESSAGE = 'Skipped: loop guard';
+export const CONDITIONS_NOT_MET = 'conditions_not_met';
 const BACKDATED_MS = 24 * 60 * 60 * 1000;
 
 /**
@@ -151,6 +153,7 @@ export class WorkflowService {
   async createWorkflow(data: CreateWorkflowData) {
 
     // Validate actions
+    assertValidWorkflow({ actions: data.actions, conditions: data.conditions });
     this.validateWorkflowActions(data.actions);
     const triggerType = normalizeTriggerType(data.triggerType);
     const triggerData = await this.validateTrigger(triggerType, data.triggerData, data.conditions);
@@ -211,6 +214,7 @@ export class WorkflowService {
     }
 
     // Validate actions if provided
+    assertValidWorkflow({ actions: updateData.actions, conditions: updateData.conditions });
     if (updateData.actions) {
       this.validateWorkflowActions(updateData.actions);
     }
@@ -309,23 +313,13 @@ export class WorkflowService {
     return this.runLoaded(workflow, input, undefined, { triggerSource: 'manual' });
   }
 
-  /** Check the workflow's conditions against the input, then queue a run. `workflow` is already loaded and active. */
+  /** Queue a run. `workflow` is already loaded and active. The conditions are checked once, in `enqueueRun`. */
   private async runLoaded(workflow: Workflow, input: any, guard: RunGuard | undefined, meta: RunMeta) {
-    // For manual execution (no input), skip workflow-level conditions
-    // The queue worker will handle finding orders that match conditions
-    const isManualExecution = !input || Object.keys(input).length === 0;
-
-    // Check conditions only for automatic triggers with input
-    if (!isManualExecution && workflow.conditions && !this.evaluateConditions(workflow.conditions, input)) {
-      logger.info('Workflow conditions not met', { workflowId: workflow.id, input });
-      return { message: 'Workflow conditions not met' };
-    }
-
     return this.enqueueRun(workflow, input, guard, meta);
   }
 
   /** Insert an execution row. Null when the idempotency key is already taken. */
-  async createExecution(workflow: Workflow, input: any, meta: RunMeta, extra: { status: string; error?: string; completedAt?: Date }) {
+  async createExecution(workflow: Workflow, input: any, meta: RunMeta, extra: { status: string; error?: string; completedAt?: Date; output?: Prisma.InputJsonValue; mode?: 'live' | 'test'; steps?: Prisma.InputJsonValue }) {
     try {
       return await prisma.workflowExecution.create({
         data: {
@@ -345,10 +339,29 @@ export class WorkflowService {
   }
 
   /**
+   * Every trigger checks the workflow's conditions once, before the first step (M9-T21 fix). Null when the run may go on.
+   * A run that does not match writes a `skipped` execution with `conditions_not_met`. A run with no input (a manual or
+   * schedule run with no order) has nothing to read, so it skips the check as before.
+   */
+  async skipUnlessConditionsMet(workflow: Workflow, input: any, meta: RunMeta) {
+    const hasInput = !!input && Object.keys(input).length > 0;
+    if (!hasInput || !workflow.conditions || this.evaluateConditions(workflow.conditions, input)) return null;
+    // A skip is not a run: it carries no idempotency key, so it never blocks the real run for the same key.
+    const skipped = await this.createExecution(workflow, input, { triggerSource: meta.triggerSource, orderId: meta.orderId ?? input?.orderId ?? null }, {
+      status: 'skipped', error: CONDITIONS_NOT_MET, completedAt: new Date(),
+    });
+    logger.info('Workflow conditions not met', { workflowId: workflow.id, orderId: meta.orderId ?? input?.orderId });
+    return { message: 'Workflow conditions not met', execution: skipped };
+  }
+
+  /**
    * Loop guard, execution record, queue: the one place a run is created (manual and triggered).
    * `guard` is given for runs caused by an order event (M2-T17).
    */
   async enqueueRun(workflow: Workflow, input: any, guard: RunGuard | undefined, meta: RunMeta) {
+    const skipped = await this.skipUnlessConditionsMet(workflow, input, meta);
+    if (skipped) return skipped;
+
     if (guard && await this.loopGuardHit(workflow, input, guard, meta)) {
       return { message: LOOP_GUARD_MESSAGE };
     }
@@ -399,7 +412,7 @@ export class WorkflowService {
     }
 
     // If conditions has an 'id' field, it's the new structure with rules
-    if (conditions.id && conditions.rules) {
+    if (Array.isArray(conditions.rules)) {
       // Use the condition evaluator utility
       return evaluateConditionRules(conditions, input);
     }
@@ -428,10 +441,8 @@ export class WorkflowService {
       'send_whatsapp',
       'send_auto_confirm',
       'update_order',
-      'assign_agent',
       'assign_user',
       'assign_to',
-      'add_tag',
       'wait',
       'http_request'
     ];
@@ -464,6 +475,8 @@ export class WorkflowService {
     filters?: { page?: number; limit?: number }
   ) {
     const { page = 1, limit = 20 } = filters || {};
+    // A workflow of another tenant is not found
+    await this.getWorkflowById(workflowId);
     const skip = (page - 1) * limit;
 
     const [executions, total] = await Promise.all([
@@ -478,8 +491,9 @@ export class WorkflowService {
       })
     ]);
 
+    const { presentExecution } = await import('./workflowRunService');
     return {
-      executions,
+      executions: executions.map(presentExecution),
       pagination: {
         page,
         limit,
@@ -547,21 +561,15 @@ export class WorkflowService {
       return;
     }
 
-    // Load order with products for condition evaluation (e.g. product-specific workflows)
-    const order = await prisma.order.findUnique({
-      where: { id: orderId },
-      select: { orderItems: { select: { product: { select: { name: true } } } } },
-    });
-
+    // The order as the conditions read it (region, total, product names), plus what the move says
+    const order = await this.loadOrderContext(orderId);
     const input = {
+      ...(order ?? {}),
       orderId,
       oldStatus,
       newStatus,
       depth,
-      productName: order?.orderItems
-        ?.map((item: any) => item.product?.name)
-        .filter(Boolean)
-        .join(', ') || '',
+      productName: order?.productName ?? '',
     };
 
     const recent = await this.recentRunIds(workflows.map((w) => w.id), orderId, depth);
@@ -609,7 +617,7 @@ export class WorkflowService {
 
       const recent = await this.recentRunIds(workflows.map((w) => w.id), order.id, 0);
 
-      // Trigger each workflow. Workflow-level conditions are not checked for a new order (as before).
+      // Trigger each workflow. enqueueRun checks the workflow's conditions.
       for (const workflow of workflows) {
         try {
           await this.enqueueRun(workflow, orderContext, { orderId: order.id, depth: 0, recent }, { triggerSource, orderId: order.id });
@@ -751,7 +759,8 @@ export class WorkflowService {
   }
 
   /**
-   * Get workflow templates
+   * Get workflow templates (M9-T25). Each says which connections it needs (`needs`: sms, email, whatsapp, from its actions).
+   * A template that needs WhatsApp is `available: false` with a reason when the store has no WhatsApp connection.
    */
   async getTemplates(category?: string) {
     const {
@@ -759,18 +768,32 @@ export class WorkflowService {
       getTemplateCategories,
       getTemplatesByCategory
     } = await import('../data/workflowTemplates');
+    const { getDbWhatsappConfig } = await import('./whatsappService');
 
     const templates = category
       ? getTemplatesByCategory(category)
       : workflowTemplates;
 
+    const whatsapp = await getDbWhatsappConfig();
+    const hasWhatsapp = !!(whatsapp?.accessToken && whatsapp?.phoneNumberId);
+
     const categories = getTemplateCategories();
 
     return {
-      templates,
+      templates: templates.map((template) => {
+        const needs = templateConnections(template.actions);
+        const missing = needs.includes('whatsapp') && !hasWhatsapp;
+        return { ...template, needs, available: !missing, ...(missing ? { unavailableReason: 'Needs WhatsApp in Connections' } : {}) };
+      }),
       categories
     };
   }
+}
+
+/** The connections the actions use. */
+export function templateConnections(actions: any[]): string[] {
+  const byAction: Record<string, string> = { send_sms: 'sms', send_email: 'email', send_whatsapp: 'whatsapp', send_auto_confirm: 'whatsapp' };
+  return [...new Set((actions ?? []).map((a) => byAction[a?.type]).filter(Boolean))];
 }
 
 const workflowService = new WorkflowService();

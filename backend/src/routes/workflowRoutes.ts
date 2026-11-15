@@ -19,12 +19,17 @@ router.get('/templates', requireResourcePermission('workflows', 'view'), workflo
 
 router.get('/meta/regions', requireResourcePermission('workflows', 'view'), workflowController.getWorkflowRegions);
 
+router.get('/executions/:executionId', requireResourcePermission('workflows', 'view'), workflowController.getWorkflowExecution);
+router.post('/executions/:executionId/retry', requireResourcePermission('workflows', 'execute'), workflowController.retryWorkflowExecution);
+
 router.get('/', requireResourcePermission('workflows', 'view'), workflowController.getAllWorkflows);
 router.post('/', requireResourcePermission('workflows', 'create'), workflowController.createWorkflow);
 router.get('/:id', requireResourcePermission('workflows', 'view'), workflowController.getWorkflow);
 router.put('/:id', requireResourcePermission('workflows', 'update'), workflowController.updateWorkflow);
 router.delete('/:id', requireResourcePermission('workflows', 'delete'), workflowController.deleteWorkflow);
 router.post('/:id/execute', requireResourcePermission('workflows', 'execute'), workflowController.executeWorkflow);
+router.post('/:id/run', requireResourcePermission('workflows', 'execute'), workflowController.runWorkflowOnOrders);
+router.post('/:id/test', requireResourcePermission('workflows', 'execute'), workflowController.testWorkflow);
 router.post('/:id/webhook-token/regenerate', requireResourcePermission('workflows', 'update', 'execute'), workflowController.regenerateWebhookToken);
 router.get('/:id/catch-up/preview', requireResourcePermission('workflows', 'view'), workflowController.getCatchUpPreview);
 router.post('/:id/catch-up', requireResourcePermission('workflows', 'execute'), workflowController.postCatchUp);

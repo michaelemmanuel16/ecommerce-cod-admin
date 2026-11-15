@@ -14,7 +14,6 @@ import { runInTenant } from '../../utils/tenantContext';
 import { createTenant, deleteTenantRows } from './helpers/twoTenants';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import assignmentService from '../../services/assignmentService';
-import workflowService from '../../services/workflowService';
 import { executeAction } from '../../queues/workflowQueue';
 import { getSocketInstance } from '../../utils/socketInstance';
 import { bearer, superAdminToken } from './helpers/superAdminToken';
@@ -300,26 +299,34 @@ describe('assignment skips an unavailable partner (F-709)', () => {
     expect((await prismaBase.order.findUniqueOrThrow({ where: { id: orderId } })).deliveryAgentId).toBe(U.agent.id);
   });
 
-  it('a workflow assign_user action in the service picks only available users, weighted or even', async () => {
+  it('a workflow assign_user action (the queue step runner) picks only available users, weighted or even', async () => {
     for (const distributionMode of ['even', 'weighted']) {
       const orderId = await mkOrder('confirmed');
-      const result = await runInTenant(tenantId, () => (workflowService as any).executeAssignUserAction(
-        { config: { userType: 'delivery_agent', distributionMode, assignments: [{ userId: U.away.id, weight: 0.9 }, { userId: U.agent.id, weight: 0.1 }] } },
+      const result = await runInTenant(tenantId, () => executeAction(
+        { type: 'assign_user', config: { userType: 'delivery_agent', distributionMode, assignments: [{ userId: U.away.id, weight: 0.9 }, { userId: U.agent.id, weight: 0.1 }] } },
         { orderId },
       ));
-      expect([distributionMode, result.assignedUserId]).toEqual([distributionMode, U.agent.id]);
+      expect([distributionMode, result.assigned, result.results[0].assignedTo]).toEqual([distributionMode, 1, U.agent.id]);
     }
     const orderId = await mkOrder('confirmed');
-    await expect(runInTenant(tenantId, () => (workflowService as any).executeAssignUserAction(
-      { config: { userType: 'delivery_agent', assignments: [{ userId: U.away.id, weight: 1 }] } }, { orderId },
-    ))).rejects.toThrow(/No available users/);
+    const none = await runInTenant(tenantId, () => executeAction(
+      { type: 'assign_user', config: { userType: 'delivery_agent', assignments: [{ userId: U.away.id, weight: 1 }] } }, { orderId },
+    ));
+    expect(none).toMatchObject({ assigned: 0, message: expect.stringMatching(/No available delivery partner/) });
+    expect((await prismaBase.order.findUniqueOrThrow({ where: { id: orderId } })).deliveryAgentId).toBeNull();
+  });
+
+  it('a workflow assign_to action skips the away partner and assigns the available one', async () => {
+    const orderId = await mkOrder('confirmed');
+    const res = await runInTenant(tenantId, () => executeAction(
+      { type: 'assign_to', config: { role: 'delivery_agent', split: 'even', userIds: [U.away.id, U.agent.id] } }, { orderId },
+    ));
+    expect(res).toMatchObject({ assigned: true, assignedUserId: U.agent.id });
   });
 
   it('a workflow assign_agent action naming the away partner is refused', async () => {
     const orderId = await mkOrder('confirmed');
     await expect(runInTenant(tenantId, () => executeAction({ type: 'assign_agent', config: { agentId: U.away.id } }, { orderId })))
-      .rejects.toMatchObject({ errorCode: 'PARTNER_UNAVAILABLE' });
-    await expect(runInTenant(tenantId, () => (workflowService as any).executeAssignAgent({ agentId: U.away.id }, { orderId })))
       .rejects.toMatchObject({ errorCode: 'PARTNER_UNAVAILABLE' });
     expect((await prismaBase.order.findUniqueOrThrow({ where: { id: orderId } })).deliveryAgentId).toBeNull();
   });

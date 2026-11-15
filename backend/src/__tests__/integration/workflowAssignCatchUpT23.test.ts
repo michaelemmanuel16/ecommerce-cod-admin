@@ -110,9 +110,10 @@ describe('Region is Ashanti + Assign to Kofi', () => {
     const history = await prismaBase.orderHistory.findMany({ where: { orderId: ashanti.body.order.id, notes: { contains: 'assigned' } } });
     expect(history).toHaveLength(1);
     expect(history[0].actorKind).toBe('system');
-    const steps = (await runs(wf.id)).flatMap((r) => r.steps as any[]);
-    expect(steps.find((s) => s.result?.reason === 'conditions_not_met')).toBeTruthy(); // the Volta step says why
-    expect(steps.find((s) => s.result?.assigned === true)).toBeTruthy();
+    const all = await runs(wf.id);
+    // the Volta run is skipped at the run level, with the reason (M9 conditions gate)
+    expect(all.find((r) => r.orderId === volta.body.order.id)).toMatchObject({ status: 'skipped', error: 'conditions_not_met' });
+    expect(all.flatMap((r) => r.steps as any[]).find((s) => s.result?.assigned === true)).toBeTruthy();
   });
 
   it('an order saved through the API with the action saved over the API (assign_to validated at save)', async () => {

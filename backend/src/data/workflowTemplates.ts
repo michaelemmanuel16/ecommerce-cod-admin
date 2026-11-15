@@ -93,10 +93,6 @@ export const workflowTemplates: WorkflowTemplate[] = [
         priority: 5
       },
       {
-        type: 'add_tag',
-        tag: 'high-value'
-      },
-      {
         type: 'send_email',
         email: 'manager@example.com',
         subject: 'High-Value Order Alert',
@@ -106,6 +102,22 @@ export const workflowTemplates: WorkflowTemplate[] = [
         type: 'send_sms',
         phoneNumber: '+1234567890',
         message: 'High-value order alert! Order #{{orderNumber}} - ${{totalAmount}}'
+      }
+    ]
+  },
+
+  // Needs the WhatsApp connection (M9-T25): the gallery shows it as unavailable until the store has one
+  {
+    id: 'whatsapp-order-confirmation',
+    name: 'WhatsApp Order Confirmation',
+    description: 'Send the customer a WhatsApp message when a new order comes in',
+    category: 'Communication',
+    triggerType: 'order_created',
+    triggerData: {},
+    actions: [
+      {
+        type: 'send_whatsapp',
+        config: { templateKey: 'order_confirmation' }
       }
     ]
   },
@@ -126,10 +138,6 @@ export const workflowTemplates: WorkflowTemplate[] = [
         phoneNumber: '{{customer.phoneNumber}}',
         message: 'Hello {{customer.firstName}}, your order #{{orderNumber}} has been confirmed! Estimated delivery: {{estimatedDelivery}}. Track at: https://example.com/track/{{orderId}}'
       },
-      {
-        type: 'add_tag',
-        tag: 'confirmation-sent'
-      }
     ]
   },
 
@@ -228,10 +236,6 @@ export const workflowTemplates: WorkflowTemplate[] = [
         priority: 10
       },
       {
-        type: 'add_tag',
-        tag: 'vip-customer'
-      },
-      {
         type: 'assign_user',
         userRole: 'sales_rep',
         targetField: 'customerRepId',
@@ -275,10 +279,6 @@ export const workflowTemplates: WorkflowTemplate[] = [
         email: '{{customer.email}}',
         subject: 'Delivery Attempt Failed - Order #{{orderNumber}}',
         body: 'Hello {{customer.firstName}},\n\nWe attempted to deliver your order but were unable to complete the delivery. Please contact us to arrange a new delivery time.\n\nOrder: {{orderNumber}}\nDelivery Address: {{deliveryAddress}}'
-      },
-      {
-        type: 'add_tag',
-        tag: 'failed-delivery'
       },
       {
         type: 'update_order',
@@ -372,10 +372,6 @@ export const workflowTemplates: WorkflowTemplate[] = [
         phoneNumber: '{{deliveryAgent.phoneNumber}}',
         message: 'REMINDER: Order #{{orderNumber}} - Collect COD payment of ${{codAmount}} from customer. Confirm collection in app.'
       },
-      {
-        type: 'add_tag',
-        tag: 'cod-pending'
-      }
     ]
   },
 
@@ -391,10 +387,6 @@ export const workflowTemplates: WorkflowTemplate[] = [
       {
         type: 'update_order',
         priority: 3
-      },
-      {
-        type: 'add_tag',
-        tag: 'weekend-order'
       },
       {
         type: 'send_email',

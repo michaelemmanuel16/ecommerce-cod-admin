@@ -47,7 +47,7 @@ describe('wait is a Bull delayed job', () => {
     const waiting = updates().find((d: any) => d.status === 'waiting');
     expect(waiting.steps.map((s: any) => s.action)).toEqual(['http_request', 'wait']);
     expect(waiting.resumeAt).toEqual(expect.any(Date));
-    expect(waiting.output).toEqual({ activeMs: expect.any(Number) });
+    expect(waiting.output).toEqual({ activeMs: expect.any(Number), actionsHash: expect.any(String) });
     expect(updates().some((d: any) => d.status === 'completed')).toBe(false);
   });
 

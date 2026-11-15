@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { AuthRequest } from '../types';
 import { UserRole } from '@prisma/client';
 import workflowService, { normalizeTriggerType, SCHEDULE_TRIGGER } from '../services/workflowService';
+import { getExecution, retryExecution, runOnOrders, testRun, listWorkflowsWithStats } from '../services/workflowRunService';
 import { previewCatchUp, runCatchUp } from '../services/workflowCatchUpService';
 import { AppError } from '../middleware/errorHandler';
 import { getRegionsForCountry } from '../utils/regions';
@@ -20,12 +21,12 @@ export const getAllWorkflows = async (req: AuthRequest, res: Response): Promise<
   try {
     const { isActive, triggerType } = req.query;
 
-    const workflows = await workflowService.getAllWorkflows({
+    const result = await listWorkflowsWithStats({
       isActive: isActive !== undefined ? isActive === 'true' : undefined,
       triggerType: triggerType ? normalizeTriggerType(triggerType) : undefined
     });
 
-    res.json({ workflows });
+    res.json(result);
   } catch (error) {
     throw error;
   }
@@ -197,4 +198,31 @@ export const getWorkflowRegions = async (_req: AuthRequest, res: Response): Prom
   const tenantId = resolveTenantId();
   const [code, country] = await Promise.all([countryCodeOfTenant(tenantId), countryNameOfTenant(tenantId)]);
   res.json({ country, countryCode: code, regions: getRegionsForCountry(code) });
+};
+
+const idParam = (value: string, label: string) => {
+  const id = parseInt(value, 10);
+  if (isNaN(id)) throw new AppError(`Invalid ${label}`, 400);
+  return id;
+};
+
+/** `GET /api/workflows/executions/:executionId` (M9-T24). */
+export const getWorkflowExecution = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.json({ execution: await getExecution(idParam(req.params.executionId, 'execution ID')) });
+};
+
+/** `POST /api/workflows/executions/:executionId/retry` (M9-T24). */
+export const retryWorkflowExecution = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.status(202).json(await retryExecution(idParam(req.params.executionId, 'execution ID')));
+};
+
+/** `POST /api/workflows/:id/run` (M9-T24): the warning answers 200, a started run 202. */
+export const runWorkflowOnOrders = async (req: AuthRequest, res: Response): Promise<void> => {
+  const result = await runOnOrders(idParam(req.params.id, 'workflow ID'), req.body ?? {});
+  res.status('warning' in result ? 200 : 202).json(result);
+};
+
+/** `POST /api/workflows/:id/test` (M9-T24): a dry run, nothing is sent. */
+export const testWorkflow = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.json(await testRun(idParam(req.params.id, 'workflow ID'), req.body ?? {}));
 };

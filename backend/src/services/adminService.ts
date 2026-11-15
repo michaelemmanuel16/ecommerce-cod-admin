@@ -1,5 +1,3 @@
-import { getPaymentProvider, clearPaymentConfigCache } from './payments';
-import { saveConnection } from './paymentConnectionService';
 import { parseFeaturePatch, clearTenantFeaturesCache } from './tenantFeatures';
 import prisma, { TransactionClient } from '../utils/prisma';
 import { sessionService } from './sessionService';
@@ -16,7 +14,6 @@ import {
   maskProviderSecrets,
   preserveMaskedSecrets,
   SENSITIVE_FIELDS,
-  decryptString,
 } from '../utils/providerCrypto';
 import { getTenantId, resolveTenantId, withoutTenant } from '../utils/tenantContext';
 import { HUMAN_USERS_WHERE, SYSTEM_USER_PASSWORD } from './systemUserService';
@@ -314,7 +311,6 @@ export const adminService = {
     smsProvider?: any;
     emailProvider?: any;
     whatsappProvider?: any;
-    paystackProvider?: any;
     notificationTemplates?: any;
     features?: Record<string, unknown>;
   }) {
@@ -335,6 +331,11 @@ export const adminService = {
     const { currency, ...configData } = data;
     data = configData;
     if (currency !== undefined && tenantId) await changeStoreCurrency(tenantId, currency);
+
+    // Paystack keys are saved on Connections (PUT /api/payment-connections), never here (M9-T27). The old JSON is not written any more.
+    if ((data as any).paystackProvider !== undefined) {
+      throw new AppError('Paystack keys are saved in Connections, not in Settings', 400, 'PAYSTACK_USE_CONNECTIONS');
+    }
 
     // Business details (M3-T25, F-1230): the support WhatsApp is an international number, the time zone an IANA name.
     if (data.supportWhatsapp) {
@@ -387,14 +388,6 @@ export const adminService = {
       data.whatsappProvider = wp;
     }
 
-    // Reject mismatched test/live key prefixes before persisting — the mode
-    // toggle is decorative without this; tenants would silently route real
-    // money through their test account or vice versa.
-    if (data.paystackProvider) {
-      const pp = data.paystackProvider as any;
-      if (pp.secretKey) getPaymentProvider('paystack').validateCredentials?.(pp.mode, decryptString(pp.secretKey) as string);
-    }
-
     // Encrypt sensitive fields before writing to DB
     for (const providerType of Object.keys(SENSITIVE_FIELDS)) {
       if ((data as any)[providerType]) {
@@ -420,24 +413,6 @@ export const adminService = {
       const { clearEmailConfigCache } = await import('./emailService');
       clearEmailConfigCache();
     }
-    if (data.paystackProvider !== undefined) {
-      // The PaymentConnection row is what checkout reads, so it follows every save here (created if missing). The JSON
-      // stays for the old Integrations panel until the Connections page (M9) and is display-only.
-      const pp = data.paystackProvider as { mode?: string; publicKey?: string; secretKey?: string; isEnabled?: boolean } | null;
-      if (pp && config.tenantId) {
-        await saveConnection({
-          provider: 'paystack',
-          mode: pp.mode === 'live' ? 'live' : 'test',
-          publicKey: pp.publicKey,
-          secretKey: pp.secretKey ? (decryptString(pp.secretKey) as string) : undefined,
-          isEnabled: pp.isEnabled !== false,
-        });
-      }
-      // saveConnection clears the tenant's cached keys itself. Clearing the JSON (pp null) skips it, so clear here.
-      // Only this tenant's entry: passing undefined would wipe every tenant's cached secret and stampede the DB.
-      if (!pp && config.tenantId) clearPaymentConfigCache(config.tenantId);
-    }
-
     // The public form page caches the support number with the form (5 minutes): a changed number shows at once.
     if (data.supportWhatsapp !== undefined) clearCheckoutFormConfigCache();
 
