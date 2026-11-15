@@ -105,12 +105,10 @@ describe('Messages page: Bulk send', () => {
     expect(await screen.findByText('SMS is not set up')).toBeInTheDocument();
   });
 
-  it('shows no Bulk send tab to a manager, or to an admin without messages:create', async () => {
+  it('shows the Bulk send tab to a manager (owner decision 2026-11-15), but not to an admin without messages:create', async () => {
     role = 'manager';
     const { unmount } = renderTab('bulk');
-    expect(await screen.findByRole('tab', { name: /Campaigns/ })).toBeInTheDocument();
-    expect(screen.queryByRole('tab', { name: /Bulk send/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Find recipients' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('tab', { name: /Bulk send/ })).toBeInTheDocument();
     unmount();
     role = 'admin';
     canCreate = false;
