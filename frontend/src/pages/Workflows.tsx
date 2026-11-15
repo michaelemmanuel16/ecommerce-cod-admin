@@ -1,357 +1,256 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Plus, Play, Pause, Trash2, Edit, GitBranch, Zap, Clock, Sparkles, Search, Loader2 } from 'lucide-react';
-import { workflowsService, Workflow } from '../services/workflows.service';
-import { Button } from '../components/ui/Button';
-import { Card } from '../components/ui/Card';
-import { WorkflowTemplateGallery } from '../components/workflows/WorkflowTemplateGallery';
-import { getSocket } from '../services/socket';
-import toast from 'react-hot-toast';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import clsx from 'clsx';
+import { Activity, AlertTriangle, LayoutTemplate, Pencil, PlayCircle, Plus, Search, Trash2, Workflow as WorkflowIcon } from 'lucide-react';
+import { useV2Page } from '../components/shell/useV2Page';
+import { Button, ConfirmDialog, EmptyState, Skeleton, Table, Tabs, Tag, Tile, useToast, type Column } from '../components/ui-v2';
+import { usePermissions } from '../hooks/usePermissions';
+import { workflowsService, type Workflow, type WorkflowList, type WorkflowTemplate } from '../services/workflows.service';
+import { apiErrorMessage } from '../utils/apiError';
+import { formatRelativeTime } from '../utils/format';
+import { describeTrigger, triggerChoice } from './workflows/model';
 
-export const Workflows: React.FC = () => {
+type Filter = 'all' | 'on' | 'off';
+
+const people = (n: number) => n.toLocaleString('en-GB');
+
+/**
+ * Workflows (M9-T41, COD-84, F-500 F-501 F-504), built from docs/mockups/v2/workflows.html: the list with its tiles, tabs and
+ * search, the switch, delete, and the template gallery. Every figure comes from GET /api/workflows (`summary`, `stats`).
+ * The builder is WorkflowWizard (T42); run history and the Run button are T43.
+ */
+export function Workflows() {
+  useV2Page();
   const navigate = useNavigate();
-  const [workflows, setWorkflows] = useState<Workflow[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [showTemplateGallery, setShowTemplateGallery] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [executingIds, setExecutingIds] = useState<Set<string>>(new Set());
-  const [runningIds, setRunningIds] = useState<Set<string>>(new Set());
+  const say = useToast();
+  const { can } = usePermissions();
+  const canCreate = can('workflows', 'create');
+  const canUpdate = can('workflows', 'update');
+  const canDelete = can('workflows', 'delete');
 
-  useEffect(() => {
-    loadWorkflows();
+  const [data, setData] = useState<WorkflowList | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<WorkflowTemplate[] | null>(null);
+  const [filter, setFilter] = useState<Filter>('all');
+  const [query, setQuery] = useState('');
+  const [deleting, setDeleting] = useState<Workflow | null>(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const gallery = useRef<HTMLDivElement>(null);
 
-    // Listen for real-time execution updates
-    const socket = getSocket();
-    if (socket) {
-      const handleStarted = (data: { workflowId: string }) => {
-        setRunningIds(prev => new Set(prev).add(String(data.workflowId)));
-      };
-      const handleCompleted = (data: { workflowId: string }) => {
-        setRunningIds(prev => {
-          const next = new Set(prev);
-          next.delete(String(data.workflowId));
-          return next;
-        });
-      };
-
-      socket.on('workflow:execution_started', handleStarted);
-      socket.on('workflow:execution_completed', handleCompleted);
-
-      return () => {
-        socket.off('workflow:execution_started', handleStarted);
-        socket.off('workflow:execution_completed', handleCompleted);
-      };
+  const load = useCallback(async () => {
+    try {
+      setData(await workflowsService.getWorkflows());
+      setFailed(null);
+    } catch (e) {
+      setFailed(apiErrorMessage(e, 'The workflows could not load.'));
     }
   }, []);
 
-  const loadWorkflows = async () => {
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (!canCreate) return;
+    workflowsService.getTemplates().then(setTemplates).catch(() => setTemplates([]));
+  }, [canCreate]);
+
+  const workflows = data?.workflows ?? [];
+  const on = workflows.filter((w) => w.isActive).length;
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return workflows.filter((w) => {
+      if (filter === 'on' && !w.isActive) return false;
+      if (filter === 'off' && w.isActive) return false;
+      return !q || `${w.name} ${w.description ?? ''}`.toLowerCase().includes(q);
+    });
+  }, [workflows, filter, query]);
+
+  const toggle = async (w: Workflow, next: boolean) => {
+    setBusyId(w.id);
     try {
-      setIsLoading(true);
-      const data = await workflowsService.getWorkflows();
-      setWorkflows(data);
-    } catch (error) {
-      console.error('Failed to load workflows:', error);
+      await workflowsService.updateWorkflow(w.id, { isActive: next });
+      say(next ? `${w.name} is on` : `${w.name} is off`);
+      await load();
+    } catch (e) {
+      say(apiErrorMessage(e, 'The workflow could not be changed.'));
     } finally {
-      setIsLoading(false);
+      setBusyId(null);
     }
   };
 
-  const handleToggleWorkflow = async (id: string, currentStatus: boolean) => {
+  const remove = async () => {
+    if (!deleting) return;
+    const w = deleting;
+    setDeleting(null);
     try {
-      await workflowsService.updateWorkflow(id, { isActive: !currentStatus });
-      toast.success(currentStatus ? 'Workflow paused' : 'Workflow activated');
-      await loadWorkflows();
-    } catch (error: any) {
-      console.error('Failed to toggle workflow:', error);
-      toast.error(error.response?.data?.error || 'Failed to update workflow');
+      await workflowsService.deleteWorkflow(w.id);
+      say('Workflow deleted');
+      await load();
+    } catch (e) {
+      say(apiErrorMessage(e, 'The workflow could not be deleted.'));
     }
   };
 
-  const handleDeleteWorkflow = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this workflow?')) return;
-
-    try {
-      await workflowsService.deleteWorkflow(id);
-      toast.success('Workflow deleted');
-      await loadWorkflows();
-    } catch (error: any) {
-      console.error('Failed to delete workflow:', error);
-      toast.error(error.response?.data?.error || 'Failed to delete workflow');
-    }
-  };
-
-  const handleExecuteWorkflow = async (id: string) => {
-    try {
-      setExecutingIds(prev => new Set(prev).add(id));
-      await workflowsService.executeWorkflow(id);
-      toast.success('Workflow execution requested');
-    } catch (error: any) {
-      console.error('Failed to execute workflow:', error);
-      toast.error(error.response?.data?.message || error.message || 'Failed to execute workflow');
-    } finally {
-      setExecutingIds(prev => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-    }
-  };
-
-  const getTriggerTypeLabel = (type: string) => {
-    const labels: Record<string, string> = {
-      order_created: 'Order Created',
-      order_status_changed: 'Order Status Changed',
-      payment_received: 'Payment Received',
-      manual: 'Manual Trigger',
-      scheduled: 'Scheduled'
-    };
-    return labels[type] || type;
-  };
-
-  const getTriggerTypeColor = (type: string) => {
-    const colors: Record<string, string> = {
-      order_created: 'bg-blue-100 text-blue-800',
-      order_status_changed: 'bg-purple-100 text-purple-800',
-      payment_received: 'bg-green-100 text-green-800',
-      manual: 'bg-gray-100 text-gray-800',
-      scheduled: 'bg-orange-100 text-orange-800'
-    };
-    return colors[type] || 'bg-gray-100 text-gray-800';
-  };
-
-  const handleSelectTemplate = (template: any) => {
-    console.log('Selected template:', template);
-    // TODO: Navigate to workflow editor with template pre-filled
-    navigate('/workflows/new', { state: { template } });
-    setShowTemplateGallery(false);
-  };
-
-  // Filter workflows based on search query
-  const filteredWorkflows = workflows.filter((workflow) => {
-    const query = searchQuery.toLowerCase();
-    return (
-      workflow.name.toLowerCase().includes(query) ||
-      (workflow.description && workflow.description.toLowerCase().includes(query))
-    );
-  });
-
-  return (
-    <div>
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Workflow Automation</h1>
-          <p className="text-gray-600 mt-1">Automate your business processes with custom workflows</p>
-        </div>
-        <div className="flex gap-3">
-          <Button variant="secondary" onClick={() => setShowTemplateGallery(true)}>
-            <Sparkles className="w-4 h-4 mr-2" />
-            Browse Templates
-          </Button>
-          <Button variant="primary" onClick={() => navigate('/workflows/new')}>
-            <Plus className="w-4 h-4 mr-2" />
-            Create Workflow
-          </Button>
-        </div>
-      </div>
-
-      {/* Search Bar */}
-      <Card className="mb-6">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-          <input
-            type="text"
-            placeholder="Search workflows by name or description..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-      </Card>
-
-      {isLoading ? (
-        <Card>
-          <div className="text-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading workflows...</p>
-          </div>
-        </Card>
-      ) : filteredWorkflows.length === 0 ? (
-        <Card>
-          <div className="text-center py-12">
-            <GitBranch className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              {searchQuery ? 'No workflows found' : 'No workflows yet'}
-            </h3>
-            <p className="text-gray-600 mb-6">
-              {searchQuery
-                ? 'Try adjusting your search terms or clear the search to see all workflows.'
-                : 'Create your first workflow to automate order processing, notifications, and more.'}
-            </p>
-            {!searchQuery && (
-              <div className="flex gap-3 justify-center">
-                <Button variant="secondary" onClick={() => setShowTemplateGallery(true)}>
-                  <Sparkles className="w-4 h-4 mr-2" />
-                  Browse Templates
-                </Button>
-                <Button variant="primary" onClick={() => navigate('/workflows/new')}>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create From Scratch
-                </Button>
-              </div>
-            )}
-          </div>
-        </Card>
-      ) : (
-        <Card>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Workflow Name
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Description
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Trigger Type
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Last Updated
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredWorkflows.map((workflow) => (
-                  <tr
-                    key={workflow.id}
-                    className={`hover:bg-gray-100 transition-colors ${workflow.isActive ? 'bg-green-50' : ''}`}
-                  >
-                    <td className={`px-6 py-4 whitespace-nowrap ${workflow.isActive ? 'border-l-4 border-green-500 shadow-[inset_4px_0_0_0_rgba(34,197,94,0.1)]' : 'border-l-4 border-transparent'}`}>
-                      <div className="text-sm font-bold text-gray-900">{workflow.name}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex flex-col items-start gap-2">
-                        <button
-                          onClick={() => handleToggleWorkflow(workflow.id, workflow.isActive)}
-                          className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold tracking-wider transition-all shadow-sm border ${workflow.isActive
-                            ? 'bg-green-100 text-green-700 border-green-200'
-                            : 'bg-gray-100 text-gray-600 border-gray-200'
-                            }`}
-                        >
-                          {workflow.isActive && <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />}
-                          {workflow.isActive ? 'ACTIVE' : 'INACTIVE'}
-                        </button>
-                        {runningIds.has(String(workflow.id)) && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 animate-pulse uppercase tracking-wider">
-                            <Zap className="w-3 h-3 mr-1 fill-current" />
-                            Running
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm text-gray-600 max-w-xs truncate">
-                        {workflow.description || '—'}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getTriggerTypeColor(workflow.triggerType)}`}>
-                        {getTriggerTypeLabel(workflow.triggerType)}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center text-sm text-gray-900">
-                        <GitBranch className="w-4 h-4 mr-2 text-blue-500" />
-                        {Array.isArray(workflow.actions) ? workflow.actions.length : 0}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center text-xs text-gray-500">
-                        <Clock className="w-3 h-3 mr-1" />
-                        {new Date(workflow.updatedAt).toLocaleDateString()}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => handleToggleWorkflow(workflow.id, workflow.isActive)}
-                          className={`transition-colors ${workflow.isActive ? 'text-green-600 hover:text-green-800' : 'text-gray-400 hover:text-green-600'}`}
-                          title={workflow.isActive ? 'Pause Workflow' : 'Activate Workflow'}
-                        >
-                          {workflow.isActive ? (
-                            <Pause className="w-5 h-5" />
-                          ) : (
-                            <Play className="w-5 h-5" />
-                          )}
-                        </button>
-                        <button
-                          onClick={() => navigate(`/workflows/${workflow.id}`)}
-                          className="text-blue-600 hover:text-blue-800 transition-colors"
-                          title="Edit Workflow"
-                        >
-                          <Edit className="w-5 h-5" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteWorkflow(workflow.id)}
-                          className="text-red-600 hover:text-red-800 transition-colors"
-                          title="Delete Workflow"
-                        >
-                          <Trash2 className="w-5 h-5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      )}
-
-      {/* Quick Info Section */}
-      {!isLoading && workflows.length > 0 && (
-        <Card className="mt-6">
-          <div className="p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Workflow Statistics</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div>
-                <p className="text-sm text-gray-600 mb-1">Total Workflows</p>
-                <p className="text-2xl font-bold text-gray-900">{workflows.length}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600 mb-1">Active Workflows</p>
-                <p className="text-2xl font-bold text-green-600">
-                  {workflows.filter(w => w.isActive).length}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600 mb-1">Inactive Workflows</p>
-                <p className="text-2xl font-bold text-gray-600">
-                  {workflows.filter(w => !w.isActive).length}
-                </p>
-              </div>
+  const columns: Column<Workflow>[] = [
+    {
+      key: 'name', header: 'Workflow',
+      render: (w) => {
+        const t = triggerChoice(w.triggerType);
+        return (
+          <div className="wfname">
+            <div className={clsx('icn', t.tone)}><t.icon /></div>
+            <div>
+              <Link to={`/workflows/${w.id}`}>{w.name}</Link>
+              {w.description && <small>{w.description}</small>}
             </div>
           </div>
-        </Card>
-      )}
+        );
+      },
+    },
+    { key: 'trigger', header: 'Trigger', render: (w) => <Tag>{describeTrigger(w)}</Tag> },
+    { key: 'actions', header: 'Actions', right: true, render: (w) => (Array.isArray(w.actions) ? w.actions.length : 0) },
+    {
+      key: 'last', header: 'Last run',
+      render: (w) => (w.stats?.lastRunAt ? formatRelativeTime(w.stats.lastRunAt) : <span className="mut">Never</span>),
+    },
+    {
+      key: 'runs', header: 'Runs, 30 days', right: true,
+      render: (w) => {
+        const s = w.stats;
+        return (
+          <div className="runs">
+            <b>{people(s?.runs ?? 0)}</b>
+            <small>{people(s?.succeeded ?? 0)} passed, {people(s?.failed ?? 0)} failed</small>
+          </div>
+        );
+      },
+    },
+    {
+      key: 'active', header: 'Active',
+      render: (w) => canUpdate ? (
+        <label className="wfsw">
+          <input type="checkbox" role="switch" aria-label={`Active: ${w.name}`} checked={w.isActive} disabled={busyId === w.id} onChange={(e) => void toggle(w, e.target.checked)} />
+          <i />
+        </label>
+      ) : <Tag tone={w.isActive ? 'ok' : 'n'}>{w.isActive ? 'On' : 'Off'}</Tag>,
+    },
+    {
+      key: 'tools', header: '', right: true,
+      render: (w) => (
+        <div className="rowtools">
+          <button type="button" className="iconbtn" aria-label={`Open ${w.name}`} title="Open" onClick={() => navigate(`/workflows/${w.id}`)}><Pencil /></button>
+          {canDelete && (
+            <button type="button" className="iconbtn dng" aria-label={`Delete ${w.name}`} title="Delete" onClick={() => setDeleting(w)}><Trash2 /></button>
+          )}
+        </div>
+      ),
+    },
+  ];
 
-      {/* Template Gallery Modal */}
-      {showTemplateGallery && (
-        <WorkflowTemplateGallery
-          onSelectTemplate={handleSelectTemplate}
-          onClose={() => setShowTemplateGallery(false)}
-        />
+  const summary = data?.summary;
+  const title = (
+    <div>
+      <h1>Workflows</h1>
+      <p>
+        Rules that run on your orders for you.
+        {summary && ` ${people(summary.activeCount)} ${summary.activeCount === 1 ? 'is' : 'are'} on and ran ${people(summary.runsToday)} ${summary.runsToday === 1 ? 'time' : 'times'} today.`}
+      </p>
+    </div>
+  );
+  const actions = (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      {canCreate && (
+        <>
+          <Button onClick={() => gallery.current?.scrollIntoView({ behavior: 'smooth' })}><LayoutTemplate />Browse templates</Button>
+          <Button variant="primary" onClick={() => navigate('/workflows/new')}><Plus />New workflow</Button>
+        </>
       )}
     </div>
   );
-};
+
+  if (failed && !data) {
+    return (
+      <section className="wf">
+        <div className="head">{title}</div>
+        <div className="card"><EmptyState title={failed} action={<Button onClick={() => void load()}>Try again</Button>} /></div>
+      </section>
+    );
+  }
+  if (!data) {
+    return <section className="wf" aria-busy="true" aria-label="Loading workflows"><div className="head">{title}</div><Skeleton height={160} /></section>;
+  }
+
+  return (
+    <section className="wf">
+      <div className="head">{title}{actions}</div>
+
+      <div className="grid kpis three">
+        <Tile icon={<PlayCircle />} tone="mint" value={people(summary!.activeCount)} label="Active"
+          footer={<><span>{people(workflows.length - on)} switched off</span><Tag tone="ok">On</Tag></>} />
+        <Tile icon={<Activity />} tone="pine" value={people(summary!.runsToday)} label="Runs today"
+          footer={<span>Test runs and skipped runs are not counted</span>} />
+        <Tile icon={<AlertTriangle />} tone="coral" value={people(summary!.failuresToday)} label="Failed runs today"
+          footer={<><span>{summary!.failuresToday === 0 ? 'Nothing failed' : 'Open a workflow to retry'}</span>{summary!.failuresToday > 0 && <Tag tone="bad">Check</Tag>}</>} />
+      </div>
+
+      <div className="card">
+        <div className="toolbar">
+          <label className="srch">
+            <Search size={16} aria-hidden="true" />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search workflows" aria-label="Search workflows" />
+          </label>
+          <Tabs
+            label="Workflow status" value={filter} onChange={(id) => setFilter(id as Filter)}
+            items={[{ id: 'all', label: 'All', count: workflows.length }, { id: 'on', label: 'Active', count: on }, { id: 'off', label: 'Inactive', count: workflows.length - on }]}
+          />
+        </div>
+        {workflows.length === 0 ? (
+          <EmptyState
+            icon={<WorkflowIcon />} title="No workflows yet"
+            text="A workflow runs on its own when an order arrives or changes. Start from a template or build your own."
+            action={canCreate ? <Button variant="primary" onClick={() => navigate('/workflows/new')}><Plus />New workflow</Button> : undefined}
+          />
+        ) : shown.length === 0 ? (
+          <EmptyState title="No workflows match." />
+        ) : (
+          <Table label="Workflows" className="wft" columns={columns} rows={shown} rowKey={(w) => w.id} />
+        )}
+        <div className="foot"><span>Switch a workflow off to stop it without deleting it.</span></div>
+      </div>
+
+      {canCreate && (
+        <div className="card" ref={gallery} id="templates">
+          <div className="ct"><h3>Start from a template</h3><span>{templates ? `${templates.length} templates` : ''}</span></div>
+          {templates === null ? (
+            <div style={{ padding: 20 }}><Skeleton height={90} /></div>
+          ) : templates.length === 0 ? (
+            <EmptyState title="No templates." />
+          ) : (
+            <div className="gal">
+              {templates.map((t) => {
+                const choice = triggerChoice(t.triggerType);
+                return (
+                  <button
+                    key={t.id} type="button" className="tpl" disabled={!t.available}
+                    onClick={() => navigate('/workflows/new', { state: { template: t } })}
+                  >
+                    <div className={clsx('icn', choice.tone)}><choice.icon /></div>
+                    <b>{t.name}</b>
+                    <p>{t.description}</p>
+                    {!t.available && <span className="why">{t.unavailableReason ?? 'Not available'}</span>}
+                    <div className="meta"><span>{t.category}</span><Tag>{choice.label}</Tag></div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={deleting !== null} onClose={() => setDeleting(null)} onConfirm={() => void remove()}
+        action="Delete" count={1} noun="workflow" title={deleting ? `Delete "${deleting.name}"?` : undefined}
+      >
+        Its run history goes with it and you cannot undo this. Switch it off to stop it without deleting it.
+      </ConfirmDialog>
+    </section>
+  );
+}

@@ -31,7 +31,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     set({ isLoading: true });
     try {
       const response = await apiClient.get('/api/workflows');
-      set({ workflows: response.data, isLoading: false });
+      set({ workflows: response.data.workflows ?? [], isLoading: false });
     } catch (error) {
       set({ isLoading: false });
       throw error;
