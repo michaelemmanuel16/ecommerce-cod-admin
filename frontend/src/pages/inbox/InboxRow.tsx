@@ -55,6 +55,7 @@ export function InboxRow({ item, status, writable, linkFor, onRead, onDone, onSn
         <div className="meta">
           <Tag tone="n">{kindLabel(item.kind)}</Tag>
           <span>{item.actorName ?? 'System'}</span>
+          {item.recipientName && <Tag tone="n">For {item.recipientName}</Tag>}
           <span aria-hidden="true">·</span>
           <time dateTime={item.createdAt} title={formatDateTime(item.createdAt)}>{formatRelativeTime(item.createdAt)}</time>
           {item.snoozedUntil && !item.doneAt && <Tag tone="warn">Snoozed until {formatDateTime(item.snoozedUntil)}</Tag>}

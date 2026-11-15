@@ -15,6 +15,12 @@ export const findQueueAlertRecipients = (tenantId: string) => prisma.user.findMa
   select: { id: true },
 });
 
+/**
+ * Only orders that crossed the limit in the last day are alerted. A tenant's first sweep would otherwise alert every order that
+ * has been pending for weeks (one row per recipient each: 19,496 rows in one local run). An order already alerted is never alerted again.
+ */
+export const QUEUE_ALERT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
 export interface QueueWaitAlertInput {
   id: number;
   orderNumber?: string;
@@ -75,7 +81,7 @@ export async function checkQueueWaitAlerts(tenantId: string, now: Date = new Dat
       deletedAt: null,
       status: 'pending_confirmation',
       firstContactAt: null,
-      createdAt: { lte: cutoff },
+      createdAt: { lte: cutoff, gt: new Date(now.getTime() - QUEUE_ALERT_MAX_AGE_MS) },
     },
     select: {
       id: true,

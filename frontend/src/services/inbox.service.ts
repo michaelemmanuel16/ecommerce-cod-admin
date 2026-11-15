@@ -28,6 +28,8 @@ export interface InboxItem {
   actorId: number | null;
   /** Who caused it. null for a system row. */
   actorName?: string | null;
+  /** Who the row is for. Set only in the owner's Everyone view. */
+  recipientName?: string | null;
   subject: InboxSubject | null;
   subjectDeleted: boolean;
   /** false: the link is greyed (the item was deleted, or it now belongs to someone else). */

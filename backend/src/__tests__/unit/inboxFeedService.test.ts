@@ -31,6 +31,24 @@ describe('listFeed subject lookups', () => {
   });
 });
 
+describe('listFeed recipient name (owner Everyone view)', () => {
+  const rows = [{ ...row(2, 'order', 10), userId: 7 }, { ...row(1, 'order', 10), userId: 8 }];
+  const people = [{ id: 7, firstName: 'Ama', lastName: 'Mensah' }, { id: 8, firstName: 'Kofi', lastName: 'Boateng' }];
+
+  it('names who each row is for when the owner reads everyone', async () => {
+    (prismaMock.notification.findMany as any).mockResolvedValue(rows);
+    (prismaMock.user.findMany as any).mockResolvedValue(people);
+    const res = await listFeed({ id: 1, role: 'super_admin' }, { view: 'all', status: 'open', scope: 'all' });
+    expect(res.items.map((i) => i.recipientName)).toEqual(['Ama Mensah', 'Kofi Boateng']);
+  });
+
+  it('leaves it empty in the person\'s own view', async () => {
+    (prismaMock.notification.findMany as any).mockResolvedValue([{ ...row(1, 'order', 10), userId: 1 }]);
+    const res = await listFeed({ id: 1, role: 'super_admin' }, { view: 'all', status: 'open', scope: 'mine' });
+    expect(res.items[0].recipientName).toBeNull();
+  });
+});
+
 describe('patchRow', () => {
   it('refuses a snooze time that is not in the future', async () => {
     (prismaMock.notification.findFirst as any).mockResolvedValue(row(1, null, null));

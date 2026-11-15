@@ -250,4 +250,13 @@ describe('Inbox page: whose rows', () => {
     expect(screen.queryByRole('button', { name: 'New reminder' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Mark all read' })).not.toBeInTheDocument();
   });
+  it('owner: in Everyone each row says who it is for', async () => {
+    setRole('super_admin');
+    renderPage();
+    await screen.findByText('Order 12 was assigned to you');
+    expect(screen.queryByText('For Ama Mensah')).not.toBeInTheDocument();
+    svc.list.mockResolvedValue({ items: [{ ...ORDER_ROW, recipientName: 'Ama Mensah' }], nextCursor: null });
+    await userEvent.click(screen.getByRole('button', { name: 'Everyone' }));
+    expect(await screen.findByText('For Ama Mensah')).toBeInTheDocument();
+  });
 });

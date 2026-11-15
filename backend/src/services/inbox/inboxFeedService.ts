@@ -128,14 +128,14 @@ async function subjectNoAccessSet(rows: Notification[], gone: Set<string>, user?
 }
 
 /** Names of the people who caused the rows (one read for the page). A row with no actor, or a removed one, has no name. */
-export async function actorNameMap(rows: Notification[]): Promise<Map<number, string>> {
-  const ids = [...new Set(rows.map((r) => r.actorId).filter((id): id is number => id != null))];
+export async function actorNameMap(rows: Notification[], field: 'actorId' | 'userId' = 'actorId'): Promise<Map<number, string>> {
+  const ids = [...new Set(rows.map((r) => r[field]).filter((id): id is number => id != null))];
   if (ids.length === 0) return new Map();
   const people = await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, firstName: true, lastName: true } });
   return new Map(people.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]));
 }
 
-export function present(row: Notification, gone: Set<string>, noAccess: Set<string> = new Set(), actors: Map<number, string> = new Map()) {
+export function present(row: Notification, gone: Set<string>, noAccess: Set<string> = new Set(), actors: Map<number, string> = new Map(), recipients?: Map<number, string>) {
   const hasSubject = !!row.subjectType && row.subjectId != null;
   return {
     id: row.id,
@@ -152,6 +152,8 @@ export function present(row: Notification, gone: Set<string>, noAccess: Set<stri
     userId: row.userId,
     actorId: row.actorId,
     actorName: row.actorId != null ? actors.get(row.actorId) ?? null : null,
+    /** Who the row is for. Only the owner's "Everyone" read fills it; otherwise null (every row is the reader's own). */
+    recipientName: recipients ? recipients.get(row.userId) ?? null : null,
     subject: hasSubject ? { type: row.subjectType, id: row.subjectId } : null,
     subjectDeleted: hasSubject ? gone.has(`${row.subjectType}:${row.subjectId}`) : false,
     /** false: the link is greyed (the item was deleted, or it now belongs to someone else). */
@@ -184,12 +186,13 @@ export async function listFeed(user: InboxUser, q: FeedQuery, now = new Date()) 
     take: limit + 1,
   });
   const page = rows.slice(0, limit);
-  const [{ gone, noAccess }, actors] = await Promise.all([
+  const [{ gone, noAccess }, actors, recipients] = await Promise.all([
     subjectDeletedMap(page).then(async (deleted) => ({ gone: deleted, noAccess: await subjectNoAccessSet(page, deleted, user) })),
     actorNameMap(page),
+    q.scope === 'all' ? actorNameMap(page, 'userId') : undefined,
   ]);
   return {
-    items: page.map((r) => present(r, gone, noAccess, actors)),
+    items: page.map((r) => present(r, gone, noAccess, actors, recipients)),
     nextCursor: rows.length > limit ? encodeCursor(page[page.length - 1]) : null,
   };
 }

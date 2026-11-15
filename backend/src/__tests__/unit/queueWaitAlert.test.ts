@@ -130,6 +130,16 @@ describe('M7-T05: Queue wait alert service tests', () => {
     expect(mockCreateNotification).not.toHaveBeenCalled();
   });
 
+  it('only looks at orders created in the last 24 hours, so a first sweep does not alert weeks of old orders', async () => {
+    mockPrisma.systemConfig.findUnique.mockResolvedValue({ operatingHours: { queueWaitAlertMinutes: 30 }, timeZone: 'Africa/Accra' });
+    mockPrisma.order.findMany.mockResolvedValue([]);
+    const now = new Date('2026-10-05T12:00:00Z');
+    await checkQueueWaitAlerts(tenantId, now);
+    const where = mockPrisma.order.findMany.mock.calls[0][0].where;
+    expect(where.createdAt.gt).toEqual(new Date('2026-10-04T12:00:00Z'));
+    expect(where.createdAt.lte).toEqual(new Date('2026-10-05T11:30:00Z'));
+  });
+
   it('a said-NO order waiting 31 open minutes alerts; the second run does not alert again', async () => {
     mockPrisma.systemConfig.findUnique.mockResolvedValue({
       operatingHours: {
