@@ -12,6 +12,7 @@ import { formatCurrency, formatPhoneLocal } from '../utils/format';
 import { ORDER_STATUS_LABELS } from '../utils/orderStatus';
 import type { OrderStatus } from '../types';
 import { RiskTags } from './customers/RiskTags';
+import { OptOutFlags, type OptOutChannel } from './customers/OptOutFlags';
 import { CustomerModal } from './customers/CustomerModal';
 import { AVATAR_TONES, initials } from '../utils/people';
 import { customerName, lastOrderDate } from './customers/model';
@@ -41,6 +42,7 @@ const ORDER_COLUMNS: Column<Order>[] = [
 ];
 
 const dash = <span className="mut">—</span>;
+const OPT_LABEL: Record<OptOutChannel, string> = { sms: 'SMS', whatsapp: 'WhatsApp', email: 'email' };
 
 /**
  * The customer page (M3-T50, F-354). No mockup: built in the v2 style from the Orders and Dashboard parts.
@@ -62,6 +64,7 @@ export function CustomerDetails() {
   const [overrideAllow, setOverrideAllow] = useState(true);
   const [overrideNote, setOverrideNote] = useState('');
   const [overriding, setOverriding] = useState(false);
+  const [flagBusy, setFlagBusy] = useState<OptOutChannel | null>(null);
 
   const load = useCallback(
     async (quiet: boolean) => {
@@ -90,6 +93,21 @@ export function CustomerDetails() {
     } catch (e) {
       // 409: an order is out for delivery. The API's sentence says what to do.
       say(apiErrorMessage(e, 'The customer could not be deleted.'));
+    }
+  };
+
+  // The API changes every customer with this phone and writes an event; the answer has the flags of this customer
+  const toggleOptOut = async (channel: OptOutChannel, optedOut: boolean) => {
+    if (!customer || flagBusy) return;
+    setFlagBusy(channel);
+    try {
+      const { flags } = await customersService.setOptOut(customer.id, channel, optedOut);
+      setCustomer((c) => (c ? { ...c, smsOptOut: flags.sms, whatsappOptOut: flags.whatsapp, emailOptOut: flags.email } : c));
+      say(optedOut ? `Opted out of ${OPT_LABEL[channel]}` : `Gets ${OPT_LABEL[channel]} again`);
+    } catch (e) {
+      say(apiErrorMessage(e, 'The opt-out was not saved.'));
+    } finally {
+      setFlagBusy(null);
     }
   };
 
@@ -133,7 +151,6 @@ export function CustomerDetails() {
   const normalizedPhone = normalizePhone(customer.phoneNumber);
   const waUrl = whatsappUrl(normalizedPhone);
   const orderCount = customer.totalOrders;
-  const optOut = (off: boolean) => (off ? <Tag tone="warn">Opted out</Tag> : <Tag tone="ok">Receives</Tag>);
 
   return (
     <section className="cdetail">
@@ -287,13 +304,9 @@ export function CustomerDetails() {
             <dd>{formatPhoneLocal(customer.phoneNumber)}</dd>
             <dt>Alternate phone</dt>
             <dd>{customer.alternatePhone ? formatPhoneLocal(customer.alternatePhone) : dash}</dd>
-            <dt>SMS</dt>
-            <dd>{optOut(customer.smsOptOut)}</dd>
-            <dt>WhatsApp</dt>
-            <dd>{optOut(customer.whatsappOptOut)}</dd>
-            <dt>Email messages</dt>
-            <dd>{optOut(customer.emailOptOut)}</dd>
+            <OptOutFlags flags={customer} canEdit={!deleted && can('customers', 'update')} busy={flagBusy} onToggle={(c, v) => void toggleOptOut(c, v)} />
           </dl>
+          {!deleted && can('customers', 'update') && <p className="optnote">A switch on means we do not message this customer on that channel. It changes every customer with the same phone number.</p>}
         </Card>
         <Card title="Address">
           <dl>

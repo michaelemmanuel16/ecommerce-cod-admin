@@ -1,5 +1,5 @@
 import { apiClient } from './api';
-import type { Assignee, ConversationList, Channel, LogPage, LogStatus, MessageTemplate, Overview, ReplyTemplate, TemplateInput, Thread } from '../pages/messages/types';
+import type { Assignee, ConversationList, Channel, LogPage, LogStatus, MessageTemplate, OptOutPage, Overview, ReplyTemplate, TemplateInput, Thread } from '../pages/messages/types';
 
 // Every call is quiet: the page shows the server's sentence itself (a toast or an inline line).
 const quiet = { quiet: true } as const;
@@ -88,5 +88,16 @@ export const messagesService = {
   async syncTemplates(): Promise<{ created: number; updated: number; total: number }> {
     const { data } = await apiClient.post<{ created: number; updated: number; total: number }>('/api/message-templates/sync', {}, quiet);
     return data;
+  },
+
+  /** GET /api/messages/opt-outs: who is opted out, one row for each channel. */
+  async listOptOuts(query: { channel?: Channel; q?: string; page?: number; limit?: number }): Promise<OptOutPage> {
+    const { data } = await apiClient.get<OptOutPage>('/api/messages/opt-outs', { params: query, skipCache: true, ...quiet });
+    return data;
+  },
+
+  /** PUT /api/messages/opt-outs: add (optedOut true) or remove one. SMS and WhatsApp go by phone, email by address. */
+  async setOptOut(input: { channel: Channel; optedOut: boolean; phone?: string; email?: string }): Promise<void> {
+    await apiClient.put('/api/messages/opt-outs', input, quiet);
   },
 };

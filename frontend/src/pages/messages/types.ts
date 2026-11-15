@@ -135,3 +135,23 @@ export interface TemplateInput {
   category?: string;
   metaTemplateName?: string;
 }
+
+/** One row of GET /api/messages/opt-outs: a customer (or a bare phone) opted out of one channel. */
+export interface OptOutRow {
+  key: string;
+  channel: Channel;
+  customerId: number | null;
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+  area: string | null;
+  since: string | null;
+  reason: string | null;
+}
+
+export interface OptOutPage {
+  items: OptOutRow[];
+  total: number;
+  page: number;
+  limit: number;
+}

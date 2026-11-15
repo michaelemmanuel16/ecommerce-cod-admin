@@ -91,6 +91,12 @@ export const customersService = {
     return response.data;
   },
 
+  /** One opt-out flag of a customer (M9-T35). The API changes every customer with the same phone and writes an event for each. */
+  async setOptOut(customerId: number, channel: 'sms' | 'whatsapp' | 'email', optedOut: boolean): Promise<{ flags: { sms: boolean; whatsapp: boolean; email: boolean } }> {
+    const response = await apiClient.put(`/api/customers/${customerId}/opt-outs`, { channel, optedOut }, { quiet: true });
+    return response.data;
+  },
+
   /** The v2 customers list (F-350 to F-353). Rows keep the API names; `skipCache` is for refetches after a change. */
   async listCustomers(params: CustomerListParams, skipCache = false): Promise<{ rows: CustomerRow[]; pagination: PaginationMeta }> {
     const response = await apiClient.get('/api/customers', { params, skipCache });

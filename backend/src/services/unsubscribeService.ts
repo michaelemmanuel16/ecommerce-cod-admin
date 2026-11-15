@@ -107,3 +107,40 @@ export async function optOutByUnsubscribeToken(token: string, extraChannel?: Mes
   }
   return true;
 }
+
+export interface StoreBrand {
+  /** The store name, or null when the customer belongs to no store. */
+  name: string | null;
+  /** An https address, or null. */
+  logo: string | null;
+  /** A 6-digit hex colour (#RRGGBB). */
+  color: string;
+}
+
+export const DEFAULT_BRAND_COLOR = '#111827';
+const HEX = /^#([0-9a-f]{6})$/i;
+const short = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i;
+
+/** `#abc` -> `#aabbcc`; anything that is not a hex colour -> null. Only these ever reach the page's style. */
+export function cleanHex(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const t = v.trim();
+  const m = short.exec(t);
+  if (m) return `#${m[1]}${m[1]}${m[2]}${m[2]}${m[3]}${m[3]}`.toLowerCase();
+  return HEX.test(t) ? t.toLowerCase() : null;
+}
+
+/**
+ * The look of the store for the public unsubscribe page: its name and logo, and the button colour of its latest active
+ * checkout form (the colour its customers already know). A store with no form gets a neutral dark.
+ */
+export async function getStoreBrand(tenantId: string | null): Promise<StoreBrand> {
+  if (!tenantId) return { name: null, logo: null, color: DEFAULT_BRAND_COLOR };
+  const [tenant, form] = await runInTenantOf(tenantId, 'unsubscribe', () => Promise.all([
+    prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true, logo: true } }),
+    prisma.checkoutForm.findFirst({ where: { tenantId, isActive: true, archivedAt: null }, orderBy: { updatedAt: 'desc' }, select: { styling: true } }),
+  ]));
+  const styling = (form?.styling ?? {}) as { buttonColor?: unknown; accentColor?: unknown };
+  const logo = tenant?.logo && /^https:\/\//i.test(tenant.logo) ? tenant.logo : null;
+  return { name: tenant?.name?.trim() || null, logo, color: cleanHex(styling.buttonColor) ?? cleanHex(styling.accentColor) ?? DEFAULT_BRAND_COLOR };
+}

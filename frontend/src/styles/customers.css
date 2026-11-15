@@ -41,6 +41,10 @@
 .v2 .cdetail dl{padding:4px 20px 18px;display:grid;grid-template-columns:130px 1fr;gap:10px 12px}
 .v2 .cdetail dt{color:var(--ink-3);font-size:13px}
 .v2 .cdetail dd{font-weight:500;overflow-wrap:anywhere}
+/* opt-out flags (M9-T35): a dt and dd in one group that the grid still lays out as a row */
+.v2 .cdetail .optrow{display:contents}
+.v2 .cdetail .optsw{display:inline-flex;align-items:center;gap:10px}
+.v2 .cdetail .optnote{padding:0 20px 18px;color:var(--ink-3);font-size:12.5px}
 .v2 .cdetail .notes{padding:0 20px 18px;white-space:pre-wrap}
 .v2 .cdetail .bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 16px;border-radius:12px;font-size:13.5px}
 .v2 .cdetail .bar.bad{background:var(--coral-soft);color:var(--coral)}
