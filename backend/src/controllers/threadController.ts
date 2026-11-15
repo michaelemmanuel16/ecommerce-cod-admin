@@ -25,6 +25,12 @@ export const getBySubject = async (req: AuthRequest, res: Response): Promise<voi
   res.json(await threads.getThreadBySubject(type, id, me(req)));
 };
 
+/** GET /api/threads/by-subject/:type/:id/mentionable */
+export const getMentionable = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { type, id } = subjectOf(req);
+  res.json(await threads.listMentionable(type, id, me(req)));
+};
+
 /** POST /api/threads/by-subject/:type/:id/comments { body, parentId?, mentionIds? } */
 export const addComment = async (req: AuthRequest, res: Response): Promise<void> => {
   const { type, id } = subjectOf(req);

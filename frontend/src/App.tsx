@@ -40,6 +40,7 @@ const Staff = lazy(() => import('./pages/Staff').then(m => ({ default: m.Staff }
 const Targets = lazy(() => import('./pages/Targets').then(m => ({ default: m.Targets })));
 const Leaderboard = lazy(() => import('./pages/Leaderboard').then(m => ({ default: m.Leaderboard })));
 const Marketing = lazy(() => import('./pages/Marketing').then(m => ({ default: m.Marketing })));
+const Inbox = lazy(() => import('./pages/Inbox').then(m => ({ default: m.Inbox })));
 const Reports = lazy(() => import('./pages/Reports').then(m => ({ default: m.Reports })));
 const Workflows = lazy(() => import('./pages/Workflows').then(m => ({ default: m.Workflows })));
 const WorkflowWizard = lazy(() => import('./pages/WorkflowWizard').then(m => ({ default: m.WorkflowWizard })));
@@ -375,6 +376,9 @@ function App() {
             } />
             <Route path="marketing" element={
               <Suspense fallback={<Loading />}><Marketing /></Suspense>
+            } />
+            <Route path="inbox" element={
+              <Suspense fallback={<Loading />}><Inbox /></Suspense>
             } />
             <Route path="reports" element={
               <Suspense fallback={<Loading />}><Reports /></Suspense>

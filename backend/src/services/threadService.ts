@@ -101,6 +101,22 @@ async function activeMentionIds(type: NoteSubjectType, subjectId: number, ids: n
   return ids;
 }
 
+/** GET mentionable: the active people of this business who can open the subject, so the mention picker never lists someone the API would refuse. Never the caller. */
+export async function listMentionable(type: NoteSubjectType, id: number, user: ThreadUser) {
+  await assertSubjectVisible(type, id, user as never);
+  const people = await prisma.user.findMany({
+    where: { isActive: true, id: { not: user.id }, ...HUMAN_USERS_WHERE },
+    select: { id: true, role: true, firstName: true, lastName: true },
+    orderBy: [{ firstName: 'asc' }, { id: 'asc' }],
+    take: 200,
+  });
+  const visible = await Promise.all(people.map(async (p) => ((await canSee(type, id, p)) ? p : null)));
+  return {
+    people: visible.filter((p): p is NonNullable<typeof p> => p !== null)
+      .map((p) => ({ id: p.id, name: `${p.firstName} ${p.lastName}`.trim(), role: p.role })),
+  };
+}
+
 async function getOrCreateThread(type: NoteSubjectType, id: number): Promise<Thread> {
   const existing = await findThread(type, id);
   if (existing) return existing;

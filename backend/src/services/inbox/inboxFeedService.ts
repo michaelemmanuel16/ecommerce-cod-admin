@@ -127,7 +127,15 @@ async function subjectNoAccessSet(rows: Notification[], gone: Set<string>, user?
   return out;
 }
 
-export function present(row: Notification, gone: Set<string>, noAccess: Set<string> = new Set()) {
+/** Names of the people who caused the rows (one read for the page). A row with no actor, or a removed one, has no name. */
+export async function actorNameMap(rows: Notification[]): Promise<Map<number, string>> {
+  const ids = [...new Set(rows.map((r) => r.actorId).filter((id): id is number => id != null))];
+  if (ids.length === 0) return new Map();
+  const people = await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, firstName: true, lastName: true } });
+  return new Map(people.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]));
+}
+
+export function present(row: Notification, gone: Set<string>, noAccess: Set<string> = new Set(), actors: Map<number, string> = new Map()) {
   const hasSubject = !!row.subjectType && row.subjectId != null;
   return {
     id: row.id,
@@ -143,6 +151,7 @@ export function present(row: Notification, gone: Set<string>, noAccess: Set<stri
     createdAt: row.createdAt,
     userId: row.userId,
     actorId: row.actorId,
+    actorName: row.actorId != null ? actors.get(row.actorId) ?? null : null,
     subject: hasSubject ? { type: row.subjectType, id: row.subjectId } : null,
     subjectDeleted: hasSubject ? gone.has(`${row.subjectType}:${row.subjectId}`) : false,
     /** false: the link is greyed (the item was deleted, or it now belongs to someone else). */
@@ -177,8 +186,9 @@ export async function listFeed(user: InboxUser, q: FeedQuery, now = new Date()) 
   const page = rows.slice(0, limit);
   const gone = await subjectDeletedMap(page);
   const noAccess = await subjectNoAccessSet(page, gone, user);
+  const actors = await actorNameMap(page);
   return {
-    items: page.map((r) => present(r, gone, noAccess)),
+    items: page.map((r) => present(r, gone, noAccess, actors)),
     nextCursor: rows.length > limit ? encodeCursor(page[page.length - 1]) : null,
   };
 }
@@ -226,7 +236,7 @@ export async function patchRow(userId: number, id: number, patch: RowPatch, now 
   if (patch.snoozedUntil !== undefined) Object.assign(data, { snoozedUntil: patch.snoozedUntil });
   const updated = await prisma.notification.update({ where: { id }, data });
   const gone = await subjectDeletedMap([updated]);
-  return present(updated, gone, await subjectNoAccessSet([updated], gone, role ? { id: userId, role } : undefined));
+  return present(updated, gone, await subjectNoAccessSet([updated], gone, role ? { id: userId, role } : undefined), await actorNameMap([updated]));
 }
 
 /** POST /api/inbox/mark-all: marks the person's unread open rows of one view as read. */

@@ -1,0 +1,99 @@
+/* Inbox (M9-T37, T40). Copied from the style block of docs/mockups/v2/inbox.html, with the `.v2 .inbx` scope added.
+   Colours come from tokens.css only. Rules with no mockup counterpart are marked "new". */
+
+.v2 .inbx .inbox{display:grid;grid-template-columns:220px minmax(0,1fr);gap:18px;align-items:start}
+.v2 .inbx .rail{padding:10px;position:sticky;top:84px}
+.v2 .inbx .rail button{display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;border-radius:10px;color:var(--ink-2);font-weight:600;text-align:left}
+.v2 .inbx .rail button svg{width:16px;height:16px;flex:none}
+.v2 .inbx .rail button:hover{background:var(--hover);color:var(--ink)}
+.v2 .inbx .rail button.on{background:var(--pine-soft);color:var(--pine);font-weight:700}
+.v2 .inbx .rail .cnt{margin-left:auto;font-size:11.5px;font-weight:700;padding:1px 7px;border-radius:99px;background:var(--hover);color:var(--ink-2)}
+.v2 .inbx .rail .cnt.hot{background:var(--coral-soft);color:var(--coral)}
+.v2 .inbx .rail hr{border:0;border-top:1px solid var(--line);margin:8px 6px}
+.v2 .inbx .istack{display:flex;flex-direction:column;gap:16px;min-width:0}
+.v2 .inbx .sub{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.v2 .inbx .sub h3{font-size:15px}
+.v2 .inbx .hd-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.v2 .inbx .seg{display:inline-flex;gap:4px;padding:4px;border:1px solid var(--line);border-radius:12px;background:var(--hover)}
+.v2 .inbx .seg button{padding:5px 12px;border-radius:9px;font-weight:600;color:var(--ink-2)}
+.v2 .inbx .seg button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+
+.v2 .inbx .nrow{display:flex;gap:12px;padding:14px 20px;border-bottom:1px solid var(--line);align-items:flex-start;position:relative}
+.v2 .inbx .nrow:last-child{border-bottom:0}
+.v2 .inbx .nrow:hover{background:var(--hover)}
+.v2 .inbx .nrow.unread{background:color-mix(in srgb,var(--pine-soft) 45%,transparent)}
+.v2 .inbx .nrow.unread:hover{background:var(--pine-soft)}
+.v2 .inbx .nrow .ud{position:absolute;left:7px;top:26px;width:7px;height:7px;border-radius:50%;background:var(--coral)}
+.v2 .inbx .nrow:not(.unread) .ud{display:none}
+.v2 .inbx .nic{flex:none;width:38px;height:38px;border-radius:11px;display:grid;place-items:center}
+.v2 .inbx .nic svg{width:18px;height:18px}
+.v2 .inbx .nic.t-coral{background:var(--coral-soft);color:var(--coral)}
+.v2 .inbx .nic.t-pine{background:var(--pine-soft);color:var(--pine)}
+.v2 .inbx .nic.t-violet{background:var(--violet-soft);color:var(--violet)}
+.v2 .inbx .nic.t-gold{background:var(--gold-soft);color:var(--warn-ink)}
+.v2 .inbx .nic.t-n{background:var(--hover);color:var(--ink-2)}
+.v2 .inbx .nbody{flex:1;min-width:0}
+.v2 .inbx .nbody b{display:block;font-size:14px;font-weight:600;overflow-wrap:anywhere}
+.v2 .inbx .nrow:not(.unread) .nbody b{font-weight:500}
+.v2 .inbx .nmsg{color:var(--ink-2);font-size:13px;margin-top:2px;overflow-wrap:anywhere}
+.v2 .inbx .nbody .meta{color:var(--ink-3);font-size:12.5px;margin-top:3px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.v2 .inbx .lnk{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:600;color:var(--pine);text-decoration:none;margin-top:5px;padding:2px 8px;border-radius:8px;background:var(--pine-soft)}
+.v2 .inbx .lnk.off{color:var(--ink-3);background:var(--hover)}
+.v2 .inbx .qa{display:flex;gap:4px;flex:none;flex-wrap:wrap;justify-content:flex-end}
+.v2 .inbx .qa button,.v2 .inbx .qa a{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;color:var(--ink-3);border:1px solid transparent}
+.v2 .inbx .qa button:hover,.v2 .inbx .qa a:hover{background:var(--card);border-color:var(--line);color:var(--ink)}
+.v2 .inbx .qa svg{width:16px;height:16px}
+.v2 .inbx .snwrap{position:relative}
+.v2 .inbx .sn{position:absolute;right:0;top:36px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-menu);padding:6px;z-index:5;min-width:190px}
+.v2 .inbx .sn button{display:block;width:100%;height:auto;text-align:left;padding:7px 10px;border-radius:8px;font-weight:500;color:var(--ink);white-space:nowrap}
+.v2 .inbx .sn button:hover{background:var(--hover)}
+.v2 .inbx .empty{padding:40px 20px;text-align:center;color:var(--ink-3)}
+.v2 .inbx .more{padding:14px 20px;text-align:center;border-top:1px solid var(--line)}
+/* new: upcoming reminders */
+.v2 .inbx .rrow{display:flex;gap:12px;padding:13px 20px;border-bottom:1px solid var(--line);align-items:center}
+.v2 .inbx .rrow:last-child{border-bottom:0}
+.v2 .inbx .rrow .rico{flex:none;width:18px;height:18px;color:var(--warn-ink)}
+/* new: reminder dialog */
+.v2 .rlink{color:var(--ink-2);font-size:13px;margin:-4px 0 12px}
+.v2 .f2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+/* thread drawer: from the .tmsgs, .m, .comp, .mnl rules of the mockup */
+.v2 .thr-body{min-height:120px}
+.v2 .thr-msg{color:var(--ink-3);padding:6px 0}
+.v2 .thr-reply{color:var(--ink-2);font-size:13px;margin-bottom:6px}
+.v2 .tmsgs{display:flex;flex-direction:column;gap:16px;overflow-wrap:anywhere}
+.v2 .tmsgs .m{display:flex;gap:10px}
+.v2 .tmsgs .m .a{flex:none;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:12px;background:var(--pine-soft);color:var(--pine)}
+.v2 .tmsgs .m .bub{min-width:0;flex:1}
+.v2 .tmsgs .m .nm{font-weight:700;font-size:13.5px}
+.v2 .tmsgs .m .nm small{color:var(--ink-3);font-weight:500;margin-left:6px}
+.v2 .tmsgs .m .tx{margin-top:2px;white-space:pre-wrap}
+.v2 .tmsgs .m .tx.gone{color:var(--ink-3);font-style:italic}
+.v2 .tmsgs .m.re{margin:10px 0 0 44px;padding-left:12px;border-left:2px solid var(--line)}
+.v2 .comp{border-top:1px solid var(--line);margin-top:16px;padding-top:12px;position:relative}
+.v2 .comp textarea{width:100%;min-height:72px;resize:vertical;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font:inherit;background:var(--card);color:var(--ink)}
+.v2 .comp textarea:focus-visible{outline:2px solid var(--pine);outline-offset:1px}
+.v2 .comp .crow{display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap}
+.v2 .comp .crow .sp{flex:1}
+.v2 .comp .mnl{position:absolute;left:0;bottom:calc(100% - 6px);background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-menu);padding:6px;min-width:220px;max-height:240px;overflow:auto;z-index:5}
+.v2 .comp .mnl button{display:flex;gap:10px;align-items:center;width:100%;padding:7px 10px;border-radius:8px;text-align:left}
+.v2 .comp .mnl button:hover{background:var(--hover)}
+.v2 .comp .mnl small{color:var(--ink-3);margin-left:auto;text-transform:capitalize}
+
+@media (max-width:1100px){
+  .v2 .inbx .inbox{grid-template-columns:minmax(0,1fr)}
+  .v2 .inbx .rail{position:static;display:flex;gap:4px;overflow-x:auto}
+  .v2 .inbx .rail button{width:auto;white-space:nowrap}
+  .v2 .inbx .rail hr{display:none}
+}
+@media (max-width:760px){
+  .v2 .inbx .nrow{flex-wrap:wrap}
+  .v2 .inbx .qa{margin-left:50px;justify-content:flex-start}
+  .v2 .f2{grid-template-columns:1fr}
+  .v2 .tmsgs .m.re{margin-left:20px}
+}
+/* the rep app keeps the strip above the list at every width */
+.v2 .inbx.compact .inbox{grid-template-columns:minmax(0,1fr)}
+.v2 .inbx.compact .rail{position:static;display:flex;gap:4px;overflow-x:auto}
+.v2 .inbx.compact .rail button{width:auto;white-space:nowrap}
+.v2 .inbx.compact .rail hr{display:none}
