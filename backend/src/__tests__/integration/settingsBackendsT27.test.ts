@@ -6,6 +6,14 @@ import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import '../mocks/logger.mock';
 import '../mocks/socketInstance.mock';
 import request from 'supertest';
+// The SMTP host guard resolves the name first. The test host does not exist, so it answers with a public address;
+// every other name goes to the real lookup.
+jest.mock('dns', () => {
+  const actual = jest.requireActual<typeof import('dns')>('dns');
+  const lookup = (host: string, ...rest: any[]) =>
+    host === 'smtp.example.test' ? Promise.resolve([{ address: '93.184.216.34', family: 4 }]) : (actual.promises.lookup as any)(host, ...rest);
+  return { ...actual, promises: { ...actual.promises, lookup } };
+});
 import Redis from 'ioredis';
 import nodemailer from 'nodemailer';
 
@@ -161,7 +169,11 @@ describe('SMTP test', () => {
     expect(sendMail).toHaveBeenCalledTimes(1);
     expect(sendMail.mock.calls[0][0]).toMatchObject({ from: 'shop@example.test' });
     expect(sendMail.mock.calls[0][0].to).toMatch(/@codadmin\.test$/); // the admin who asked
-    expect(create.mock.calls[0][0]).toMatchObject({ host: 'smtp.example.test', auth: { user: 'shop-login', pass: 'pw' } });
+    expect(create.mock.calls[0][0]).toMatchObject({
+      host: '93.184.216.34',
+      tls: { servername: 'smtp.example.test' },
+      auth: { user: 'shop-login', pass: 'pw' },
+    });
     create.mockRestore();
   });
 
