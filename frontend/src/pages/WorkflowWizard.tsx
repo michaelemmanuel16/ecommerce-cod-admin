@@ -12,6 +12,7 @@ import { useFilterOptions } from './orders/useFilterOptions';
 import { ActionsStep } from './workflows/builder/ActionsStep';
 import { ConditionsStep } from './workflows/builder/ConditionsStep';
 import { ReviewStep } from './workflows/builder/ReviewStep';
+import { RunHistory } from './workflows/builder/RunHistory';
 import { TriggerStep } from './workflows/builder/TriggerStep';
 import { Area } from './workflows/builder/Area';
 import { emptyForm, firstErrorStep, formFromTemplate, formFromWorkflow, noErrors, sortErrors, toBody, type FieldErrors, type Form } from './workflows/model';
@@ -273,6 +274,7 @@ export function WorkflowWizard() {
           {step === 4 && (
             <ReviewStep
               form={form} nameOf={nameOf} general={errors.general} dirty={dirty} saved={savedId !== null} canTest={canTest} onTest={test}
+              history={savedId ? <RunHistory workflowId={savedId} canRetry={can('workflows', 'execute')} /> : undefined}
             />
           )}
           <div className="wfoot">

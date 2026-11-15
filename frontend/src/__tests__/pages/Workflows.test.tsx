@@ -7,7 +7,7 @@ import { Workflows } from '../../pages/Workflows';
 import { template, workflow } from '../fixtures/workflows';
 
 const svc = vi.hoisted(() => ({
-  getWorkflows: vi.fn(), getTemplates: vi.fn(), updateWorkflow: vi.fn(), deleteWorkflow: vi.fn()
+  getWorkflows: vi.fn(), getTemplates: vi.fn(), updateWorkflow: vi.fn(), deleteWorkflow: vi.fn(), runOnOrders: vi.fn(),
 }));
 vi.mock('../../services/workflows.service', () => ({ workflowsService: svc }));
 
@@ -44,6 +44,7 @@ beforeEach(() => {
   svc.getTemplates.mockResolvedValue([template(), template({ id: 'wa', name: 'WhatsApp confirmation', available: false, unavailableReason: 'Needs WhatsApp in Connections' })]);
   svc.updateWorkflow.mockResolvedValue({ workflow: workflow() });
   svc.deleteWorkflow.mockResolvedValue(undefined);
+  svc.runOnOrders.mockResolvedValue({ queued: 1, batches: 1 });
 });
 
 describe('Workflows list (M9-T41)', () => {
@@ -134,6 +135,22 @@ describe('Workflows gallery (M9-T41)', () => {
   });
 });
 
+describe('Workflows run button (M9-T43)', () => {
+  it('Run opens the dialog for that workflow and starts it on the typed orders', async () => {
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: 'Run Send confirmation SMS' }));
+    await userEvent.type(screen.getByLabelText('Order numbers'), '#24117, 24118');
+    await userEvent.click(screen.getByRole('button', { name: 'Run' }));
+    expect(svc.runOnOrders).toHaveBeenCalledWith(1, [24117, 24118], false);
+  });
+
+  it('there is no Run button on a workflow that is off', async () => {
+    renderPage();
+    await screen.findByRole('link', { name: 'Daily reminder' });
+    expect(screen.queryByRole('button', { name: 'Run Daily reminder' })).not.toBeInTheDocument();
+  });
+});
+
 describe('Workflows without permission', () => {
   it('a viewer sees no write controls', async () => {
     allowed = ['view'];
@@ -143,6 +160,7 @@ describe('Workflows without permission', () => {
     expect(screen.queryByRole('button', { name: /Browse templates/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('switch')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Delete / })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Run / })).not.toBeInTheDocument();
     expect(screen.queryByText('Start from a template')).not.toBeInTheDocument();
     expect(svc.getTemplates).not.toHaveBeenCalled();
   });

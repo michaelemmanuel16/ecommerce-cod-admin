@@ -4,11 +4,11 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ToastProvider } from '../../components/ui-v2';
 import { WorkflowWizard } from '../../pages/WorkflowWizard';
-import { template, workflow } from '../fixtures/workflows';
+import { run, template, workflow } from '../fixtures/workflows';
 
 const svc = vi.hoisted(() => ({
   getWorkflow: vi.fn(), createWorkflow: vi.fn(), updateWorkflow: vi.fn(), testRun: vi.fn(), getRegions: vi.fn(), previewCatchUp: vi.fn(),
-  runCatchUp: vi.fn(), regenerateToken: vi.fn()
+  runCatchUp: vi.fn(), regenerateToken: vi.fn(), getRuns: vi.fn(), retryRun: vi.fn(),
 }));
 vi.mock('../../services/workflows.service', () => ({ workflowsService: svc }));
 
@@ -45,6 +45,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   allowed = ['view', 'create', 'update', 'delete', 'execute'];
   svc.getRegions.mockResolvedValue({ country: 'Ghana', countryCode: 'GH', regions: ['Greater Accra', 'Ashanti'] });
+  svc.getRuns.mockResolvedValue({ executions: [], pagination: { page: 1, limit: 10, total: 0, pages: 1 } });
   svc.getWorkflow.mockImplementation(async (id) => workflow({ id }));
   svc.previewCatchUp.mockResolvedValue({ count: 38, orderIds: [1, 2], capped: false });
   svc.createWorkflow.mockImplementation(async (body) => ({ workflow: workflow({ id: 55, ...body }) }));
@@ -292,6 +293,56 @@ describe('Workflow builder catch-up (M9-T42, F-512)', () => {
     await openStep(/Actions/);
     expect(screen.queryByRole('switch', { name: /no one yet/ })).not.toBeInTheDocument();
     expect(svc.previewCatchUp).not.toHaveBeenCalled();
+  });
+});
+
+describe('Workflow builder run history (M9-T43)', () => {
+  it('shows runs with status, source and order link, and opens the steps of one', async () => {
+    svc.getWorkflow.mockResolvedValue(workflow({ id: 4 }));
+    svc.getRuns.mockResolvedValue({
+      executions: [
+        run({ id: 1 }),
+        run({ id: 2, status: 'failed', error: 'SMS is not set up: message not sent', failedStepIndex: 0, steps: [{ index: 0, type: 'send_sms', status: 'failed', result: null, error: 'SMS is not set up: message not sent' }] }),
+      ],
+      pagination: { page: 1, limit: 10, total: 2, pages: 1 },
+    });
+    renderAt('/workflows/4');
+    await screen.findByDisplayValue('Send confirmation SMS');
+    await openStep(/Review/);
+    const table = await screen.findByRole('table', { name: 'Run history' });
+    expect(within(table).getAllByRole('link', { name: '#24117' })[0]).toHaveAttribute('href', '/orders/24117');
+    expect(within(table).getByText('Success')).toBeInTheDocument();
+    expect(within(table).getByText('Failed')).toBeInTheDocument();
+    await userEvent.click(within(table).getByRole('button', { name: 'Show steps of run 2' }));
+    expect(within(table).getAllByText('SMS is not set up: message not sent').length).toBeGreaterThan(1);
+  });
+
+  it('Retry shows only on a failed run, and a 409 is shown as the API wrote it', async () => {
+    svc.getWorkflow.mockResolvedValue(workflow({ id: 4 }));
+    svc.getRuns.mockResolvedValue({
+      executions: [run({ id: 1 }), run({ id: 2, status: 'failed', failedStepIndex: 0, error: 'boom' }), run({ id: 3, status: 'skipped', error: 'conditions_not_met' })],
+      pagination: { page: 1, limit: 10, total: 3, pages: 1 },
+    });
+    svc.retryRun.mockRejectedValue(apiError(409, { error: 'The workflow changed since this run. Run it again instead.' }));
+    renderAt('/workflows/4');
+    await screen.findByDisplayValue('Send confirmation SMS');
+    await openStep(/Review/);
+    await screen.findByRole('table', { name: 'Run history' });
+    expect(screen.getAllByRole('button', { name: /^Retry run/ })).toHaveLength(1);
+    await userEvent.click(screen.getByRole('button', { name: 'Retry run 2' }));
+    expect(svc.retryRun).toHaveBeenCalledWith(2);
+    expect(await screen.findByText('The workflow changed since this run. Run it again instead.')).toBeInTheDocument();
+  });
+
+  it('a user who may not execute sees no Retry', async () => {
+    allowed = ['view', 'update'];
+    svc.getWorkflow.mockResolvedValue(workflow({ id: 4 }));
+    svc.getRuns.mockResolvedValue({ executions: [run({ id: 2, status: 'failed', error: 'boom' })], pagination: { page: 1, limit: 10, total: 1, pages: 1 } });
+    renderAt('/workflows/4');
+    await screen.findByDisplayValue('Send confirmation SMS');
+    await openStep(/Review/);
+    await screen.findByRole('table', { name: 'Run history' });
+    expect(screen.queryByRole('button', { name: /^Retry/ })).not.toBeInTheDocument();
   });
 });
 

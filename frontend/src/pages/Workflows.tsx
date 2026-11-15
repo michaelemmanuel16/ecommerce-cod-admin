@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
-import { Activity, AlertTriangle, LayoutTemplate, Pencil, PlayCircle, Plus, Search, Trash2, Workflow as WorkflowIcon } from 'lucide-react';
+import { Activity, AlertTriangle, LayoutTemplate, Pencil, Play, PlayCircle, Plus, Search, Trash2, Workflow as WorkflowIcon } from 'lucide-react';
 import { useV2Page } from '../components/shell/useV2Page';
 import { Button, ConfirmDialog, EmptyState, Skeleton, Table, Tabs, Tag, Tile, useToast, type Column } from '../components/ui-v2';
 import { usePermissions } from '../hooks/usePermissions';
@@ -9,6 +9,7 @@ import { workflowsService, type Workflow, type WorkflowList, type WorkflowTempla
 import { apiErrorMessage } from '../utils/apiError';
 import { formatRelativeTime } from '../utils/format';
 import { describeTrigger, triggerChoice } from './workflows/model';
+import { RunDialog } from './workflows/RunDialog';
 
 type Filter = 'all' | 'on' | 'off';
 
@@ -27,6 +28,7 @@ export function Workflows() {
   const canCreate = can('workflows', 'create');
   const canUpdate = can('workflows', 'update');
   const canDelete = can('workflows', 'delete');
+  const canRun = can('workflows', 'execute');
 
   const [data, setData] = useState<WorkflowList | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
@@ -34,6 +36,7 @@ export function Workflows() {
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
   const [deleting, setDeleting] = useState<Workflow | null>(null);
+  const [running, setRunning] = useState<Workflow | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const gallery = useRef<HTMLDivElement>(null);
 
@@ -136,6 +139,9 @@ export function Workflows() {
       key: 'tools', header: '', right: true,
       render: (w) => (
         <div className="rowtools">
+          {canRun && w.isActive && (
+            <button type="button" className="iconbtn" aria-label={`Run ${w.name}`} title="Run on orders" onClick={() => setRunning(w)}><Play /></button>
+          )}
           <button type="button" className="iconbtn" aria-label={`Open ${w.name}`} title="Open" onClick={() => navigate(`/workflows/${w.id}`)}><Pencil /></button>
           {canDelete && (
             <button type="button" className="iconbtn dng" aria-label={`Delete ${w.name}`} title="Delete" onClick={() => setDeleting(w)}><Trash2 /></button>
@@ -251,6 +257,7 @@ export function Workflows() {
       >
         Its run history goes with it and you cannot undo this. Switch it off to stop it without deleting it.
       </ConfirmDialog>
+      {running && <RunDialog workflow={running} onClose={() => setRunning(null)} onStarted={() => void load()} />}
     </section>
   );
 }

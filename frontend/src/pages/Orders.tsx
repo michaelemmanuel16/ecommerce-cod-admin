@@ -12,6 +12,7 @@ import { FloatingMenu } from './orders/FloatingMenu';
 import { BulkBar } from './orders/BulkBar';
 import { ExportMenu } from './orders/ExportMenu';
 import { ImportModal } from './orders/ImportModal';
+import { RunDialog } from './workflows/RunDialog';
 import { RowAssignItems } from './orders/AssignItems';
 import { NewOrderSheet } from './orders/NewOrderSheet';
 import { RowStatus } from './orders/RowStatus';
@@ -56,6 +57,7 @@ export function Orders({ onOpen }: OrdersProps) {
   const sheetOpen = formOpen || search.get('new') === '1';
   const [assignFor, setAssignFor] = useState<{ row: OrderListRow; anchor: HTMLElement } | null>(null);
   const [focus, setFocus] = useState<FocusSet | null>(null);
+  const [runOn, setRunOn] = useState<number[] | null>(null);
 
   const go = useCallback((next: ListView, replace = false) => setSearch(writeView(next), { replace }), [setSearch]);
 
@@ -74,6 +76,7 @@ export function Orders({ onOpen }: OrdersProps) {
   const canMove = can('orders', 'update');
   const canAssign = can('orders', 'assign');
   const canDelete = can('orders', 'delete');
+  const canRun = can('workflows', 'execute');
   const selectedRows = useMemo(() => list.rows.filter((r) => selected.has(r.id)), [list.rows, selected]);
   const actions = useOrderActions({ setSelected, refetch: list.refetch, setFocus });
   const shownRows = focus ? list.rows.filter((r) => focus.ids.includes(r.id)) : list.rows;
@@ -176,10 +179,12 @@ export function Orders({ onOpen }: OrdersProps) {
             canMove={canMove}
             canAssign={canAssign}
             canDelete={canDelete}
+            canRun={canRun}
             onStatus={(target) => actions.moveStatus(selectedRows, target, { bulk: true })}
             onRep={(o) => actions.assign(selectedRows, { kind: 'rep', option: o }, { bulk: true })}
             onAgent={(o) => actions.assign(selectedRows, { kind: 'agent', option: o }, { bulk: true })}
             onDelete={() => actions.askDelete(selectedRows)}
+            onRun={() => setRunOn(selectedRows.map((r) => r.id))}
             onClear={() => setSelected(new Set())}
           />
         )}
@@ -257,6 +262,7 @@ export function Orders({ onOpen }: OrdersProps) {
         </FloatingMenu>
       )}
       {actions.dialogs}
+      {runOn && <RunDialog orderIds={runOn} onClose={() => setRunOn(null)} onStarted={() => setSelected(new Set())} />}
       <ImportModal
         open={importOpen}
         onClose={() => setImportOpen(false)}

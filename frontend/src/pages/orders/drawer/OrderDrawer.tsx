@@ -14,6 +14,7 @@ import { formatCurrency } from '../../../utils/format';
 import { orderNumber } from '../model';
 import { declineReasonLabel, failureReasonLabel } from '../reasons';
 import { useFilterOptions } from '../useFilterOptions';
+import { RunDialog } from '../../workflows/RunDialog';
 import { useOrderActions } from '../useOrderActions';
 import { CallsBlock } from './CallsBlock';
 import { CustomerEdit, ItemsEdit, PaymentEdit } from './EditBlocks';
@@ -53,6 +54,7 @@ export function OrderDrawer({ id, onClose }: OrderDrawerProps) {
   /** Why the Discard prompt is open: closing the drawer, or leaving edit mode. */
   const [discard, setDiscard] = useState<'close' | 'cancel' | null>(null);
   const [taken, setTaken] = useState<{ name: string; customerId: number } | null>(null);
+  const [running, setRunning] = useState(false);
   const [allOrders, setAllOrders] = useState<{ others: number; body: Record<string, unknown> } | null>(null);
 
   const load = useCallback(async () => {
@@ -325,6 +327,16 @@ export function OrderDrawer({ id, onClose }: OrderDrawerProps) {
               </div>
             </div>
 
+            {can('workflows', 'execute') && (
+              <div className="sec">
+                <h4>
+                  Workflows
+                  <Button size="mini" onClick={() => setRunning(true)}>Run workflow</Button>
+                </h4>
+                <p className="hint">Run one of your active workflows on this order now.</p>
+              </div>
+            )}
+
             <div className="sec">
               <h4>Timeline</h4>
               <Timeline entries={timeline} sourceLabel={order.sourceLabel} />
@@ -346,6 +358,7 @@ export function OrderDrawer({ id, onClose }: OrderDrawerProps) {
       </Drawer>
 
       {actions.dialogs}
+      {running && order && <RunDialog orderIds={[order.id]} onClose={() => setRunning(false)} />}
 
       <Modal
         open={discard !== null}
