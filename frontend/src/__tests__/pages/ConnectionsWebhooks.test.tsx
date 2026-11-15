@@ -25,6 +25,13 @@ vi.mock('../../stores/authStore', () => ({ useAuthStore: (sel: (s: unknown) => u
 const HOOK = { id: 9, name: 'Landing page B', uniqueUrl: 'abc-123', apiKey: 'key-0123456789abcdef', isActive: true, productId: 5, product: { name: 'Copybook set' }, fieldMapping: { customerPhone: 'phone' }, headers: {} };
 const log = (over = {}) => ({ id: 1, endpoint: '/x', method: 'POST', headers: {}, body: { name: 'A' }, response: {}, statusCode: 200, success: false, errorMessage: 'Customer phone number is required', processedAt: '2026-11-14T10:00:00.000Z', ...over });
 
+// A full GET /api/connections answer: the cards render every field of every card (the manager test shows them).
+const card = (over = {}) => ({ status: 'not_connected', reason: null, lastEventAt: null, ...over });
+const CARDS = {
+  sms: card(), whatsapp: card(), email: card({ provider: null }), paystack: card({ mode: null }), meta: card({ accounts: 0 }),
+  checkout: card({ forms: 0, lastOrderAt: null }), csv: card({ templateUrl: '/api/connections/csv/template' }),
+};
+
 const renderTab = (url = '/connections?tab=webhooks') => render(
   <ToastProvider><MemoryRouter initialEntries={[url]}><Routes><Route path="/connections" element={<Connections />} /></Routes></MemoryRouter></ToastProvider>,
 );
@@ -32,7 +39,7 @@ const renderTab = (url = '/connections?tab=webhooks') => render(
 beforeEach(() => {
   vi.clearAllMocks();
   role = 'super_admin';
-  cs.getCards.mockResolvedValue({});
+  cs.getCards.mockResolvedValue(CARDS);
   cs.getActivity.mockResolvedValue({ counts: { all: 9, error: 2, warning: 3 }, items: [], nextCursor: null });
   wh.getWebhooks.mockResolvedValue({ webhooks: [HOOK] });
   wh.getWebhookLogs.mockResolvedValue({ logs: [log()], pagination: { page: 1, limit: 20, total: 1, pages: 1 } });
