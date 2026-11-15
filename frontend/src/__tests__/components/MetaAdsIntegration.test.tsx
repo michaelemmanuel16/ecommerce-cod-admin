@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MetaAdsIntegration } from '../../components/settings/integrations/MetaAdsIntegration';
 import { metaAdsService, MetaAdAccount } from '../../services/metaAds.service';
 
@@ -37,29 +37,35 @@ beforeEach(() => {
   svc.getAccounts.mockResolvedValue([]);
 });
 
-describe('MetaAdsIntegration', () => {
-  it('shows one Connect button and the read-only line when there are no accounts', async () => {
-    renderCard();
-    expect(await screen.findByRole('button', { name: /Connect Meta Ads/i })).toBeInTheDocument();
-    expect(screen.getByText('CodAdmin reads your ad spend each day at 05:00. It never changes your ads.')).toBeInTheDocument();
-  });
+/** Click the Meta Ads card and return its modal. */
+const openModal = async () => {
+  fireEvent.click(await screen.findByTestId('card-Meta Ads'));
+  return screen.findByRole('dialog');
+};
 
-  it('says Not connected with no accounts, and Connected with the number of ad accounts and a scrolling list', async () => {
+describe('MetaAdsIntegration', () => {
+  it('the card says Not connected with no accounts; its modal has one Connect button and the read-only line', async () => {
     renderCard();
     expect(await screen.findByText('Not connected')).toBeInTheDocument();
-    svc.getAccounts.mockResolvedValue([account({ id: 1 }), account({ id: 2, name: 'Second' })]);
-    cleanup();
-    renderCard();
-    expect(await screen.findByText('Connected', { selector: '.ct *' })).toBeInTheDocument();
-    expect(screen.getByTestId('meta-summary')).toHaveTextContent('2 ad accounts');
-    expect(screen.getByTestId('meta-account-1').parentElement).toHaveClass('metalist');
+    const dlg = await openModal();
+    expect(within(dlg).getByRole('button', { name: /Connect Meta Ads/i })).toBeInTheDocument();
+    expect(within(dlg).getByText('CodAdmin reads your ad spend each day at 05:00. It never changes your ads.')).toBeInTheDocument();
   });
 
-  it('says Needs attention when an account is disconnected', async () => {
-    svc.getAccounts.mockResolvedValue([account({ status: 'disconnected', statusReason: 'Token revoked' })]);
+  it('the card shows the status, N ad accounts and how many need attention; the list is in the modal', async () => {
+    svc.getAccounts.mockResolvedValue([account({ id: 1 }), account({ id: 2, name: 'Second' }), account({ id: 3, name: 'Third', status: 'disconnected', statusReason: 'Token revoked' })]);
     renderCard();
-    expect(await screen.findByText('Needs attention')).toBeInTheDocument();
-    expect(screen.getByTestId('meta-summary')).toHaveTextContent('1 ad account');
+    const card = await screen.findByTestId('card-Meta Ads');
+    await waitFor(() => expect(within(card).getByText('Needs attention')).toBeInTheDocument());
+    expect(card).toHaveTextContent('Ad accounts3');
+    expect(card).toHaveTextContent('Need attention1');
+    expect(within(card).queryByText('Main store')).not.toBeInTheDocument();
+    expect(within(card).queryByRole('button')).not.toBeInTheDocument();
+    const dlg = await openModal();
+    expect(within(dlg).getByTestId('meta-summary')).toHaveTextContent('3 ad accounts');
+    expect(within(dlg).getByText('Main store')).toBeInTheDocument();
+    expect(within(dlg).getByRole('button', { name: 'Connect another ad account' })).toBeInTheDocument();
+    expect(within(dlg).getByRole('button', { name: 'Reconnect Meta Ads' })).toBeInTheDocument();
   });
 
   it('opens the picker on metaAds=pick and saves the ticked accounts', async () => {
@@ -76,45 +82,51 @@ describe('MetaAdsIntegration', () => {
     svc.getAccounts.mockResolvedValue([account({ id: 2, accountId: '444555666', name: 'Second store' })]);
     fireEvent.click(screen.getByRole('button', { name: 'Save accounts' }));
     await waitFor(() => expect(svc.savePick).toHaveBeenCalledWith('abc123', ['444555666']));
-    expect(await screen.findByText('Second store')).toBeInTheDocument();
-    expect(screen.queryByText('Choose ad accounts')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText('Choose ad accounts')).not.toBeInTheDocument());
+    expect(await screen.findByText('Connected')).toBeInTheDocument();
+    expect(await screen.findByTestId('card-Meta Ads')).toHaveTextContent('Ad accounts1');
   });
 
-  it('shows the message as an inline error on metaAds=error', async () => {
+  it('opens the modal with the message as an inline error on metaAds=error', async () => {
     renderCard('/connections?metaAds=error&message=Meta%20said%20no');
-    expect(await screen.findByRole('alert')).toHaveTextContent('Meta said no');
+    expect(await within(await screen.findByRole('dialog')).findByText('Meta said no')).toBeInTheDocument();
     expect(svc.getPickAccounts).not.toHaveBeenCalled();
   });
 
   it('shows Reconnect Meta Ads when an account is disconnected', async () => {
     svc.getAccounts.mockResolvedValue([account({ status: 'disconnected', statusReason: 'Token revoked' })]);
     renderCard();
-    expect(await screen.findByText(/Disconnected: Token revoked/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Reconnect Meta Ads/i })).toBeInTheDocument();
+    const dlg = await openModal();
+    expect(await within(dlg).findByText(/Disconnected: Token revoked/)).toBeInTheDocument();
+    expect(within(dlg).getByRole('button', { name: /Reconnect Meta Ads/i })).toBeInTheDocument();
   });
 
   it('shows the 429 text under the row when Refresh now is limited', async () => {
     svc.getAccounts.mockResolvedValue([account()]);
     svc.refresh.mockRejectedValue({ response: { status: 429, data: { error: 'Refresh again in a few minutes.' } } });
     renderCard();
-    fireEvent.click(await screen.findByRole('button', { name: /Refresh now/i }));
+    const dlg = await openModal();
+    fireEvent.click(await within(dlg).findByRole('button', { name: /Refresh now/i }));
     expect(await screen.findByText('Refresh again in a few minutes.')).toBeInTheDocument();
   });
 
-  it('shows the list with no buttons and no switch for a user without marketing:update', async () => {
+  it('shows the list with no buttons and no switch, and the rights line, for a user without marketing:update', async () => {
     canUpdate = false;
     svc.getAccounts.mockResolvedValue([account({ status: 'disconnected', statusReason: 'Token revoked' })]);
     renderCard();
-    expect(await screen.findByText('Main store')).toBeInTheDocument();
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
-    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+    const dlg = await openModal();
+    expect(await within(dlg).findByText('Main store')).toBeInTheDocument();
+    expect(within(dlg).getByText('You need Marketing edit rights to change this.')).toBeInTheDocument();
+    expect(within(dlg).queryByRole('button', { name: /Connect|Reconnect|Refresh|Remove/ })).not.toBeInTheDocument();
+    expect(within(dlg).queryByRole('switch')).not.toBeInTheDocument();
   });
 
   it('shows the empty state without a Connect button for a read-only user', async () => {
     canUpdate = false;
     renderCard();
-    await screen.findByText(/reads your ad spend/);
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    const dlg = await openModal();
+    expect(within(dlg).getByText(/reads your ad spend/)).toBeInTheDocument();
+    expect(within(dlg).queryByRole('button', { name: /Connect/ })).not.toBeInTheDocument();
   });
 
   it('warns in amber when a user token expires in 7 days or less, not before', async () => {
@@ -124,6 +136,7 @@ describe('MetaAdsIntegration', () => {
       account({ id: 3, name: 'System', tokenType: 'system_user' }),
     ]);
     renderCard();
+    await openModal();
     await screen.findByText('Soon');
     const soonEl = Array.from(screen.getByTestId('meta-account-1').querySelectorAll('span')).find((s) => /^Expires/.test(s.textContent || ''))!;
     const laterEl = Array.from(screen.getByTestId('meta-account-2').querySelectorAll('span')).find((s) => /^Expires/.test(s.textContent || ''))!;

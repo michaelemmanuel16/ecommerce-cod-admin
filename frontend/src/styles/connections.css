@@ -38,10 +38,28 @@
 .v2 .cx .urlrow{display:flex;gap:8px;align-items:center;min-width:0}
 .v2 .cx .urlrow .mono{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-/* new: Meta Ads takes one column like the other cards; its account list scrolls inside the card */
-.v2 .cx .conns > .metacard{min-width:0;display:flex;flex-direction:column}
-.v2 .cx .metacard .ct{gap:10px}
-.v2 .cx .metacard .metalist{max-height:340px;overflow-y:auto;padding-right:4px;overscroll-behavior:contain}
+/* new: a card is a button that opens its modal; every card has about the same height */
+.v2 .cx .cn.clickable{cursor:pointer;min-height:176px;transition:transform .15s,box-shadow .15s,border-color .15s}
+.v2 .cx .cn.clickable:hover{transform:translateY(-2px);box-shadow:var(--shadow-md,0 8px 24px rgba(0,0,0,.08));border-color:var(--pine)}
+.v2 .cx .cn.clickable:focus-visible{outline:2px solid var(--pine);outline-offset:2px}
+.v2 .cx .cn .manage{margin-top:auto;display:inline-flex;align-items:center;gap:2px;font-size:12.5px;font-weight:600;color:var(--pine)}
+.v2 .cx .cn .manage svg.lucide{width:14px;height:14px}
+.v2 .cxd-title{display:inline-flex;align-items:center;gap:10px}
+.v2 .cxd-title .ic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;flex:none}
+.v2 .cxd-title .ic svg.lucide{width:16px;height:16px}
+
+/* the card's modal renders outside .cx, so its facts, strips and buttons carry their own rules */
+.v2 .cx-detail .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:13px}
+.v2 .cx-detail .kv dt{color:var(--ink-3)}
+.v2 .cx-detail .kv dd{text-align:right;font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.v2 .cx-detail .mono{font-family:ui-monospace,Menlo,monospace;font-size:12px}
+.v2 .cx-detail .strip{display:flex;gap:8px;align-items:flex-start;padding:9px 11px;border-radius:11px;font-size:12.5px;font-weight:500}
+.v2 .cx-detail .strip svg.lucide{flex:none;width:15px;height:15px;margin-top:2px}
+.v2 .cx-detail .strip.bad{background:var(--coral-soft);color:var(--coral)}
+.v2 .cx-detail .cn-off{color:var(--ink-3);font-size:13px}
+.v2 .cx-detail .urlrow{display:flex;gap:8px;align-items:center;min-width:0}
+.v2 .cx-detail .urlrow .mono{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.v2 .cx-detail .acts{display:flex;gap:8px;flex-wrap:wrap}
 
 /* switch (mockup .sw) */
 .v2 .cx .sw,.v2 .cxd .sw{flex:none;width:36px;height:20px;border-radius:99px;background:var(--line);position:relative;transition:background .15s}

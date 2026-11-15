@@ -11,7 +11,7 @@ import { apiErrorMessage } from '../../utils/apiError';
 import { formatRelativeTime } from '../../utils/format';
 import { EmailDialog } from './EmailDialog';
 import { PaystackDialog } from './PaystackDialog';
-import { ConnCard, CopyButton } from './parts';
+import { ConnCard, ConnDetail, CopyButton } from './parts';
 import { SmsDialog } from './SmsDialog';
 import { WhatsAppDialog, WhatsAppPhonePicker } from './WhatsAppDialog';
 
@@ -31,6 +31,7 @@ export function CardsTab() {
   const [paystack, setPaystack] = useState<PaymentConnection | null>(null);
   const [reportUrl, setReportUrl] = useState<{ url: string | null; message?: string } | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
+  const [detail, setDetail] = useState<Exclude<Dialog, null> | null>(null);
   const [retrying, setRetrying] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [phones, setPhones] = useState<WABAPhoneNumber[] | null>(null);
@@ -44,9 +45,9 @@ export function CardsTab() {
     }
   }, []);
   const loadConfig = useCallback(async () => {
-    if (!isSuperAdmin) return;
+    if (!isAdmin) return;
     try { setConfig(await adminService.getSystemConfig()); } catch { setConfig(null); }
-  }, [isSuperAdmin]);
+  }, [isAdmin]);
   const loadPaystack = useCallback(async () => {
     if (!isAdmin) return;
     try { setPaystack((await connectionsService.getPaymentConnections()).find((c) => c.provider === 'paystack') ?? null); } catch { setPaystack(null); }
@@ -123,7 +124,20 @@ export function CardsTab() {
   const emailFrom = config?.emailProvider?.fromEmail;
   const slug = config?.tenantSlug;
   const paystackHook = slug ? `${window.location.origin}/api/paystack/webhook/${slug}` : null;
-  const owner = (label: string, on: () => void) => (isSuperAdmin ? <Button variant="primary" onClick={on}>{label}</Button> : null);
+  // Owner and admins connect SMS, WhatsApp, Email and Paystack; everyone else reads
+  const act = (label: string, form: Exclude<Dialog, null>) => (isAdmin ? <Button variant="primary" onClick={() => { setDetail(null); setDialog(form); }}>{label}</Button> : null);
+  const close = () => setDetail(null);
+
+  const smsRows: Array<[string, string]> = [['Sender ID', sms?.senderId || 'Not set'], ['API key', sms?.authToken ? '••••••••' : 'Not set'], ['Last activity', ago(cards.sms.lastEventAt)]];
+  const waRows: Array<[string, string]> = [
+    ['Phone number', wa?.oauthDisplayPhone || 'Not set'], ['Business', wa?.oauthVerifiedName || 'Not set'],
+    ['Connected by', wa?.authMode === 'oauth' ? 'Meta login' : wa?.accessToken ? 'Token' : 'Not set'],
+    ...(wa?.oauthTokenExpiry ? [['Token ends', new Date(wa.oauthTokenExpiry).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })] as [string, string]] : []),
+  ];
+  const emailRows: Array<[string, string]> = cards.email.status === 'not_connected' ? [] : [['Sender', EMAIL_NAMES[cards.email.provider ?? ''] ?? 'Not set'], ...(emailFrom ? [['From', emailFrom] as [string, string]] : []), ['Last activity', ago(cards.email.lastEventAt)]];
+  const paystackRows: Array<[string, string]> = [['Mode', cards.paystack.mode === 'live' ? 'Live' : cards.paystack.mode === 'test' ? 'Test' : 'Not set'], ['Public key', paystack?.publicKey || 'Not set']];
+  const paystackTest = cards.paystack.status === 'connected' && cards.paystack.mode === 'test';
+  const waLabel = cards.whatsapp.status === 'not_connected' ? 'Connect' : cards.whatsapp.status === 'error' ? 'Reconnect' : 'Edit';
 
   return (
     <>
@@ -131,54 +145,27 @@ export function CardsTab() {
         <div className="strip bad" role="alert" style={{ marginBottom: 16, alignItems: 'center' }}>
           <AlertTriangle aria-hidden="true" />
           <span style={{ flex: 1 }}>{notice}</span>
-          {isSuperAdmin && <Button size="mini" onClick={() => { setNotice(null); setDialog('whatsapp'); }}>Start again</Button>}
+          {isAdmin && <Button size="mini" onClick={() => { setNotice(null); setDialog('whatsapp'); }}>Start again</Button>}
           <Button size="mini" onClick={() => setNotice(null)}>Dismiss</Button>
         </div>
       )}
       <div className="conns">
         <ConnCard
           icon={Smartphone} tone="mint" title="Arkesel SMS" sub="Text messages to customers" card={cards.sms}
-          rows={[['Sender ID', sms?.senderId || 'Not set'], ['API key', sms?.authToken ? '••••••••' : 'Not set'], ['Last activity', ago(cards.sms.lastEventAt)]]}
-          onRetry={() => retry('sms')} retrying={retrying === 'sms'}
-        >
-          {owner(cards.sms.status === 'not_connected' ? 'Connect' : 'Edit', () => setDialog('sms'))}
-          {reportUrl?.url && (
-            <div className="urlrow" style={{ flexBasis: '100%' }}>
-              <span className="mono" title={reportUrl.url}>{reportUrl.url}</span><CopyButton text={reportUrl.url} label="Copy report URL" />
-            </div>
-          )}
-          {reportUrl && !reportUrl.url && reportUrl.message && <p className="cn-off" style={{ flexBasis: '100%' }}>{reportUrl.message}</p>}
-        </ConnCard>
-
+          rows={[smsRows[0], smsRows[2]]} onOpen={() => setDetail('sms')}
+        />
         <ConnCard
           icon={MessageCircle} tone="mint" title="WhatsApp Business" sub="Reminders and replies" card={cards.whatsapp}
-          rows={[
-            ['Phone number', wa?.oauthDisplayPhone || 'Not set'], ['Business', wa?.oauthVerifiedName || 'Not set'],
-            ['Connected by', wa?.authMode === 'oauth' ? 'Meta login' : wa?.accessToken ? 'Token' : 'Not set'],
-            ...(wa?.oauthTokenExpiry ? [['Token ends', new Date(wa.oauthTokenExpiry).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })] as [string, string]] : []),
-          ]}
-          onRetry={() => retry('whatsapp')} retrying={retrying === 'whatsapp'}
-        >
-          {owner(cards.whatsapp.status === 'not_connected' ? 'Connect' : cards.whatsapp.status === 'error' ? 'Reconnect' : 'Edit', () => setDialog('whatsapp'))}
-        </ConnCard>
-
+          rows={[waRows[0], waRows[1]]} onOpen={() => setDetail('whatsapp')}
+        />
         <ConnCard
           icon={Mail} tone="violet" title="Your own email (SMTP)" sub="Receipts, guides and campaigns" card={cards.email}
-          rows={cards.email.status === 'not_connected' ? [] : [['Sender', EMAIL_NAMES[cards.email.provider ?? ''] ?? 'Not set'], ...(emailFrom ? [['From', emailFrom] as [string, string]] : []), ['Last activity', ago(cards.email.lastEventAt)]]}
-          onRetry={() => retry('email')} retrying={retrying === 'email'}
-        >
-          {owner(cards.email.status === 'not_connected' ? 'Connect' : 'Edit', () => setDialog('email'))}
-        </ConnCard>
-
+          rows={emailRows} onOpen={() => setDetail('email')}
+        />
         <ConnCard
           icon={CreditCard} tone="pine" title="Paystack" sub="Card and MoMo payments" card={cards.paystack}
-          testMode={cards.paystack.status === 'connected' && cards.paystack.mode === 'test'}
-          rows={[['Mode', cards.paystack.mode === 'live' ? 'Live' : cards.paystack.mode === 'test' ? 'Test' : 'Not set'], ['Public key', paystack?.publicKey || 'Not set']]}
-          onRetry={() => retry('paystack')} retrying={retrying === 'paystack'}
-        >
-          {isAdmin && <Button variant="primary" onClick={() => setDialog('paystack')}>{cards.paystack.status === 'not_connected' ? 'Add keys' : 'Edit keys'}</Button>}
-          {paystackHook && <CopyButton text={paystackHook} label="Copy webhook URL" />}
-        </ConnCard>
+          testMode={paystackTest} rows={paystackRows} onOpen={() => setDetail('paystack')}
+        />
 
         {can('marketing', 'view') && <MetaAdsIntegration />}
 
@@ -188,6 +175,37 @@ export function CardsTab() {
           </div>
         )}
       </div>
+
+      <ConnDetail
+        open={detail === 'sms'} onClose={close} icon={Smartphone} tone="mint" title="Arkesel SMS" sub="Text messages to customers" card={cards.sms}
+        rows={smsRows} onRetry={() => retry('sms')} retrying={retrying === 'sms'} actions={act(cards.sms.status === 'not_connected' ? 'Connect' : 'Edit', 'sms')}
+      >
+        {reportUrl?.url && (
+          <div className="urlrow">
+            <span className="mono" title={reportUrl.url}>{reportUrl.url}</span><CopyButton text={reportUrl.url} label="Copy report URL" />
+          </div>
+        )}
+        {reportUrl && !reportUrl.url && reportUrl.message && <p className="cn-off">{reportUrl.message}</p>}
+      </ConnDetail>
+      <ConnDetail
+        open={detail === 'whatsapp'} onClose={close} icon={MessageCircle} tone="mint" title="WhatsApp Business" sub="Reminders and replies" card={cards.whatsapp}
+        rows={waRows} onRetry={() => retry('whatsapp')} retrying={retrying === 'whatsapp'} actions={act(waLabel, 'whatsapp')}
+      />
+      <ConnDetail
+        open={detail === 'email'} onClose={close} icon={Mail} tone="violet" title="Your own email (SMTP)" sub="Receipts, guides and campaigns" card={cards.email}
+        rows={emailRows} onRetry={() => retry('email')} retrying={retrying === 'email'} actions={act(cards.email.status === 'not_connected' ? 'Connect' : 'Edit', 'email')}
+      />
+      <ConnDetail
+        open={detail === 'paystack'} onClose={close} icon={CreditCard} tone="pine" title="Paystack" sub="Card and MoMo payments" card={cards.paystack} testMode={paystackTest}
+        rows={paystackRows} onRetry={() => retry('paystack')} retrying={retrying === 'paystack'}
+        actions={act(cards.paystack.status === 'not_connected' ? 'Add keys' : 'Edit keys', 'paystack')}
+      >
+        {paystackHook && (
+          <div className="urlrow">
+            <span className="mono" title={paystackHook}>{paystackHook}</span><CopyButton text={paystackHook} label="Copy webhook URL" />
+          </div>
+        )}
+      </ConnDetail>
 
       <SmsDialog open={dialog === 'sms'} config={config} onClose={() => setDialog(null)} onSaved={reload} />
       <WhatsAppDialog open={dialog === 'whatsapp'} config={config} onClose={() => setDialog(null)} onSaved={reload} />

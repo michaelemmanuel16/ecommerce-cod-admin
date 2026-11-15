@@ -15,7 +15,7 @@ const ROLE_CHOICES: Array<{ id: string; label: string }> = [
 ];
 
 /** The roles whose defaults a person may change (the API enforces the same rule): the owner all, an admin all but Owner, a manager all but Owner and Admin. */
-export function editableRoles(role: string): Array<{ id: string; label: string }> {
+function editableRoles(role: string): Array<{ id: string; label: string }> {
   if (role === 'super_admin') return ROLE_CHOICES;
   if (role === 'admin') return ROLE_CHOICES.filter((r) => r.id !== 'super_admin');
   if (role === 'manager') return ROLE_CHOICES.filter((r) => r.id !== 'super_admin' && r.id !== 'admin');

@@ -315,7 +315,13 @@ export const adminService = {
     whatsappProvider?: any;
     features?: Record<string, unknown>;
   }) {
-    await this.checkAdminPrivilege(requester, 'super_admin');
+    // An admin saves the SMS, WhatsApp and Email connections (Connections page); every other setting stays with the Owner.
+    const CONNECTION_KEYS = ['smsProvider', 'emailProvider', 'whatsappProvider'];
+    if (requester.role === 'admin' && Object.keys(data).every((k) => CONNECTION_KEYS.includes(k))) {
+      // allowed
+    } else {
+      await this.checkAdminPrivilege(requester, 'super_admin');
+    }
     const tenantId = getTenantId();
     const findConfig = () => tenantId
       ? prisma.systemConfig.findUnique({ where: { tenantId } })

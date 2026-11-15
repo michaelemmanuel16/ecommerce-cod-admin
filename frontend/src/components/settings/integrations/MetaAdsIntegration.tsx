@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Link2, Loader2, RefreshCw, Trash2 } from 'lucide-react';
+import { Link2, Loader2, Megaphone, RefreshCw, Trash2 } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 import toast from 'react-hot-toast';
-import { Button, Card, ConfirmDialog, Tag } from '../../ui-v2';
+import { Button, ConfirmDialog, Tag } from '../../ui-v2';
+import { ConnCard, ConnDetail } from '../../../pages/connections/parts';
+import type { ConnectionCard } from '../../../services/connections.service';
 import { usePermissions } from '../../../hooks/usePermissions';
 import { metaAdsService, type MetaAdAccount, type MetaPickAccount } from '../../../services/metaAds.service';
 import { MetaAdsPickerModal } from './MetaAdsPickerModal';
@@ -29,6 +31,7 @@ export const MetaAdsIntegration: React.FC = () => {
   const [refreshing, setRefreshing] = useState<number | null>(null);
   const [rowErrors, setRowErrors] = useState<Record<number, string>>({});
   const [removing, setRemoving] = useState<MetaAdAccount | null>(null);
+  const [open, setOpen] = useState(false);
 
   const loadAccounts = useCallback(async () => {
     try {
@@ -58,6 +61,7 @@ export const MetaAdsIntegration: React.FC = () => {
         });
     } else if (result === 'error') {
       setConnectError(searchParams.get('message') || 'Meta Ads connection failed');
+      setOpen(true); // the message lives in the modal
     }
     const params = new URLSearchParams(searchParams);
     ['metaAds', 'pick', 'message'].forEach((k) => params.delete(k));
@@ -142,31 +146,46 @@ export const MetaAdsIntegration: React.FC = () => {
   };
 
   const hasDisconnected = accounts.some((a) => a.status === 'disconnected');
-  const status = accounts.length === 0 ? <Tag>Not connected</Tag> : hasDisconnected ? <Tag tone="bad">Needs attention</Tag> : <Tag tone="ok">Connected</Tag>;
+  const needAttention = accounts.filter((a) => a.status !== 'connected').length;
+  const card: ConnectionCard = accounts.length === 0
+    ? { status: 'not_connected', reason: 'Connect Meta Ads', lastEventAt: null }
+    : hasDisconnected ? { status: 'error', reason: accounts.find((a) => a.status !== 'connected')?.statusReason ?? 'Meta Ads is disconnected. Reconnect Meta Ads.', lastEventAt: null }
+      : { status: 'connected', reason: null, lastEventAt: null };
+
+  const connectButton = (label: string) => (
+    <Button variant="primary" onClick={handleConnect} disabled={connecting}>
+      {connecting ? <Loader2 className="animate-spin" size={16} /> : <Link2 size={16} />}
+      {label}
+    </Button>
+  );
+  const actions = !canUpdate ? null : (
+    <>
+      {accounts.length === 0 ? connectButton('Connect Meta Ads') : connectButton('Connect another ad account')}
+      {hasDisconnected && connectButton('Reconnect Meta Ads')}
+    </>
+  );
 
   return (
     <>
-      <Card className="metacard" title="Meta Ads" aside={loading ? undefined : status}>
-        <div style={{ padding: '12px 20px 20px', display: 'grid', gap: 14, minHeight: 0 }}>
-          {connectError && (
-            <div role="alert" className="opserr" style={{ margin: 0 }}>{connectError}</div>
-          )}
-          {loadError && <div role="alert" className="opserr" style={{ margin: 0 }}>{loadError}</div>}
+      <ConnCard
+        icon={Megaphone} tone="pine" title="Meta Ads" sub="Ad spend" card={loading ? { status: 'connected', reason: null, lastEventAt: null } : card}
+        rows={loading ? [] : [['Ad accounts', String(accounts.length)], ['Need attention', String(needAttention)]]}
+        onOpen={() => setOpen(true)}
+      />
 
+      <ConnDetail
+        open={open} onClose={() => setOpen(false)} icon={Megaphone} tone="pine" title="Meta Ads" sub="Ad spend" card={card}
+        actions={actions} readOnlyText="You need Marketing edit rights to change this."
+      >
+        <div style={{ display: 'grid', gap: 14 }}>
+          {connectError && <div role="alert" className="opserr" style={{ margin: 0 }}>{connectError}</div>}
+          {loadError && <div role="alert" className="opserr" style={{ margin: 0 }}>{loadError}</div>}
           {loading ? (
             <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>Loading...</p>
           ) : accounts.length === 0 ? (
-            <div style={{ display: 'grid', gap: 12, justifyItems: 'start' }}>
-              <p style={{ color: 'var(--ink-2)', fontSize: 13 }}>
-                CodAdmin reads your ad spend each day at 05:00. It never changes your ads.
-              </p>
-              {canUpdate && (
-                <Button variant="primary" onClick={handleConnect} disabled={connecting}>
-                  {connecting ? <Loader2 className="animate-spin" size={16} /> : <Link2 size={16} />}
-                  Connect Meta Ads
-                </Button>
-              )}
-            </div>
+            <p style={{ color: 'var(--ink-2)', fontSize: 13 }}>
+              CodAdmin reads your ad spend each day at 05:00. It never changes your ads.
+            </p>
           ) : (
             <>
               <p data-testid="meta-summary" style={{ color: 'var(--ink-2)', fontSize: 13 }}>
@@ -227,21 +246,13 @@ export const MetaAdsIntegration: React.FC = () => {
                   </div>
                 ))}
               </div>
-              {canUpdate && hasDisconnected && (
-                <div>
-                  <Button variant="primary" onClick={handleConnect} disabled={connecting}>
-                    {connecting ? <Loader2 className="animate-spin" size={16} /> : <Link2 size={16} />}
-                    Reconnect Meta Ads
-                  </Button>
-                </div>
-              )}
               <p style={{ color: 'var(--ink-3)', fontSize: 12 }}>
                 CodAdmin reads your ad spend each day at 05:00. It never changes your ads.
               </p>
             </>
           )}
         </div>
-      </Card>
+      </ConnDetail>
 
       {pickId && pickAccounts && (
         <MetaAdsPickerModal accounts={pickAccounts} onSave={handlePickSave} onClose={closePicker} saving={pickSaving} />

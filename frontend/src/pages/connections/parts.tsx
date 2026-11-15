@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react';
-import { AlertCircle, Copy, type LucideIcon } from 'lucide-react';
-import { Button, Card, Tag, useToast } from '../../components/ui-v2';
+import type { MouseEvent, ReactNode } from 'react';
+import { AlertCircle, ChevronRight, Copy, type LucideIcon } from 'lucide-react';
+import { Button, Card, Modal, Tag, useToast } from '../../components/ui-v2';
 import type { ConnectionCard } from '../../services/connections.service';
 
 type Tone = 'mint' | 'violet' | 'pine' | 'plain';
@@ -21,7 +21,8 @@ function StatusTag({ card, testMode }: { card: ConnectionCard; testMode?: boolea
 /** A copy button that says so in a toast. */
 export function CopyButton({ text, label = 'Copy' }: { text: string; label?: string }) {
   const say = useToast();
-  const copy = async () => {
+  const copy = async (e: MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
     try {
       await navigator.clipboard.writeText(text);
       say('Copied');
@@ -43,44 +44,85 @@ interface ConnCardProps {
   sub: string;
   card: ConnectionCard;
   testMode?: boolean;
-  /** Replaces the status pill (the CSV card is always "Manual"). */
-  tag?: ReactNode;
+  /** The two key facts at most; the modal holds the rest. */
   rows?: Array<[string, ReactNode]>;
-  /** The Retry in an error card. */
-  onRetry?: () => void;
-  retrying?: boolean;
-  children?: ReactNode;
-  className?: string;
+  /** Opens the card's modal (the whole card is the button). */
+  onOpen: () => void;
 }
 
-/** One connection card (docs/mockups/v2/connections.html .cn): icon, name, status, facts, the API's reason, buttons. */
-export function ConnCard({ icon: Icon, tone, title, sub, card, testMode, tag, rows, onRetry, retrying, children, className }: ConnCardProps) {
+/** One connection card (docs/mockups/v2/connections.html .cn), a short summary. The whole card is a button that opens its modal. */
+export function ConnCard({ icon: Icon, tone, title, sub, card, testMode, rows, onOpen }: ConnCardProps) {
   return (
-    <Card className={`cn ${className ?? ''}`} data-testid={`card-${title}`}>
+    <Card
+      className="cn clickable" data-testid={`card-${title}`} role="button" tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onOpen(); } }}
+    >
       <div className="cn-top">
         <div className="ic" style={ICON_STYLE[tone]}><Icon aria-hidden="true" /></div>
         <div><b>{title}</b><p>{sub}</p></div>
-        {tag ?? <StatusTag card={card} testMode={testMode} />}
+        <StatusTag card={card} testMode={testMode} />
       </div>
       {card.status === 'not_connected' && card.reason && <p className="cn-off">{card.reason}</p>}
       {rows && rows.length > 0 && (
         <dl className="kv">
-          {rows.map(([k, v]) => (
+          {rows.slice(0, 2).map(([k, v]) => (
             <div key={k} style={{ display: 'contents' }}><dt>{k}</dt><dd>{v}</dd></div>
           ))}
         </dl>
       )}
-      {card.status === 'error' && (
-        <div className="strip bad" role="alert">
-          <AlertCircle aria-hidden="true" /><span>{card.reason ?? 'This connection has a problem.'}</span>
-        </div>
-      )}
-      <div className="acts">
-        {children}
-        {card.status === 'error' && onRetry && (
-          <Button onClick={onRetry} disabled={retrying}>{retrying ? 'Checking...' : 'Retry'}</Button>
-        )}
-      </div>
+      <span className="manage">Manage <ChevronRight aria-hidden="true" /></span>
     </Card>
+  );
+}
+
+interface ConnDetailProps extends Pick<ConnCardProps, 'icon' | 'tone' | 'title' | 'sub' | 'card' | 'testMode'> {
+  open: boolean;
+  onClose: () => void;
+  /** Every fact of the connection. */
+  rows?: Array<[string, ReactNode]>;
+  /** The Retry in an error card. */
+  onRetry?: () => void;
+  retrying?: boolean;
+  /** Extra body (a URL line, the Meta account list). */
+  children?: ReactNode;
+  /** The buttons. Null when the person may only read. */
+  actions: ReactNode;
+  /** The one line shown in place of the buttons for a reader. */
+  readOnlyText?: string;
+}
+
+/** The modal of a connection card: the details and every action, or one line for a person who may only read. */
+export function ConnDetail({ open, onClose, icon: Icon, tone, title, sub, card, testMode, rows, onRetry, retrying, children, actions, readOnlyText = 'Only the owner or an admin can change this.' }: ConnDetailProps) {
+  return (
+    <Modal
+      open={open} onClose={onClose} size="lg"
+      title={<span className="cxd-title"><span className="ic" style={ICON_STYLE[tone]}><Icon aria-hidden="true" /></span>{title}</span>}
+      description={sub}
+    >
+      <div className="cxd stack cx-detail">
+        <div><StatusTag card={card} testMode={testMode} /></div>
+        {card.status === 'not_connected' && card.reason && <p className="cn-off">{card.reason}</p>}
+        {rows && rows.length > 0 && (
+          <dl className="kv">
+            {rows.map(([k, v]) => (
+              <div key={k} style={{ display: 'contents' }}><dt>{k}</dt><dd>{v}</dd></div>
+            ))}
+          </dl>
+        )}
+        {card.status === 'error' && (
+          <div className="strip bad" role="alert">
+            <AlertCircle aria-hidden="true" /><span>{card.reason ?? 'This connection has a problem.'}</span>
+          </div>
+        )}
+        {children}
+        <div className="acts">
+          {actions ?? <p className="cn-off">{readOnlyText}</p>}
+          {card.status === 'error' && onRetry && (
+            <Button onClick={onRetry} disabled={retrying}>{retrying ? 'Checking...' : 'Retry'}</Button>
+          )}
+        </div>
+      </div>
+    </Modal>
   );
 }

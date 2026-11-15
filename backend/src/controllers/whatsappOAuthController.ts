@@ -49,7 +49,7 @@ if (process.env.NODE_ENV !== 'test') {
 
 /**
  * POST /api/whatsapp/oauth/initiate
- * Generate Meta OAuth URL with CSRF state. super_admin only.
+ * Generate Meta OAuth URL with CSRF state. owner and admin only.
  */
 export async function initiateOAuth(req: AuthRequest, res: Response): Promise<void> {
   try {
@@ -141,7 +141,7 @@ export async function handleOAuthCallback(req: AuthRequest, res: Response): Prom
 
 /**
  * GET /api/whatsapp/oauth/phones
- * Fetch pending phone numbers after OAuth callback. super_admin only.
+ * Fetch pending phone numbers after OAuth callback. owner and admin only.
  */
 export async function getPhoneNumbers(req: AuthRequest, res: Response): Promise<void> {
   try {
@@ -161,7 +161,7 @@ export async function getPhoneNumbers(req: AuthRequest, res: Response): Promise<
 
 /**
  * POST /api/whatsapp/oauth/select
- * Finalize phone number selection and persist OAuth config. super_admin only.
+ * Finalize phone number selection and persist OAuth config. owner and admin only.
  * Body: { phoneNumberId, displayPhone, verifiedName, wabaId? }
  */
 export async function selectPhoneNumber(req: AuthRequest, res: Response): Promise<void> {
@@ -257,7 +257,7 @@ export async function selectPhoneNumber(req: AuthRequest, res: Response): Promis
 
 /**
  * DELETE /api/whatsapp/oauth/disconnect
- * Clear OAuth fields, revert to manual mode. super_admin only.
+ * Clear OAuth fields, revert to manual mode. owner and admin only.
  */
 export async function disconnectOAuth(req: AuthRequest, res: Response): Promise<void> {
   try {

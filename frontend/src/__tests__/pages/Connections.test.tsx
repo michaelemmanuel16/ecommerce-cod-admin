@@ -69,6 +69,11 @@ const renderPage = (url = '/connections') => render(
 );
 
 const cardOf = (name: string) => screen.getByTestId(`card-${name}`);
+/** Click a card and return its modal. */
+const openCard = async (name: string) => {
+  await userEvent.click(await screen.findByTestId(`card-${name}`));
+  return screen.findByRole('dialog');
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -101,25 +106,27 @@ describe('Connections page (M9-T44)', () => {
     expect(screen.queryByText(/partner key/i)).not.toBeInTheDocument();
   });
 
-  it('shows the delivery-report URL on the SMS card with a copy button', async () => {
+  it('shows the delivery-report URL in the SMS modal with a copy button', async () => {
     renderPage();
-    expect(await screen.findByText('https://api.shop.com/api/sms/webhook?token=abc')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Copy report URL/ })).toBeInTheDocument();
+    const dlg = await openCard('Arkesel SMS');
+    expect(await within(dlg).findByText('https://api.shop.com/api/sms/webhook?token=abc')).toBeInTheDocument();
+    expect(within(dlg).getByRole('button', { name: /Copy report URL/ })).toBeInTheDocument();
   });
 
-  it('a card that is not set up shows the API reason and a Connect button', async () => {
+  it('a card that is not set up shows the API reason, and its modal has Connect', async () => {
     renderPage();
     const wa = await screen.findByTestId('card-WhatsApp Business');
     expect(within(wa).getByText('Not connected')).toBeInTheDocument();
     expect(within(wa).getByText('Connect your WhatsApp Business number')).toBeInTheDocument();
-    expect(within(wa).getByRole('button', { name: 'Connect' })).toBeInTheDocument();
+    expect(within(wa).queryByRole('button')).not.toBeInTheDocument();
+    expect(within(await openCard('WhatsApp Business')).getByRole('button', { name: 'Connect' })).toBeInTheDocument();
   });
 
   it('a card in error shows the reason from the API and a Retry that checks again', async () => {
     svc.getCards.mockResolvedValue({ ...CARDS, whatsapp: card({ status: 'error', reason: 'The WhatsApp connection expired. Reconnect WhatsApp.' }) });
     admin.getWhatsAppStatus.mockResolvedValue({ configured: true });
     renderPage();
-    const wa = await screen.findByTestId('card-WhatsApp Business');
+    const wa = await openCard('WhatsApp Business');
     expect(within(wa).getByRole('alert')).toHaveTextContent('The WhatsApp connection expired. Reconnect WhatsApp.');
     const before = svc.getCards.mock.calls.length;
     await userEvent.click(within(wa).getByRole('button', { name: 'Retry' }));
@@ -140,13 +147,13 @@ describe('Connections page (M9-T44)', () => {
     expect(within(email).getByText('Not connected')).toBeInTheDocument();
     expect(within(email).getByText("Until you add one, emails go out from CodAdmin's sender.")).toBeInTheDocument();
     expect(within(email).queryByText('CodAdmin sender (Resend)')).not.toBeInTheDocument();
-    expect(within(email).getByRole('button', { name: 'Connect' })).toBeInTheDocument();
+    expect(within(await openCard('Your own email (SMTP)')).getByRole('button', { name: 'Connect' })).toBeInTheDocument();
   });
 
   it('SMTP test shows the server error text', async () => {
     svc.testSmtp.mockRejectedValue({ isAxiosError: true, response: { data: { error: 'Invalid login: 535 Authentication failed' } } });
     renderPage();
-    await userEvent.click(within(await screen.findByTestId('card-Your own email (SMTP)')).getByRole('button', { name: 'Edit' }));
+    await userEvent.click(within(await openCard('Your own email (SMTP)')).getByRole('button', { name: 'Edit' }));
     await userEvent.selectOptions(await screen.findByLabelText('Sender'), 'smtp');
     await userEvent.type(screen.getByLabelText('Host'), 'smtp.mail.example');
     await userEvent.type(screen.getByLabelText('Password'), 'secret');
@@ -159,7 +166,7 @@ describe('Connections page (M9-T44)', () => {
   it('Paystack save goes to /api/payment-connections and shows the wrong-prefix message from the API', async () => {
     svc.savePaymentConnection.mockRejectedValue({ isAxiosError: true, response: { data: { error: 'A live key must start with sk_live_' } } });
     renderPage();
-    await userEvent.click(within(await screen.findByTestId('card-Paystack')).getByRole('button', { name: 'Edit keys' }));
+    await userEvent.click(within(await openCard('Paystack')).getByRole('button', { name: 'Edit keys' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Live' }));
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(await screen.findByText('A live key must start with sk_live_')).toBeInTheDocument();
@@ -168,7 +175,7 @@ describe('Connections page (M9-T44)', () => {
 
   it('SMS save writes the Arkesel settings', async () => {
     renderPage();
-    await userEvent.click(within(await screen.findByTestId('card-Arkesel SMS')).getByRole('button', { name: 'Edit' }));
+    await userEvent.click(within(await openCard('Arkesel SMS')).getByRole('button', { name: 'Edit' }));
     const sender = await screen.findByLabelText('Sender ID');
     await userEvent.clear(sender);
     await userEvent.type(sender, 'NewName');
@@ -176,24 +183,57 @@ describe('Connections page (M9-T44)', () => {
     await waitFor(() => expect(admin.updateSystemConfig).toHaveBeenCalledWith({ smsProvider: expect.objectContaining({ provider: 'arkesel', senderId: 'NewName' }) }));
   });
 
-  it('an admin edits Paystack only: no SMS, WhatsApp or Email edit buttons', async () => {
+  it('an admin edits SMS, WhatsApp, Email and Paystack like the owner, but has no AI keys card', async () => {
     role = 'admin';
     renderPage();
     await screen.findByTestId('card-Paystack');
-    expect(within(cardOf('Paystack')).getByRole('button', { name: 'Edit keys' })).toBeInTheDocument();
-    expect(within(cardOf('Arkesel SMS')).queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
-    expect(within(cardOf('WhatsApp Business')).queryByRole('button', { name: 'Connect' })).not.toBeInTheDocument();
-    expect(within(cardOf('Your own email (SMTP)')).queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    expect(within(await openCard('Paystack')).getByRole('button', { name: 'Edit keys' })).toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
+    expect(within(await openCard('Arkesel SMS')).getByRole('button', { name: 'Edit' })).toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
+    expect(within(await openCard('WhatsApp Business')).getByRole('button', { name: 'Connect' })).toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
+    expect(within(await openCard('Your own email (SMTP)')).getByRole('button', { name: 'Edit' })).toBeInTheDocument();
     expect(screen.queryByText('AI KEYS CARD')).not.toBeInTheDocument();
+    expect(admin.getSystemConfig).toHaveBeenCalled();
+  });
+
+  it('a person who may only view opens every modal, reads the details and sees one line instead of buttons', async () => {
+    role = 'manager';
+    renderPage();
+    for (const name of ['Arkesel SMS', 'WhatsApp Business', 'Your own email (SMTP)', 'Paystack']) {
+      const dlg = await openCard(name);
+      expect(within(dlg).getByText('Only the owner or an admin can change this.')).toBeInTheDocument();
+      expect(within(dlg).queryByRole('button', { name: /Edit|Connect|Add keys/ })).not.toBeInTheDocument();
+      await userEvent.keyboard('{Escape}');
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    }
+    expect(svc.getPaymentConnections).not.toHaveBeenCalled();
     expect(admin.getSystemConfig).not.toHaveBeenCalled();
   });
 
-  it('a person who may only view sees the cards and no write control', async () => {
-    role = 'manager';
+  it('the whole card opens its modal with Enter or Space, and Escape gives the focus back to the card', async () => {
     renderPage();
-    await screen.findByTestId('card-Paystack');
-    expect(screen.queryByRole('button', { name: /Edit|Connect|Add keys/ })).not.toBeInTheDocument();
-    expect(svc.getPaymentConnections).not.toHaveBeenCalled();
+    const sms = await screen.findByTestId('card-Arkesel SMS');
+    expect(sms).toHaveAttribute('role', 'button');
+    sms.focus();
+    await userEvent.keyboard('{Enter}');
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(sms).toHaveFocus();
+    await userEvent.keyboard(' ');
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('a card shows a summary of two facts at most and a Manage hint, and no action buttons', async () => {
+    renderPage();
+    const pay = await screen.findByTestId('card-Paystack');
+    expect(within(pay).getByText('Manage')).toBeInTheDocument();
+    expect(within(pay).queryByRole('button')).not.toBeInTheDocument();
+    expect(pay.querySelectorAll('dt').length).toBeLessThanOrEqual(2);
+    const wa = await screen.findByTestId('card-WhatsApp Business');
+    expect(wa.querySelectorAll('dt').length).toBeLessThanOrEqual(2);
   });
 
   it('/webhooks redirects to the Webhooks tab of Connections', async () => {
