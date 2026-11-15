@@ -14,8 +14,8 @@ router.get('/', paginationValidation, validate, notificationController.getNotifi
 router.get('/unread-count', notificationController.getUnreadCount);
 router.get('/preferences', notificationController.getPreferences);
 router.put('/preferences', notificationController.putPreferences);
-router.get('/role-defaults', requireRole('admin', 'super_admin'), notificationController.getRoleDefaults);
-router.put('/role-defaults', requireRole('admin', 'super_admin'), notificationController.putRoleDefaults);
+router.get('/role-defaults', requireRole('manager', 'admin', 'super_admin'), notificationController.getRoleDefaults);
+router.put('/role-defaults', requireRole('manager', 'admin', 'super_admin'), notificationController.putRoleDefaults);
 router.patch('/:id/read', notificationController.markAsRead);
 router.patch('/read-all', notificationController.markAllAsRead);
 

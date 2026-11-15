@@ -9,6 +9,7 @@ import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
 import { notify } from '../../services/inbox/inboxService';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
+import { generateAccessToken } from '../../utils/jwt';
 
 let pair: TwoTenants;
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
@@ -74,7 +75,7 @@ describe('PUT /api/notifications/preferences', () => {
 });
 
 describe('role defaults', () => {
-  it('are owner and admin only', async () => {
+  it('are for owner, admin and manager only', async () => {
     expect((await request(app).get('/api/notifications/role-defaults').set(auth(pair.a.users.salesRep.token))).status).toBe(403);
     expect((await request(app).put('/api/notifications/role-defaults').set(auth(pair.a.users.salesRep.token)).send({ role: 'sales_rep', defaults: [{ event: 'mention', email: true }] })).status).toBe(403);
   });
@@ -94,9 +95,61 @@ describe('role defaults', () => {
   });
 
   it('refuse in-app off for System problem on an owner role', async () => {
-    const res = await request(app).put('/api/notifications/role-defaults').set(auth(pair.a.users.admin.token))
+    const ownerUser = await prismaBase.user.findFirstOrThrow({ where: { tenantId: pair.a.id, role: 'super_admin' } });
+    const owner = generateAccessToken({ id: ownerUser.id, email: ownerUser.email, role: 'super_admin', tenantId: pair.a.id });
+    const res = await request(app).put('/api/notifications/role-defaults').set(auth(owner))
       .send({ role: 'super_admin', defaults: [{ event: 'system_problem', inApp: false }] });
     expect(res.status).toBe(400);
+  });
+});
+
+describe('role defaults: who may change which role', () => {
+  // The harness has no manager, so make one (and take the owner's id from the seed) in tenant A
+  const tokenFor = async (role: 'manager' | 'super_admin') => {
+    const tenantId = pair.a.id;
+    const stamp = `${role}-${Date.now()}`;
+    const u = role === 'super_admin'
+      ? await prismaBase.user.findFirstOrThrow({ where: { tenantId, role } })
+      : await prismaBase.user.create({ data: { email: `${stamp}@codadmin.test`, password: 'x', firstName: 'M', lastName: 'G', role, tenantId } });
+    return generateAccessToken({ id: u.id, email: u.email, role, tenantId });
+  };
+  const put = (token: string, role: string) => request(app).put('/api/notifications/role-defaults').set(auth(token))
+    .send({ role, defaults: [{ event: 'mention', email: true }] });
+  let manager: string;
+  let owner: string;
+  beforeAll(async () => { manager = await tokenFor('manager'); owner = await tokenFor('super_admin'); });
+
+  it('a manager changes Sales rep and Manager defaults', async () => {
+    expect((await put(manager, 'sales_rep')).status).toBe(200);
+    expect((await put(manager, 'manager')).status).toBe(200);
+    expect((await request(app).get('/api/notifications/role-defaults?role=sales_rep').set(auth(manager))).status).toBe(200);
+  });
+
+  it('a manager cannot read or change Owner or Admin: 403', async () => {
+    for (const role of ['super_admin', 'admin']) {
+      expect((await put(manager, role)).status).toBe(403);
+      expect((await request(app).get(`/api/notifications/role-defaults?role=${role}`).set(auth(manager))).status).toBe(403);
+    }
+    const all = await request(app).get('/api/notifications/role-defaults').set(auth(manager));
+    expect(all.status).toBe(200);
+    const roles = all.body.roles.map((r: any) => r.role);
+    expect(roles).not.toContain('super_admin');
+    expect(roles).not.toContain('admin');
+    expect(roles).toContain('sales_rep');
+  });
+
+  it('an admin changes every role but Owner; the owner changes all of them', async () => {
+    const admin = pair.a.users.admin.token;
+    expect((await put(admin, 'admin')).status).toBe(200);
+    expect((await put(admin, 'manager')).status).toBe(200);
+    expect((await put(admin, 'super_admin')).status).toBe(403);
+    expect((await request(app).get('/api/notifications/role-defaults?role=super_admin').set(auth(admin))).status).toBe(403);
+    expect((await put(owner, 'super_admin')).status).toBe(200);
+    expect((await put(owner, 'admin')).status).toBe(200);
+  });
+
+  it('a sales rep changes none: 403', async () => {
+    expect((await put(pair.a.users.salesRep.token, 'sales_rep')).status).toBe(403);
   });
 });
 

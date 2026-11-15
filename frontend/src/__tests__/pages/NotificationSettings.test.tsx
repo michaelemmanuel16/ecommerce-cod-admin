@@ -81,6 +81,35 @@ describe('NotificationSettings (T39)', () => {
     expect(svc.saveMine).not.toHaveBeenCalled();
   });
 
+  it('a manager gets the role view but is not offered Owner or Admin; an admin is not offered Owner; the owner gets all', async () => {
+    const choices = async (role: string) => {
+      const { unmount } = renderIt(role);
+      await screen.findByRole('switch', { name: 'Someone mentioned you: In-app' });
+      await userEvent.click(screen.getByRole('button', { name: 'Role defaults' }));
+      const labels = within(screen.getByLabelText('Role')).getAllByRole('option').map((o) => o.textContent);
+      unmount();
+      return labels;
+    };
+    const manager = await choices('manager');
+    expect(manager).toContain('Manager');
+    expect(manager).toContain('Call rep');
+    expect(manager).not.toContain('Owner');
+    expect(manager).not.toContain('Admin');
+    const admin = await choices('admin');
+    expect(admin).toContain('Admin');
+    expect(admin).not.toContain('Owner');
+    expect(await choices('super_admin')).toEqual(expect.arrayContaining(['Owner', 'Admin']));
+  });
+
+  it('a manager saves defaults for the chosen role', async () => {
+    svc.saveRoleDefaults.mockResolvedValue(ROWS);
+    renderIt('manager');
+    await screen.findByRole('switch', { name: 'Someone mentioned you: In-app' });
+    await userEvent.click(screen.getByRole('button', { name: 'Role defaults' }));
+    await userEvent.click(await screen.findByRole('switch', { name: 'Someone mentioned you: Email' }));
+    await waitFor(() => expect(svc.saveRoleDefaults).toHaveBeenCalledWith('manager', [{ event: 'mention', email: true }]));
+  });
+
   it('a failed save keeps the old value and says why', async () => {
     svc.saveMine.mockRejectedValue(Object.assign(new Error('x'), { isAxiosError: true, response: { status: 400, data: { error: 'Nope' } } }));
     renderIt();

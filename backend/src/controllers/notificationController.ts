@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import { UserRole } from '@prisma/client';
 import { AuthRequest } from '../types';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
@@ -85,16 +86,31 @@ export const putPreferences = async (req: AuthRequest, res: Response): Promise<v
   res.json({ preferences: await inboxPreferences.savePreferences({ id: req.user!.id, role: req.user!.role }, parsed.data.preferences) });
 };
 
-/** GET /api/notifications/role-defaults?role= (owner and admin) */
+/**
+ * Which roles' defaults a caller may read and change. Owner (super_admin) edits all of them; an admin edits all but Owner;
+ * a manager edits the other roles (Manager included) but never Owner or Admin. Anyone else gets none.
+ */
+const PROTECTED_FROM: Record<string, UserRole[]> = {
+  super_admin: [],
+  admin: ['super_admin'],
+  manager: ['super_admin', 'admin'],
+};
+const canEditRole = (caller: UserRole, target: UserRole): boolean => caller in PROTECTED_FROM && !PROTECTED_FROM[caller].includes(target);
+
+/** GET /api/notifications/role-defaults?role= (owner, admin and manager; a manager never sees Owner or Admin) */
 export const getRoleDefaults = async (req: AuthRequest, res: Response): Promise<void> => {
   const parsed = roleDefaultsQuerySchema.safeParse(req.query);
   if (!parsed.success) throw new AppError(formatIssues(parsed.error), 400);
-  res.json({ roles: await inboxPreferences.getRoleDefaults(parsed.data.role) });
+  const caller = req.user!.role;
+  if (parsed.data.role && !canEditRole(caller, parsed.data.role)) throw new AppError('You cannot manage notification defaults for this role', 403);
+  const roles = await inboxPreferences.getRoleDefaults(parsed.data.role);
+  res.json({ roles: roles.filter((r) => canEditRole(caller, r.role)) });
 };
 
-/** PUT /api/notifications/role-defaults { role, defaults: [...] } (owner and admin) */
+/** PUT /api/notifications/role-defaults { role, defaults: [...] } (same role rule as the read) */
 export const putRoleDefaults = async (req: AuthRequest, res: Response): Promise<void> => {
   const parsed = roleDefaultsPutSchema.safeParse(req.body ?? {});
   if (!parsed.success) throw new AppError(formatIssues(parsed.error), 400);
+  if (!canEditRole(req.user!.role, parsed.data.role)) throw new AppError('You cannot manage notification defaults for this role', 403);
   res.json({ roles: await inboxPreferences.saveRoleDefaults(parsed.data.role, parsed.data.defaults) });
 };

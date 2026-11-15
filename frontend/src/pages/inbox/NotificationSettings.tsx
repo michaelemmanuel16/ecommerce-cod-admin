@@ -10,9 +10,17 @@ import { CHANNEL_LABEL as MESSAGE_CHANNEL_LABEL } from '../messages/format';
 
 const CHANNEL_LABEL: Record<Channel, string> = { ...MESSAGE_CHANNEL_LABEL, inApp: 'In-app' };
 const ROLE_CHOICES: Array<{ id: string; label: string }> = [
-  { id: 'admin', label: 'Admin' }, { id: 'manager', label: 'Manager' }, { id: 'sales_rep', label: 'Call rep' },
+  { id: 'super_admin', label: 'Owner' }, { id: 'admin', label: 'Admin' }, { id: 'manager', label: 'Manager' }, { id: 'sales_rep', label: 'Call rep' },
   { id: 'delivery_agent', label: 'Delivery agent' }, { id: 'inventory_manager', label: 'Inventory manager' }, { id: 'accountant', label: 'Accountant' },
 ];
+
+/** The roles whose defaults a person may change (the API enforces the same rule): the owner all, an admin all but Owner, a manager all but Owner and Admin. */
+export function editableRoles(role: string): Array<{ id: string; label: string }> {
+  if (role === 'super_admin') return ROLE_CHOICES;
+  if (role === 'admin') return ROLE_CHOICES.filter((r) => r.id !== 'super_admin');
+  if (role === 'manager') return ROLE_CHOICES.filter((r) => r.id !== 'super_admin' && r.id !== 'admin');
+  return [];
+}
 
 interface Props {
   /** The person whose settings these are. The agent app (M10) passes its own user. */
@@ -23,19 +31,20 @@ type Mode = 'mine' | 'roles';
 
 /**
  * Notification settings (M9-T39, F-555, F-1227, F-1228): "My notifications" is the person's own choice for each event
- * and channel; "Role defaults" (owner and admin) is what a role starts with. Each switch saves at once through the API.
+ * and channel; "Role defaults" (owner, admin and manager) is what a role starts with. Each switch saves at once through the API.
  * A channel the business has not connected is disabled, with the API's hint.
  */
 export function NotificationSettings({ user }: Props) {
   const say = useToast();
   const isOwner = isOwnerRole(user.role);
+  const roleChoices = editableRoles(user.role);
   const [mode, setMode] = useState<Mode>('mine');
   const [role, setRole] = useState('manager');
   const [rows, setRows] = useState<PreferenceRow[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
 
-  const forRoles = mode === 'roles' && isOwner;
+  const forRoles = mode === 'roles' && roleChoices.length > 0;
 
   const load = useCallback(async () => {
     setRows(null);
@@ -70,7 +79,7 @@ export function NotificationSettings({ user }: Props) {
     <div className="card nset">
       <div className="sub">
         <h3>Notification settings</h3>
-        {isOwner && (
+        {roleChoices.length > 0 && (
           <div className="seg" role="group" aria-label="Whose settings">
             <button type="button" className={mode === 'mine' ? 'on' : ''} aria-pressed={mode === 'mine'} onClick={() => setMode('mine')}>My notifications</button>
             <button type="button" className={mode === 'roles' ? 'on' : ''} aria-pressed={mode === 'roles'} onClick={() => setMode('roles')}>Role defaults</button>
@@ -82,7 +91,7 @@ export function NotificationSettings({ user }: Props) {
         <div className="nset-note">
           <p>What a role starts with. Anyone who has changed their own settings keeps them.</p>
           <Select label="Role" compact value={role} onChange={(e) => setRole(e.target.value)}>
-            {ROLE_CHOICES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+            {roleChoices.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
           </Select>
         </div>
       )}
