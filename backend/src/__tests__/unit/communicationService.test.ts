@@ -43,7 +43,7 @@ jest.mock('../../utils/logger', () => ({
 }));
 
 import { prismaMock } from '../mocks/prisma.mock';
-import { communicationService } from '../../services/communicationService';
+import { communicationService, RECIPIENT_LIMIT } from '../../services/communicationService';
 import whatsappService from '../../services/whatsappService';
 import { smsService } from '../../services/smsService';
 import { useTestTenant, TEST_TENANT_ID } from '../mocks/tenant.mock';
@@ -112,6 +112,22 @@ describe('CommunicationService', () => {
         }),
       );
       expect(result).toEqual(mockCustomers);
+    });
+
+    it('lists at most RECIPIENT_LIMIT customers and counts every match without that cap', async () => {
+      (prismaMock.customer.findMany as jest.Mock).mockResolvedValue(mockCustomers);
+      (prismaMock.customer.count as jest.Mock).mockResolvedValue(1837);
+
+      await communicationService.getRecipients({ channel: 'sms', state: 'Ashanti' });
+      const total = await communicationService.countRecipients({ channel: 'sms', state: 'Ashanti' });
+
+      expect(RECIPIENT_LIMIT).toBe(1000);
+      expect((prismaMock.customer.findMany as jest.Mock).mock.calls.at(-1)![0]).toMatchObject({ take: RECIPIENT_LIMIT });
+      const listWhere = (prismaMock.customer.findMany as jest.Mock).mock.calls.at(-1)![0].where;
+      const countArgs = (prismaMock.customer.count as jest.Mock).mock.calls.at(-1)![0];
+      expect(countArgs.where).toEqual(listWhere); // same audience, same opt-out rule
+      expect(countArgs.take).toBeUndefined();
+      expect(total).toBe(1837);
     });
 
     it('should return customers filtered for WhatsApp channel (excluding whatsappOptOut)', async () => {

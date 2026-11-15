@@ -31,6 +31,7 @@ export function BulkSendTab() {
   const [productId, setProductId] = useState('');
   const [hasOrdered, setHasOrdered] = useState(false);
   const [recipients, setRecipients] = useState<Recipient[] | null>(null);
+  const [matching, setMatching] = useState(0);
   const [finding, setFinding] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [sending, setSending] = useState(false);
@@ -48,7 +49,9 @@ export function BulkSendTab() {
     setFinding(true);
     setResult(null);
     try {
-      setRecipients(await communicationService.getRecipients({ channel, ...(state.trim() && { state: state.trim() }), ...(productId && { productId }), ...(hasOrdered && { hasOrdered: true }) }));
+      const found = await communicationService.getRecipients({ channel, ...(state.trim() && { state: state.trim() }), ...(productId && { productId }), ...(hasOrdered && { hasOrdered: true }) });
+      setRecipients(found.recipients);
+      setMatching(found.total);
     } catch (err) {
       say(await apiMessage(err, 'The recipients did not load'));
     } finally {
@@ -150,6 +153,9 @@ export function BulkSendTab() {
             <div>
               <small className="ink3">Will be sent to</small>
               <div className="big num" aria-live="polite">{formatNumber(count)}</div>
+              {matching > count && (
+                <small className="ink3">{formatNumber(count)} of {formatNumber(matching)}, the most one send allows. Narrow the region or product to reach the rest.</small>
+              )}
               <small className="ink3">Customers who opted out of {CHANNEL_LABEL[channel]} are left out.</small>
             </div>
             {count > 0 && (

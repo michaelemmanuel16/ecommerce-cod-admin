@@ -78,6 +78,26 @@ function campaignStats(
   };
 }
 
+/** How many customers the recipient list returns. The Bulk send tab sends to the customers it lists, so this is also the most one send reaches. */
+export const RECIPIENT_LIMIT = 1000;
+
+interface RecipientFilters {
+  state?: string;
+  productId?: number;
+  hasOrdered?: boolean;
+  channel: 'sms' | 'whatsapp' | 'email';
+}
+
+function recipientWhere(filters: RecipientFilters) {
+  const where: any = buildAudienceWhere({
+    filter: { state: filters.state, productId: filters.productId, hasOrdered: filters.hasOrdered },
+  });
+  if (filters.channel === 'sms') where.smsOptOut = false;
+  if (filters.channel === 'whatsapp') where.whatsappOptOut = false;
+  if (filters.channel === 'email') Object.assign(where, EMAIL_ELIGIBLE);
+  return where;
+}
+
 export const communicationService = {
   async getMessages(params: {
     page?: number;
@@ -96,20 +116,15 @@ export const communicationService = {
     return whatsappService.getStats(startDate, endDate);
   },
 
-  async getRecipients(filters: {
-    state?: string;
-    productId?: number;
-    hasOrdered?: boolean;
-    channel: 'sms' | 'whatsapp' | 'email';
-  }) {
-    const where: any = buildAudienceWhere({
-      filter: { state: filters.state, productId: filters.productId, hasOrdered: filters.hasOrdered },
-    });
-    if (filters.channel === 'sms') where.smsOptOut = false;
-    if (filters.channel === 'whatsapp') where.whatsappOptOut = false;
-    if (filters.channel === 'email') Object.assign(where, EMAIL_ELIGIBLE);
+  /** All customers who match, with no cap (the list below is capped), so the screen can say "1,000 of 1,837". */
+  async countRecipients(filters: RecipientFilters) {
+    return prisma.customer.count({ where: recipientWhere(filters) });
+  },
 
-    // Preview listing only — capped. The bulk send enqueues via cursor pagination
+  async getRecipients(filters: RecipientFilters) {
+    const where = recipientWhere(filters);
+
+    // Capped (RECIPIENT_LIMIT). The email bulk send enqueues via cursor pagination
     // (bulkSendEmail) and is not bounded by this cap.
     const customers = await prisma.customer.findMany({
       where,
@@ -126,7 +141,7 @@ export const communicationService = {
         emailOptOut: true,
       },
       orderBy: { firstName: 'asc' },
-      take: 1000,
+      take: RECIPIENT_LIMIT,
     });
     return customers;
   },

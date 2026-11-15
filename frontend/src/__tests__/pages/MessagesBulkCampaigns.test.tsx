@@ -37,7 +37,7 @@ beforeEach(() => {
   canCreate = true;
   msgs.listConversations.mockResolvedValue({ items: [], nextCursor: null });
   msgs.listTemplates.mockResolvedValue([{ id: 1, channel: 'sms', name: 'Restock', body: 'Pens are back' }]);
-  comm.getRecipients.mockResolvedValue([recipient(1, 'Ama'), recipient(2, 'Kofi')]);
+  comm.getRecipients.mockResolvedValue({ recipients: [recipient(1, 'Ama'), recipient(2, 'Kofi')], total: 2, limit: 1000 });
   comm.bulkSendSms.mockResolvedValue({ total: 3, skipped: 1, results: [{ customerId: 1, success: true }, { customerId: 2, success: true }, { customerId: 3, success: false, skipped: true }] });
   comm.bulkSendWhatsApp.mockResolvedValue({ total: 2, skipped: 0, results: [{ customerId: 1, success: true }, { customerId: 2, success: false, error: 'x' }] });
   comm.getCampaigns.mockResolvedValue([]);
@@ -59,6 +59,25 @@ describe('Messages page: Bulk send', () => {
     const box = last.closest('[role=status]') as HTMLElement;
     expect(within(box).getByText('Skipped (opted out or not sendable)').nextSibling).toHaveTextContent('1');
     expect(within(box).getByText('Sent').nextSibling).toHaveTextContent('2');
+  });
+
+  it('says so when the list is capped: "1,000 of 1,837, the most one send allows"', async () => {
+    const user = userEvent.setup();
+    const many = Array.from({ length: 1000 }, (_, i) => recipient(i + 1, 'Ama'));
+    comm.getRecipients.mockResolvedValue({ recipients: many, total: 1837, limit: 1000 });
+    renderTab('bulk');
+    await user.type(await screen.findByLabelText('Text'), 'Pens are back');
+    await user.click(screen.getByRole('button', { name: 'Find recipients' }));
+    expect(await screen.findByText(/1,000 of 1,837, the most one send allows/)).toBeInTheDocument();
+  });
+
+  it('shows no cap note when every match is listed', async () => {
+    const user = userEvent.setup();
+    renderTab('bulk');
+    await user.type(await screen.findByLabelText('Text'), 'Pens are back');
+    await user.click(screen.getByRole('button', { name: 'Find recipients' }));
+    await screen.findByText('Ama Test');
+    expect(screen.queryByText(/the most one send allows/)).not.toBeInTheDocument();
   });
 
   it('WhatsApp send passes the template key and the link', async () => {

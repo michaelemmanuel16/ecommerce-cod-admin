@@ -49,8 +49,11 @@ export interface BulkSendResult {
   results: Array<{ customerId: number; success: boolean; skipped?: boolean; messageLogId?: number; error?: string }>;
 }
 
+/** The customers a send reaches (capped at `limit`) and how many match in all. */
+export interface RecipientList { recipients: Recipient[]; total: number; limit: number }
+
 export const communicationService = {
-  async getRecipients(filters: Record<string, any>): Promise<Recipient[]> {
+  async getRecipients(filters: Record<string, any>): Promise<RecipientList> {
     const res = await apiClient.get('/api/communications/recipients', { params: filters });
     return res.data;
   },

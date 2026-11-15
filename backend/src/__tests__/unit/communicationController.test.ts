@@ -8,7 +8,9 @@ import { communicationService } from '../../services/communicationService';
 // Mock communicationService
 jest.mock('../../services/communicationService', () => ({
   __esModule: true,
+  RECIPIENT_LIMIT: 1000,
   communicationService: {
+    countRecipients: jest.fn(),
     getMessages: jest.fn(),
     getStats: jest.fn(),
     getRecipients: jest.fn(),
@@ -120,6 +122,7 @@ describe('Communication Controller', () => {
       mockReq.query = { channel: 'sms' };
       const mockRecipients = [{ id: 1, firstName: 'John' }];
       (communicationService.getRecipients as jest.Mock).mockResolvedValue(mockRecipients);
+      (communicationService.countRecipients as jest.Mock).mockResolvedValue(1837);
 
       await communicationController.getRecipients(mockReq as AuthRequest, mockRes as Response);
 
@@ -129,12 +132,14 @@ describe('Communication Controller', () => {
         hasOrdered: false,
         channel: 'sms',
       });
-      expect(mockRes.json).toHaveBeenCalledWith(mockRecipients);
+      // the list is capped, the total is not: the screen says "1 of 1,837" instead of passing the cap off as the audience
+      expect(mockRes.json).toHaveBeenCalledWith({ recipients: mockRecipients, total: 1837, limit: 1000 });
     });
 
     it('should parse productId as number', async () => {
       mockReq.query = { channel: 'whatsapp', productId: '5' };
       (communicationService.getRecipients as jest.Mock).mockResolvedValue([]);
+      (communicationService.countRecipients as jest.Mock).mockResolvedValue(0);
 
       await communicationController.getRecipients(mockReq as AuthRequest, mockRes as Response);
 
