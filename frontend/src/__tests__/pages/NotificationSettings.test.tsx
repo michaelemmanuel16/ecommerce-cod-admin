@@ -58,7 +58,7 @@ describe('NotificationSettings (T39)', () => {
     expect(wa).toBeDisabled();
     expect(wa).toHaveAttribute('title', HINT);
     expect(screen.getByText(HINT)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Open Connections' })).toHaveAttribute('href', '/settings?tab=integrations');
+    expect(screen.getByRole('link', { name: 'Open Connections' })).toHaveAttribute('href', '/connections');
     await userEvent.click(wa);
     expect(svc.saveMine).not.toHaveBeenCalled();
   });
