@@ -184,9 +184,10 @@ export async function listFeed(user: InboxUser, q: FeedQuery, now = new Date()) 
     take: limit + 1,
   });
   const page = rows.slice(0, limit);
-  const gone = await subjectDeletedMap(page);
-  const noAccess = await subjectNoAccessSet(page, gone, user);
-  const actors = await actorNameMap(page);
+  const [{ gone, noAccess }, actors] = await Promise.all([
+    subjectDeletedMap(page).then(async (deleted) => ({ gone: deleted, noAccess: await subjectNoAccessSet(page, deleted, user) })),
+    actorNameMap(page),
+  ]);
   return {
     items: page.map((r) => present(r, gone, noAccess, actors)),
     nextCursor: rows.length > limit ? encodeCursor(page[page.length - 1]) : null,
@@ -236,7 +237,11 @@ export async function patchRow(userId: number, id: number, patch: RowPatch, now 
   if (patch.snoozedUntil !== undefined) Object.assign(data, { snoozedUntil: patch.snoozedUntil });
   const updated = await prisma.notification.update({ where: { id }, data });
   const gone = await subjectDeletedMap([updated]);
-  return present(updated, gone, await subjectNoAccessSet([updated], gone, role ? { id: userId, role } : undefined), await actorNameMap([updated]));
+  const [noAccess, actors] = await Promise.all([
+    subjectNoAccessSet([updated], gone, role ? { id: userId, role } : undefined),
+    actorNameMap([updated]),
+  ]);
+  return present(updated, gone, noAccess, actors);
 }
 
 /** POST /api/inbox/mark-all: marks the person's unread open rows of one view as read. */

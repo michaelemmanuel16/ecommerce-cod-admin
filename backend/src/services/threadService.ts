@@ -5,7 +5,7 @@ import { resolveTenantId } from '../utils/tenantContext';
 import { HUMAN_USERS_WHERE } from './systemUserService';
 import { isOwnerRole } from './inbox/inboxEvents';
 import { notify } from './inbox/inboxService';
-import { assertSubjectVisible, NoteSubjectType } from './inbox/subjectAccess';
+import { assertSubjectVisible, filterVisible, NoteSubjectType } from './inbox/subjectAccess';
 
 /**
  * Threads, comments and mentions (M9-T19). One thread per subject, made on the first comment.
@@ -93,11 +93,9 @@ async function activeMentionIds(type: NoteSubjectType, subjectId: number, ids: n
   if (ids.length === 0) return [];
   const found = await prisma.user.findMany({ where: { id: { in: ids }, isActive: true, ...HUMAN_USERS_WHERE }, select: { id: true, role: true, firstName: true, lastName: true } });
   if (found.length !== ids.length) throw new AppError('You can mention only active people of this business', 400);
-  for (const person of found) {
-    if (!(await canSee(type, subjectId, person))) {
-      throw new AppError(`${`${person.firstName} ${person.lastName}`.trim()} cannot see this ${type}`, 400);
-    }
-  }
+  const visible = new Set((await filterVisible(type, subjectId, found)).map((p) => p.id));
+  const blocked = found.find((p) => !visible.has(p.id));
+  if (blocked) throw new AppError(`${`${blocked.firstName} ${blocked.lastName}`.trim()} cannot see this ${type}`, 400);
   return ids;
 }
 
@@ -110,9 +108,9 @@ export async function listMentionable(type: NoteSubjectType, id: number, user: T
     orderBy: [{ firstName: 'asc' }, { id: 'asc' }],
     take: 200,
   });
-  const visible = await Promise.all(people.map(async (p) => ((await canSee(type, id, p)) ? p : null)));
+  const visible = await filterVisible(type, id, people);
   return {
-    people: visible.filter((p): p is NonNullable<typeof p> => p !== null)
+    people: visible
       .map((p) => ({ id: p.id, name: `${p.firstName} ${p.lastName}`.trim(), role: p.role })),
   };
 }
@@ -188,8 +186,7 @@ async function notifyComment(type: NoteSubjectType, id: number, comment: Comment
   const others = [...new Set(earlierAuthors)].filter((a) => a !== comment.authorId && !mentioned.includes(a));
   const people = others.length === 0 ? [] : await prisma.user.findMany({ where: { id: { in: others }, isActive: true, ...HUMAN_USERS_WHERE }, select: { id: true, role: true } });
   // Someone who lost access since they commented is skipped: the note carries the comment text
-  const active: number[] = [];
-  for (const person of people) if (await canSee(type, id, person)) active.push(person.id);
+  const active = (await filterVisible(type, id, people)).map((p) => p.id);
   if (active.length > 0) {
     await notify({ ...base, event: 'team_note', recipients: active, title: `${who} added a note on ${type} #${id}`, message: excerpt(comment.body) });
   }

@@ -7,6 +7,14 @@ const mockVisible = jest.fn<(...a: any[]) => Promise<void>>();
 jest.mock('../../services/inbox/subjectAccess', () => ({
   NOTE_SUBJECT_TYPES: ['order', 'customer', 'payout', 'product'],
   assertSubjectVisible: (...a: any[]) => mockVisible(...a),
+  // The batch form: the same per-person check, a 403 or 404 drops the person
+  filterVisible: async (type: any, id: any, people: any[]) => {
+    const kept: any[] = [];
+    for (const person of people) {
+      try { await mockVisible(type, id, person); kept.push(person); } catch (error: any) { if (error?.statusCode !== 403 && error?.statusCode !== 404) throw error; }
+    }
+    return kept;
+  },
 }));
 jest.mock('../../utils/logger', () => ({ __esModule: true, default: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } }));
 

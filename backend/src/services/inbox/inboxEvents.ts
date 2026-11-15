@@ -56,9 +56,8 @@ const LIST: InboxEventDef[] = [
 export const INBOX_EVENTS: Readonly<Record<string, InboxEventDef>> = Object.freeze(
   Object.fromEntries(LIST.map((e) => [e.name, e])),
 );
-export type InboxEventName = string;
 
-export const INBOX_EVENT_NAMES = LIST.map((e) => e.name);
+export const INBOX_EVENT_NAMES = Object.keys(INBOX_EVENTS);
 
 /** Roles that count as the tenant owner (the same rule as `findTenantAdmins`). */
 export const OWNER_ROLES: readonly UserRole[] = ['admin', 'super_admin'];
