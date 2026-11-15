@@ -185,3 +185,14 @@
 /* a skeleton list directly inside a card (ListSkeleton) keeps the card's side padding */
 .v2 .card > .lskel{padding:20px}
 .v2 .note.flat{padding-top:0}
+
+/* label switch: <label class="sw"><input type="checkbox"><span class="tg"></span> text</label>. Scoped to label.sw because settings.css
+   and connections.css use .sw for a button switch (role=switch); the first rule resets that button look for the label version. */
+.v2 label.sw{width:auto;height:auto;background:none;border-radius:0;display:inline-flex;align-items:center;gap:10px;font-weight:600;cursor:pointer;position:relative}
+.v2 label.sw::after{content:none}
+.v2 label.sw input{position:absolute;opacity:0;width:1px;height:1px}
+.v2 label.sw .tg{width:38px;height:22px;border-radius:99px;background:var(--line);position:relative;transition:background .15s;flex:none}
+.v2 label.sw .tg::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--card);box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .15s}
+.v2 label.sw input:checked+.tg{background:var(--pine)}
+.v2 label.sw input:checked+.tg::after{transform:translateX(16px)}
+.v2 label.sw input:focus-visible+.tg{outline:2px solid var(--pine);outline-offset:2px}
