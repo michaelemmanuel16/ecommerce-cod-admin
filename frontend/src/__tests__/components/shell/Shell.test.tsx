@@ -200,10 +200,10 @@ describe('Shell', () => {
   });
 
   describe('old pages whose new home ships later', () => {
-    it('an owner sees Customer reps and Webhooks', async () => {
+    it('an owner sees Customer reps, and Connections instead of Webhooks', async () => {
       renderShell();
       expect(await screen.findByRole('link', { name: 'Customer reps' })).toHaveAttribute('href', '/customer-reps');
-      expect(screen.getByRole('link', { name: 'Webhooks' })).toHaveAttribute('href', '/webhooks');
+      expect(screen.queryByRole('link', { name: 'Webhooks' })).not.toBeInTheDocument();
       expect(screen.queryByRole('link', { name: 'Earnings history' })).not.toBeInTheDocument();
     });
 
