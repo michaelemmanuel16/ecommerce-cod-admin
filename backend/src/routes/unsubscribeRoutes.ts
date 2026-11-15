@@ -5,6 +5,7 @@ import {
   optOutByUnsubscribeToken,
 } from '../services/unsubscribeService';
 import { escapeHtml } from '../utils/sanitizer';
+import { MessageChannel } from '@prisma/client';
 import logger from '../utils/logger';
 
 /**
@@ -33,11 +34,17 @@ function page(title: string, bodyHtml: string): string {
   );
 }
 
-const INVALID_PAGE = page(
-  'Unsubscribe',
-  '<h2>Link not valid</h2>' +
-    '<p style="color:#6b7280;">This unsubscribe link is invalid or has expired.</p>',
+// One page for every token that does not belong to a customer: unknown, forged, or a customer who was deleted.
+// It is the page a real unsubscribe shows, and it carries nothing about the store or a person (M9-T10).
+const UNSUBSCRIBED_PAGE = page(
+  'Unsubscribed',
+  '<h2>You are unsubscribed</h2>' +
+    "<p style=\"color:#6b7280;\">You won't receive further messages from this store. To start receiving them again, place a new order or contact the store.</p>",
 );
+const ERROR_PAGE = page('Unsubscribe', '<h2>Something went wrong</h2><p style="color:#6b7280;">Please try again later.</p>');
+
+const CHANNELS = new Set<string>(['sms', 'whatsapp']);
+const channelOf = (q: unknown): MessageChannel | undefined => (typeof q === 'string' && CHANNELS.has(q) ? (q as MessageChannel) : undefined);
 
 // GET — render a confirm page only. No DB write.
 router.get('/:token', async (req, res) => {
@@ -45,10 +52,11 @@ router.get('/:token', async (req, res) => {
     const { token } = req.params;
     const customer = await findCustomerByUnsubscribeToken(token);
     if (!customer) {
-      res.status(404).type('html').send(INVALID_PAGE);
+      res.status(200).type('html').send(UNSUBSCRIBED_PAGE);
       return;
     }
-    const action = `/api/public/unsubscribe/${encodeURIComponent(token)}`;
+    const channel = channelOf(req.query.channel);
+    const action = `/api/public/unsubscribe/${encodeURIComponent(token)}${channel ? `?channel=${channel}` : ''}`;
     res
       .status(200)
       .type('html')
@@ -64,7 +72,7 @@ router.get('/:token', async (req, res) => {
       );
   } catch (error: any) {
     logger.error('Unsubscribe confirm page failed', { error: error.message });
-    res.status(500).type('html').send(INVALID_PAGE);
+    res.status(500).type('html').send(ERROR_PAGE);
   }
 });
 
@@ -73,24 +81,12 @@ router.get('/:token', async (req, res) => {
 router.post('/:token', async (req, res) => {
   try {
     const { token } = req.params;
-    const ok = await optOutByUnsubscribeToken(token);
-    if (!ok) {
-      res.status(404).type('html').send(INVALID_PAGE);
-      return;
-    }
-    res
-      .status(200)
-      .type('html')
-      .send(
-        page(
-          'Unsubscribed',
-          "<h2>You've been unsubscribed</h2>" +
-            "<p style=\"color:#6b7280;\">You won't receive further emails. To start receiving them again, place a new order or contact the store.</p>",
-        ),
-      );
+    // Whether the token was real or not, the answer is the same page
+    await optOutByUnsubscribeToken(token, channelOf(req.query.channel));
+    res.status(200).type('html').send(UNSUBSCRIBED_PAGE);
   } catch (error: any) {
     logger.error('Unsubscribe opt-out failed', { error: error.message });
-    res.status(500).type('html').send(INVALID_PAGE);
+    res.status(500).type('html').send(ERROR_PAGE);
   }
 });
 

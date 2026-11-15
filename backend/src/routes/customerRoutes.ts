@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as customerController from '../controllers/customerController';
+import * as optOutController from '../controllers/customerOptOutController';
 import { authenticate, requireResourcePermission, requireRole } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate } from '../middleware/validation';
@@ -19,6 +20,8 @@ router.get('/towns', requireResourcePermission('customers', 'view'), customerCon
 router.get('/export', bulkOrderRateLimiter, requireResourcePermission('customers', 'export'), customerController.exportCustomers);
 router.post('/', createCustomerValidation, validate, requireResourcePermission('customers', 'create'), customerController.createCustomer);
 router.get('/:id/messages', requireResourcePermission('customers', 'view'), messageTracking.forCustomer);
+router.get('/:id/opt-outs', requireResourcePermission('customers', 'view'), optOutController.getOptOuts);
+router.put('/:id/opt-outs', requireResourcePermission('customers', 'update'), optOutController.putOptOut);
 router.get('/:id', requireResourcePermission('customers', 'view'), customerController.getCustomer);
 router.post('/:id/cod-override', requireRole('super_admin', 'admin', 'manager'), codOverrideValidation, validate, customerController.overrideCod);
 router.put('/:id', updateCustomerValidation, validate, requireResourcePermission('customers', 'update'), customerController.updateCustomer);

@@ -22,6 +22,7 @@ let rep: { id: number; token: string };
 let otherRep: { id: number; token: string };
 let ownerB: { id: number; token: string };
 let customerId: number;
+let templateId: number;
 let seq = 0;
 
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3600_000);
@@ -44,6 +45,9 @@ beforeAll(async () => {
     data: { firstName: 'Ama', lastName: 'Mensah', phoneNumber: `+23355${String(SUFFIX).slice(-7)}`, address: '1 St', state: 'Greater Accra', area: 'Accra', tenantId: tenantA },
   });
   customerId = customer.id;
+  templateId = (await prismaBase.messageTemplate.create({
+    data: { tenantId: tenantA, channel: 'whatsapp', name: 'Auto confirm', body: 'Hello {{1}}', language: 'en_US', metaTemplateName: 'order_auto_confirm', metaStatus: 'APPROVED' },
+  })).id;
   await prismaBase.order.create({
     data: { customerId, subtotal: 10, shippingCost: 0, totalAmount: 10, deliveryAddress: '1 St', deliveryState: 'Greater Accra', deliveryArea: 'Accra', tenantId: tenantA, customerRepId: rep.id } as any,
   });
@@ -141,7 +145,7 @@ describe('POST /api/conversations/:id/reply', () => {
     expect(refused.status).toBe(422);
     expect(JSON.stringify(refused.body)).toContain('The 24 hour window is closed. Send an approved template.');
     expect(sendSpy.mock.calls.length).toBe(calls);
-    const ok = await request(app).post(`/api/conversations/${conv.id}/reply`).set(bearer(owner.token)).send({ templateName: 'order_auto_confirm', variables: ['Ama', 'Pack', '1', '10'] });
+    const ok = await request(app).post(`/api/conversations/${conv.id}/reply`).set(bearer(owner.token)).send({ templateId, variables: ['Ama', 'Pack', '1', '10'] });
     expect(ok.status).toBe(201);
     expect(sendSpy.mock.calls.length).toBe(calls + 1);
   });
@@ -152,7 +156,7 @@ describe('POST /api/conversations/:id/reply', () => {
       const fresh = await mkConv({ customerId, lastInboundAt: hoursAgo(1) });
       expect((await request(app).post(`/api/conversations/${fresh.id}/reply`).set(bearer(owner.token)).send({ body: 'ok' })).status).toBe(201);
       const stale = await mkConv({ customerId, lastInboundAt: hoursAgo(48) });
-      expect((await request(app).post(`/api/conversations/${stale.id}/reply`).set(bearer(owner.token)).send({ templateName: 'order_auto_confirm' })).status).toBe(409);
+      expect((await request(app).post(`/api/conversations/${stale.id}/reply`).set(bearer(owner.token)).send({ templateId })).status).toBe(409);
     } finally {
       await prismaBase.customer.update({ where: { id: customerId }, data: { whatsappOptOut: false } });
     }
@@ -161,7 +165,7 @@ describe('POST /api/conversations/:id/reply', () => {
   it('needs body or a template, not both; a rep outside their customers gets 404', async () => {
     const conv = await mkConv({ customerId, lastInboundAt: hoursAgo(1) });
     expect((await request(app).post(`/api/conversations/${conv.id}/reply`).set(bearer(owner.token)).send({})).status).toBe(400);
-    expect((await request(app).post(`/api/conversations/${conv.id}/reply`).set(bearer(owner.token)).send({ body: 'a', templateName: 'b' })).status).toBe(400);
+    expect((await request(app).post(`/api/conversations/${conv.id}/reply`).set(bearer(owner.token)).send({ body: 'a', templateId })).status).toBe(400);
     expect((await request(app).post(`/api/conversations/${conv.id}/reply`).set(bearer(otherRep.token)).send({ body: 'hi' })).status).toBe(404);
     expect((await request(app).post(`/api/conversations/${conv.id}/reply`).set(bearer(rep.token)).send({ body: 'hi' })).status).toBe(201);
   });
