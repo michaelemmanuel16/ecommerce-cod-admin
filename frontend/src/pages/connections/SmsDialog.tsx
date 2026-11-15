@@ -3,6 +3,7 @@ import { Button, Input, Modal, useToast } from '../../components/ui-v2';
 import { adminService, type SystemConfig } from '../../services/admin.service';
 import { connectionsService } from '../../services/connections.service';
 import { apiErrorMessage } from '../../utils/apiError';
+import { useDialogForm } from './useDialogForm';
 
 interface Props {
   open: boolean;
@@ -18,10 +19,7 @@ export function SmsDialog({ open, config, onClose, onSaved }: Props) {
   const [senderId, setSenderId] = useState('');
   const [isEnabled, setIsEnabled] = useState(true);
   const [phone, setPhone] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [testNote, setTestNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const { saving, setSaving, testing, setTesting, error, setError, testNote, setTestNote } = useDialogForm(open, config);
 
   useEffect(() => {
     if (!open) return;
@@ -30,8 +28,6 @@ export function SmsDialog({ open, config, onClose, onSaved }: Props) {
     setSenderId(p?.senderId ?? '');
     setIsEnabled(p?.isEnabled !== false);
     setPhone('');
-    setError(null);
-    setTestNote(null);
   }, [open, config]);
 
   const save = async () => {

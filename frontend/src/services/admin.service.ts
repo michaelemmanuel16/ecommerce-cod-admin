@@ -28,6 +28,10 @@ export interface SystemConfig {
     apiKey?: string;
     fromEmail?: string;
     fromName?: string;
+    smtpHost?: string;
+    smtpPort?: number;
+    smtpSecure?: boolean;
+    smtpUser?: string;
   };
   whatsappProvider?: {
     accessToken?: string;

@@ -3,6 +3,7 @@ import { Button, Input, Modal, useToast } from '../../components/ui-v2';
 import { connectionsService, type PaymentConnection } from '../../services/connections.service';
 import { apiErrorMessage } from '../../utils/apiError';
 import { CopyButton } from './parts';
+import { useDialogForm } from './useDialogForm';
 
 interface Props {
   open: boolean;
@@ -19,8 +20,7 @@ export function PaystackDialog({ open, connection, webhookUrl, onClose, onSaved 
   const [publicKey, setPublicKey] = useState('');
   const [secretKey, setSecretKey] = useState('');
   const [isEnabled, setIsEnabled] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { saving, setSaving, error, setError } = useDialogForm(open, connection);
 
   useEffect(() => {
     if (!open) return;
@@ -28,7 +28,6 @@ export function PaystackDialog({ open, connection, webhookUrl, onClose, onSaved 
     setPublicKey(connection?.publicKey ?? '');
     setSecretKey(connection?.secretKey ?? '');
     setIsEnabled(connection?.isEnabled ?? true);
-    setError(null);
   }, [open, connection]);
 
   const save = async () => {
