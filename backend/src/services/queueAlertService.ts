@@ -21,6 +21,19 @@ export const findQueueAlertRecipients = (tenantId: string) => prisma.user.findMa
  */
 export const QUEUE_ALERT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
+/** A wait in plain units: "41 min", "3 h 5 min", "3 h", "21 days" (days round down). */
+export function formatWaitMinutes(minutes: number): string {
+  const total = Math.round(minutes);
+  if (total < 60) return `${total} min`;
+  if (total < 24 * 60) {
+    const h = Math.floor(total / 60);
+    const m = total % 60;
+    return m === 0 ? `${h} h` : `${h} h ${m} min`;
+  }
+  const days = Math.floor(total / (24 * 60));
+  return `${days} ${days === 1 ? 'day' : 'days'}`;
+}
+
 export interface QueueWaitAlertInput {
   id: number;
   orderNumber?: string;
@@ -44,7 +57,7 @@ export async function notifyQueueWaitAlert(order: QueueWaitAlertInput): Promise<
   const rounded = Math.round(order.waitMinutes);
   const orderRef = formatOrderNumber(order.id);
   const title = 'Queue wait alert';
-  const message = `Order ${orderRef} has been waiting ${rounded} min in the call queue (limit: ${order.alertMinutes} min)`;
+  const message = `Order ${orderRef} has been waiting ${formatWaitMinutes(rounded)} in the call queue (limit: ${formatWaitMinutes(order.alertMinutes)})`;
   const data = {
     orderId: order.id,
     orderNumber: order.orderNumber ?? String(order.id),

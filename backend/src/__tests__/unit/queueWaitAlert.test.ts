@@ -1,5 +1,5 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
-import { checkQueueWaitAlerts, notifyQueueWaitAlert } from '../../services/queueAlertService';
+import { checkQueueWaitAlerts, notifyQueueWaitAlert, formatWaitMinutes } from '../../services/queueAlertService';
 import prisma from '../../utils/prisma';
 import * as inboxService from '../../services/inbox/inboxService';
 
@@ -174,5 +174,18 @@ describe('M7-T05: Queue wait alert service tests', () => {
     const alertedSecond = await checkQueueWaitAlerts(tenantId, now);
     expect(alertedSecond).toEqual([]);
     expect(mockCreateNotification).toHaveBeenCalledTimes(1); // not called again
+  });
+});
+
+describe('formatWaitMinutes', () => {
+  it('uses plain units', () => {
+    expect(formatWaitMinutes(41)).toBe('41 min');
+    expect(formatWaitMinutes(59.4)).toBe('59 min');
+    expect(formatWaitMinutes(60)).toBe('1 h');
+    expect(formatWaitMinutes(185)).toBe('3 h 5 min');
+    expect(formatWaitMinutes(180)).toBe('3 h');
+    expect(formatWaitMinutes(1439)).toBe('23 h 59 min');
+    expect(formatWaitMinutes(1440)).toBe('1 day');
+    expect(formatWaitMinutes(21 * 1440 + 700)).toBe('21 days');
   });
 });
