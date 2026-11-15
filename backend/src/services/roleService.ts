@@ -181,7 +181,7 @@ export async function createRole(tenantId: string, input: CreateRoleInput) {
     nameTaken(input.name),
     input.copyToolsFromRoleId === undefined
       ? null
-      : prisma.role.findFirst({ where: { id: input.copyToolsFromRoleId }, select: { permissions: true, presetRole: true, isSystem: true } }),
+      : prisma.role.findFirst({ where: { id: input.copyToolsFromRoleId }, select: { name: true, permissions: true, presetRole: true, isSystem: true } }),
   ]);
   if (taken) throw new AppError(NAME_TAKEN, 409);
   if (input.copyToolsFromRoleId !== undefined && !source) throw new AppError('Role to copy from was not found', 400);

@@ -97,19 +97,19 @@ const normal = (g: PermissionGrid) =>
 
 export const sameGrid = (a: PermissionGrid, b: PermissionGrid): boolean => normal(a) === normal(b);
 
-type GridSource = { permissions: unknown; presetRole: UserRole | null; name?: string };
+type GridSource = { permissions: unknown; presetRole: UserRole | null; name: string };
 
 const isGrid = (v: unknown): v is PermissionGrid => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /**
  * The grid a role gives its holders: its own `permissions`, else the tenant's matrix for its base role (`matrix`: always the tenant's,
  * from `getTenantMatrix`), else nothing. One rule for the middleware, the checks, the role views and the MCP keys.
- * A position role (Admin, Manager, ...: pass its `name`) seeded before a resource existed has no key for it; that key comes from the
+ * A position role (Admin, Manager, ...: `name` says which) seeded before a resource existed has no key for it; that key comes from the
  * tenant's matrix for the base role. A key the role stores wins, an empty list included. A custom role never borrows keys.
  */
 export function gridOfRole(role: GridSource, matrix: Record<string, PermissionGrid>): PermissionGrid {
   if (isGrid(role.permissions)) {
-    return role.presetRole && role.name !== undefined && isPositionRole({ name: role.name, presetRole: role.presetRole })
+    return role.presetRole && isPositionRole({ name: role.name, presetRole: role.presetRole })
       ? { ...matrix[role.presetRole], ...role.permissions }
       : role.permissions;
   }

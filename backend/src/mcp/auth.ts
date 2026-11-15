@@ -73,7 +73,7 @@ export async function validateKey(apiKey: string): Promise<McpPrincipal> {
     where: { keyHash },
     include: {
       user: { select: { id: true, kind: true, isActive: true, tenantId: true, role: true } },
-      role: { select: { tools: true, isSystem: true, permissions: true, presetRole: true } },
+      role: { select: { name: true, tools: true, isSystem: true, permissions: true, presetRole: true } },
     },
   });
 

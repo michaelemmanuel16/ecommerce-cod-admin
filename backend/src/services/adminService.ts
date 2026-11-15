@@ -579,7 +579,7 @@ export const adminService = {
     const roleId = data.roleId ?? await positionRoleId(db, data.role);
     // A person below the Owner may not hand out a role whose grid is wider than their own (the base-role rank above is not enough).
     if (roleId !== null) {
-      const role = await db.role.findFirst({ where: { id: roleId }, select: { permissions: true, presetRole: true } });
+      const role = await db.role.findFirst({ where: { id: roleId }, select: { name: true, permissions: true, presetRole: true } });
       if (!role) throw new AppError('Role not found', 404);
       await assertGridWithin(requester, role, undefined);
     }
@@ -685,7 +685,7 @@ export const adminService = {
     const roleChanged = input.role !== undefined && input.role !== targetUser.role;
     // The new position role must sit within the requester's own grid (the rank check above only compares base roles).
     if (roleChanged) {
-      const role = await prisma.role.findFirst({ where: { name: ROLE_NAME_BY_USER_ROLE[input.role!] }, select: { permissions: true, presetRole: true } });
+      const role = await prisma.role.findFirst({ where: { name: ROLE_NAME_BY_USER_ROLE[input.role!] }, select: { name: true, permissions: true, presetRole: true } });
       if (role) await assertGridWithin(requester, role, userId);
     }
     const deactivating = input.isActive === false;

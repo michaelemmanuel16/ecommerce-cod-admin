@@ -87,7 +87,7 @@ const freshHeld = (tenantId: string, userId: number) => {
 };
 
 const heldAssignmentSelect = { role: { select: { name: true, permissions: true, presetRole: true } } } as const;
-type HeldAssignment = { role: { name?: string; permissions: unknown; presetRole: UserRole | null } };
+type HeldAssignment = { role: { name: string; permissions: unknown; presetRole: UserRole | null } };
 
 /** The union of the grids of the held roles, by the one rule (gridOfRole); null when none gives a grid (the Legacy role gives none). */
 function unionOf(assignments: HeldAssignment[], matrix: Matrix): PermissionGrid | null {

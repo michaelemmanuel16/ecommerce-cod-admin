@@ -77,7 +77,7 @@ async function otherRoleKeepsUsersUpdate(roleId: number): Promise<boolean> {
   const [roles, matrix] = await Promise.all([
     prisma.role.findMany({
       where: { id: { not: roleId }, assignments: { some: { toDate: null, holder: { isActive: true } } } },
-      select: { permissions: true, presetRole: true },
+      select: { name: true, permissions: true, presetRole: true },
     }),
     tenantMatrix(),
   ]);
@@ -138,7 +138,7 @@ export async function saveMatrix(actor: Requester, byUserRole: Record<string, Pe
  * (every cell of it is in their own union), and never to themselves. Otherwise the union of roles would let an admin lift
  * themselves, or someone else, above their own access. The Owner may assign any role.
  */
-export async function assertGridWithin(actor: Requester, role: { permissions: unknown; presetRole: UserRole | null }, holderId?: number): Promise<void> {
+export async function assertGridWithin(actor: Requester, role: { name: string; permissions: unknown; presetRole: UserRole | null }, holderId?: number): Promise<void> {
   if (isOwner(actor)) return;
   if (holderId === actor.id) throw new AppError('You cannot give a role to yourself', 403, 'SELF_ASSIGN');
   const [own, matrix] = await Promise.all([getUserPermissions(actor), tenantMatrix()]);

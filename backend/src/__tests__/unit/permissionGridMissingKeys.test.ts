@@ -20,6 +20,7 @@ import prisma from '../../utils/prisma';
 import { runInTenant } from '../../utils/tenantContext';
 import { clearPermissionsCache, getTenantMatrix, getUserPermissions, hasPermission } from '../../services/permissionService';
 import { gridOfRole } from '../../config/roleToolRules';
+import { assertGridWithin } from '../../services/rolePermissionService';
 import { defaultRolePermissions } from '../../config/defaultRolePermissions';
 
 const db = prisma as unknown as {
@@ -58,6 +59,21 @@ describe('gridOfRole: a position role fills the keys it never stored', () => {
   it('a custom role (Marketing, base role manager) never borrows keys', () => {
     const grid = gridOfRole({ name: 'Marketing', presetRole: 'manager', permissions: { orders: ['view'] } }, matrix);
     expect(grid).toEqual({ orders: ['view'] });
+  });
+});
+
+describe('the hand-out check and the enforcement read one grid', () => {
+  it('an older Admin role with no messages key: assertGridWithin sees messages:create, as the enforcement does', async () => {
+    const oldAdmin = { name: 'Admin', presetRole: 'admin' as const, permissions: oldAdminGrid };
+    db.role.findMany.mockResolvedValue([oldAdmin]);
+    db.roleAssignment.findMany.mockResolvedValue([{ role: oldAdmin }]);
+    const enforced = await asTenant(() => getUserPermissions(admin)); // what a holder of the role may do
+    expect(enforced.messages).toEqual(['view', 'create']);
+    // The actor holds only messages:view; the check must name the cell the merged grid gives, so it refuses
+    const actor = { id: 99, role: 'manager' as const, tenantId: TENANT } as never;
+    db.roleAssignment.findMany.mockResolvedValue([{ role: { name: 'Marketing', presetRole: 'manager', permissions: { ...oldAdminGrid, targets: ['view', 'update'], messages: ['view'] } } }]);
+    clearPermissionsCache();
+    await expect(asTenant(() => assertGridWithin(actor, oldAdmin, undefined))).rejects.toMatchObject({ errorCode: 'GRID_ABOVE_ACTOR', message: expect.stringContaining('messages:create') });
   });
 });
 
