@@ -78,7 +78,3 @@ export function whatsappOAuthStore(): WhatsappOAuthStore {
   }
   return shared.store;
 }
-
-export async function closeWhatsappOAuthStore(): Promise<void> {
-  if (shared) { await shared.redis.quit().catch(() => undefined); shared = null; }
-}

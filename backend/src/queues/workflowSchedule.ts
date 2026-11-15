@@ -70,8 +70,10 @@ interface ScheduledWorkflow {
 
 export const isScheduleWorkflow = (w: { triggerType: string }) => w.triggerType === 'time_based';
 
-async function removeRepeat(queue: Bull.Queue, workflowId: number): Promise<void> {
-  for (const repeat of await queue.getRepeatableJobs()) {
+type RepeatableJob = Awaited<ReturnType<Bull.Queue['getRepeatableJobs']>>[number];
+
+async function removeRepeat(queue: Bull.Queue, workflowId: number, repeats?: RepeatableJob[]): Promise<void> {
+  for (const repeat of repeats ?? await queue.getRepeatableJobs()) {
     if (repeat.name === SCHEDULE_JOB && repeat.id === scheduleJobId(workflowId)) await queue.removeRepeatableByKey(repeat.key);
   }
 }
@@ -79,11 +81,12 @@ async function removeRepeat(queue: Bull.Queue, workflowId: number): Promise<void
 /**
  * Make the queue match one workflow: remove its repeat job, then add one when it is an active schedule workflow.
  * Called when a workflow is created, edited, switched on or off, or deleted (pass `isActive: false` for a delete).
+ * `repeats` is the queue's current repeat list when the caller already read it (start-up syncs every workflow from one read).
  */
-export async function syncWorkflowSchedule(workflow: ScheduledWorkflow, queue: Bull.Queue = workflowQueue): Promise<void> {
+export async function syncWorkflowSchedule(workflow: ScheduledWorkflow, queue: Bull.Queue = workflowQueue, repeats?: RepeatableJob[]): Promise<void> {
   // The queue is a stub in tests (no repeat support): nothing to sync
   if (typeof queue.getRepeatableJobs !== 'function') return;
-  await removeRepeat(queue, workflow.id);
+  await removeRepeat(queue, workflow.id, repeats);
   const schedule = workflow.isActive && isScheduleWorkflow(workflow) ? readSchedule(workflow.triggerData) : null;
   if (!schedule || !workflow.tenantId) return;
   await queue.add(
@@ -172,10 +175,13 @@ export async function setupWorkflowSchedules(queue: Bull.Queue = workflowQueue):
     select: { id: true, tenantId: true, isActive: true, triggerType: true, triggerData: true },
   }));
   const live = new Set(workflows.filter((w) => w.isActive && readSchedule(w.triggerData) && w.tenantId).map((w) => scheduleJobId(w.id)));
-  for (const repeat of await queue.getRepeatableJobs()) {
+  const repeats = await queue.getRepeatableJobs();
+  const kept: RepeatableJob[] = [];
+  for (const repeat of repeats) {
     if (repeat.name === SCHEDULE_JOB && !live.has(repeat.id ?? '')) await queue.removeRepeatableByKey(repeat.key);
+    else kept.push(repeat);
   }
-  for (const workflow of workflows) await syncWorkflowSchedule(workflow, queue);
+  for (const workflow of workflows) await syncWorkflowSchedule(workflow, queue, kept);
   const caught = await catchUpMissedSchedules();
   logger.info('Workflow schedules set up', { schedules: live.size, caughtUp: caught });
 }

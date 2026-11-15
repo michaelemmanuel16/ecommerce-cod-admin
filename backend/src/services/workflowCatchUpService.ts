@@ -41,7 +41,7 @@ async function loadWorkflow(workflowId: number) {
 }
 
 /** Ids of the current orders the workflow would act on, oldest first. */
-export async function findCatchUpOrderIds(workflow: Awaited<ReturnType<typeof loadWorkflow>>): Promise<{ ids: number[]; capped: boolean }> {
+async function findCatchUpOrderIds(workflow: Awaited<ReturnType<typeof loadWorkflow>>): Promise<{ ids: number[]; capped: boolean }> {
   const roles = [...new Set(((workflow.actions as any[]) ?? []).map(roleOfAction).filter((r): r is AssignToRole => !!r))];
   if (roles.length === 0) throw new AppError('Catch-up needs an "Assign to" action in the workflow', 400);
   const status = triggerStatus(workflow);
@@ -49,7 +49,7 @@ export async function findCatchUpOrderIds(workflow: Awaited<ReturnType<typeof lo
 
   const orders = await prisma.order.findMany({
     where: { status, deletedAt: null, OR: roles.map((role) => ({ [assigneeFieldOf(role)]: null })) },
-    include: { orderItems: { include: { product: true } } },
+    include: { orderItems: { include: { product: { select: { name: true } } } } },
     orderBy: { id: 'asc' },
     take: CATCH_UP_SCAN_LIMIT,
   });
@@ -78,19 +78,22 @@ export async function runCatchUp(workflowId: number, confirm: unknown) {
   const { ids } = await findCatchUpOrderIds(workflow);
   const stamp = workflow.updatedAt.toISOString();
   const tenantId = getTenantId();
-  let batches = 0;
+  const jobs: Array<{ name: string; data: object; opts: Bull.JobOptions }> = [];
+  for (let i = 0; i < ids.length; i += CATCH_UP_BATCH) {
+    const orderIds = ids.slice(i, i + CATCH_UP_BATCH);
+    jobs.push({
+      name: CATCH_UP_JOB,
+      data: { workflowId, tenantId, orderIds, stamp },
+      opts: { jobId: `wf-catchup:${workflowId}:${stamp}:${orderIds[0]}`, removeOnComplete: true },
+    });
+  }
   try {
-    for (let i = 0; i < ids.length; i += CATCH_UP_BATCH) {
-      const orderIds = ids.slice(i, i + CATCH_UP_BATCH);
-      await workflowQueue.add(CATCH_UP_JOB, { workflowId, tenantId, orderIds, stamp }, {
-        jobId: `wf-catchup:${workflowId}:${stamp}:${orderIds[0]}`, removeOnComplete: true,
-      });
-      batches++;
-    }
+    await Promise.all(jobs.map((job) => workflowQueue.add(job.name, job.data, job.opts)));
   } catch (error: any) {
     logger.error('Workflow catch-up could not be queued', { workflowId, error: error.message });
     throw new AppError('The queue is unavailable. Try again in a minute.', 503);
   }
+  const batches = jobs.length;
   logger.info('Workflow catch-up queued', { workflowId, orders: ids.length, batches });
   return { queued: ids.length, batches };
 }

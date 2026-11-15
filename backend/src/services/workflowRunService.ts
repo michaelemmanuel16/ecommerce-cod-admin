@@ -10,6 +10,7 @@ import { workflowQueue, MANUAL_RUN_JOB, actionsHash } from '../queues/workflowQu
 import { enqueueWorkflowRun } from '../queues/workflowEnqueue';
 import workflowService from './workflowService';
 import { localDate, startOfDay } from './kpi/dates';
+import { DAY_MS } from './kpi/dates';
 
 /**
  * Run history, retry, manual Run and test run (M9-T24, F-502, F-503, F-514).
@@ -22,7 +23,7 @@ export const MANUAL_RUN_MAX_ORDERS = 500;
 const LIVE_OR_DONE = ['pending', 'running', 'waiting', 'completed'];
 
 /** What a client sees of one step: the queue writes `{ action, success, result, error }`. */
-export function presentStep(step: any, index: number) {
+function presentStep(step: any, index: number) {
   const status = step?.status ?? (step?.success === false ? 'failed' : 'completed');
   return { index, type: step?.type ?? step?.action ?? null, status, result: step?.result ?? null, error: step?.error ?? null };
 }
@@ -130,18 +131,21 @@ export async function runOnOrders(workflowId: number, body: { orderIds?: unknown
 
   const tenantId = getTenantId();
   const batchKey = crypto.randomUUID();
-  let batches = 0;
+  const jobs: Array<{ name: string; data: object; opts: Bull.JobOptions }> = [];
+  for (let i = 0; i < orderIds.length; i += MANUAL_RUN_BATCH) {
+    jobs.push({
+      name: MANUAL_RUN_JOB,
+      data: { workflowId, tenantId, orderIds: orderIds.slice(i, i + MANUAL_RUN_BATCH) },
+      opts: { jobId: `wf-manual:${workflowId}:${batchKey}:${i}`, removeOnComplete: true },
+    });
+  }
   try {
-    for (let i = 0; i < orderIds.length; i += MANUAL_RUN_BATCH) {
-      await workflowQueue.add(MANUAL_RUN_JOB, { workflowId, tenantId, orderIds: orderIds.slice(i, i + MANUAL_RUN_BATCH) }, {
-        jobId: `wf-manual:${workflowId}:${batchKey}:${i}`, removeOnComplete: true,
-      });
-      batches++;
-    }
+    await Promise.all(jobs.map((job) => workflowQueue.add(job.name, job.data, job.opts)));
   } catch (error: any) {
     logger.error('Workflow manual run could not be queued', { workflowId, error: error.message });
     throw new AppError('The queue is unavailable. Try again in a minute.', 503);
   }
+  const batches = jobs.length;
   logger.info('Workflow manual run queued', { workflowId, orders: orderIds.length, batches });
   return { queued: orderIds.length, batches };
 }
@@ -210,7 +214,7 @@ export async function testRun(workflowId: number, body: { orderId?: unknown }) {
   }));
   const blocked = matches === false;
 
-  const steps = blocked ? [] : plan.map((p) => ({ action: p.type, type: p.type, status: 'planned', success: true, result: { dryRun: true, willDo: p.willDo } }));
+  const steps = blocked ? [] : plan.map((p) => ({ action: p.type, status: 'planned', success: true, result: { dryRun: true, willDo: p.willDo } }));
   const execution = await prisma.workflowExecution.create({
     data: {
       tenantId: resolveTenantId(workflow.tenantId),
@@ -252,7 +256,7 @@ export async function listWorkflowsWithStats(filters: Parameters<typeof workflow
   const now = new Date();
   const config = await prisma.systemConfig.findFirst({ select: { timeZone: true } });
   const dayStart = startOfDay(localDate(now, config?.timeZone || 'Africa/Accra'), config?.timeZone || 'Africa/Accra');
-  const since = new Date(now.getTime() - STATS_DAYS * 24 * 60 * 60 * 1000);
+  const since = new Date(now.getTime() - STATS_DAYS * DAY_MS);
   const ids = workflows.map((w) => w.id);
   const base = { workflowId: { in: ids }, mode: 'live' as const, status: { not: 'skipped' } };
 

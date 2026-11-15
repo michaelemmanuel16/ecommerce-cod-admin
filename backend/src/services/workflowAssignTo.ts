@@ -28,10 +28,16 @@ export interface AssignToConfig {
   weights?: Record<string, number>;
 }
 
+/** Per Assign-to role: the assignment role behind it and the Order column that holds the assignee. */
+const ROLE_MAP: Record<AssignToRole, { assignRole: AssignRole; field: 'customerRepId' | 'deliveryAgentId' }> = {
+  sales_rep: { assignRole: 'sales_rep', field: 'customerRepId' },
+  delivery_agent: { assignRole: 'delivery_agent', field: 'deliveryAgentId' },
+  partner: { assignRole: 'delivery_agent', field: 'deliveryAgentId' },
+};
 /** The assignment role behind an Assign-to role. */
-export const assignRoleOf = (role: AssignToRole): AssignRole => (role === 'sales_rep' ? 'sales_rep' : 'delivery_agent');
+export const assignRoleOf = (role: AssignToRole): AssignRole => ROLE_MAP[role].assignRole;
 /** The Order column that holds the assignee of a role. */
-export const assigneeFieldOf = (role: AssignToRole) => (role === 'sales_rep' ? 'customerRepId' : 'deliveryAgentId');
+export const assigneeFieldOf = (role: AssignToRole) => ROLE_MAP[role].field;
 
 /** Refuses a bad "Assign to" config at save (400). */
 export function validateAssignToConfig(config: any): void {
