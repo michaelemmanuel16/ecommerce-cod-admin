@@ -27,6 +27,12 @@ vi.mock('../../services/products.service', () => ({ productsService: { getProduc
 vi.mock('../../services/delivery-agents.service', () => ({ deliveryAgentsService: { getDeliveryAgents: () => Promise.resolve([{ id: '5', name: 'Kofi Appiah', isActive: true, isAvailable: true }]) } }));
 vi.mock('../../services/customer-reps.service', () => ({ customerRepsService: { getCustomerReps: () => Promise.resolve([{ id: '2', name: 'Adwoa Darko', isActive: true, isAvailable: true }]) } }));
 
+const inboxSvc = vi.hoisted(() => ({ listReminders: vi.fn(), createReminder: vi.fn(), cancelReminder: vi.fn(), getThread: vi.fn(), mentionable: vi.fn(), addComment: vi.fn() }));
+vi.mock('../../services/inbox.service', async (orig) => ({ ...(await orig<typeof import('../../services/inbox.service')>()), inboxService: inboxSvc }));
+const messagesSvc = vi.hoisted(() => ({ forSubject: vi.fn() }));
+vi.mock('../../services/messages.service', () => ({ messagesService: messagesSvc }));
+const EMPTY_THREAD = { id: null, subjectType: 'order', subjectId: 1, archived: false, unreadCount: 0, comments: [] };
+
 const axiosError = (status: number, data: Record<string, unknown>) =>
   Object.assign(new Error('request failed'), { isAxiosError: true, response: { status, data } });
 
@@ -46,6 +52,10 @@ beforeEach(() => {
   getTimeline.mockReset().mockResolvedValue(TIMELINE);
   editOrder.mockReset().mockResolvedValue(undefined);
   createCall.mockReset().mockResolvedValue({});
+  messagesSvc.forSubject.mockReset().mockResolvedValue({ items: [] });
+  inboxSvc.listReminders.mockReset().mockResolvedValue([]);
+  inboxSvc.getThread.mockReset().mockResolvedValue(EMPTY_THREAD);
+  inboxSvc.mentionable.mockReset().mockResolvedValue([]);
   useConfigStore.setState({ currency: 'GHS', loaded: true });
   useAuthStore.setState({ user: { id: 1, role: 'admin', firstName: 'Manny', lastName: 'A' } as never, permissions: { orders: ['view', 'update', 'assign'] } });
 });
@@ -89,8 +99,8 @@ describe('Order drawer: frame and blocks (M3-T46, F-321)', () => {
     getOrderDetail.mockResolvedValue({ ...DETAIL, calls: [] });
     renderDrawer();
     expect(await screen.findByText('No calls yet. Log the first one.')).toBeInTheDocument();
-    expect(screen.getByText(/No messages yet/)).toBeInTheDocument();
-    expect(screen.getByText(/No notes yet/)).toBeInTheDocument();
+    expect(await screen.findByText(/No messages yet/)).toBeInTheDocument();
+    expect(await screen.findByText(/No notes yet/)).toBeInTheDocument();
   });
 
   it('Escape closes it, and so does the Close button', async () => {

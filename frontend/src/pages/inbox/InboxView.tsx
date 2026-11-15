@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { BellRing, CheckCheck, CheckCircle2, Inbox as InboxIcon, Moon } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { BellRing, CheckCheck, CheckCircle2, Inbox as InboxIcon, Moon, Settings2 } from 'lucide-react';
 import clsx from 'clsx';
 import { Button, EmptyState, Skeleton, Tag, useToast } from '../../components/ui-v2';
 import { inboxService, type InboxItem, type InboxStatus, type InboxSubject, type InboxView as ViewId } from '../../services/inbox.service';
@@ -23,13 +24,15 @@ interface Props {
   linkFor: (s: InboxSubject) => string | null;
   /** The rep app lays the views out as a strip above the list. */
   compact?: boolean;
+  /** Where "Notification settings" goes. Left out: no link (the rep app has none until M10). */
+  settingsHref?: string;
 }
 
 type Pick = ViewId | 'snoozed' | 'done';
 const OWNER_ROLES = ['admin', 'super_admin'];
 
 /** The Inbox (M9-T37) for the admin app and the rep app: the same feed API, the same rows, the same actions. */
-export function InboxView({ title, subtitle, views, linkFor, compact }: Props) {
+export function InboxView({ title, subtitle, views, linkFor, compact, settingsHref }: Props) {
   const say = useToast();
   const role = useAuthStore((s) => s.user?.role ?? '');
   const counts = useInboxStore((s) => s.counts);
@@ -104,6 +107,7 @@ export function InboxView({ title, subtitle, views, linkFor, compact }: Props) {
           )}
           {writable && <Button onClick={onMarkAll} disabled={status !== 'open' || unreadHere === 0}><CheckCheck /> Mark all read</Button>}
           {writable && <Button onClick={() => setRemind({ subject: null, note: '' })}><BellRing /> New reminder</Button>}
+          {settingsHref && <Link className="btn" to={settingsHref}><Settings2 aria-hidden="true" /> Notification settings</Link>}
         </div>
       </div>
 

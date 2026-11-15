@@ -104,3 +104,21 @@ export interface LogPage {
   total: number;
   nextCursor: string | null;
 }
+
+/** GET /api/orders/:id/messages and /api/customers/:id/messages (backend: messageTracking.ts). Newest first. */
+export interface TrackedMessage {
+  id: number;
+  channel: Channel;
+  direction: 'inbound' | 'outbound';
+  status: MessageStatus;
+  at: string;
+  bodyPreview: string;
+  inReplyToId: number | null;
+  errorMessage: string | null;
+}
+
+export interface TrackedMessages {
+  items: TrackedMessage[];
+  /** Customer route only. */
+  optOut?: { whatsapp: boolean; sms: boolean; email: boolean };
+}

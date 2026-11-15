@@ -46,7 +46,7 @@ export function Messages() {
       {tab === 'campaigns' && <div className="card"><CampaignsTab /></div>}
       {tab === 'conversations' && (
         <div className="card inboxcard">
-          <ConversationsTab meId={user?.id ?? null} canWrite={can('messages', 'create')} canPickPeople={isManager} />
+          <ConversationsTab meId={user?.id ?? null} canWrite={can('messages', 'create')} canPickPeople={isManager} initialSearch={search.get('q') ?? ''} />
         </div>
       )}
     </section>

@@ -26,13 +26,15 @@ interface Props {
   canWrite: boolean;
   /** Owner, admin and manager can hand a conversation to anyone; a rep only to themselves. */
   canPickPeople: boolean;
+  /** A phone or name to start the search with (the "Open the conversation" link of an order or customer). It also shows every conversation, not only the unanswered. */
+  initialSearch?: string;
 }
 
 /** Conversations (F-454): list on the left, thread on the right. The API scopes the list: a rep sees only theirs. */
-export function ConversationsTab({ meId, canWrite, canPickPeople }: Props) {
-  const [filter, setFilter] = useState<Filter>('unanswered');
-  const [search, setSearch] = useState('');
-  const [q, setQ] = useState('');
+export function ConversationsTab({ meId, canWrite, canPickPeople, initialSearch = '' }: Props) {
+  const [filter, setFilter] = useState<Filter>(initialSearch ? 'all' : 'unanswered');
+  const [search, setSearch] = useState(initialSearch);
+  const [q, setQ] = useState(initialSearch.trim());
   const [rows, setRows] = useState<ConversationRow[] | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);

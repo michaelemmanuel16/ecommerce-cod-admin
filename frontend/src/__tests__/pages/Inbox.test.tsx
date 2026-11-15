@@ -209,7 +209,7 @@ describe('Inbox page: team note thread', () => {
     expect(await within(drawer).findByText('<b>please check</b>')).toBeInTheDocument(); // text, not HTML
     expect(within(drawer).getByText('on it')).toBeInTheDocument();
 
-    const box = within(drawer).getByLabelText('Note');
+    const box = within(drawer).getByLabelText('Team note');
     await userEvent.type(box, 'Thanks @');
     const picker = await within(drawer).findByRole('listbox', { name: 'People you can mention' });
     expect(within(picker).getAllByRole('option').map((o) => o.textContent?.replace(/\s+/g, ' '))).toEqual(['Kofi Appiahsales rep', 'Esi Badumanager']);
@@ -226,7 +226,7 @@ describe('Inbox page: team note thread', () => {
     const row = (await screen.findAllByTestId('inbox-row'))[1];
     await userEvent.click(within(row).getByRole('button', { name: 'Open thread' }));
     expect(await screen.findByText('This thread is closed because the item was deleted.')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Note')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Team note')).not.toBeInTheDocument();
   });
 });
 

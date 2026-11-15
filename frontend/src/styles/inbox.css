@@ -97,3 +97,25 @@
 .v2 .inbx.compact .rail{position:static;display:flex;gap:4px;overflow-x:auto}
 .v2 .inbx.compact .rail button{width:auto;white-space:nowrap}
 .v2 .inbx.compact .rail hr{display:none}
+
+/* M9-T39: notification settings. The matrix is the mockup's .mx table; the rest is new. */
+.v2 .nset .mx{width:100%;border-collapse:collapse}
+.v2 .nset .mx th{font-size:12.5px;font-weight:600;color:var(--ink-3);padding:11px 12px;border-bottom:1px solid var(--line)}
+.v2 .nset .mx td{padding:11px 12px;border-bottom:1px solid var(--line);text-align:center}
+.v2 .nset .mx th:first-child,.v2 .nset .mx td:first-child{text-align:left;padding-left:20px}
+.v2 .nset .mx tr:last-child td{border-bottom:0}
+.v2 .nset .tablewrap{overflow-x:auto}
+.v2 .nset .sub{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.v2 .nset .sub h3{font-size:15px}
+.v2 .nset .seg{display:inline-flex;gap:4px;padding:4px;border:1px solid var(--line);border-radius:12px;background:var(--hover)}
+.v2 .nset .seg button{padding:5px 12px;border-radius:9px;font-weight:600;color:var(--ink-2)}
+.v2 .nset .seg button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+.v2 .nset-note{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px 20px 0;color:var(--ink-2)}
+.v2 .nset-hints{list-style:none;padding:12px 20px 0;display:flex;flex-direction:column;gap:4px;color:var(--ink-2);font-size:13px}
+.v2 .nset-hints a{color:var(--pine);font-weight:600}
+@media (max-width:760px){
+  .v2 .nset .mx th,.v2 .nset .mx td{padding:10px 8px}
+  .v2 .nset .mx th:first-child,.v2 .nset .mx td:first-child{padding-left:14px;min-width:150px}
+}
+.v2 .inbx .back{display:inline-flex;align-items:center;gap:6px;color:var(--ink-3);font-weight:600;font-size:13px;margin-bottom:10px}
+.v2 .inbx .back svg{width:15px;height:15px}
