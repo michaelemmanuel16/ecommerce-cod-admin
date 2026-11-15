@@ -45,7 +45,7 @@ interface SendSmsOptions {
 }
 
 class SmsService {
-  async sendSms(options: SendSmsOptions): Promise<{ messageLogId: number; providerMessageId?: string; sent: boolean }> {
+  async sendSms(options: SendSmsOptions): Promise<{ messageLogId: number; providerMessageId?: string; sent: boolean; skipped?: boolean }> {
     const { to, body, logBody, orderId, customerId, conversationId, inReplyToId, fallbackOfId, retryOfId } = options;
     const result = await messageSender.send({
       tenantId: getTenantId(),
@@ -61,7 +61,7 @@ class SmsService {
       retryOfId,
     });
     throwIfFailed(result);
-    return { messageLogId: result.messageLogId, providerMessageId: result.providerMessageId, sent: result.sent };
+    return { messageLogId: result.messageLogId, providerMessageId: result.providerMessageId, sent: result.sent, ...(result.skipped ? { skipped: true } : {}) };
   }
 }
 
