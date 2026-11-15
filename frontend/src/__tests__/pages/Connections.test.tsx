@@ -1,0 +1,191 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { ToastProvider } from '../../components/ui-v2';
+import { Connections } from '../../pages/Connections';
+import { WebhooksRedirect } from '../../pages/connections/WebhooksRedirect';
+
+const svc = vi.hoisted(() => ({
+  getCards: vi.fn(), getPaymentConnections: vi.fn(), savePaymentConnection: vi.fn(), testPaymentConnection: vi.fn(),
+  getSmsReportUrl: vi.fn(), testSmtp: vi.fn(), getCsvTemplate: vi.fn(), sendSmsTest: vi.fn(), sendEmailTest: vi.fn(),
+  getActivity: vi.fn(),
+}));
+vi.mock('../../services/connections.service', () => ({ connectionsService: svc }));
+
+const admin = vi.hoisted(() => ({
+  getSystemConfig: vi.fn(), updateSystemConfig: vi.fn(), getWhatsAppStatus: vi.fn(), checkWhatsAppOAuthEnabled: vi.fn(),
+  initiateWhatsAppOAuth: vi.fn(), getWhatsAppOAuthPhones: vi.fn(), selectWhatsAppOAuthPhone: vi.fn(), disconnectWhatsAppOAuth: vi.fn(),
+}));
+vi.mock('../../services/admin.service', () => ({ adminService: admin }));
+vi.mock('../../services/webhooks.service', () => ({ webhooksService: { getWebhooks: vi.fn().mockResolvedValue({ webhooks: [] }) } }));
+vi.mock('../../services/products.service', () => ({ productsService: { getProducts: vi.fn().mockResolvedValue([]) } }));
+
+vi.mock('../../components/settings/integrations/MetaAdsIntegration', () => ({ MetaAdsIntegration: () => <div>META ADS CARD</div> }));
+vi.mock('../../components/settings/integrations/McpIntegration', () => ({ McpIntegration: () => <div>AI KEYS CARD</div> }));
+
+let role: 'super_admin' | 'admin' | 'manager' = 'super_admin';
+vi.mock('../../hooks/usePermissions', () => ({
+  usePermissions: () => ({
+    can: (r: string) => role !== 'manager' || r === 'settings',
+    isSuperAdmin: role === 'super_admin',
+    isAdmin: role !== 'manager',
+  }),
+}));
+vi.mock('../../stores/authStore', () => ({ useAuthStore: (sel: (s: unknown) => unknown) => sel({ user: { id: 1, email: 'owner@shop.com' } }) }));
+
+const card = (over = {}) => ({ status: 'connected', reason: null, lastEventAt: null, ...over });
+const CARDS = {
+  sms: card({ lastEventAt: new Date().toISOString() }),
+  whatsapp: card({ status: 'not_connected', reason: 'Connect your WhatsApp Business number' }),
+  email: card({ provider: 'platform' }),
+  paystack: card({ mode: 'test' }),
+  meta: card({ accounts: 1 }),
+  checkout: card({ forms: 2, lastOrderAt: null }),
+  csv: card({ templateUrl: '/api/connections/csv/template' }),
+};
+const CONFIG = {
+  smsProvider: { provider: 'arkesel', authToken: '••••••••', senderId: 'MagicGroove', isEnabled: true },
+  whatsappProvider: {}, emailProvider: undefined, tenantSlug: 'acme',
+};
+const PAYSTACK = { id: 7, provider: 'paystack', mode: 'test', publicKey: 'pk_test_abc', secretKey: '••••••••', hasSecret: true, isEnabled: true, lastCheckedAt: null, legacy: false };
+
+function Where() {
+  const l = useLocation();
+  return <output data-testid="where">{l.pathname + l.search}</output>;
+}
+
+const renderPage = (url = '/connections') => render(
+  <ToastProvider>
+    <MemoryRouter initialEntries={[url]}>
+      <Where />
+      <Routes>
+        <Route path="/connections" element={<Connections />} />
+        <Route path="/webhooks" element={<WebhooksRedirect />} />
+        <Route path="*" element={<div>ELSEWHERE</div>} />
+      </Routes>
+    </MemoryRouter>
+  </ToastProvider>,
+);
+
+const cardOf = (name: string) => screen.getByTestId(`card-${name}`);
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  role = 'super_admin';
+  svc.getCards.mockResolvedValue(CARDS);
+  svc.getPaymentConnections.mockResolvedValue([PAYSTACK]);
+  svc.getSmsReportUrl.mockResolvedValue({ url: 'https://api.shop.com/api/sms/webhook?token=abc' });
+  svc.savePaymentConnection.mockResolvedValue({ ...PAYSTACK });
+  svc.testPaymentConnection.mockResolvedValue({ ok: true, message: 'ok' });
+  admin.getSystemConfig.mockResolvedValue(CONFIG);
+  admin.updateSystemConfig.mockResolvedValue({});
+  admin.checkWhatsAppOAuthEnabled.mockResolvedValue({ enabled: true });
+});
+
+describe('Connections page (M9-T44)', () => {
+  it('shows a card for each connection with its facts, and no partner key card', async () => {
+    renderPage();
+    const sms = await screen.findByTestId('card-Arkesel SMS');
+    expect(within(sms).getByText('MagicGroove')).toBeInTheDocument();
+    expect(within(sms).getByText('Connected')).toBeInTheDocument();
+    expect(within(cardOf('Paystack')).getByText('Test mode')).toBeInTheDocument();
+    expect(within(cardOf('Paystack')).getByText('pk_test_abc')).toBeInTheDocument();
+    expect(within(cardOf('Email')).getByText('CodAdmin sender (Resend)')).toBeInTheDocument();
+    expect(within(cardOf('Checkout website')).getByText('2')).toBeInTheDocument();
+    expect(screen.getByText('META ADS CARD')).toBeInTheDocument();
+    expect(screen.getByText('AI KEYS CARD')).toBeInTheDocument();
+    expect(screen.queryByText(/partner key/i)).not.toBeInTheDocument();
+  });
+
+  it('shows the delivery-report URL on the SMS card with a copy button', async () => {
+    renderPage();
+    expect(await screen.findByText('https://api.shop.com/api/sms/webhook?token=abc')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Copy report URL/ })).toBeInTheDocument();
+  });
+
+  it('a card that is not set up shows the API reason and a Connect button', async () => {
+    renderPage();
+    const wa = await screen.findByTestId('card-WhatsApp Business');
+    expect(within(wa).getByText('Not connected')).toBeInTheDocument();
+    expect(within(wa).getByText('Connect your WhatsApp Business number')).toBeInTheDocument();
+    expect(within(wa).getByRole('button', { name: 'Connect' })).toBeInTheDocument();
+  });
+
+  it('a card in error shows the reason from the API and a Retry that checks again', async () => {
+    svc.getCards.mockResolvedValue({ ...CARDS, whatsapp: card({ status: 'error', reason: 'The WhatsApp connection expired. Reconnect WhatsApp.' }) });
+    admin.getWhatsAppStatus.mockResolvedValue({ configured: true });
+    renderPage();
+    const wa = await screen.findByTestId('card-WhatsApp Business');
+    expect(within(wa).getByRole('alert')).toHaveTextContent('The WhatsApp connection expired. Reconnect WhatsApp.');
+    const before = svc.getCards.mock.calls.length;
+    await userEvent.click(within(wa).getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(admin.getWhatsAppStatus).toHaveBeenCalled());
+    await waitFor(() => expect(svc.getCards.mock.calls.length).toBeGreaterThan(before));
+  });
+
+  it('?error=start_again shows "The login expired. Start again." and clears the parameter', async () => {
+    renderPage('/connections?error=start_again');
+    expect(await screen.findByText('The login expired. Start again.')).toBeInTheDocument();
+    expect(screen.getByTestId('where')).toHaveTextContent(/^\/connections$/);
+  });
+
+  it('SMTP test shows the server error text', async () => {
+    svc.testSmtp.mockRejectedValue({ isAxiosError: true, response: { data: { error: 'Invalid login: 535 Authentication failed' } } });
+    renderPage();
+    await userEvent.click(within(await screen.findByTestId('card-Email')).getByRole('button', { name: 'Edit' }));
+    await userEvent.selectOptions(await screen.findByLabelText('Sender'), 'smtp');
+    await userEvent.type(screen.getByLabelText('Host'), 'smtp.mail.example');
+    await userEvent.type(screen.getByLabelText('Password'), 'secret');
+    await userEvent.type(screen.getByLabelText('From email'), 'hello@shop.com');
+    await userEvent.click(screen.getByRole('button', { name: 'Send test email' }));
+    expect(await screen.findByText('Invalid login: 535 Authentication failed')).toBeInTheDocument();
+    expect(svc.testSmtp).toHaveBeenCalledWith(expect.objectContaining({ smtpHost: 'smtp.mail.example', password: 'secret', fromEmail: 'hello@shop.com' }));
+  });
+
+  it('Paystack save goes to /api/payment-connections and shows the wrong-prefix message from the API', async () => {
+    svc.savePaymentConnection.mockRejectedValue({ isAxiosError: true, response: { data: { error: 'A live key must start with sk_live_' } } });
+    renderPage();
+    await userEvent.click(within(await screen.findByTestId('card-Paystack')).getByRole('button', { name: 'Edit keys' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Live' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText('A live key must start with sk_live_')).toBeInTheDocument();
+    expect(svc.savePaymentConnection).toHaveBeenCalledWith(expect.objectContaining({ provider: 'paystack', mode: 'live', publicKey: 'pk_test_abc' }));
+  });
+
+  it('SMS save writes the Arkesel settings', async () => {
+    renderPage();
+    await userEvent.click(within(await screen.findByTestId('card-Arkesel SMS')).getByRole('button', { name: 'Edit' }));
+    const sender = await screen.findByLabelText('Sender ID');
+    await userEvent.clear(sender);
+    await userEvent.type(sender, 'NewName');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(admin.updateSystemConfig).toHaveBeenCalledWith({ smsProvider: expect.objectContaining({ provider: 'arkesel', senderId: 'NewName' }) }));
+  });
+
+  it('an admin edits Paystack only: no SMS, WhatsApp or Email edit buttons', async () => {
+    role = 'admin';
+    renderPage();
+    await screen.findByTestId('card-Paystack');
+    expect(within(cardOf('Paystack')).getByRole('button', { name: 'Edit keys' })).toBeInTheDocument();
+    expect(within(cardOf('Arkesel SMS')).queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    expect(within(cardOf('WhatsApp Business')).queryByRole('button', { name: 'Connect' })).not.toBeInTheDocument();
+    expect(within(cardOf('Email')).queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    expect(screen.queryByText('AI KEYS CARD')).not.toBeInTheDocument();
+    expect(admin.getSystemConfig).not.toHaveBeenCalled();
+  });
+
+  it('a person who may only view sees the cards and no write control', async () => {
+    role = 'manager';
+    renderPage();
+    await screen.findByTestId('card-Paystack');
+    expect(screen.queryByRole('button', { name: /Edit|Connect|Add keys/ })).not.toBeInTheDocument();
+    expect(svc.getPaymentConnections).not.toHaveBeenCalled();
+  });
+
+  it('/webhooks redirects to the Webhooks tab of Connections', async () => {
+    renderPage('/webhooks');
+    await screen.findByRole('heading', { name: 'Connections' });
+    expect(screen.getByTestId('where')).toHaveTextContent('/connections?tab=webhooks');
+  });
+});

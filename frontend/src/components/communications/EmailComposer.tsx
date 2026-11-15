@@ -161,9 +161,9 @@ export const EmailComposer: React.FC = () => {
         title="Email provider not configured"
         description="Connect your email provider before sending campaigns. Marketing email sends from your own domain to protect deliverability."
         action={
-          <Button onClick={() => navigate('/settings?tab=integrations')}>
+          <Button onClick={() => navigate('/connections')}>
             <Settings className="w-4 h-4 mr-1" />
-            Go to Settings → Email
+            Go to Connections → Email
           </Button>
         }
       />

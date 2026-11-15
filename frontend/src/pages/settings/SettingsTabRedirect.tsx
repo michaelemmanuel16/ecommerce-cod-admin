@@ -3,7 +3,7 @@ import type { SettingsTab } from './tabs';
 
 /**
  * Sends an old URL to its Settings tab and keeps the query (section, oauth, message) as it was (F-1215, F-1237).
- * An explicit ?tab= on the old URL wins. `/connections` goes to Integrations until Connections ships (M9).
+ * An explicit ?tab= on the old URL wins.
  */
 export function SettingsTabRedirect({ tab }: { tab: SettingsTab }) {
   const { search } = useLocation();

@@ -81,7 +81,7 @@ describe('Meta Ads connection (T04)', () => {
     const url = new URL(init.body.authUrl);
     expect(url.pathname).toBe('/v25.0/dialog/oauth');
     expect(url.searchParams.get('scope')).toBe('ads_read,business_management');
-    expect(location).toContain('/settings?tab=integrations&section=meta-ads&metaAds=pick&pick=');
+    expect(location).toContain('/connections?metaAds=pick&pick=');
     expect(location).not.toContain('TOKEN');
 
     const pick = pickIdOf(location);

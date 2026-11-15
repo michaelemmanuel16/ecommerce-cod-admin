@@ -1,0 +1,88 @@
+/* Connections page, Webhooks tab and Activity log (M9-T44, T45, COD-82). Copied from the style block of
+   docs/mockups/v2/connections.html, with the `.v2` scope added. Colours come from tokens.css only.
+   Rules with no mockup counterpart are marked "new". */
+
+.v2 .cx > * + *{margin-top:16px}
+.v2 .cx > .head{margin-bottom:22px}
+.v2 .cx > .head + *{margin-top:0}
+.v2 .cx .conns{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.v2 .cx .conns > .wide{grid-column:span 2}
+.v2 .cx .cn{padding:18px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.v2 .cx .cn-top{display:flex;gap:12px;align-items:flex-start}
+.v2 .cx .cn-top .ic{flex:none;width:42px;height:42px;border-radius:12px;display:grid;place-items:center}
+.v2 .cx .cn-top .ic svg.lucide{width:20px;height:20px}
+.v2 .cx .cn-top b{display:block;font-family:"Bricolage Grotesque";font-size:16px;line-height:1.25}
+.v2 .cx .cn-top p{color:var(--ink-2);font-size:13px;margin-top:2px}
+.v2 .cx .cn-top .tag{margin-left:auto;flex:none}
+.v2 .cx .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:13px}
+.v2 .cx .kv dt{color:var(--ink-3)}
+.v2 .cx .kv dd{text-align:right;font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.v2 .cx .mono{font-family:ui-monospace,Menlo,monospace;font-size:12px}
+.v2 .cx .strip{display:flex;gap:8px;align-items:flex-start;padding:9px 11px;border-radius:11px;font-size:12.5px;font-weight:500}
+.v2 .cx .strip svg.lucide{flex:none;width:15px;height:15px;margin-top:2px}
+.v2 .cx .strip.bad{background:var(--coral-soft);color:var(--coral)}
+.v2 .cx .strip.warn{background:var(--gold-soft);color:var(--warn-ink)}
+.v2 .cx .strip.ok{background:var(--mint-soft);color:var(--ok-ink)}
+.v2 .cx .cn .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto}
+.v2 .cx .cn .acts .btn{padding:7px 12px;font-size:13px}
+.v2 .cx .copy,.v2 .cxd .copy{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--pine);padding:3px 7px;border-radius:8px;border:1px solid var(--line);flex:none}
+.v2 .cx .copy svg.lucide,.v2 .cxd .copy svg.lucide{width:13px;height:13px}
+.v2 .cx .copy:hover,.v2 .cxd .copy:hover{background:var(--hover)}
+.v2 .cx a.btn{text-decoration:none;color:var(--ink)}
+.v2 .cx a.btn:hover{background:var(--hover)}
+/* new: grey line on a card that is not set up */
+.v2 .cx .cn-off{color:var(--ink-3);font-size:13px}
+/* new: the report URL line on the SMS card */
+.v2 .cx .urlrow{display:flex;gap:8px;align-items:center;min-width:0}
+.v2 .cx .urlrow .mono{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* switch (mockup .sw) */
+.v2 .cx .sw,.v2 .cxd .sw{flex:none;width:36px;height:20px;border-radius:99px;background:var(--line);position:relative;transition:background .15s}
+.v2 .cx .sw::after,.v2 .cxd .sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--ink-3);transition:transform .15s,background .15s}
+.v2 .cx .sw[aria-checked="true"],.v2 .cxd .sw[aria-checked="true"]{background:var(--pine)}
+.v2 .cx .sw[aria-checked="true"]::after,.v2 .cxd .sw[aria-checked="true"]::after{transform:translateX(16px);background:var(--card)}
+
+/* webhooks and activity tables */
+.v2 .cx .tablewrap{overflow-x:auto}
+.v2 .cx .wh td,.v2 .cx .wh th,.v2 .cx .lg td,.v2 .cx .lg th{padding-left:14px;padding-right:14px}
+.v2 .cx .wh td:first-child,.v2 .cx .wh th:first-child,.v2 .cx .lg td:first-child,.v2 .cx .lg th:first-child{padding-left:20px}
+.v2 .cx .wh td:last-child,.v2 .cx .wh th:last-child,.v2 .cx .lg td:last-child,.v2 .cx .lg th:last-child{padding-right:20px}
+.v2 .cx .wh tbody tr.on{background:var(--pine-soft)}
+.v2 .cx .urlc{display:flex;gap:6px;align-items:center}
+.v2 .cx .urlc .mono{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.v2 .cx .td-sub{display:block;color:var(--ink-3);font-size:12px}
+.v2 .cx .code,.v2 .cxd .code{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;white-space:pre-wrap;word-break:break-all;color:var(--ink-2)}
+.v2 .cx .cols2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.v2 .cx .cols2 small{display:block;font-size:12px;font-weight:600;color:var(--ink-3);margin-bottom:4px}
+.v2 .cx .lg tr.dtl td{background:var(--hover);padding-top:12px;padding-bottom:14px}
+.v2 .cx .lg tr.row{cursor:pointer}
+.v2 .cx .acts-row{display:flex;gap:6px;justify-content:flex-end;flex-wrap:nowrap}
+.v2 .cx .wh td:first-child{min-width:150px}
+.v2 .cx .sechead{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.v2 .cx .secnote{padding:4px 20px 12px;color:var(--ink-2);font-size:13px}
+.v2 .cx .mut{color:var(--ink-3)}
+.v2 .cx .more{display:flex;justify-content:center;padding:12px}
+
+/* new: the dialog bodies (portals render inside .v2, the dialog carries .cxd) */
+.v2 .cxd .stack{display:grid;gap:14px}
+.v2 .cxd .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.v2 .cxd .rowf{display:flex;gap:8px;align-items:flex-end}
+.v2 .cxd .rowf > .fl{flex:1;min-width:0}
+.v2 .cxd .strip{display:flex;gap:8px;align-items:flex-start;padding:9px 11px;border-radius:11px;font-size:12.5px;font-weight:500}
+.v2 .cxd .strip.bad{background:var(--coral-soft);color:var(--coral)}
+.v2 .cxd .strip.warn{background:var(--gold-soft);color:var(--warn-ink)}
+.v2 .cxd .strip.ok{background:var(--mint-soft);color:var(--ok-ink)}
+.v2 .cxd .seg{display:inline-flex;gap:4px;padding:4px;border:1px solid var(--line);border-radius:12px;background:var(--hover);flex-wrap:wrap}
+.v2 .cxd .seg button{padding:7px 12px;border-radius:9px;font-weight:600;font-size:13px;color:var(--ink-2)}
+.v2 .cxd .seg button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+.v2 .cxd .lab{display:block;font-weight:600;font-size:13px;margin-bottom:6px}
+.v2 .cxd .hint{color:var(--ink-3);font-size:12px}
+.v2 .cxd .accrow{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;cursor:pointer}
+.v2 .cxd .accrow b{display:block;font-size:13.5px}
+.v2 .cxd .accrow small{color:var(--ink-3);font-size:12px}
+.v2 .cxd .accrow input{flex:none}
+.v2 .cxd .maprow{display:grid;grid-template-columns:1fr 1.2fr 32px;gap:10px;align-items:end}
+.v2 .cx .opserr.top{margin:0}
+
+@media (max-width:1100px){.v2 .cx .conns{grid-template-columns:repeat(2,1fr)}.v2 .cx .cols2{grid-template-columns:1fr}}
+@media (max-width:760px){.v2 .cx .conns{grid-template-columns:1fr}.v2 .cx .conns > .wide{grid-column:auto}.v2 .cxd .row2{grid-template-columns:1fr}.v2 .cxd .maprow{grid-template-columns:1fr 1fr}}

@@ -28,7 +28,7 @@ const account = (over: Partial<MetaAdAccount> = {}): MetaAdAccount => ({
 
 const days = (n: number) => new Date(Date.now() + n * 24 * 3600 * 1000).toISOString();
 
-const renderCard = (url = '/settings?tab=integrations&section=meta-ads') =>
+const renderCard = (url = '/connections') =>
   render(<MemoryRouter initialEntries={[url]}><MetaAdsIntegration /></MemoryRouter>);
 
 beforeEach(() => {
@@ -50,7 +50,7 @@ describe('MetaAdsIntegration', () => {
       { id: '444555666', name: 'Second store', currency: 'NGN', timezone: 'Africa/Lagos', alreadyConnected: false },
     ]);
     svc.savePick.mockResolvedValue(undefined);
-    renderCard('/settings?tab=integrations&section=meta-ads&metaAds=pick&pick=abc123');
+    renderCard('/connections?metaAds=pick&pick=abc123');
     expect(await screen.findByText('Choose ad accounts')).toBeInTheDocument();
     expect(svc.getPickAccounts).toHaveBeenCalledWith('abc123');
     expect(screen.getByText(/act_111222333/)).toBeInTheDocument();
@@ -63,7 +63,7 @@ describe('MetaAdsIntegration', () => {
   });
 
   it('shows the message as an inline error on metaAds=error', async () => {
-    renderCard('/settings?tab=integrations&section=meta-ads&metaAds=error&message=Meta%20said%20no');
+    renderCard('/connections?metaAds=error&message=Meta%20said%20no');
     expect(await screen.findByRole('alert')).toHaveTextContent('Meta said no');
     expect(svc.getPickAccounts).not.toHaveBeenCalled();
   });

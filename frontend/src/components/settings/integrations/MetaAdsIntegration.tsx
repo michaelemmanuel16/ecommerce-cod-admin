@@ -69,7 +69,7 @@ export const MetaAdsIntegration: React.FC = () => {
     setConnectError(null);
     try {
       const { authUrl } = await metaAdsService.initiate();
-      // Same tab: Meta sends the browser back to Settings (no new tab, the in-app browsers lose it)
+      // Same tab: Meta sends the browser back to Connections (no new tab, the in-app browsers lose it)
       window.location.assign(authUrl);
     } catch (err) {
       setConnectError(apiMessage(err, 'Failed to start the Meta Ads connection'));

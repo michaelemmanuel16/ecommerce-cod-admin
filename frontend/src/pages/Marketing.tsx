@@ -58,7 +58,7 @@ export function Marketing() {
           <EmptyState
             icon={<Megaphone />} title="Meta Ads is not connected"
             text="Connect your ad account to see spend, CPA and delivered orders by product."
-            action={<Link className="btn pri" to="/settings?tab=integrations&section=meta-ads">Connect Meta Ads</Link>}
+            action={<Link className="btn pri" to="/connections">Connect Meta Ads</Link>}
           />
         </div>
       </section>
