@@ -126,11 +126,12 @@ export function InboxView({ title, subtitle, views, linkFor, compact, settingsHr
 
         <div className="istack">
           {writable && pick === 'reminders' && <UpcomingReminders version={reminderVersion} />}
-          <div className="card">
+          <div className="card lcard">
             <div className="sub">
               <h3>{pick === 'snoozed' ? 'Snoozed' : pick === 'done' ? 'Done' : defs.find((v) => v.id === pick)?.label}</h3>
               {feed.state === 'ready' && <Tag tone="n">{feed.items.length}{feed.hasMore ? '+' : ''}</Tag>}
             </div>
+            <div className="lbody">
             {feed.state === 'loading' ? (
               <div aria-busy="true" aria-label="Loading"><Skeleton height={64} /><Skeleton height={64} /><Skeleton height={64} /></div>
             ) : feed.state === 'failed' ? (
@@ -158,6 +159,7 @@ export function InboxView({ title, subtitle, views, linkFor, compact, settingsHr
                 )}
               </>
             )}
+            </div>
           </div>
         </div>
       </div>

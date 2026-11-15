@@ -54,6 +54,21 @@ describe('Inbox page: the feed', () => {
     expect(within(rows[1]).queryByText('Unread')).not.toBeInTheDocument();
   });
 
+  it('keeps a row to two lines: title and time on the first, the message (full text in its title) and the tag on the second', async () => {
+    renderPage();
+    await screen.findByText('Order 12 was assigned to you');
+    const rows = screen.getAllByTestId('inbox-row');
+    const first = rows[0].querySelector('.l1') as HTMLElement;
+    const second = rows[0].querySelector('.l2') as HTMLElement;
+    expect(within(first).getByText('Order 12 was assigned to you')).toBeInTheDocument();
+    expect(first.querySelector('time')).not.toBeNull();
+    expect(within(second).getByText('Alert')).toBeInTheDocument();
+    const msg = rows[1].querySelector('.l2 .nmsg') as HTMLElement;
+    expect(msg).toHaveTextContent('please check');
+    expect(msg).toHaveAttribute('title', 'please check');
+    expect(document.querySelector('.lcard .lbody')).not.toBeNull();
+  });
+
   it('offers only the views the API serves, with their counts', async () => {
     renderPage();
     const rail = await screen.findByRole('navigation', { name: 'Inbox views' });

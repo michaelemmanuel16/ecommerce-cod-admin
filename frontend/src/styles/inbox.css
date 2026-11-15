@@ -18,28 +18,30 @@
 .v2 .inbx .seg button{padding:5px 12px;border-radius:9px;font-weight:600;color:var(--ink-2)}
 .v2 .inbx .seg button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
 
-.v2 .inbx .nrow{display:flex;gap:12px;padding:14px 20px;border-bottom:1px solid var(--line);align-items:flex-start;position:relative}
+.v2 .inbx .nrow{display:flex;gap:12px;padding:10px 20px;min-height:64px;border-bottom:1px solid var(--line);align-items:center;position:relative}
 .v2 .inbx .nrow:last-child{border-bottom:0}
 .v2 .inbx .nrow:hover{background:var(--hover)}
 .v2 .inbx .nrow.unread{background:color-mix(in srgb,var(--pine-soft) 45%,transparent)}
 .v2 .inbx .nrow.unread:hover{background:var(--pine-soft)}
-.v2 .inbx .nrow .ud{position:absolute;left:7px;top:26px;width:7px;height:7px;border-radius:50%;background:var(--coral)}
+.v2 .inbx .nrow .ud{position:absolute;left:7px;top:50%;margin-top:-3.5px;width:7px;height:7px;border-radius:50%;background:var(--coral)}
 .v2 .inbx .nrow:not(.unread) .ud{display:none}
-.v2 .inbx .nic{flex:none;width:38px;height:38px;border-radius:11px;display:grid;place-items:center}
+.v2 .inbx .nic{flex:none;width:36px;height:36px;border-radius:11px;display:grid;place-items:center}
 .v2 .inbx .nic svg{width:18px;height:18px}
 .v2 .inbx .nic.t-coral{background:var(--coral-soft);color:var(--coral)}
 .v2 .inbx .nic.t-pine{background:var(--pine-soft);color:var(--pine)}
 .v2 .inbx .nic.t-violet{background:var(--violet-soft);color:var(--violet)}
 .v2 .inbx .nic.t-gold{background:var(--gold-soft);color:var(--warn-ink)}
 .v2 .inbx .nic.t-n{background:var(--hover);color:var(--ink-2)}
-.v2 .inbx .nbody{flex:1;min-width:0}
-.v2 .inbx .nbody b{display:block;font-size:14px;font-weight:600;overflow-wrap:anywhere}
-.v2 .inbx .nrow:not(.unread) .nbody b{font-weight:500}
-.v2 .inbx .nmsg{color:var(--ink-2);font-size:13px;margin-top:2px;overflow-wrap:anywhere}
-.v2 .inbx .nbody .meta{color:var(--ink-3);font-size:12.5px;margin-top:3px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
-.v2 .inbx .lnk{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:600;color:var(--pine);text-decoration:none;margin-top:5px;padding:2px 8px;border-radius:8px;background:var(--pine-soft)}
+.v2 .inbx .nbody{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.v2 .inbx .l1,.v2 .inbx .l2{display:flex;align-items:center;gap:10px;min-width:0}
+.v2 .inbx .l1 b{flex:1;min-width:0;font-size:14px;font-weight:600;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.v2 .inbx .nrow:not(.unread) .l1 b{font-weight:500}
+.v2 .inbx .when{flex:none;display:inline-flex;gap:5px;align-items:center;color:var(--ink-3);font-size:12.5px;white-space:nowrap}
+.v2 .inbx .nmsg{flex:1;min-width:0;color:var(--ink-2);font-size:13px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0}
+.v2 .inbx .l2 .tags{flex:none;display:inline-flex;gap:6px;align-items:center;max-width:60%;overflow:hidden;margin-left:auto}
+.v2 .inbx .lnk{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--pine);text-decoration:none;padding:1px 8px;border-radius:8px;background:var(--pine-soft);white-space:nowrap}
 .v2 .inbx .lnk.off{color:var(--ink-3);background:var(--hover)}
-.v2 .inbx .qa{display:flex;gap:4px;flex:none;flex-wrap:wrap;justify-content:flex-end}
+.v2 .inbx .qa{display:flex;gap:4px;flex:none;justify-content:flex-end}
 .v2 .inbx .qa button,.v2 .inbx .qa a{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;color:var(--ink-3);border:1px solid transparent}
 .v2 .inbx .qa button:hover,.v2 .inbx .qa a:hover{background:var(--card);border-color:var(--line);color:var(--ink)}
 .v2 .inbx .qa svg{width:16px;height:16px}
@@ -48,7 +50,7 @@
 .v2 .inbx .sn button{display:block;width:100%;height:auto;text-align:left;padding:7px 10px;border-radius:8px;font-weight:500;color:var(--ink);white-space:nowrap}
 .v2 .inbx .sn button:hover{background:var(--hover)}
 .v2 .inbx .empty{padding:40px 20px;text-align:center;color:var(--ink-3)}
-.v2 .inbx .more{padding:14px 20px;text-align:center;border-top:1px solid var(--line)}
+.v2 .inbx .more{padding:12px 20px;text-align:center;border-top:1px solid var(--line)}
 /* new: upcoming reminders */
 .v2 .inbx .rrow{display:flex;gap:12px;padding:13px 20px;border-bottom:1px solid var(--line);align-items:center}
 .v2 .inbx .rrow:last-child{border-bottom:0}
@@ -80,6 +82,17 @@
 .v2 .comp .mnl button:hover{background:var(--hover)}
 .v2 .comp .mnl small{color:var(--ink-3);margin-left:auto;text-transform:capitalize}
 
+/* desktop: the page does not scroll; the list card scrolls inside a box that fits under the top bar, and the menu stays put */
+@media (min-width:761px) and (min-height:560px){
+  .v2 .inbx:not(.compact){display:flex;flex-direction:column;height:calc(100dvh - 156px);min-height:420px}
+  .v2 .inbx:not(.compact) > .head{flex:none}
+  .v2 .inbx:not(.compact) .inbox{flex:1;min-height:0;align-items:stretch}
+  .v2 .inbx:not(.compact) .rail{position:static;align-self:start}
+  .v2 .inbx:not(.compact) .istack{min-height:0;overflow:hidden}
+  .v2 .inbx:not(.compact) .lcard{flex:1;min-height:0;display:flex;flex-direction:column}
+  .v2 .inbx:not(.compact) .lcard .sub{flex:none}
+  .v2 .inbx:not(.compact) .lbody{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain}
+}
 @media (max-width:1100px){
   .v2 .inbx .inbox{grid-template-columns:minmax(0,1fr)}
   .v2 .inbx .rail{position:static;display:flex;gap:4px;overflow-x:auto}
@@ -87,8 +100,10 @@
   .v2 .inbx .rail hr{display:none}
 }
 @media (max-width:760px){
-  .v2 .inbx .nrow{flex-wrap:wrap}
-  .v2 .inbx .qa{margin-left:50px;justify-content:flex-start}
+  .v2 .inbx .nrow{flex-wrap:wrap;padding:10px 14px}
+  .v2 .inbx .nbody{flex:1 1 calc(100% - 50px)}
+  .v2 .inbx .who{display:none}
+  .v2 .inbx .qa{margin-left:48px;flex-wrap:wrap;justify-content:flex-start}
   .v2 .f2{grid-template-columns:1fr}
   .v2 .tmsgs .m.re{margin-left:20px}
 }

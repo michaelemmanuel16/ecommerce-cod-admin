@@ -50,23 +50,29 @@ export function InboxRow({ item, status, writable, linkFor, onRead, onDone, onSn
       <span className="ud" aria-hidden="true" />
       <div className={`nic t-${tone}`} aria-hidden="true"><Icon /></div>
       <div className="nbody">
-        <b>{text.title}</b>
-        {text.message && text.message !== text.title && <p className="nmsg">{text.message}</p>}
-        <div className="meta">
-          <Tag tone="n">{kindLabel(item.kind)}</Tag>
-          <span>{item.actorName ?? 'System'}</span>
-          {item.recipientName && <Tag tone="n">For {item.recipientName}</Tag>}
-          <span aria-hidden="true">·</span>
-          <time dateTime={item.createdAt} title={formatDateTime(item.createdAt)}>{formatRelativeTime(item.createdAt)}</time>
-          {item.snoozedUntil && !item.doneAt && <Tag tone="warn">Snoozed until {formatDateTime(item.snoozedUntil)}</Tag>}
-          {item.doneAt && <Tag tone="ok">Done</Tag>}
-          {unread && <span className="sr-only">Unread</span>}
+        <div className="l1">
+          <b title={text.title}>{text.title}</b>
+          <span className="when">
+            <span className="who">{item.actorName ?? 'System'}</span>
+            <span className="who" aria-hidden="true">·</span>
+            <time dateTime={item.createdAt} title={formatDateTime(item.createdAt)}>{formatRelativeTime(item.createdAt)}</time>
+          </span>
         </div>
-        {subject && (href ? (
-          <Link className="lnk" to={href} onClick={() => writable && unread && onRead(item)}>{lnkText}</Link>
-        ) : (
-          <span className="lnk off">{lnkText}{item.subjectDeleted ? ', deleted' : !item.subjectAccessible ? ', not yours any more' : ''}</span>
-        ))}
+        <div className="l2">
+          {text.message && text.message !== text.title && <p className="nmsg" title={text.message}>{text.message}</p>}
+          <span className="tags">
+            <Tag tone="n">{kindLabel(item.kind)}</Tag>
+            {item.recipientName && <Tag tone="n">For {item.recipientName}</Tag>}
+            {item.snoozedUntil && !item.doneAt && <Tag tone="warn">Snoozed until {formatDateTime(item.snoozedUntil)}</Tag>}
+            {item.doneAt && <Tag tone="ok">Done</Tag>}
+            {unread && <span className="sr-only">Unread</span>}
+            {subject && (href ? (
+              <Link className="lnk" to={href} onClick={() => writable && unread && onRead(item)}>{lnkText}</Link>
+            ) : (
+              <span className="lnk off">{lnkText}{item.subjectDeleted ? ', deleted' : !item.subjectAccessible ? ', not yours any more' : ''}</span>
+            ))}
+          </span>
+        </div>
       </div>
 
       {writable && (
