@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AtSign, Send } from 'lucide-react';
 import { Button, Skeleton, useToast } from '../../components/ui-v2';
-import { inboxService, type InboxSubject, type Mentionable, type Thread, type ThreadComment } from '../../services/inbox.service';
+import { inboxService, type InboxSubject, type Mentionable, type NoteThread, type ThreadComment } from '../../services/inbox.service';
 import { apiErrorMessage } from '../../utils/apiError';
 import { formatRelativeTime } from '../../utils/format';
 import { initials } from '../../utils/people';
@@ -22,7 +22,7 @@ const TRAILING_MENTION = /(?:^|\s)@(\S*)$/;
  */
 export function ThreadPanel({ subject, onTouched }: Props) {
   const say = useToast();
-  const [thread, setThread] = useState<Thread | null>(null);
+  const [thread, setThread] = useState<NoteThread | null>(null);
   const [failed, setFailed] = useState(false);
   const [people, setPeople] = useState<Mentionable[]>([]);
   const [body, setBody] = useState('');

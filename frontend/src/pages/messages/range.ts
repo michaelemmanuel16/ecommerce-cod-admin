@@ -16,5 +16,5 @@ export const LOG_RANGES: Array<{ id: LogRangeKey; label: string }> = [{ id: 'any
 /** The `from` and `to` the API takes, or none for "any". */
 export const datesFor = (key: LogRangeKey): { from?: string; to?: string } => (key === 'any' ? {} : presetRange(key));
 
-export const isRangeKey = (v: string | null): v is RangeKey => RANGES.some((r) => r.id === v);
+const isRangeKey = (v: string | null): v is RangeKey => RANGES.some((r) => r.id === v);
 export const isLogRangeKey = (v: string | null): v is LogRangeKey => v === 'any' || isRangeKey(v);

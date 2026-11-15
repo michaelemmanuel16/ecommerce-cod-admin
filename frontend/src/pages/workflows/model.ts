@@ -56,7 +56,7 @@ export function buildCron(s: ScheduleDraft): string {
   return `${m} ${h} * * ${s.mode === 'weekly' ? s.day : '*'}`;
 }
 
-export function describeSchedule(cron: string | undefined): string {
+function describeSchedule(cron: string | undefined): string {
   const s = parseCron(cron);
   if (s.mode === 'daily') return `Every day at ${s.time}`;
   if (s.mode === 'weekly') return `Every ${WEEKDAYS[s.day]} at ${s.time}`;
@@ -129,7 +129,7 @@ export const NO_VALUE_OPERATORS = ['is_empty', 'is_not_empty'];
 export interface CondRow { key: string; field: string; operator: string; value: string }
 
 let counter = 0;
-export const newKey = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${counter++}`;
+const newKey = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${counter++}`;
 
 export const newCondition = (): CondRow => ({ key: newKey('c'), field: 'totalAmount', operator: 'greater_than', value: '' });
 
@@ -175,7 +175,7 @@ export const WAIT_UNITS = [
   { id: 86400, label: 'days' },
 ];
 
-export const defaultConfig = (type: ActionType): Record<string, any> => {
+const defaultConfig = (type: ActionType): Record<string, any> => {
   switch (type) {
     case 'assign_to': return { role: 'delivery_agent', userIds: [], split: 'even' };
     case 'send_sms': return { phoneNumber: '', message: '' };
@@ -241,7 +241,7 @@ export const emptyForm = (): Form => ({
 const KNOWN_ACTIONS = ACTIONS.map((a) => a.type) as string[];
 
 /** An action from a saved workflow or a template, as the editor draws it. Flat template keys move into `config`; the old `assign_user` becomes "Assign to". */
-export function actionFromApi(raw: any): ActionDraft | null {
+function actionFromApi(raw: any): ActionDraft | null {
   if (!raw || typeof raw.type !== 'string') return null;
   const { type, config, conditions: _c, elseBranch: _e, ...flat } = raw;
   const merged: Record<string, any> = { ...flat, ...(config ?? {}) };

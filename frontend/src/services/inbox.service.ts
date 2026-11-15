@@ -2,7 +2,7 @@ import apiClient from './api';
 
 /** The Inbox APIs (M9-T17, T18, T19): the feed and its counts, reminders, and threads by subject. */
 
-export const INBOX_VIEWS = ['all', 'assigned', 'mentions', 'reminders', 'notes', 'alerts', 'replies'] as const;
+const INBOX_VIEWS = ['all', 'assigned', 'mentions', 'reminders', 'notes', 'alerts', 'replies'] as const;
 export type InboxView = (typeof INBOX_VIEWS)[number];
 export type InboxStatus = 'open' | 'done' | 'snoozed';
 export type InboxKind = 'alert' | 'reply' | 'mention' | 'reminder' | 'note' | 'system';
@@ -62,7 +62,7 @@ export interface ThreadComment {
   replies?: ThreadComment[];
 }
 
-export interface Thread {
+export interface NoteThread {
   id: number | null;
   subjectType: string;
   subjectId: number;
@@ -108,7 +108,7 @@ export const inboxService = {
     await apiClient.delete(`/api/reminders/${id}`);
   },
 
-  async getThread(type: string, id: number): Promise<Thread> {
+  async getThread(type: string, id: number): Promise<NoteThread> {
     const { data } = await apiClient.get(`/api/threads/by-subject/${type}/${id}`);
     return data.thread;
   },

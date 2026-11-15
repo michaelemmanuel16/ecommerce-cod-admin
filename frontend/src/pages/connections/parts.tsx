@@ -12,7 +12,7 @@ const ICON_STYLE: Record<Tone, { background: string; color: string }> = {
 };
 
 /** The status pill of a card: from the API status; a card that is on but in test mode can say so. */
-export function StatusTag({ card, testMode }: { card: ConnectionCard; testMode?: boolean }) {
+function StatusTag({ card, testMode }: { card: ConnectionCard; testMode?: boolean }) {
   if (card.status === 'error') return <Tag tone="bad">Needs attention</Tag>;
   if (card.status === 'not_connected') return <Tag>Not connected</Tag>;
   return testMode ? <Tag tone="warn">Test mode</Tag> : <Tag tone="ok">Connected</Tag>;

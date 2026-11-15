@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { isOwnerRole } from '../../components/shell/navModel';
 import { Button, EmptyState, Select, Skeleton, useToast } from '../../components/ui-v2';
 import {
   CHANNELS, notificationSettingsService, type Channel, type PreferenceRow,
 } from '../../services/notificationSettings.service';
 import { apiErrorMessage } from '../../utils/apiError';
+import { CHANNEL_LABEL as MESSAGE_CHANNEL_LABEL } from '../messages/format';
 
-const CHANNEL_LABEL: Record<Channel, string> = { inApp: 'In-app', whatsapp: 'WhatsApp', email: 'Email', sms: 'SMS' };
-const OWNER_ROLES = ['admin', 'super_admin'];
+const CHANNEL_LABEL: Record<Channel, string> = { ...MESSAGE_CHANNEL_LABEL, inApp: 'In-app' };
 const ROLE_CHOICES: Array<{ id: string; label: string }> = [
   { id: 'admin', label: 'Admin' }, { id: 'manager', label: 'Manager' }, { id: 'sales_rep', label: 'Call rep' },
   { id: 'delivery_agent', label: 'Delivery agent' }, { id: 'inventory_manager', label: 'Inventory manager' }, { id: 'accountant', label: 'Accountant' },
@@ -27,7 +28,7 @@ type Mode = 'mine' | 'roles';
  */
 export function NotificationSettings({ user }: Props) {
   const say = useToast();
-  const isOwner = OWNER_ROLES.includes(user.role);
+  const isOwner = isOwnerRole(user.role);
   const [mode, setMode] = useState<Mode>('mine');
   const [role, setRole] = useState('manager');
   const [rows, setRows] = useState<PreferenceRow[] | null>(null);

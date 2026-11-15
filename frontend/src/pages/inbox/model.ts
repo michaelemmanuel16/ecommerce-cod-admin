@@ -3,7 +3,7 @@ import type { InboxItem, InboxKind, InboxStatus, InboxSubject, InboxView } from 
 import { formatOrderNumber } from '../../utils/orderNumber';
 
 /** The subjects a thread or a reminder can point at (the API's NOTE_SUBJECT_TYPES). */
-export const NOTE_SUBJECT_TYPES = ['order', 'customer', 'payout', 'product'] as const;
+const NOTE_SUBJECT_TYPES = ['order', 'customer', 'payout', 'product'] as const;
 export const isNoteSubject = (s: InboxSubject | null): s is InboxSubject => !!s && (NOTE_SUBJECT_TYPES as readonly string[]).includes(s.type);
 
 export interface ViewDef { id: InboxView; label: string; icon: LucideIcon; empty: string }
