@@ -5,6 +5,8 @@ import whatsappService, { formatPhoneNumber } from '../whatsappService';
 import { notifyCustomerReply } from './replyNotify';
 import { isOptedOut } from './optOutService';
 import { assertSendable, getTemplate } from './templateService';
+import { DAY_MS } from '../kpi/dates';
+import { isManagerUp } from '../../utils/authUtils';
 
 export interface Actor {
   id: number;
@@ -13,9 +15,8 @@ export interface Actor {
 }
 
 /** The WhatsApp customer-service window: free text is allowed this long after the customer's last message. */
-export const WINDOW_MS = 24 * 60 * 60 * 1000;
+export const WINDOW_MS = DAY_MS;
 export const WINDOW_CLOSED_MESSAGE = 'The 24 hour window is closed. Send an approved template.';
-const SEES_ALL: UserRole[] = ['super_admin', 'admin', 'manager'];
 /** Roles that can open the Conversations screen, so the only roles a conversation may be assigned to. */
 export const CONVERSATION_ROLES: UserRole[] = ['super_admin', 'admin', 'manager', 'sales_rep'];
 const PAGE_SIZE = 25;
@@ -26,7 +27,7 @@ export const windowOpen = (lastInboundAt: Date | null, now: number = Date.now())
 
 /** Owner, admin and manager see every conversation of the tenant. A rep sees those assigned to them or of a customer with an order of theirs. */
 export function visibilityWhere(actor: Pick<Actor, 'id' | 'role' | 'tenantId'>): Prisma.ConversationWhereInput {
-  if (SEES_ALL.includes(actor.role)) return { tenantId: actor.tenantId };
+  if (isManagerUp(actor)) return { tenantId: actor.tenantId };
   return {
     tenantId: actor.tenantId,
     OR: [

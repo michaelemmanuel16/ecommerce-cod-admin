@@ -3,11 +3,12 @@ import prisma from '../../utils/prisma';
 import logger from '../../utils/logger';
 import whatsappService from '../whatsappService';
 import orderService from '../orderService';
-import { normalizeInternationalPhone, phoneLookupVariants } from '../../utils/phone';
+import { conversationPhone, phoneLookupVariants } from '../../utils/phone';
 import { CallbackRequest, ParsedInbound } from './types';
 import { whatsappCloudProvider } from './providers';
 import { notifyCustomerReply } from './replyNotify';
 import { setOptOut } from './optOutService';
+import { DAY_MS } from '../kpi/dates';
 
 const PAYLOAD_KIND = { CONFIRM: 'yes', CHANGE: 'change', CANCEL: 'cancel' } as const;
 
@@ -21,16 +22,10 @@ const REPLY_TEXT: Record<string, ((firstName: string, orderId: number) => string
 const STOP_WORDS = new Set(['stop', 'unsubscribe', 'stop all']);
 const START_WORDS = new Set(['start']);
 const CLOSED_ORDER_STATUSES: OrderStatus[] = ['delivered', 'digital_delivered', 'returned', 'cancelled'];
-const REPLY_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
+const REPLY_LOOKBACK_MS = 7 * DAY_MS;
 
 /** Trim, drop leading and trailing punctuation, lower-case: "YES.", "Stop!" */
 const clean = (text: string) => text.trim().replace(/^[\s.,!?;:"'()]+|[\s.,!?;:"'()]+$/g, '').toLowerCase();
-
-/** E.164 as stored on Customer. */
-export function conversationPhone(from: string): string {
-  const digits = from.replace(/\D/g, '');
-  return normalizeInternationalPhone(`+${digits}`) ?? `+${digits}`;
-}
 
 async function findCustomer(tenantId: string, fromPhone: string) {
   const rawNoPlus = fromPhone.replace(/^\+/, '');

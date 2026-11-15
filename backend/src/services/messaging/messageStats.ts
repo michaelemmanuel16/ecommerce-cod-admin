@@ -1,5 +1,6 @@
 import { MessageChannel, MessageStatus, Prisma } from '@prisma/client';
 import prisma from '../../utils/prisma';
+import { isManagerUp } from '../../utils/authUtils';
 import { visibilityWhere, Actor } from './conversationService';
 
 /**
@@ -83,7 +84,7 @@ export function messageScope(actor: Actor): Prisma.MessageLogWhereInput {
     // An order made by a connection test is not a customer message
     { NOT: { order: { isTest: true } } },
   ];
-  if (!['super_admin', 'admin', 'manager'].includes(actor.role)) {
+  if (!isManagerUp(actor)) {
     and.push({ OR: [{ order: { customerRepId: actor.id } }, { conversation: visibilityWhere(actor) }] });
   }
   return { AND: and };

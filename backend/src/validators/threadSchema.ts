@@ -1,11 +1,11 @@
 import { z } from 'zod';
+import { positiveInt } from './common';
 import { NOTE_SUBJECT_TYPES } from '../services/inbox/subjectAccess';
 
 export const COMMENT_MAX_LENGTH = 4000;
 
 const body = z.string().min(1, 'Write a comment').max(COMMENT_MAX_LENGTH, `A comment can be ${COMMENT_MAX_LENGTH} characters at most`)
   .refine((b) => b.trim().length > 0, { message: 'Write a comment' });
-const positiveInt = z.coerce.number().int().positive();
 
 /** :type and :id of /api/threads/by-subject/:type/:id */
 export const threadSubjectSchema = z.object({

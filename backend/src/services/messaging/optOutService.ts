@@ -1,6 +1,6 @@
 import { MessageChannel } from '@prisma/client';
 import prisma from '../../utils/prisma';
-import { normalizeInternationalPhone, phoneLookupVariants } from '../../utils/phone';
+import { conversationPhone, phoneForms } from '../../utils/phone';
 
 /** The Customer column that holds the opt-out flag of each channel. */
 export const OPT_OUT_FLAG = {
@@ -8,12 +8,6 @@ export const OPT_OUT_FLAG = {
   whatsapp: 'whatsappOptOut',
   email: 'emailOptOut',
 } as const satisfies Record<MessageChannel, 'smsOptOut' | 'whatsappOptOut' | 'emailOptOut'>;
-
-/** Every stored form of a phone: E.164, local with 0, bare digits. */
-export function phoneForms(phone: string): string[] {
-  const digits = phone.replace(/\D/g, '');
-  return Array.from(new Set([...phoneLookupVariants(phone), ...(digits ? phoneLookupVariants(`+${digits}`) : [])]));
-}
 
 /**
  * Whether a message to this address on this channel is blocked by an opt-out. The one check every non-reply send uses.
@@ -59,12 +53,6 @@ export interface SetOptOutInput {
   actorId?: number | null;
 }
 
-/** E.164 as the events store it. */
-const eventPhone = (phone: string): string => {
-  const digits = phone.replace(/\D/g, '');
-  return normalizeInternationalPhone(`+${digits}`) ?? `+${digits}`;
-};
-
 /**
  * The one way an opt-out changes. Opt-out is per phone: the flag changes on every customer of the tenant with that phone
  * (or email), and every change writes an OptOutEvent with its reason, one for each customer, or one with no customer
@@ -73,7 +61,7 @@ const eventPhone = (phone: string): string => {
 export async function setOptOut(input: SetOptOutInput): Promise<{ customerIds: number[] }> {
   const { tenantId, channel, optedOut, reason } = input;
   const flag = OPT_OUT_FLAG[channel];
-  const phone = input.phone ? eventPhone(input.phone) : null;
+  const phone = input.phone ? conversationPhone(input.phone) : null;
   const forms = input.phone ? phoneForms(input.phone) : [];
 
   const or: any[] = [];
