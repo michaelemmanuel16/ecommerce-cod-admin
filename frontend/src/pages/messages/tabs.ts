@@ -8,7 +8,7 @@ export interface MessagesTab {
   icon: LucideIcon;
 }
 
-// Bulk send is for owner and admin (the API allows only them); the page drops it for anyone else.
+// Bulk send is for owner, admin and manager (the API's rule) who also have messages:create; the page drops it for anyone else.
 // Templates and Opt-outs: owner, admin and manager read them, owner and admin change them (the tabs hide the write controls).
 export const TABS: MessagesTab[] = [
   { key: 'overview', label: 'Overview', icon: BarChart3 },
@@ -21,10 +21,10 @@ export const TABS: MessagesTab[] = [
 ];
 
 /**
- * The tabs a person may open. Owner, admin and manager get the list; bulk send needs owner or admin and messages:create (the API's rule).
+ * The tabs a person may open. Owner, admin and manager get the list; bulk send also needs messages:create.
  * A call rep gets Conversations only: the API scopes it to their own, and every other tab is for managers and up.
  */
-export function tabsFor(who: { isManager: boolean; isAdmin: boolean; canCreate: boolean }): MessagesTab[] {
+export function tabsFor(who: { isManager: boolean; canCreate: boolean }): MessagesTab[] {
   if (!who.isManager) return TABS.filter((t) => t.key === 'conversations');
-  return TABS.filter((t) => t.key !== 'bulk' || (who.isAdmin && who.canCreate));
+  return TABS.filter((t) => t.key !== 'bulk' || who.canCreate);
 }

@@ -64,9 +64,9 @@ describe('Messages page: a call rep', () => {
 });
 
 describe('tabsFor', () => {
-  it('gives a manager every tab but Bulk send, and an admin with messages:create all of them', () => {
-    expect(tabsFor({ isManager: true, isAdmin: false, canCreate: false }).map((t) => t.key)).toEqual(['overview', 'conversations', 'log', 'campaigns', 'templates', 'optouts']);
-    expect(tabsFor({ isManager: true, isAdmin: true, canCreate: true })).toHaveLength(7);
-    expect(tabsFor({ isManager: false, isAdmin: false, canCreate: true }).map((t) => t.key)).toEqual(['conversations']);
+  it('gives a manager or admin with messages:create every tab, Bulk send included, and one without it every tab but Bulk send', () => {
+    expect(tabsFor({ isManager: true, canCreate: true })).toHaveLength(7);
+    expect(tabsFor({ isManager: true, canCreate: false }).map((t) => t.key)).toEqual(['overview', 'conversations', 'log', 'campaigns', 'templates', 'optouts']);
+    expect(tabsFor({ isManager: false, canCreate: true }).map((t) => t.key)).toEqual(['conversations']);
   });
 });

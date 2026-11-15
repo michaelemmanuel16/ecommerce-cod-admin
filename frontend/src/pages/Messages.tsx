@@ -20,7 +20,7 @@ export function Messages() {
   useV2Page();
   const { user, can, isManager, isAdmin } = usePermissions();
   const [search, setSearch] = useSearchParams();
-  const tabs = tabsFor({ isManager, isAdmin, canCreate: can('messages', 'create') });
+  const tabs = tabsFor({ isManager, canCreate: can('messages', 'create') });
   const tab: TabKey = tabs.find((t) => t.key === search.get('tab'))?.key ?? tabs[0].key;
 
   const open = (key: TabKey) => setSearch((prev) => { const next = new URLSearchParams(prev); next.set('tab', key); return next; }, { replace: true });
