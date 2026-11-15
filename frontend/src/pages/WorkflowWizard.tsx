@@ -1,297 +1,286 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
-import { Button } from '../components/ui/Button';
-import { WizardStepper, Step } from '../components/workflows/WizardStepper';
-import { workflowsService } from '../services/workflows.service';
-import { ConditionGroup } from '../components/workflows/ConditionBuilder';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import axios from 'axios';
+import clsx from 'clsx';
+import { ArrowLeft, ArrowRight, Check, FlaskConical } from 'lucide-react';
+import { useV2Page } from '../components/shell/useV2Page';
+import { Button, Input, Skeleton, Tag, useToast } from '../components/ui-v2';
+import { usePermissions } from '../hooks/usePermissions';
+import { workflowsService, type CatchUpPreview, type TestRunResult, type Workflow, type WorkflowBody, type WorkflowTemplate } from '../services/workflows.service';
+import { apiErrorMessage } from '../utils/apiError';
+import { useFilterOptions } from './orders/useFilterOptions';
+import { ActionsStep } from './workflows/builder/ActionsStep';
+import { ConditionsStep } from './workflows/builder/ConditionsStep';
+import { ReviewStep } from './workflows/builder/ReviewStep';
+import { TriggerStep } from './workflows/builder/TriggerStep';
+import { Area } from './workflows/builder/Area';
+import { emptyForm, firstErrorStep, formFromTemplate, formFromWorkflow, noErrors, sortErrors, toBody, type FieldErrors, type Form } from './workflows/model';
 
-// Step Components (to be created)
-import { BasicInfoStep } from '../components/workflows/steps/BasicInfoStep';
-import { TriggerStep } from '../components/workflows/steps/TriggerStep';
-import { ConditionsStep } from '../components/workflows/steps/ConditionsStep';
-import { ActionsStep } from '../components/workflows/steps/ActionsStep';
-import { ReviewStep } from '../components/workflows/steps/ReviewStep';
+const STEPS = ['Basic info', 'Trigger', 'Conditions', 'Actions', 'Review'];
 
-export interface WorkflowAction {
-  id: string;
-  type: string;
-  config: any;
-  conditions?: ConditionGroup;
-}
+/** Everything the API would store, except the on/off switch: when it differs from the saved copy the screen has unsaved changes. */
+const signature = (f: Form) => JSON.stringify({ ...toBody(f), isActive: undefined });
 
-export interface WorkflowFormData {
-  name: string;
-  description: string;
-  isActive: boolean;
-  triggerType: string;
-  triggerConfig: any;
-  conditions?: ConditionGroup;
-  actions: WorkflowAction[];
-}
+/** The 400 answer lists `errors: string[]`; any other refusal is one sentence. */
+const messagesOf = (e: unknown): string[] => {
+  const list = axios.isAxiosError(e) ? e.response?.data?.errors : null;
+  return Array.isArray(list) && list.length > 0 ? list.map(String) : [apiErrorMessage(e, 'The workflow could not be saved.')];
+};
 
-const wizardSteps: Step[] = [
-  { id: 1, title: 'Basic Info', description: 'Name and details' },
-  { id: 2, title: 'Trigger', description: 'When to run' },
-  { id: 3, title: 'Conditions', description: 'Optional filters' },
-  { id: 4, title: 'Actions', description: 'What to do' },
-  { id: 5, title: 'Review', description: 'Test and save' },
-];
-
-export const WorkflowWizard: React.FC = () => {
+/**
+ * The workflow builder (M9-T42, COD-84, F-505 F-507 F-508 F-509 F-511 F-512 F-514), built from docs/mockups/v2/workflows.html:
+ * five steps (Basic info, Trigger, Conditions, Actions, Review). The catch-up switch sits under the first "Assign to" action
+ * and counts from GET /api/workflows/:id/catch-up/preview. A test run (or the catch-up count) on a workflow that was never
+ * saved first saves it as a draft that is switched off. Run history is T43 (builder/RunHistory.tsx).
+ */
+export function WorkflowWizard() {
+  useV2Page();
   const navigate = useNavigate();
   const location = useLocation();
-  const { id } = useParams<{ id: string }>();
-  const isEditMode = id && id !== 'new';
+  const say = useToast();
+  const { id: idParam } = useParams<{ id: string }>();
+  const routeId = idParam && idParam !== 'new' ? Number(idParam) : null;
+  const { can, isManager } = usePermissions();
+  const { reps, agents } = useFilterOptions();
+  const state = (location.state ?? {}) as { template?: WorkflowTemplate; webhookToken?: string };
 
-  // Wizard state
-  const [currentStep, setCurrentStep] = useState(1);
-  const [loading, setLoading] = useState(false);
+  const [step, setStep] = useState(0);
+  const [form, setForm] = useState<Form>(() => (state.template ? formFromTemplate(state.template) : emptyForm()));
+  const [savedId, setSavedId] = useState<number | null>(routeId);
+  const [savedSig, setSavedSig] = useState<string | null>(null);
+  const [hasToken, setHasToken] = useState(false);
+  const [token, setToken] = useState<string | null>(state.webhookToken ?? null);
+  const [loading, setLoading] = useState(routeId !== null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState<FieldErrors>(noErrors());
+  const [preview, setPreview] = useState<{ data?: CatchUpPreview; error?: string; loading?: boolean } | null>(null);
 
-  // Form data
-  const [formData, setFormData] = useState<WorkflowFormData>({
-    name: '',
-    description: '',
-    isActive: true,
-    triggerType: 'order_created',
-    triggerConfig: {},
-    conditions: undefined,
-    actions: [],
-  });
+  const canSave = savedId ? can('workflows', 'update') : can('workflows', 'create');
+  const canTest = can('workflows', 'execute') && (savedId ? true : can('workflows', 'create'));
 
-  // Load workflow if editing
+  const set = useCallback((patch: Partial<Form>) => setForm((f) => ({ ...f, ...patch })), []);
+
+  const adopt = useCallback((w: Workflow, f: Form) => {
+    setSavedId(w.id);
+    setSavedSig(signature(f));
+    setHasToken(!!w.hasWebhookToken);
+  }, []);
+
+  // Editing: load the workflow
   useEffect(() => {
-    if (isEditMode) {
-      loadWorkflow();
-    }
+    if (routeId === null) return;
+    let live = true;
+    workflowsService.getWorkflow(routeId)
+      .then((w) => {
+        if (!live) return;
+        const f = formFromWorkflow(w);
+        setForm(f);
+        adopt(w, f);
+      })
+      .catch((e) => live && setLoadError(apiErrorMessage(e, 'The workflow could not load.')))
+      .finally(() => live && setLoading(false));
+    return () => { live = false; };
+  }, [routeId, adopt]);
 
-    // Check if template was passed from workflows page
-    if (location.state?.template) {
-      loadTemplate(location.state.template);
-    }
-  }, [id]);
+  const dirty = savedId !== null && savedSig !== signature(form);
+  const assignIndexes = form.actions.flatMap((a, i) => (a.type === 'assign_to' ? [i] : []));
 
-  const loadWorkflow = async () => {
-    if (!id) return;
-    setLoading(true);
+  const nameOf = useMemo(() => {
+    const names = new Map<number, string>([...reps, ...agents].map((p) => [p.id, p.name]));
+    return (id: number) => names.get(id) ?? `User ${id}`;
+  }, [reps, agents]);
+
+  /** Save the form: a new workflow is created, a saved one updated. Returns the saved workflow, or null when the API refused. */
+  const persist = async (overrides: Partial<WorkflowBody> = {}): Promise<{ workflow: Workflow; webhookToken?: string } | null> => {
+    if (!form.name.trim()) {
+      setErrors({ ...noErrors(), name: 'Give the workflow a name.' });
+      setStep(0);
+      return null;
+    }
+    const body = toBody(form, overrides);
     try {
-      const data = await workflowsService.getWorkflow(id);
-      setFormData({
-        name: data.name || '',
-        description: data.description || '',
-        isActive: data.isActive !== undefined ? data.isActive : true,
-        triggerType: data.triggerType || 'order_created',
-        triggerConfig: data.triggerData || {},
-        conditions: data.conditions,
-        actions: Array.isArray(data.actions) ? data.actions : [],
-      });
-    } catch (error) {
-      console.error('Error loading workflow:', error);
-    } finally {
-      setLoading(false);
+      const res = savedId ? await workflowsService.updateWorkflow(savedId, body) : await workflowsService.createWorkflow(body);
+      setErrors(noErrors());
+      if (res.webhookToken) setToken(res.webhookToken);
+      adopt(res.workflow, form);
+      return res;
+    } catch (e) {
+      const sorted = sortErrors(messagesOf(e), assignIndexes);
+      setErrors(sorted);
+      const at = firstErrorStep(sorted);
+      if (at) setStep(at - 1);
+      if (!axios.isAxiosError(e) || e.response?.status !== 400) say(apiErrorMessage(e, 'The workflow could not be saved.'));
+      return null;
     }
   };
 
-  const loadTemplate = (template: any) => {
-    setFormData({
-      name: template.name || '',
-      description: template.description || '',
-      isActive: true,
-      triggerType: template.trigger?.type || 'order_created',
-      triggerConfig: template.trigger?.config || {},
-      conditions: template.conditions,
-      actions: template.actions || [],
-    });
+  /** The id of the saved workflow; a new one is saved first as a draft that is switched off. */
+  const ensureSaved = async (): Promise<number | null> => {
+    if (savedId) return savedId;
+    return (await persist({ isActive: false }))?.workflow.id ?? null;
   };
 
-  const updateFormData = (updates: Partial<WorkflowFormData>) => {
-    setFormData((prev) => ({ ...prev, ...updates }));
-  };
-
-  const handleNext = () => {
-    if (currentStep < wizardSteps.length) {
-      setCurrentStep((prev) => prev + 1);
-      // Scroll to top when changing steps
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  };
-
-  const handleBack = () => {
-    if (currentStep > 1) {
-      setCurrentStep((prev) => prev - 1);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  };
-
-  const handleStepClick = (stepId: number) => {
-    if (stepId < currentStep) {
-      setCurrentStep(stepId);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  };
-
-  const handleSave = async (activate: boolean = false) => {
-    // Validate required fields
-    if (!formData.name.trim()) {
-      alert('Please enter a workflow name');
-      return;
-    }
-
-    if (formData.actions.length === 0) {
-      alert('Please add at least one action');
-      return;
-    }
-
+  const save = async () => {
     setSaving(true);
     try {
-      const workflowData = {
-        name: formData.name,
-        description: formData.description,
-        triggerType: formData.triggerType as any,
-        triggerData: formData.triggerConfig,
-        conditions: formData.conditions,
-        actions: formData.actions,
-        isActive: activate ? true : formData.isActive,
-      };
-
-      if (isEditMode && id) {
-        await workflowsService.updateWorkflow(id, workflowData);
-      } else {
-        await workflowsService.createWorkflow(workflowData);
+      const wasNew = routeId === null;
+      const saved = await persist();
+      if (!saved) return;
+      const w = saved.workflow;
+      say('Workflow saved');
+      if (form.catchUp && w.isActive && preview?.data && preview.data.count > 0) {
+        try {
+          const r = await workflowsService.runCatchUp(w.id);
+          say(`Catch-up started on ${r.queued.toLocaleString('en-GB')} ${r.queued === 1 ? 'order' : 'orders'}`);
+        } catch (e) {
+          say(apiErrorMessage(e, 'The catch-up could not start.'));
+        }
+        set({ catchUp: false });
       }
-
-      navigate('/workflows');
-    } catch (error) {
-      console.error('Error saving workflow:', error);
-      alert('Failed to save workflow. Please try again.');
+      const shown = saved.webhookToken ?? token;
+      if (wasNew) navigate(`/workflows/${w.id}`, { replace: true, state: shown ? { webhookToken: shown } : undefined });
     } finally {
       setSaving(false);
     }
   };
 
-  const canProceed = () => {
-    switch (currentStep) {
-      case 1:
-        return formData.name.trim().length > 0;
-      case 2:
-        return formData.triggerType.length > 0;
-      case 3:
-        return true; // Conditions are optional
-      case 4:
-        return formData.actions.length > 0;
-      case 5:
-        return true;
-      default:
-        return false;
+  const test = async (orderId?: number): Promise<TestRunResult | null> => {
+    const id = await ensureSaved();
+    if (id === null) return null;
+    try {
+      return await workflowsService.testRun(id, orderId);
+    } catch (e) {
+      say(apiErrorMessage(e, 'The test could not run.'));
+      return null;
     }
   };
 
-  if (loading) {
+  const regenerate = async () => {
+    if (!savedId) return;
+    try {
+      setToken(await workflowsService.regenerateToken(savedId));
+      setHasToken(true);
+      say('New token made. The old address stops working.');
+    } catch (e) {
+      say(apiErrorMessage(e, 'The token could not be regenerated.'));
+    }
+  };
+
+  /* ---- catch-up (F-512) ---- */
+  const catchEligible = isManager && (form.triggerType === 'order_created' || form.triggerType === 'status_change') && assignIndexes.length > 0;
+  const loadPreview = useCallback(async (id: number) => {
+    setPreview({ loading: true });
+    try {
+      setPreview({ data: await workflowsService.previewCatchUp(id) });
+    } catch (e) {
+      setPreview({ error: apiErrorMessage(e, 'The count could not load.') });
+    }
+  }, []);
+  // A saved workflow shows its count as soon as there is an "Assign to" action
+  useEffect(() => {
+    if (catchEligible && savedId && !loading) void loadPreview(savedId);
+    else if (!catchEligible) setPreview(null);
+  }, [catchEligible, savedId, loading, loadPreview]);
+
+  const toggleCatchUp = async (on: boolean) => {
+    set({ catchUp: on });
+    if (on && !savedId) {
+      const id = await ensureSaved();
+      if (id === null) set({ catchUp: false });
+    }
+  };
+
+  const catchUp = catchEligible ? (
+    <div className="catchup">
+      <label className="wfsw">
+        <input type="checkbox" role="switch" aria-label="Also assign orders that have no one yet" checked={form.catchUp} onChange={(e) => void toggleCatchUp(e.target.checked)} />
+        <i />
+      </label>
+      <span>
+        <b>Also assign orders that have no one yet</b>
+        <span className="hint" aria-live="polite">
+          {preview?.loading ? 'Counting…'
+            : preview?.error ? preview.error
+            : preview?.data ? `${preview.data.count.toLocaleString('en-GB')} ${preview.data.count === 1 ? 'order would' : 'orders would'} be assigned now${preview.data.capped ? ' (more are waiting)' : ''}.${dirty ? ' Counted on the saved version.' : ''}${form.catchUp && !form.isActive ? ' It runs when the workflow is on.' : ''}`
+            : 'Turn this on to count the orders it would assign now.'}
+        </span>
+      </span>
+    </div>
+  ) : null;
+
+  const stepErrors = [!!errors.name, !!errors.trigger, Object.keys(errors.conditions).length > 0, Object.keys(errors.actions).length > 0 || errors.general.length > 0, false];
+
+  if (loading) return <section className="wf" aria-busy="true" aria-label="Loading workflow"><Skeleton height={240} /></section>;
+  if (loadError) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
+      <section className="wf">
+        <div className="bbar"><Button onClick={() => navigate('/workflows')}><ArrowLeft />Workflows</Button></div>
+        <div className="card"><p style={{ padding: 20 }} role="alert">{loadError}</p></div>
+      </section>
     );
   }
 
+  const go = (i: number) => { setStep(Math.max(0, Math.min(STEPS.length - 1, i))); window.scrollTo(0, 0); };
+
   return (
-    <div className="max-w-5xl mx-auto pb-8">
-      {/* Header */}
-      <div className="mb-4">
-        <Button
-          variant="ghost"
-          onClick={() => navigate('/workflows')}
-          className="mb-4"
-        >
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Back to Workflows
-        </Button>
-        <h1 className="text-2xl font-bold text-gray-900">
-          {isEditMode ? 'Edit Workflow' : 'Create New Workflow'}
-        </h1>
+    <section className="wf">
+      <div className="bbar">
+        <Button onClick={() => navigate('/workflows')}><ArrowLeft />Workflows</Button>
+        <h1>{form.name.trim() || (savedId ? 'Workflow' : 'New workflow')}</h1>
+        <Tag tone={form.isActive ? 'ok' : 'n'}>{form.isActive ? 'Active' : 'Off'}</Tag>
+        <div className="sp" />
+        <Button onClick={() => go(4)}><FlaskConical />Test run</Button>
+        {canSave && <Button variant="primary" disabled={saving} onClick={() => void save()}><Check />Save workflow</Button>}
       </div>
 
-      {/* Progress Stepper */}
-      <WizardStepper
-        steps={wizardSteps}
-        currentStep={currentStep}
-        onStepClick={handleStepClick}
-      />
-
-      {/* Step Content */}
-      <div className="mt-8">
-        {currentStep === 1 && (
-          <BasicInfoStep
-            formData={formData}
-            onUpdate={updateFormData}
-          />
-        )}
-
-        {currentStep === 2 && (
-          <TriggerStep
-            formData={formData}
-            onUpdate={updateFormData}
-          />
-        )}
-
-        {currentStep === 3 && (
-          <ConditionsStep
-            formData={formData}
-            onUpdate={updateFormData}
-          />
-        )}
-
-        {currentStep === 4 && (
-          <ActionsStep
-            formData={formData}
-            onUpdate={updateFormData}
-          />
-        )}
-
-        {currentStep === 5 && (
-          <ReviewStep
-            formData={formData}
-            isEditMode={!!isEditMode}
-            workflowId={id}
-            onEdit={(stepId) => setCurrentStep(stepId)}
-            onSave={handleSave}
-            onBack={handleBack}
-            saving={saving}
-          />
-        )}
-      </div>
-
-      {/* Navigation Footer - Only show for steps 1-4 */}
-      {currentStep < 5 && (
-        <div className="mt-8 flex items-center justify-between border-t border-gray-200 pt-6">
-          <div>
-            {currentStep > 1 && (
-              <Button variant="ghost" onClick={handleBack}>
-                <ChevronLeft className="w-4 h-4 mr-2" />
-                Back
-              </Button>
-            )}
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              onClick={() => navigate('/workflows')}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              onClick={handleNext}
-              disabled={!canProceed()}
-            >
-              Next: {wizardSteps[currentStep]?.title || 'Continue'}
-              <ChevronRight className="w-4 h-4 ml-2" />
-            </Button>
+      <div className="card wiz">
+        <div className="steps" role="tablist" aria-label="Builder steps">
+          {STEPS.map((title, i) => (
+            <button key={title} type="button" role="tab" aria-selected={step === i} className={clsx('step', step === i && 'on', i < step && 'done')} onClick={() => go(i)}>
+              <span className="n">{i < step ? <Check size={14} /> : i + 1}</span>
+              <span className="t">{title}</span>
+              {stepErrors[i] && <span className="bad" aria-label="Has a problem">!</span>}
+            </button>
+          ))}
+        </div>
+        <div className="wbody pane" role="tabpanel">
+          {step === 0 && (
+            <>
+              <h2>Basic info</h2>
+              <p>Name the workflow so your team knows what it does.</p>
+              <div className="stack" style={{ maxWidth: 620 }}>
+                <Input label="Name" value={form.name} error={errors.name} onChange={(e) => set({ name: e.target.value })} />
+                <Area label="Description" value={form.description} onChange={(e) => set({ description: e.target.value })} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <label className="wfsw">
+                    <input type="checkbox" role="switch" aria-label="Active" checked={form.isActive} onChange={(e) => set({ isActive: e.target.checked })} />
+                    <i />
+                  </label>
+                  <div><b>Active</b><div className="hint" style={{ margin: 0 }}>Runs on every new match as soon as you save.</div></div>
+                </div>
+              </div>
+            </>
+          )}
+          {step === 1 && (
+            <TriggerStep
+              form={form} set={set} error={errors.trigger} token={token} hasToken={hasToken} saved={savedId !== null}
+              canRegenerate={isManager && can('workflows', 'update')} onRegenerate={regenerate}
+            />
+          )}
+          {step === 2 && <ConditionsStep form={form} set={set} errors={errors.conditions} />}
+          {step === 3 && <ActionsStep form={form} set={set} errors={errors.actions} reps={reps} agents={agents} nameOf={nameOf} catchUp={catchUp} />}
+          {step === 4 && (
+            <ReviewStep
+              form={form} nameOf={nameOf} general={errors.general} dirty={dirty} saved={savedId !== null} canTest={canTest} onTest={test}
+            />
+          )}
+          <div className="wfoot">
+            <Button style={{ visibility: step === 0 ? 'hidden' : undefined }} onClick={() => go(step - 1)}><ArrowLeft />Back</Button>
+            <Button variant="primary" style={{ visibility: step === STEPS.length - 1 ? 'hidden' : undefined }} onClick={() => go(step + 1)}>Continue<ArrowRight /></Button>
           </div>
         </div>
-      )}
-    </div>
+      </div>
+    </section>
   );
-};
+}
