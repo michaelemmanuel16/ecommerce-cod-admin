@@ -31,6 +31,9 @@ export interface NavItem {
 export const MANAGER_UP = ['super_admin', 'admin', 'manager'];
 export const isManagerUp = (role: string): boolean => MANAGER_UP.includes(role);
 
+/** Admin and super admin: the owner roles. */
+export const isOwnerRole = (role: string): boolean => ['admin', 'super_admin'].includes(role);
+
 export interface NavGroup {
   label?: string;
   items: NavItem[];

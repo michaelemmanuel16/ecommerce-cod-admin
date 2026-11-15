@@ -5,7 +5,8 @@ import { BlockError } from '../dashboard/blocks/Frame';
 import { Select, Skeleton, Tile, type TagTone, type TileTone } from '../../components/ui-v2';
 import { messagesService } from '../../services/messages.service';
 import { rangeLabel } from '../reports/format';
-import { CHANNEL_LABEL, countText, rateText } from './format';
+import { formatNumber } from '../../utils/format';
+import { CHANNEL_LABEL, rateText } from './format';
 import { datesFor, RANGES, type RangeKey } from './range';
 import { useLoad } from './useLoad';
 import type { Channel, Figures, LogStatus } from './types';
@@ -65,7 +66,7 @@ export function OverviewTab({ logHref }: Props) {
             const rate = t.rate ? f[t.rate.key] as number | null : undefined;
             return (
               <Tile
-                key={t.figure} tone={t.tone} icon={<t.icon />} value={countText(f[t.figure])} label={t.label}
+                key={t.figure} tone={t.tone} icon={<t.icon />} value={formatNumber(f[t.figure])} label={t.label}
                 footer={(
                   <>
                     <span>{t.rate ? <>{rateText(rate)} {t.rate.text}</> : 'Left the system'}</span>
@@ -78,7 +79,7 @@ export function OverviewTab({ logHref }: Props) {
         </div>
       )}
       {f && f.skipped > 0 && (
-        <p className="hint">{countText(f.skipped)} {f.skipped === 1 ? 'message was' : 'messages were'} not sent (opted out or no number). They are in no tile above.</p>
+        <p className="hint">{formatNumber(f.skipped)} {f.skipped === 1 ? 'message was' : 'messages were'} not sent (opted out or no number). They are in no tile above.</p>
       )}
     </div>
   );

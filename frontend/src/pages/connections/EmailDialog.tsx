@@ -4,6 +4,7 @@ import { adminService, type SystemConfig } from '../../services/admin.service';
 import { connectionsService } from '../../services/connections.service';
 import { useAuthStore } from '../../stores/authStore';
 import { apiErrorMessage } from '../../utils/apiError';
+import { useDialogForm } from './useDialogForm';
 
 interface Props {
   open: boolean;
@@ -29,14 +30,11 @@ export function EmailDialog({ open, config, onClose, onSaved }: Props) {
   const [port, setPort] = useState('587');
   const [secure, setSecure] = useState(false);
   const [user, setUser] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [testNote, setTestNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const { saving, setSaving, testing, setTesting, error, setError, testNote, setTestNote } = useDialogForm(open, config);
 
   useEffect(() => {
     if (!open) return;
-    const p = config?.emailProvider as (SystemConfig['emailProvider'] & { smtpHost?: string; smtpPort?: number; smtpSecure?: boolean; smtpUser?: string }) | undefined;
+    const p = config?.emailProvider;
     setProvider((p?.provider as Provider) || 'sendgrid');
     setApiKey(p?.apiKey ?? '');
     setFromEmail(p?.fromEmail ?? '');
@@ -45,8 +43,6 @@ export function EmailDialog({ open, config, onClose, onSaved }: Props) {
     setPort(String(p?.smtpPort ?? 587));
     setSecure(!!p?.smtpSecure);
     setUser(p?.smtpUser ?? '');
-    setError(null);
-    setTestNote(null);
   }, [open, config]);
 
   const smtp = provider === 'smtp';

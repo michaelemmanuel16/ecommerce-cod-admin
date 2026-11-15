@@ -3,6 +3,7 @@ import { Play } from 'lucide-react';
 import { Button, Modal, useToast } from '../../components/ui-v2';
 import { workflowsService, type Workflow } from '../../services/workflows.service';
 import { apiErrorMessage } from '../../utils/apiError';
+import { formatNumber } from '../../utils/format';
 import { parseOrderNumber } from '../../utils/orderNumber';
 
 interface RunDialogProps {
@@ -14,7 +15,7 @@ interface RunDialogProps {
   onStarted?: () => void;
 }
 
-const count = (n: number) => `${n.toLocaleString('en-GB')} ${n === 1 ? 'order' : 'orders'}`;
+const count = (n: number) => `${formatNumber(n)} ${n === 1 ? 'order' : 'orders'}`;
 
 /** Order numbers as typed ("#24117, 24118") to ids; the first word that is not an order number comes back as `bad`. */
 function readOrderNumbers(text: string): { ids: number[]; bad: string | null } {
@@ -130,7 +131,7 @@ export function RunDialog({ onClose, workflow, orderIds, onStarted }: RunDialogP
         )}
         {already !== null && (
           <p className="warn" role="alert">
-            {already === total ? `All ${count(already)} already ran` : `${already.toLocaleString('en-GB')} of the ${count(total)} already ran`} this workflow. Run again anyway?
+            {already === total ? `All ${count(already)} already ran` : `${formatNumber(already)} of the ${count(total)} already ran`} this workflow. Run again anyway?
           </p>
         )}
         {error && <p className="ferr" role="alert">{error}</p>}

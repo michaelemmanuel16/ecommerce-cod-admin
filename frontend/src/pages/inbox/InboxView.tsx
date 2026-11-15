@@ -4,6 +4,7 @@ import { BellRing, CheckCheck, CheckCircle2, Inbox as InboxIcon, Moon, Settings2
 import clsx from 'clsx';
 import { Button, EmptyState, Skeleton, Tag, useToast } from '../../components/ui-v2';
 import { inboxService, type InboxItem, type InboxStatus, type InboxSubject, type InboxView as ViewId } from '../../services/inbox.service';
+import { isOwnerRole } from '../../components/shell/navModel';
 import { useAuthStore } from '../../stores/authStore';
 import { useInboxStore } from '../../stores/inboxStore';
 import { apiErrorMessage } from '../../utils/apiError';
@@ -29,7 +30,6 @@ interface Props {
 }
 
 type Pick = ViewId | 'snoozed' | 'done';
-const OWNER_ROLES = ['admin', 'super_admin'];
 
 /** The Inbox (M9-T37) for the admin app and the rep app: the same feed API, the same rows, the same actions. */
 export function InboxView({ title, subtitle, views, linkFor, compact, settingsHref }: Props) {
@@ -44,7 +44,7 @@ export function InboxView({ title, subtitle, views, linkFor, compact, settingsHr
 
   const status: InboxStatus = pick === 'snoozed' ? 'snoozed' : pick === 'done' ? 'done' : 'open';
   const view: ViewId = pick === 'snoozed' || pick === 'done' ? 'all' : pick;
-  const isOwner = OWNER_ROLES.includes(role);
+  const isOwner = isOwnerRole(role);
   const effectiveScope = isOwner ? scope : 'mine';
   const writable = effectiveScope === 'mine';
   const feed = useInboxFeed({ view, status, scope: effectiveScope });

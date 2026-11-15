@@ -55,6 +55,12 @@ export const formatDate = (date: string | Date, formatStr: string = 'MMM dd, yyy
 /** Today as YYYY-MM-DD in the viewer's own zone (toISOString is UTC and gives tomorrow after 23:00 in Lagos). */
 export const todayYmd = (now: Date = new Date()): string => format(now, 'yyyy-MM-dd');
 
+/** "14 Oct, 09:42": day, short month and 24-hour time, for a log row, a bubble time or an activity line. */
+export function formatStamp(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getDate()} ${d.toLocaleString('en-GB', { month: 'short' })}, ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 export const formatDateTime = (date: string | Date): string => {
   return format(new Date(date), 'MMM dd, yyyy HH:mm');
 };

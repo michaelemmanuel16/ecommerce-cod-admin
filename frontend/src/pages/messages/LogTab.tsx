@@ -2,16 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Search, List } from 'lucide-react';
 import { BlockError } from '../dashboard/blocks/Frame';
-import { EmptyState, Pagination, Select, Skeleton, Table, Tag, type TagTone } from '../../components/ui-v2';
+import { EmptyState, Pagination, Select, Skeleton, Table, Tag } from '../../components/ui-v2';
 import { messagesService } from '../../services/messages.service';
-import { CHANNEL_LABEL, STATUS_LABEL, stamp } from './format';
+import { formatStamp } from '../../utils/format';
+import { CHANNEL_LABEL, STATUS_LABEL, STATUS_TONE } from './format';
 import { datesFor, isLogRangeKey, LOG_RANGES, type LogRangeKey } from './range';
 import { useLoad } from './useLoad';
 import type { Channel, LogRow, LogStatus } from './types';
 
 const PAGE = 50;
 const STATUSES: LogStatus[] = ['sent', 'delivered', 'read', 'replied', 'failed', 'skipped', 'pending'];
-const TONE: Record<string, TagTone> = { delivered: 'ok', read: 'ok', replied: 'v', failed: 'bad', pending: 'warn', sent: 'n', skipped: 'n' };
 const isStatus = (v: string | null): v is LogStatus => STATUSES.includes(v as LogStatus);
 const isChannel = (v: string | null): v is Channel => v === 'whatsapp' || v === 'sms' || v === 'email';
 
@@ -86,7 +86,7 @@ export function LogTab() {
           <Table<LogRow>
             label="Message log" className="otab" rowKey={(r) => r.id} rows={data.data.items}
             columns={[
-              { key: 'at', header: 'Date', render: (r) => stamp(r.at) },
+              { key: 'at', header: 'Date', render: (r) => formatStamp(r.at) },
               { key: 'channel', header: 'Channel', render: (r) => CHANNEL_LABEL[r.channel] },
               {
                 key: 'to', header: 'Customer',
@@ -100,7 +100,7 @@ export function LogTab() {
               { key: 'tpl', header: 'Template', render: (r) => r.templateName ?? '-' },
               {
                 key: 'status', header: 'Status',
-                render: (r) => <><Tag tone={TONE[r.status] ?? 'n'}>{STATUS_LABEL[r.status]}</Tag>{r.status === 'failed' && r.errorMessage && <span className="pct">{r.errorMessage}</span>}</>,
+                render: (r) => <><Tag tone={STATUS_TONE[r.status] ?? 'n'}>{STATUS_LABEL[r.status]}</Tag>{r.status === 'failed' && r.errorMessage && <span className="pct">{r.errorMessage}</span>}</>,
               },
               { key: 'order', header: 'Order', render: (r) => (r.order ? <Link className="lnk" to={`/orders/${r.order.id}`}>#{r.order.id}</Link> : '-') },
             ]}

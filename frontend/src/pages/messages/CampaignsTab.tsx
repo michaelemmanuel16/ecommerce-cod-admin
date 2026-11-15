@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Megaphone } from 'lucide-react';
 import { Button, EmptyState, Skeleton, Table, Tag, type TagTone } from '../../components/ui-v2';
 import { communicationService, type EmailCampaign } from '../../services/communication.service';
-import { countText, stamp } from './format';
+import { formatNumber, formatStamp } from '../../utils/format';
 
 const STATUS: Record<EmailCampaign['status'], { label: string; tone: TagTone }> = {
   queued: { label: 'Queued', tone: 'n' },
@@ -46,13 +46,13 @@ export function CampaignsTab() {
         columns={[
           { key: 'name', header: 'Campaign', render: (c) => <><b>{c.title}</b><span className="pct">{c.subject}</span></> },
           { key: 'status', header: 'Status', render: (c) => <Tag tone={STATUS[c.status].tone}>{STATUS[c.status].label}</Tag> },
-          { key: 'date', header: 'Date', render: (c) => stamp(c.createdAt) },
-          { key: 'audience', header: 'Audience', right: true, render: (c) => countText(c.stats.audienceTotal) },
-          { key: 'sent', header: 'Sent', right: true, render: (c) => countText(c.stats.sent) },
-          { key: 'delivered', header: 'Delivered', right: true, render: (c) => countText(c.stats.delivered) },
-          { key: 'failed', header: 'Failed', right: true, render: (c) => countText(c.stats.failed) },
+          { key: 'date', header: 'Date', render: (c) => formatStamp(c.createdAt) },
+          { key: 'audience', header: 'Audience', right: true, render: (c) => formatNumber(c.stats.audienceTotal) },
+          { key: 'sent', header: 'Sent', right: true, render: (c) => formatNumber(c.stats.sent) },
+          { key: 'delivered', header: 'Delivered', right: true, render: (c) => formatNumber(c.stats.delivered) },
+          { key: 'failed', header: 'Failed', right: true, render: (c) => formatNumber(c.stats.failed) },
           // no address and opted out are skips, never failures
-          { key: 'skipped', header: 'Skipped', right: true, render: (c) => <span title={`${c.stats.noEmail} no address, ${c.stats.optedOut} opted out`}>{countText(c.stats.noEmail + c.stats.optedOut + c.stats.skipped)}</span> },
+          { key: 'skipped', header: 'Skipped', right: true, render: (c) => <span title={`${c.stats.noEmail} no address, ${c.stats.optedOut} opted out`}>{formatNumber(c.stats.noEmail + c.stats.optedOut + c.stats.skipped)}</span> },
         ]}
       />
     </div>
