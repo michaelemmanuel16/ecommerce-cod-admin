@@ -265,31 +265,37 @@ async function loadOrderCustomer(orderId: number, actor: Actor) {
   return { orderId: order.id, customer: order.customer, phone: conversationPhone(order.customer.phoneNumber) };
 }
 
-/** The WhatsApp conversation of this phone, found under any stored form of the number. A conversation with no customer is linked to the order's customer, so the rep may open it. */
-async function findOrderConversation(tenantId: string, phone: string, customerId: number) {
-  const found = await prisma.conversation.findFirst({ where: { tenantId, channel: MessageChannel.whatsapp, phone: { in: [phone, ...phoneForms(phone)] } } });
-  if (found && !found.customerId) return prisma.conversation.update({ where: { id: found.id }, data: { customerId } });
-  return found;
+/** The WhatsApp conversation of this phone, found under any stored form of the number. Read only: it never links a customer. */
+const findOrderConversation = (tenantId: string, phone: string) =>
+  prisma.conversation.findFirst({ where: { tenantId, channel: MessageChannel.whatsapp, phone: { in: [phone, ...phoneForms(phone)] } } });
+
+/** Can this actor open the conversation? (a rep: only A or B, see visibilityWhere) */
+async function canOpen(id: number, actor: Actor): Promise<boolean> {
+  return !!(await prisma.conversation.findFirst({ where: { AND: [{ id }, visibilityWhere(actor)] }, select: { id: true } }));
 }
 
-/** GET /api/conversations/for-order/:orderId: the conversation to open from a rep's WhatsApp button (null id: none yet, the first send starts it). */
+/** GET /api/conversations/for-order/:orderId: the conversation to open from a rep's WhatsApp button (null id: none yet, the first send starts it). `blocked`: a chat for this number exists but the actor may not open it. Never writes. */
 export async function conversationForOrder(orderId: number, actor: Actor) {
   const { customer, phone } = await loadOrderCustomer(orderId, actor);
-  const found = await findOrderConversation(actor.tenantId, phone, customer.id);
+  const found = await findOrderConversation(actor.tenantId, phone);
+  const open = found && await canOpen(found.id, actor) ? found : null;
   return {
-    conversationId: found?.id ?? null,
+    conversationId: open?.id ?? null,
+    ...(found && !open ? { blocked: true } : {}),
     orderId,
     phone,
     customerName: `${customer.firstName} ${customer.lastName}`.trim(),
-    windowOpen: windowOpen(found?.lastInboundAt ?? null),
+    windowOpen: windowOpen(open?.lastInboundAt ?? null),
   };
 }
 
-/** POST /api/conversations/start: the first message to an order's customer. Creates the thread, then sends like a reply (a new thread has no 24 hour window, so it needs an approved template). */
+const NOT_VISIBLE = () => new AppError('A chat with this number already exists. Ask a manager to link it to this customer.', 409, 'CONVERSATION_NOT_VISIBLE');
+
+/** POST /api/conversations/start: the first message to an order's customer. Creates the thread, then sends like a reply (a new thread has no 24 hour window, so it needs an approved template). A rep never gets a thread they cannot open (409) and never links one; a manager links an unlinked thread to the order's customer. */
 export async function startOrderConversation(actor: Actor, input: ReplyInput & { orderId: number }) {
   const { orderId, ...reply } = input;
   const { customer, phone } = await loadOrderCustomer(orderId, actor);
-  let conversation = await findOrderConversation(actor.tenantId, phone, customer.id);
+  let conversation = await findOrderConversation(actor.tenantId, phone);
   if (!conversation) {
     try {
       conversation = await prisma.conversation.create({ data: { tenantId: actor.tenantId, channel: MessageChannel.whatsapp, phone, customerId: customer.id, lastMessageAt: new Date() } });
@@ -297,6 +303,10 @@ export async function startOrderConversation(actor: Actor, input: ReplyInput & {
       if (err?.code !== 'P2002') throw err;
       conversation = await prisma.conversation.findFirstOrThrow({ where: { tenantId: actor.tenantId, channel: MessageChannel.whatsapp, phone } });
     }
+  }
+  if (!await canOpen(conversation.id, actor)) throw NOT_VISIBLE();
+  if (isManagerUp(actor) && !conversation.customerId) {
+    conversation = await prisma.conversation.update({ where: { id: conversation.id }, data: { customerId: customer.id } });
   }
   const sent = await replyToConversation(conversation.id, actor, reply);
   return { conversationId: conversation.id, ...sent };

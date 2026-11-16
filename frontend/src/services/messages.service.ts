@@ -12,7 +12,7 @@ export interface ConversationQuery {
   cursor?: string;
 }
 
-export interface OrderChat { conversationId: number | null; orderId: number; phone: string; customerName: string; windowOpen: boolean }
+export interface OrderChat { conversationId: number | null; orderId: number; phone: string; customerName: string; windowOpen: boolean; blocked?: boolean }
 
 export interface MessageFilters {
   channel?: Channel;

@@ -104,12 +104,54 @@ describe('open a chat from an order (the rep WhatsApp button)', () => {
     expect(res.status).toBe(422);
   });
 
-  it('for-order finds an existing conversation under the same phone and links its customer', async () => {
+  const customerPhone = async () => {
     const customer = await prismaBase.customer.findUniqueOrThrow({ where: { id: pair.a.ids.customer } });
-    const existing = await mkConv({ phone: customer.phoneNumber.startsWith('+') ? customer.phoneNumber : `+${customer.phoneNumber.replace(/\D/g, '')}`, lastInboundAt: new Date() });
+    return customer.phoneNumber.startsWith('+') ? customer.phoneNumber : `+${customer.phoneNumber.replace(/\D/g, '')}`;
+  };
+
+  it('for-order finds a conversation under the same phone when the rep may open it (customer linked)', async () => {
+    const existing = await mkConv({ phone: await customerPhone(), customerId: pair.a.ids.customer, lastInboundAt: new Date() });
     const res = await get(rep().token, `/api/conversations/for-order/${pair.a.ids.order}`);
     expect(res.body).toMatchObject({ conversationId: existing.id, windowOpen: true });
+    expect(res.body.blocked).toBeUndefined();
     expect((await get(rep().token, `/api/conversations/${existing.id}/messages`)).status).toBe(200);
+  });
+
+  it('for-order for a rep with an unlinked conversation on the phone: no id, blocked, and nothing is linked', async () => {
+    const existing = await mkConv({ phone: await customerPhone(), lastInboundAt: new Date() });
+    const res = await get(rep().token, `/api/conversations/for-order/${pair.a.ids.order}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ conversationId: null, blocked: true, windowOpen: false });
+    expect((await prismaBase.conversation.findUniqueOrThrow({ where: { id: existing.id } })).customerId).toBeNull();
+    expect((await get(rep().token, `/api/conversations/${existing.id}/messages`)).status).toBe(404);
+  });
+
+  it('start for a rep with an unlinked conversation on the phone: 409, no new conversation, nothing linked, nothing sent', async () => {
+    const existing = await mkConv({ phone: await customerPhone() });
+    const before = await prismaBase.conversation.count({ where: { tenantId: pair.a.id } });
+    const res = await request(app).post('/api/conversations/start').set(bearer(rep().token)).send({ orderId: pair.a.ids.order, templateId });
+    expect(res.status).toBe(409);
+    expect(res.body.code ?? res.body.error?.code).toBe('CONVERSATION_NOT_VISIBLE');
+    expect(await prismaBase.conversation.count({ where: { tenantId: pair.a.id } })).toBe(before);
+    expect((await prismaBase.conversation.findUniqueOrThrow({ where: { id: existing.id } })).customerId).toBeNull();
+    expect(whatsappCloudProvider.send).not.toHaveBeenCalled();
+  });
+
+  it('a manager GET for-order does not write; the manager start links the unlinked conversation', async () => {
+    const existing = await mkConv({ phone: await customerPhone(), lastInboundAt: new Date() });
+    const res = await get(owner().token, `/api/conversations/for-order/${pair.a.ids.order}`);
+    expect(res.body).toMatchObject({ conversationId: existing.id, windowOpen: true });
+    expect(res.body.blocked).toBeUndefined();
+    expect((await prismaBase.conversation.findUniqueOrThrow({ where: { id: existing.id } })).customerId).toBeNull();
+    const sent = await request(app).post('/api/conversations/start').set(bearer(owner().token)).send({ orderId: pair.a.ids.order, body: 'Hi' });
+    expect(sent.status).toBe(201);
+    expect((await prismaBase.conversation.findUniqueOrThrow({ where: { id: existing.id } })).customerId).toBe(pair.a.ids.customer);
+  });
+
+  it('a malformed order id is 400 INVALID_ORDER_ID', async () => {
+    const res = await get(rep().token, '/api/conversations/for-order/abc');
+    expect(res.status).toBe(400);
+    expect(res.body.code ?? res.body.error?.code).toBe('INVALID_ORDER_ID');
   });
 
   it('an order that is not theirs is 404 for for-order and start; a manager may open any', async () => {

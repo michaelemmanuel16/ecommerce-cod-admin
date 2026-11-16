@@ -16,6 +16,7 @@ import { formatOrderNumber } from '../../utils/orderNumber';
 import type { ConversationRow } from '../../pages/messages/types';
 
 export const WHATSAPP_OFF_HINT = 'WhatsApp is not connected';
+export const CHAT_BLOCKED_HINT = 'A chat with this number already exists. Ask a manager to link it to this customer.';
 
 type Target = { orderId: number } | { conversationId: number } | { notes: InboxSubject };
 
@@ -49,10 +50,12 @@ function EmptyChat({ chat, disabledHint, onStarted }: { chat: OrderChat; disable
         </div>
       </div>
       <div className="msgs" aria-label="Conversation messages">
-        <EmptyState icon={<MessageCircle />} title="No messages yet" text="Send an approved template to start this chat. When the customer answers, you can type freely for 24 hours." />
+        {chat.blocked
+          ? <EmptyState icon={<MessageCircle />} title="Chat not available" text={CHAT_BLOCKED_HINT} />
+          : <EmptyState icon={<MessageCircle />} title="No messages yet" text="Send an approved template to start this chat. When the customer answers, you can type freely for 24 hours." />}
       </div>
       <ReplyBox
-        conversationId={0} windowOpen={false} onSent={() => undefined} disabledHint={disabledHint}
+        conversationId={0} windowOpen={false} onSent={() => undefined} disabledHint={chat.blocked ? 'You cannot reply to this chat' : disabledHint}
         send={async (payload) => { onStarted(await messagesService.start(chat.orderId, payload)); }}
       />
     </>
@@ -71,7 +74,7 @@ function useSubjectName(subject: InboxSubject): string | null {
   useEffect(() => {
     let live = true;
     setName(null);
-    const set = (n: unknown) => { if (live && typeof n === 'string' && n.trim() && !/undefined|null/.test(n)) setName(n.trim()); };
+    const set = (n: unknown) => { if (live && typeof n === 'string' && !['', 'undefined', 'null'].includes(n.trim())) setName(n.trim()); };
     if (type === 'product') productsService.detail(id).then((p) => set(p?.name), () => undefined);
     else if (type === 'customer') customersService.getCustomerById(id).then((c) => set(c ? `${c.firstName ?? ''} ${c.lastName ?? ''}` : null), () => undefined);
     return () => { live = false; };
