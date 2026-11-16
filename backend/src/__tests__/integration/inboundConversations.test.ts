@@ -149,6 +149,30 @@ describe('inbound WhatsApp conversations', () => {
     expect(await notifications(conv.id)).toBe(before);
   });
 
+  it('NO on an order with no rep needs a person: unanswered and a notification (T51)', async () => {
+    const conv = (await convOf(phone))!;
+    await prismaBase.conversation.update({ where: { id: conv.id }, data: { unanswered: false, status: 'done' } });
+    const order = await makeOrder({ tenantId: tenantA, customerId, status: 'pending_confirmation', paymentMethod: 'cod', orderType: 'physical' } as any);
+    await prismaBase.order.update({ where: { id: order.id }, data: { autoConfirmSentAt: new Date(), customerRepId: null } });
+    const before = await notifications(conv.id);
+    await post(phone, 'NO');
+    expect(await prismaBase.order.findUniqueOrThrow({ where: { id: order.id } })).toMatchObject({ saidNo: true, requiresManualCall: true, customerResponse: 'no' });
+    expect(await convOf(phone)).toMatchObject({ unanswered: true, status: 'open' });
+    expect(await notifications(conv.id)).toBeGreaterThan(before);
+  });
+
+  it('NO on an order that has a rep keeps today: the rep queue shows it, so no unanswered and no notification (T51)', async () => {
+    const conv = (await convOf(phone))!;
+    await prismaBase.conversation.update({ where: { id: conv.id }, data: { unanswered: false, status: 'done' } });
+    const order = await makeOrder({ tenantId: tenantA, customerId, status: 'pending_confirmation', paymentMethod: 'cod', orderType: 'physical' } as any);
+    await prismaBase.order.update({ where: { id: order.id }, data: { autoConfirmSentAt: new Date(), customerRepId: pair.a.users.salesRep.id } });
+    const before = await notifications(conv.id);
+    await post(phone, 'NO');
+    expect((await prismaBase.order.findUniqueOrThrow({ where: { id: order.id } })).saidNo).toBe(true);
+    expect(await convOf(phone)).toMatchObject({ unanswered: false, status: 'open' });
+    expect(await notifications(conv.id)).toBe(before);
+  });
+
   it('STOP sets the opt-out and writes an OptOutEvent; no reply, no notification; START re-subscribes', async () => {
     const conv = (await convOf(phone))!;
     const before = await notifications(conv.id);
