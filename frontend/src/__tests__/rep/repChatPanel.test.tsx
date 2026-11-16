@@ -3,10 +3,11 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { ToastProvider } from '../../components/ui-v2';
-import { RepChatProvider } from '../../components/rep/RepChatPanel';
+import { RepChatProvider, useRepChat } from '../../components/rep/RepChatPanel';
 import { WhatsAppButton } from '../../components/rep/WhatsAppButton';
 import { resetWhatsappConnected } from '../../hooks/useWhatsappConnected';
 import { messagesService } from '../../services/messages.service';
+import { customersService } from '../../services/customers.service';
 import { useAuthStore } from '../../stores/authStore';
 
 vi.mock('../../services/messages.service', () => ({
@@ -15,6 +16,8 @@ vi.mock('../../services/messages.service', () => ({
     approvedTemplates: vi.fn(), whatsappConnected: vi.fn(), reply: vi.fn(), update: vi.fn(), assignees: vi.fn(),
   },
 }));
+vi.mock('../../services/customers.service', () => ({ customersService: { getCustomerById: vi.fn() } }));
+vi.mock('../../pages/inbox/ThreadPanel', () => ({ ThreadPanel: () => null }));
 const svc = vi.mocked(messagesService);
 
 const ROW = {
@@ -87,5 +90,38 @@ describe('Rep chat panel', () => {
     renderButton();
     await userEvent.click(screen.getByRole('button', { name: 'WhatsApp Abena' }));
     expect(await screen.findByText('This chat is not available')).toBeInTheDocument();
+  });
+
+  it('a blocked chat shows the manager message and a disabled reply box', async () => {
+    svc.forOrder.mockResolvedValue({ conversationId: null, blocked: true, orderId: 12, phone: '+233245550103', customerName: 'Abena Owusu', windowOpen: false });
+    renderButton();
+    await userEvent.click(screen.getByRole('button', { name: 'WhatsApp Abena' }));
+    const panel = await screen.findByTestId('rep-chat-panel');
+    expect(await within(panel).findByText('A chat with this number already exists. Ask a manager to link it to this customer.')).toBeInTheDocument();
+    expect(within(panel).getByLabelText('Reply')).toBeDisabled();
+    expect(svc.start).not.toHaveBeenCalled();
+  });
+});
+
+describe('Team notes title', () => {
+  const NotesButton = () => { const { openNotes } = useRepChat(); return <button onClick={() => openNotes({ type: 'customer', id: 5 })}>notes</button>; };
+  const open = async () => {
+    render(<MemoryRouter><ToastProvider><RepChatProvider><NotesButton /></RepChatProvider></ToastProvider></MemoryRouter>);
+    await userEvent.click(screen.getByRole('button', { name: 'notes' }));
+    return screen.findByTestId('rep-notes-panel');
+  };
+
+  it('keeps a real name that contains "null"', async () => {
+    vi.mocked(customersService.getCustomerById).mockResolvedValue({ firstName: 'Null', lastName: 'Anderson' } as never);
+    const panel = await open();
+    expect(await within(panel).findByText(/Null Anderson/)).toBeInTheDocument();
+  });
+
+  it('falls back to the numbered label for a name built from missing parts', async () => {
+    vi.mocked(customersService.getCustomerById).mockResolvedValue({} as never);
+    const panel = await open();
+    await waitFor(() => expect(customersService.getCustomerById).toHaveBeenCalled());
+    expect(within(panel).getByText(/Customer/)).toBeInTheDocument();
+    expect(within(panel).queryByText(/Null Anderson/)).not.toBeInTheDocument();
   });
 });

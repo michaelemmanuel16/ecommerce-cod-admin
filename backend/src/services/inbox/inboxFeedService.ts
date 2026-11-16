@@ -4,6 +4,7 @@ import { AppError } from '../../middleware/errorHandler';
 import { customerScope, orderScope, Requester } from '../../utils/authUtils';
 import { isOwnerRole } from './inboxEvents';
 import { repConversationWhere } from '../messaging/conversationScope';
+import { getTenantId } from '../../utils/tenantContext';
 
 /** Inbox feed (M9-T17): views, status, cursor paging, read, done, snooze, mark all and counts. Every read is from the database. */
 
@@ -73,10 +74,12 @@ export async function repVisibleFilter(userId: number): Promise<Where> {
   });
   const idsOf = (type: string) => pairs.filter((p) => p.subjectType === type).map((p) => p.subjectId as number);
   const cScope = customerScope({ id: userId, role: 'sales_rep' } as Requester);
+  // Explicit tenant on the follow-up lookups (the tenant extension injects it too; this keeps the filter safe on its own)
+  const tenant = getTenantId() ? { tenantId: getTenantId() as string } : {};
   const [orders, conversations, customers] = await Promise.all([
-    idsOf('order').length ? prisma.order.findMany({ where: { id: { in: idsOf('order') }, customerRepId: userId }, select: { id: true } }) : [],
-    idsOf('conversation').length ? prisma.conversation.findMany({ where: { id: { in: idsOf('conversation') }, ...repConversationWhere(userId) }, select: { id: true } }) : [],
-    idsOf('customer').length ? prisma.customer.findMany({ where: { id: { in: idsOf('customer') }, AND: [cScope!] }, select: { id: true } }) : [],
+    idsOf('order').length ? prisma.order.findMany({ where: { id: { in: idsOf('order') }, customerRepId: userId, ...tenant }, select: { id: true } }) : [],
+    idsOf('conversation').length ? prisma.conversation.findMany({ where: { id: { in: idsOf('conversation') }, ...repConversationWhere(userId), ...tenant }, select: { id: true } }) : [],
+    idsOf('customer').length ? prisma.customer.findMany({ where: { id: { in: idsOf('customer') }, AND: [cScope!], ...tenant }, select: { id: true } }) : [],
   ]);
   const ownOrder: Where = { subjectType: 'order', subjectId: { in: orders.map((o) => o.id) } };
   const ownCustomer: Where = { subjectType: 'customer', subjectId: { in: customers.map((c) => c.id) } };
@@ -257,7 +260,7 @@ export async function getCounts(userId: number, now = new Date()): Promise<Inbox
     OR: [{ snoozedUntil: null }, { snoozedUntil: { lte: now } }, { kind: 'alert' }],
   };
   const hide = await roleFilter(userId);
-  if (hide) unreadOpen.AND = [hide];
+  if (hide) unreadOpen.AND = [...(Array.isArray(unreadOpen.AND) ? unreadOpen.AND : unreadOpen.AND ? [unreadOpen.AND] : []), hide];
   const [byKind, assignedFilter] = await Promise.all([
     prisma.notification.groupBy({ by: ['kind'], where: unreadOpen, _count: { _all: true } }),
     assignedSubjectFilter(userId),

@@ -44,7 +44,7 @@ export const patch = async (req: AuthRequest, res: Response): Promise<void> => {
 /** GET /api/conversations/for-order/:orderId */
 export const forOrder = async (req: AuthRequest, res: Response): Promise<void> => {
   const orderId = Number(req.params.orderId);
-  if (!Number.isInteger(orderId) || orderId <= 0) throw new AppError('Order not found', 404, 'ORDER_NOT_FOUND');
+  if (!Number.isInteger(orderId) || orderId <= 0) throw new AppError('Invalid order ID', 400, 'INVALID_ORDER_ID');
   res.json(await conversations.conversationForOrder(orderId, actorOf(req)));
 };
 
