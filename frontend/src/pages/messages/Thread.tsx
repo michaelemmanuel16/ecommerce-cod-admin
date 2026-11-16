@@ -7,6 +7,7 @@ import { apiMessage } from '../orders/importText';
 import { formatStamp } from '../../utils/format';
 import { CHANNEL_LABEL, STATUS_LABEL, initials } from './format';
 import { ReplyBox } from './ReplyBox';
+import { renderWhatsAppText } from './whatsappText';
 import { useLoad } from './useLoad';
 import type { Assignee, ConversationRow, MessageStatus, ThreadMessage } from './types';
 
@@ -30,7 +31,7 @@ function Bubble({ m, quoted }: { m: ThreadMessage; quoted: ThreadMessage | undef
   return (
     <div className={out ? 'b out' : 'b in'}>
       {quoted && <div className="quote"><CornerUpLeft />Replying to: {quoted.messageBody.slice(0, 80)}</div>}
-      <div className="bub">{m.messageBody}</div>
+      <div className="bub">{renderWhatsAppText(m.messageBody)}</div>
       <div className="mst-row">
         <span className="mst-time">{formatStamp(m.createdAt)}</span>
         {out && <span className={`mst ${m.status}`}><Icon />{STATUS_LABEL[m.status]}</span>}
