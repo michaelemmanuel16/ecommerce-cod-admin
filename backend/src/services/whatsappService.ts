@@ -172,30 +172,13 @@ export async function sendWhatsAppForOrder(
     bodyParams.push(customLink);
   }
 
-  try {
-    return await whatsappService.sendTemplate({
-      to: orderContext.customerPhone,
-      templateName: templateConfig.templateName,
-      bodyParams,
-      orderId: order.id,
-      customerId: orderContext.customerId,
-    });
-  } catch (error: any) {
-    // Auto-fallback to SMS when WhatsApp fails
-    logger.warn('WhatsApp send failed, attempting SMS fallback', {
-      orderId, templateKey, error: error.message,
-    });
-
-    try {
-      const { sendSmsForOrder } = await import('./smsService');
-      const smsResult = await sendSmsForOrder(templateKey, orderId, error.messageLogId);
-      logger.info('SMS fallback succeeded', { orderId, messageLogId: smsResult.messageLogId });
-      return smsResult;
-    } catch (smsError: any) {
-      logger.error('SMS fallback also failed', { orderId, error: smsError.message });
-      throw error; // throw original WhatsApp error
-    }
-  }
+  return whatsappService.sendTemplate({
+    to: orderContext.customerPhone,
+    templateName: templateConfig.templateName,
+    bodyParams,
+    orderId: order.id,
+    customerId: orderContext.customerId,
+  });
 }
 
 interface SendTemplateOptions {

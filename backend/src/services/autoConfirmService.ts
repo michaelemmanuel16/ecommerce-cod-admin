@@ -132,8 +132,9 @@ export async function sendAutoConfirmForOrder(
     const storePrefix = storeName ? `${storeName}: ` : '';
     const smsMessage = `${storePrefix}Hello ${customerFirstName}, please confirm order #${order.id}, ${productName}, ${currency} ${total} on delivery. Reply YES to confirm or NO to change or cancel.`;
 
+    // SMS only when the workflow step chose the SMS channel (never a fallback for WhatsApp).
     // A channel that is not set up returns sent: false: count that as a failed send.
-    const sendSmsFallback = async (): Promise<void> => {
+    const sendSms = async (): Promise<void> => {
       const smsResult = await smsService.sendSms({
         to: phone,
         body: smsMessage,
@@ -145,32 +146,27 @@ export async function sendAutoConfirmForOrder(
 
     try {
       if (targetChannel === 'whatsapp') {
-        try {
-          // The message comes from the tenant's `auto_confirm` template (Messages > Templates)
-          const template = await getAutoConfirmTemplate(tId);
-          const waResult = await whatsappService.sendTemplate({
-            to: phone,
-            templateName: template.metaTemplateName ?? 'order_auto_confirm',
-            languageCode: template.language ?? 'en_US', // must match the approved template's language on Meta
-            bodyText: template.body,
-            headerParams: [productName],
-            bodyParams: [
-              customerName,
-              packageLabel,
-              String(order.id),
-              formattedTotalWithSign,
-            ],
-            buttonPayloads: ['CONFIRM', 'CHANGE', 'CANCEL'],
-            orderId: order.id,
-            customerId: order.customer.id,
-          });
-          if (waResult.sent !== true) throw new Error('WhatsApp is not set up: message logged but not sent');
-        } catch (err: any) {
-          logger.warn('Auto-confirm WhatsApp send failed, falling back to SMS', { orderId: order.id, error: err.message });
-          await sendSmsFallback();
-        }
+        // The message comes from the tenant's `auto_confirm` template (Messages > Templates)
+        const template = await getAutoConfirmTemplate(tId);
+        const waResult = await whatsappService.sendTemplate({
+          to: phone,
+          templateName: template.metaTemplateName ?? 'order_auto_confirm',
+          languageCode: template.language ?? 'en_US', // must match the approved template's language on Meta
+          bodyText: template.body,
+          headerParams: [productName],
+          bodyParams: [
+            customerName,
+            packageLabel,
+            String(order.id),
+            formattedTotalWithSign,
+          ],
+          buttonPayloads: ['CONFIRM', 'CHANGE', 'CANCEL'],
+          orderId: order.id,
+          customerId: order.customer.id,
+        });
+        if (waResult.sent !== true) throw new Error('WhatsApp is not set up: message logged but not sent');
       } else {
-        await sendSmsFallback();
+        await sendSms();
       }
     } catch (err: any) {
       logger.error('Auto-confirm send failed', { orderId: order.id, error: err.message });
