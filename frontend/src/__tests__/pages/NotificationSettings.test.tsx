@@ -13,17 +13,15 @@ vi.mock('../../services/notificationSettings.service', async (orig) => ({ ...(aw
 // The Inbox page also reads the feed; this file only opens its settings view
 vi.mock('../../services/inbox.service', async (orig) => ({ ...(await orig<typeof import('../../services/inbox.service')>()), inboxService: { list: vi.fn(), counts: vi.fn() } }));
 
-const HINT = 'Connect WhatsApp in Connections to turn this on.';
-const row = (event: string, label: string, over: Partial<Record<'inApp' | 'whatsapp' | 'email' | 'sms', boolean>> = {}, locked = false): PreferenceRow => ({
-  event, label, kind: 'alert', source: 'default',
+const HINT = 'Connect email in Connections to turn this on.';
+const row = (event: string, label: string, over: Partial<Record<'inApp' | 'email', boolean>> = {}, locked = false, group = 'Conversations', emailOn = true): PreferenceRow => ({
+  event, label, kind: 'alert', group, source: 'default',
   channels: {
     inApp: { enabled: over.inApp ?? true, available: true, ...(locked ? { locked: true } : {}) },
-    whatsapp: { enabled: over.whatsapp ?? false, available: false, hint: HINT },
-    email: { enabled: over.email ?? false, available: true },
-    sms: { enabled: false, available: false, hint: 'Connect SMS in Connections to turn this on.' },
+    email: { enabled: over.email ?? false, available: emailOn, ...(emailOn ? {} : { hint: HINT }) },
   },
 });
-const ROWS = [row('mention', 'Someone mentioned you'), row('system_problem', 'A connection or job problem', {}, true)];
+const ROWS = [row('mention', 'Someone mentioned you'), row('system_problem', 'A connection or job problem', {}, true, 'System')];
 
 const user = (role: string) => ({ id: 1, role });
 const renderIt = (role = 'sales_rep') => render(<MemoryRouter><ToastProvider><NotificationSettings user={user(role)} /></ToastProvider></MemoryRouter>);
@@ -53,14 +51,24 @@ describe('NotificationSettings (T39)', () => {
   });
 
   it('a channel that is not connected is disabled and shows its hint', async () => {
+    svc.mine.mockResolvedValue([row('mention', 'Someone mentioned you', {}, false, 'Conversations', false)]);
     renderIt('admin');
-    const wa = await screen.findByRole('switch', { name: 'Someone mentioned you: WhatsApp' });
+    const wa = await screen.findByRole('switch', { name: 'Someone mentioned you: Email' });
     expect(wa).toBeDisabled();
     expect(wa).toHaveAttribute('title', HINT);
     expect(screen.getByText(HINT)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open Connections' })).toHaveAttribute('href', '/connections');
     await userEvent.click(wa);
     expect(svc.saveMine).not.toHaveBeenCalled();
+  });
+
+  it('shows only the In-app and Email columns, and a heading for each group', async () => {
+    renderIt('admin');
+    await screen.findByRole('switch', { name: 'Someone mentioned you: In-app' });
+    const table = screen.getByRole('table');
+    expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Event', 'In-app', 'Email', 'Conversations', 'System']);
+    expect(screen.queryByText('WhatsApp')).not.toBeInTheDocument();
+    expect(screen.queryByText('SMS')).not.toBeInTheDocument();
   });
 
   it('the in-app copy the owner must keep is locked', async () => {

@@ -35,10 +35,12 @@ describe('GET /api/notifications/preferences', () => {
 
   it('lists every event with the merged channels; unconnected channels are marked with a hint', async () => {
     const prefs = await prefsOf(pair.a.users.salesRep.token);
-    expect(Object.keys(prefs)).toEqual(expect.arrayContaining(['customer_reply', 'mention', 'system_problem', 'order_assigned']));
+    expect(Object.keys(prefs)).toEqual(expect.arrayContaining(['customer_reply', 'mention', 'late_callback', 'order_assigned']));
     expect(prefs.mention.channels.inApp).toMatchObject({ enabled: true, available: true });
-    expect(prefs.mention.channels.sms).toMatchObject({ enabled: false, available: false });
-    expect(prefs.mention.channels.sms.hint).toMatch(/Connections/);
+    expect(Object.keys(prefs.mention.channels)).toEqual(['inApp', 'email']);
+    expect(prefs.mention.group).toBe('Conversations');
+    expect(prefs.system_problem).toBeUndefined();
+    expect(prefs.queue_wait).toBeUndefined();
     expect(prefs.mention.source).toBe('default');
   });
 });
@@ -63,14 +65,26 @@ describe('PUT /api/notifications/preferences', () => {
     expect(empty.status).toBe(400);
   });
 
-  it('refuses the owner turning in-app off for System problem with 400; a rep may', async () => {
+  it('refuses the owner turning in-app off for System problem with 400; a rep is refused the event altogether', async () => {
     const owner = await request(app).put('/api/notifications/preferences').set(auth(pair.a.users.admin.token))
       .send({ preferences: [{ event: 'system_problem', inApp: false }] });
     expect(owner.status).toBe(400);
     expect(owner.body.code ?? owner.body.errorCode).toBe('OWNER_IN_APP_REQUIRED');
     const rep = await request(app).put('/api/notifications/preferences').set(auth(pair.a.users.salesRep.token))
       .send({ preferences: [{ event: 'system_problem', inApp: false }] });
-    expect(rep.status).toBe(200);
+    expect(rep.status).toBe(400);
+    expect(rep.body.code ?? rep.body.errorCode).toBe('EVENT_NOT_FOR_ROLE');
+  });
+
+  it('refuses an event outside the role list, and a role default for it, with 400', async () => {
+    const mine = await request(app).put('/api/notifications/preferences').set(auth(pair.a.users.deliveryAgent.token))
+      .send({ preferences: [{ event: 'customer_reply', email: true }] });
+    expect(mine.status).toBe(400);
+    const roleDefault = await request(app).put('/api/notifications/role-defaults').set(auth(pair.a.users.admin.token))
+      .send({ role: 'delivery_agent', defaults: [{ event: 'queue_wait', email: true }] });
+    expect(roleDefault.status).toBe(400);
+    const list = await request(app).get('/api/notifications/role-defaults?role=delivery_agent').set(auth(pair.a.users.admin.token));
+    expect(list.body.roles[0].defaults.map((d: any) => d.event)).not.toContain('queue_wait');
   });
 });
 
@@ -157,9 +171,9 @@ describe('notify against the database', () => {
   const rowsFor = (tenantId: string, userId: number, type: string) => prismaBase.notification.findMany({ where: { tenantId, userId, type } });
 
   it('an empty list goes to the tenant owner (admin), never to the other tenant', async () => {
-    await notify({ tenantId: pair.a.id, event: 'workflow_failed', recipients: [], title: 'Flow broke', message: 'x' });
-    expect(await rowsFor(pair.a.id, pair.a.users.admin.id, 'workflow_failed')).toHaveLength(1);
-    expect(await prismaBase.notification.count({ where: { tenantId: pair.b.id, type: 'workflow_failed' } })).toBe(0);
+    await notify({ tenantId: pair.a.id, event: 'system_problem', recipients: [], title: 'Flow broke', message: 'x' });
+    expect(await rowsFor(pair.a.id, pair.a.users.admin.id, 'system_problem')).toHaveLength(1);
+    expect(await prismaBase.notification.count({ where: { tenantId: pair.b.id, type: 'system_problem' } })).toBe(0);
   });
 
   it('a deactivated recipient sends it to the owner', async () => {

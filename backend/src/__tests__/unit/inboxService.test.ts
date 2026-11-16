@@ -1,13 +1,9 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { prismaMock } from '../mocks/prisma.mock';
-import { INBOX_EVENTS, INBOX_EVENT_NAMES, eventDefaultFor, getEventDef } from '../../services/inbox/inboxEvents';
+import { CHANNELS, EVENT_GROUPS, INBOX_EVENTS, INBOX_EVENT_NAMES, eventDefaultFor, getEventDef } from '../../services/inbox/inboxEvents';
 
 const mockSendEmail = jest.fn<(...a: any[]) => Promise<any>>();
-const mockSendSms = jest.fn<(...a: any[]) => Promise<any>>();
-const mockSendWhatsapp = jest.fn<(...a: any[]) => Promise<any>>();
 jest.mock('../../services/emailService', () => ({ sendEmail: (...a: any[]) => mockSendEmail(...a), getDbEmailConfig: jest.fn() }));
-jest.mock('../../services/smsService', () => ({ smsService: { sendSms: (...a: any[]) => mockSendSms(...a) }, getDbSmsConfig: jest.fn() }));
-jest.mock('../../services/whatsappService', () => ({ whatsappService: { sendText: (...a: any[]) => mockSendWhatsapp(...a) }, getDbWhatsappConfig: jest.fn() }));
 jest.mock('../../sockets', () => ({ emitNotification: jest.fn() }));
 jest.mock('../../utils/socketInstance', () => ({ getSocketInstance: () => null }));
 const mockChannels = jest.fn<() => Promise<any>>();
@@ -21,7 +17,7 @@ import logger from '../../utils/logger';
 
 const T = 'tenant-a';
 const person = (id: number, role = 'sales_rep') => ({ id, role, email: `u${id}@x.test`, phoneNumber: `+23355000000${id}` });
-const allOn = { inApp: { available: true }, email: { available: true }, sms: { available: true }, whatsapp: { available: true } };
+const allOn = { inApp: { available: true }, email: { available: true } };
 
 const base = (over: Record<string, unknown> = {}) => ({
   tenantId: T, event: 'order_assigned', recipients: [1], title: 'Hello', message: 'World', ...over,
@@ -39,11 +35,27 @@ beforeEach(() => {
 describe('event list', () => {
   it('has every event the spec names, each with a kind and channel defaults', () => {
     for (const name of ['customer_reply', 'mention', 'reminder_due', 'team_note', 'order_assigned', 'late_callback', 'overdue_collections', 'queue_wait',
-      'no_assignee_available', 'agent_blocked', 'agent_unblocked', 'stock_incoming', 'payout_paid', 'delivery_rescheduled', 'system_problem',
-      'workflow_failed', 'connection_error']) {
+      'no_assignee_available', 'agent_blocked', 'stock_incoming', 'payout_paid', 'delivery_rescheduled', 'system_problem',
+      'finding_assigned', 'target_returned', 'conversation_assigned']) {
       expect(INBOX_EVENT_NAMES).toContain(name);
       expect(INBOX_EVENTS[name].defaults.inApp).toBe(true);
     }
+  });
+  it('no longer lists the events that are never sent, or the separate unblock event', () => {
+    for (const name of ['workflow_failed', 'connection_error', 'agent_unblocked']) expect(INBOX_EVENT_NAMES).not.toContain(name);
+    expect(getEventDef('agent_blocked').label).toBe('Your account was blocked or unblocked');
+  });
+  it('offers staff only the In-app and Email channels', () => {
+    expect([...CHANNELS]).toEqual(['inApp', 'email']);
+  });
+  it('gives every event a group and at least one role, and lists the groups in order', () => {
+    const seen: string[] = [];
+    for (const e of Object.values(INBOX_EVENTS)) {
+      expect(EVENT_GROUPS).toContain(e.group);
+      expect(e.roles.length).toBeGreaterThan(0);
+      if (seen[seen.length - 1] !== e.group) seen.push(e.group);
+    }
+    expect(seen).toEqual([...EVENT_GROUPS]);
   });
   it('maps events to the inbox kinds', () => {
     expect(getEventDef('customer_reply').kind).toBe('reply');
@@ -121,29 +133,24 @@ describe('notify recipients', () => {
 describe('external channels', () => {
   const prefs = (row: Record<string, unknown>) => (prismaMock.notificationPreference.findMany as any).mockResolvedValue([{ userId: 1, event: 'order_assigned', ...row }]);
 
-  it('sends email, SMS and WhatsApp when the person chose them', async () => {
-    prefs({ inApp: true, email: true, sms: true, whatsapp: true });
+  it('sends email when the person chose it', async () => {
+    prefs({ inApp: true, email: true });
     await notify(base());
     expect(mockSendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: 'u1@x.test', subject: 'Hello' }));
-    expect(mockSendSms).toHaveBeenCalledWith(expect.objectContaining({ to: '+233550000001' }));
-    expect(mockSendWhatsapp).toHaveBeenCalledWith(expect.objectContaining({ to: '+233550000001' }));
   });
 
   it('sends nothing external by default', async () => {
     await notify(base());
     expect(mockSendEmail).not.toHaveBeenCalled();
-    expect(mockSendSms).not.toHaveBeenCalled();
   });
 
-  it('keeps the in-app row when every external send fails, and logs the failures', async () => {
-    prefs({ inApp: true, email: true, sms: true, whatsapp: true });
+  it('keeps the in-app row when the email send fails, and logs the failure', async () => {
+    prefs({ inApp: true, email: true });
     mockSendEmail.mockRejectedValue(new Error('smtp down'));
-    mockSendSms.mockRejectedValue(new Error('sms down'));
-    mockSendWhatsapp.mockRejectedValue(new Error('wa down'));
     const rows = await notify(base());
     expect(rows).toHaveLength(1);
     expect(prismaMock.notification.create).toHaveBeenCalledTimes(1);
-    expect((logger.warn as any).mock.calls.filter((c: any[]) => c[0] === 'Inbox: external notification failed')).toHaveLength(3);
+    expect((logger.warn as any).mock.calls.filter((c: any[]) => c[0] === 'Inbox: external notification failed')).toHaveLength(1);
   });
 
   it('writes the in-app row before any external send', async () => {
@@ -155,19 +162,18 @@ describe('external channels', () => {
     expect(order).toEqual(['row', 'email']);
   });
 
-  it('skips a channel the tenant has not connected', async () => {
-    prefs({ inApp: true, email: true, sms: true });
-    mockChannels.mockResolvedValue({ ...allOn, sms: { available: false, hint: 'x' } });
+  it('skips email when the tenant has not connected it', async () => {
+    prefs({ inApp: true, email: true });
+    mockChannels.mockResolvedValue({ ...allOn, email: { available: false, hint: 'x' } });
     await notify(base());
-    expect(mockSendEmail).toHaveBeenCalled();
-    expect(mockSendSms).not.toHaveBeenCalled();
+    expect(mockSendEmail).not.toHaveBeenCalled();
   });
 
-  it('skips SMS when the person has no phone number', async () => {
-    prefs({ inApp: true, sms: true });
-    (prismaMock.user.findMany as any).mockResolvedValue([{ ...person(1), phoneNumber: null }]);
-    await notify(base());
-    expect(mockSendSms).not.toHaveBeenCalled();
+  it('ignores stored SMS and WhatsApp choices: nothing is sent on those channels', async () => {
+    prefs({ inApp: true, email: false, sms: true, whatsapp: true });
+    const rows = await notify(base());
+    expect(rows).toHaveLength(1);
+    expect(mockSendEmail).not.toHaveBeenCalled();
   });
 });
 
@@ -181,22 +187,22 @@ describe('preference merge order', () => {
       await notify(base());
       return mockSendEmail.mock.calls.length;
     };
-    const role = [{ role: 'sales_rep', event: 'order_assigned', inApp: true, email: true, sms: false, whatsapp: false }];
-    const mine = [{ userId: 1, event: 'order_assigned', inApp: true, email: false, sms: false, whatsapp: false }];
+    const role = [{ role: 'sales_rep', event: 'order_assigned', inApp: true, email: true }];
+    const mine = [{ userId: 1, event: 'order_assigned', inApp: true, email: false }];
     expect(await notifyWith([], [])).toBe(0); // event default: in-app only
     expect(await notifyWith([], role)).toBe(1); // role default turns email on
     expect(await notifyWith(mine, role)).toBe(0); // the person turns it off again
   });
 
   it('a person can turn in-app off for a normal event: no row', async () => {
-    (prismaMock.notificationPreference.findMany as any).mockResolvedValue([{ userId: 1, event: 'order_assigned', inApp: false, email: false, sms: false, whatsapp: false }]);
+    (prismaMock.notificationPreference.findMany as any).mockResolvedValue([{ userId: 1, event: 'order_assigned', inApp: false, email: false }]);
     expect(await notify(base())).toEqual([]);
   });
 
   it('getMyPreferences merges the three layers and marks unconnected channels', async () => {
-    mockChannels.mockResolvedValue({ ...allOn, sms: { available: false, hint: 'Connect SMS in Connections to turn this on.' } });
-    (prismaMock.notificationPreference.findMany as any).mockResolvedValue([{ userId: 1, event: 'mention', inApp: true, email: true, sms: false, whatsapp: false }]);
-    (prismaMock.roleNotificationDefault.findMany as any).mockResolvedValue([{ role: 'sales_rep', event: 'team_note', inApp: true, email: true, sms: false, whatsapp: false }]);
+    mockChannels.mockResolvedValue({ ...allOn, email: { available: false, hint: 'Connect email in Connections to turn this on.' } });
+    (prismaMock.notificationPreference.findMany as any).mockResolvedValue([{ userId: 1, event: 'mention', inApp: true, email: true }]);
+    (prismaMock.roleNotificationDefault.findMany as any).mockResolvedValue([{ role: 'sales_rep', event: 'team_note', inApp: true, email: true }]);
     const rows = await runInTenant(T, () => getMyPreferences({ id: 1, role: 'sales_rep' as any }));
     const by = Object.fromEntries(rows.map((r) => [r.event, r]));
     expect(by.mention).toMatchObject({ source: 'person' });
@@ -205,7 +211,8 @@ describe('preference merge order', () => {
     expect(by.team_note.channels.email.enabled).toBe(true);
     expect(by.customer_reply).toMatchObject({ source: 'default' });
     expect(by.customer_reply.channels.email.enabled).toBe(false);
-    expect(by.customer_reply.channels.sms).toMatchObject({ available: false, hint: 'Connect SMS in Connections to turn this on.' });
+    expect(by.customer_reply.channels.email).toMatchObject({ available: false, hint: 'Connect email in Connections to turn this on.' });
+    expect(by.customer_reply.channels).not.toHaveProperty('sms');
     expect(by.customer_reply.channels.inApp.available).toBe(true);
   });
 });
@@ -213,7 +220,7 @@ describe('preference merge order', () => {
 describe('owner and system_problem', () => {
   it('still writes the in-app row for an owner who has it off in the database', async () => {
     (prismaMock.user.findMany as any).mockResolvedValue([person(1, 'super_admin')]);
-    (prismaMock.notificationPreference.findMany as any).mockResolvedValue([{ userId: 1, event: 'system_problem', inApp: false, email: false, sms: false, whatsapp: false }]);
+    (prismaMock.notificationPreference.findMany as any).mockResolvedValue([{ userId: 1, event: 'system_problem', inApp: false, email: false }]);
     const rows = await notify(base({ event: 'system_problem' }));
     expect(rows).toHaveLength(1);
   });
@@ -226,16 +233,40 @@ describe('owner and system_problem', () => {
     expect(prismaMock.notificationPreference.upsert).not.toHaveBeenCalled();
   });
 
-  it('lets a manager turn it off, and lets the owner turn off email', async () => {
+  it('lets the owner turn off email', async () => {
     (prismaMock.notificationPreference.upsert as any).mockResolvedValue({});
-    await runInTenant(T, () => savePreferences({ id: 2, role: 'manager' as any }, [{ event: 'system_problem', inApp: false }]));
     await runInTenant(T, () => savePreferences({ id: 1, role: 'super_admin' as any }, [{ event: 'system_problem', email: false }]));
-    expect(prismaMock.notificationPreference.upsert).toHaveBeenCalledTimes(2);
+    expect(prismaMock.notificationPreference.upsert).toHaveBeenCalledTimes(1);
   });
 
   it('refuses an unknown event', async () => {
     await expect(runInTenant(T, () => savePreferences({ id: 1, role: 'manager' as any }, [{ event: 'nope', inApp: true }])))
       .rejects.toMatchObject({ statusCode: 400 });
+  });
+});
+
+describe('role filter', () => {
+  const eventsOf = async (role: string) => (await runInTenant(T, () => getMyPreferences({ id: 1, role: role as any }))).map((r) => r.event);
+
+  it('lists only the events that reach the role', async () => {
+    const rep = await eventsOf('sales_rep');
+    expect(rep).toEqual(expect.arrayContaining(['customer_reply', 'order_assigned', 'late_callback', 'mention']));
+    expect(rep).not.toEqual(expect.arrayContaining(['queue_wait']));
+    expect(rep).not.toContain('system_problem');
+    expect(rep).not.toContain('stock_incoming');
+    const agent = await eventsOf('delivery_agent');
+    expect(agent).toEqual(expect.arrayContaining(['stock_incoming', 'payout_paid', 'delivery_rescheduled', 'agent_blocked']));
+    expect(agent).not.toContain('customer_reply');
+    expect(await eventsOf('super_admin')).toEqual(expect.arrayContaining(['system_problem', 'queue_wait', 'overdue_collections', 'no_assignee_available']));
+  });
+
+  it('refuses to save an event that does not reach the role (400), for a person and for a role default', async () => {
+    await expect(runInTenant(T, () => savePreferences({ id: 1, role: 'sales_rep' as any }, [{ event: 'system_problem', email: true }])))
+      .rejects.toMatchObject({ statusCode: 400, errorCode: 'EVENT_NOT_FOR_ROLE' });
+    await expect(runInTenant(T, () => saveRoleDefaults('delivery_agent' as any, [{ event: 'queue_wait', email: true }])))
+      .rejects.toMatchObject({ statusCode: 400, errorCode: 'EVENT_NOT_FOR_ROLE' });
+    expect(prismaMock.notificationPreference.upsert).not.toHaveBeenCalled();
+    expect(prismaMock.roleNotificationDefault.upsert).not.toHaveBeenCalled();
   });
 });
 

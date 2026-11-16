@@ -2,11 +2,14 @@ import { UserRole } from '@prisma/client';
 import prisma from '../../utils/prisma';
 import { resolveTenantId } from '../../utils/tenantContext';
 import { AppError } from '../../middleware/errorHandler';
-import { CHANNELS, ChannelSet, INBOX_EVENTS, InboxEventDef, eventDefaultFor, getEventDef, isOwnerRole } from './inboxEvents';
+import { CHANNELS, ChannelSet, INBOX_EVENTS, InboxEventDef, eventDefaultFor, eventReachesRole, getEventDef, isOwnerRole } from './inboxEvents';
 import { TenantChannels, getTenantChannels } from './inboxChannels';
 
-type ChannelRow = { inApp: boolean; email: boolean; sms: boolean; whatsapp: boolean };
-const pick = (r: ChannelRow): ChannelSet => ({ inApp: r.inApp, email: r.email, sms: r.sms, whatsapp: r.whatsapp });
+type ChannelRow = { inApp: boolean; email: boolean };
+const pick = (r: ChannelRow): ChannelSet => ({ inApp: r.inApp, email: r.email });
+
+/** The events that can reach a role, in list order. */
+const eventsFor = (role: UserRole): InboxEventDef[] => Object.values(INBOX_EVENTS).filter((e) => eventReachesRole(e, role));
 
 export type ChannelSource = 'person' | 'role' | 'default';
 export interface ResolvedChannels { channels: ChannelSet; source: ChannelSource }
@@ -51,6 +54,7 @@ export interface PreferenceRow {
   event: string;
   label: string;
   kind: string;
+  group: string;
   source: ChannelSource;
   channels: Record<(typeof CHANNELS)[number], ChannelView>;
 }
@@ -66,13 +70,13 @@ function view(event: InboxEventDef, role: UserRole, resolved: ResolvedChannels, 
       ...(ch === 'inApp' && event.ownerInAppRequired && isOwnerRole(role) ? { locked: true } : {}),
     };
   }
-  return { event: event.name, label: event.label, kind: event.kind, source: resolved.source, channels };
+  return { event: event.name, label: event.label, kind: event.kind, group: event.group, source: resolved.source, channels };
 }
 
 /** GET /preferences: every event with the person's merged channels. */
 export async function getMyPreferences(user: { id: number; role: UserRole }): Promise<PreferenceRow[]> {
   const available = await getTenantChannels();
-  const events = Object.values(INBOX_EVENTS);
+  const events = eventsFor(user.role);
   const [prefs, roleRows] = await Promise.all([
     prisma.notificationPreference.findMany({ where: { userId: user.id } }),
     prisma.roleNotificationDefault.findMany({ where: { role: user.role } }),
@@ -91,12 +95,13 @@ export async function getMyPreferences(user: { id: number; role: UserRole }): Pr
   });
 }
 
-export type PreferenceInput = { event: string; inApp?: boolean; email?: boolean; sms?: boolean; whatsapp?: boolean };
+export type PreferenceInput = { event: string; inApp?: boolean; email?: boolean };
 
 function assertKnownAndAllowed(role: UserRole, items: PreferenceInput[]): void {
   for (const item of items) {
     const event = INBOX_EVENTS[item.event];
     if (!event) throw new AppError(`Unknown event: ${item.event}`, 400);
+    if (!eventReachesRole(event, role)) throw new AppError(`${event.label}: this notification does not reach this role`, 400, 'EVENT_NOT_FOR_ROLE');
     if (event.ownerInAppRequired && isOwnerRole(role) && item.inApp === false) {
       throw new AppError(`${event.label}: the owner cannot turn off in-app notifications for this event`, 400, 'OWNER_IN_APP_REQUIRED');
     }
@@ -122,15 +127,13 @@ export async function savePreferences(user: { id: number; role: UserRole }, item
 async function resolveCurrent(user: { id: number; role: UserRole }, events: string[]): Promise<Map<string, ChannelSet>> {
   const all = await getMyPreferences(user);
   return new Map(all.filter((r) => events.includes(r.event)).map((r) => [r.event, {
-    inApp: r.channels.inApp.enabled, email: r.channels.email.enabled, sms: r.channels.sms.enabled, whatsapp: r.channels.whatsapp.enabled,
+    inApp: r.channels.inApp.enabled, email: r.channels.email.enabled,
   }]));
 }
 
 const merge = (base: ChannelSet, item: PreferenceInput): ChannelSet => ({
   inApp: item.inApp ?? base.inApp,
   email: item.email ?? base.email,
-  sms: item.sms ?? base.sms,
-  whatsapp: item.whatsapp ?? base.whatsapp,
 });
 
 /** GET /role-defaults?role=: the tenant's defaults for one role (or every role) merged with the event defaults. */
@@ -140,7 +143,7 @@ export async function getRoleDefaults(role?: UserRole): Promise<{ role: UserRole
   const roles = role ? [role] : Object.values(UserRole);
   return roles.map((r) => ({
     role: r,
-    defaults: Object.values(INBOX_EVENTS).map((event) => {
+    defaults: eventsFor(r).map((event) => {
       const row = rows.find((x) => x.role === r && x.event === event.name);
       const resolved: ResolvedChannels = row
         ? { channels: pick(row), source: 'role' }

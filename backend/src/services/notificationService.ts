@@ -156,7 +156,8 @@ export async function notifyAgentUnblocked(
 ) {
   return notify({
     tenantId: resolveTenantId(),
-    event: 'agent_unblocked',
+    // Same event as the block: one settings row covers both
+    event: 'agent_blocked',
     recipients: [Number(userId)],
     title: 'Account Unblocked',
     message: 'Your account has been unblocked. You can now receive new deliveries.',
