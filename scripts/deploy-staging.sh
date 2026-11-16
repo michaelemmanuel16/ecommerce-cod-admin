@@ -54,11 +54,19 @@ if docker ps | grep -q "ecommerce-cod-postgres-staging"; then
 else
     echo -e "${YELLOW}No existing database found, skipping backup${NC}"
 fi
+# Keep only the newest 20 staging backups.
+ls -1t ./backups/staging-backup-*.sql 2>/dev/null | tail -n +21 | xargs -r rm -f
 
 # Step 2: Pull latest images from develop branch
 echo -e "${BLUE}[2/6] Pulling latest Docker images (develop branch)...${NC}"
-docker pull ghcr.io/michaelemmanuel16/ecommerce-cod-admin/backend:develop || echo -e "${YELLOW}Warning: Failed to pull backend image, will use existing${NC}"
-docker pull ghcr.io/michaelemmanuel16/ecommerce-cod-admin/frontend:develop || echo -e "${YELLOW}Warning: Failed to pull frontend image, will use existing${NC}"
+# A failed pull stops the deploy. Otherwise the old image keeps running and the deploy reports success.
+for IMAGE in backend frontend; do
+    if ! docker pull ghcr.io/michaelemmanuel16/ecommerce-cod-admin/${IMAGE}:develop; then
+        echo -e "${RED}✗ Failed to pull the ${IMAGE} image. Stopping the deployment.${NC}"
+        df -h / || true
+        exit 1
+    fi
+done
 
 # Step 3: Ensure infrastructure is running, then rolling-update app containers
 echo -e "${BLUE}[3/6] Updating staging containers (rolling update)...${NC}"
@@ -89,6 +97,9 @@ else
 fi
 
 echo -e "${GREEN}✓ Containers updated${NC}"
+
+# Remove untagged old images. Images that a container uses (staging or production) are kept.
+docker image prune -f || true
 
 # Step 4: Wait for backend to be healthy
 echo -e "${BLUE}[4/6] Waiting for backend to be healthy...${NC}"
