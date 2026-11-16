@@ -23,6 +23,10 @@ interface Props {
   views: ViewId[];
   /** Where "Open" goes for a subject in this app. */
   linkFor: (s: InboxSubject) => string | null;
+  /** The rep app: a subject that opens a panel over the Inbox instead of a page. */
+  openerFor?: (s: InboxSubject, kind: InboxItem['kind']) => (() => void) | null;
+  /** The rep app: no "Open thread" icon (the "Open" icon already opens the notes panel). */
+  hideThread?: boolean;
   /** The rep app lays the views out as a strip above the list. */
   compact?: boolean;
   /** Where "Notification settings" goes. Left out: no link (the rep app has none until M10). */
@@ -32,7 +36,7 @@ interface Props {
 type Pick = ViewId | 'snoozed' | 'done';
 
 /** The Inbox (M9-T37) for the admin app and the rep app: the same feed API, the same rows, the same actions. */
-export function InboxView({ title, subtitle, views, linkFor, compact, settingsHref }: Props) {
+export function InboxView({ title, subtitle, views, linkFor, openerFor, hideThread, compact, settingsHref }: Props) {
   const say = useToast();
   const role = useAuthStore((s) => s.user?.role ?? '');
   const counts = useInboxStore((s) => s.counts);
@@ -147,6 +151,8 @@ export function InboxView({ title, subtitle, views, linkFor, compact, settingsHr
                     status={status}
                     writable={writable}
                     linkFor={linkFor}
+                    openerFor={openerFor}
+                    hideThread={hideThread}
                     onRead={onRead}
                     onDone={onDone}
                     onSnooze={onSnooze}

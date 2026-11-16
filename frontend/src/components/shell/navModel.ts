@@ -4,7 +4,6 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { NavCounts } from '../../services/nav.service';
-import { features } from '../../config/features';
 
 // The sidebar of docs/mockups/v2/products.html: Dashboard and Inbox, then Sell, Stock, Money, Team, Setup.
 // An item shows when its key is in `menu` from /api/auth/me (no role lists here) AND its page exists (`to` is set).
@@ -71,8 +70,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { key: 'finance', label: 'Finance', icon: Wallet, to: '/finance', count: 'financeOpen' },
       { key: 'marketing', label: 'Marketing', icon: Megaphone, to: '/marketing' },
       { key: 'reports', label: 'Reports', icon: BarChart3, to: '/reports' },
-      // Call rep earnings: replaced by the rep app (M7). Old Sidebar: call reps only (when repApp is off).
-      { key: 'earningsHistory', label: 'Earnings history', icon: History, to: '/earnings-history', oldPageFor: (r) => r === 'sales_rep' && !features.repApp },
+      { key: 'earningsHistory', label: 'Earnings history', icon: History, to: '/earnings-history' },
     ],
   },
   {

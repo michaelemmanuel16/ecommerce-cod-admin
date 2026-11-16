@@ -11,6 +11,8 @@
   display: grid;
   grid-template-columns: 240px 1fr;
   min-height: 100vh;
+  /* the rail column keeps its background the full page height; the sticky rail itself is only one viewport tall */
+  background: linear-gradient(to right, var(--side) 239px, var(--line) 239px, var(--line) 240px, transparent 240px);
 }
 
 /* desktop rail */
@@ -208,6 +210,7 @@
 @media (max-width: 760px) {
   .v2 .rep-shell .app-layout {
     grid-template-columns: 1fr;
+    background: none;
   }
   .v2 .rep-shell .side {
     display: none;
@@ -409,12 +412,7 @@
   gap: 2px;
   padding: 12px 10px;
   border-bottom: 1px solid var(--line);
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.v2 .rep-shell .qtabs::-webkit-scrollbar {
-  display: none;
+  flex-wrap: wrap;
 }
 
 .v2 .rep-shell .qtabs .tab {
@@ -489,7 +487,8 @@
 
 .v2 .rep-shell .wt {
   flex: none;
-  width: 86px;
+  min-width: 86px;
+  width: max-content;
   white-space: nowrap;
   text-align: center;
   border-radius: 12px;
@@ -945,4 +944,97 @@
   .v2 .rep-shell .nums {
     grid-template-columns: 1fr;
   }
+}
+
+/* Chat panel (RepChatPanel): opens over the current page; full screen on a phone */
+.v2 .rep-shell .rchat-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.v2 .rep-shell .rchat {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 111;
+  width: min(460px, 100vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border-left: 1px solid var(--line);
+  box-shadow: -8px 0 28px rgba(0, 0, 0, 0.18);
+}
+
+.v2 .rep-shell .rchat-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.v2 .rep-shell .rchat-head .rchat-back {
+  display: none;
+}
+
+.v2 .rep-shell .rchat .inbox.rchat-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
+.v2 .rep-shell .rchat .inbox .pane {
+  flex: 1;
+  border-right: 0;
+}
+
+.v2 .rep-shell .rchat .inbox .msgs {
+  min-height: 0;
+}
+
+@media (max-width: 760px) {
+  .v2 .rep-shell .rchat {
+    width: 100vw;
+    border-left: 0;
+  }
+  .v2 .rep-shell .rchat-head .rchat-back {
+    display: block;
+  }
+  .v2 .rep-shell .rchat-head .rchat-x {
+    display: none;
+  }
+}
+
+.v2 .rep-shell .rchat .compose[aria-disabled='true'] .msgin,
+.v2 .rep-shell .rchat .compose[aria-disabled='true'] .send {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Team notes panel: the thread scrolls inside the drawer */
+.v2 .rep-shell .rchat .rchat-notes {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px;
+}
+
+.v2 .rep-shell .rchat-head .rchat-title-link {
+  color: var(--pine);
+  text-decoration: none;
+  border-radius: 4px;
+}
+
+.v2 .rep-shell .rchat-head .rchat-title-link:hover {
+  text-decoration: underline;
+}
+
+.v2 .rep-shell .rchat-head .rchat-title-link:focus-visible {
+  outline: 2px solid var(--pine);
+  outline-offset: 2px;
 }

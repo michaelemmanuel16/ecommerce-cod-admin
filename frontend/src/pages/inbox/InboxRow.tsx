@@ -22,15 +22,20 @@ interface Props extends RowActions {
   writable: boolean;
   /** Where "Open" goes for this subject; null when this app has no screen for it. */
   linkFor: (s: NonNullable<InboxItem['subject']>) => string | null;
+  /** The rep app: a subject that opens a panel instead of a page (a conversation). Returns the opener, or null. */
+  openerFor?: (s: NonNullable<InboxItem['subject']>, kind: InboxItem['kind']) => (() => void) | null;
+  /** The rep app: its "Open" icon already opens the notes panel, so no separate thread icon. */
+  hideThread?: boolean;
 }
 
 /** One row of the feed (M9-T37): type, title, who, link, time, unread mark and the row actions. */
-export function InboxRow({ item, status, writable, linkFor, onRead, onDone, onSnooze, onRemind, onThread }: Props) {
+export function InboxRow({ item, status, writable, linkFor, openerFor, hideThread, onRead, onDone, onSnooze, onRemind, onThread }: Props) {
   const { icon: Icon, tone } = kindIcon(item.kind);
   const text = notificationText({ title: item.title, message: item.message, data: item.data, type: item.event });
   const subject = item.subject;
   const href = subject && item.subjectAccessible ? linkFor(subject) : null;
-  const canThread = !!subject && isNoteSubject(subject) && item.subjectAccessible && (item.kind === 'mention' || item.kind === 'note');
+  const open = subject && item.subjectAccessible ? openerFor?.(subject, item.kind) ?? null : null;
+  const canThread = !hideThread && !!subject && isNoteSubject(subject) && item.subjectAccessible && (item.kind === 'mention' || item.kind === 'note');
   const unread = !item.isRead;
   const [snoozing, setSnoozing] = useState(false);
   const snoozeRef = useRef<HTMLDivElement>(null);
@@ -66,7 +71,9 @@ export function InboxRow({ item, status, writable, linkFor, onRead, onDone, onSn
             {item.snoozedUntil && !item.doneAt && <Tag tone="warn">Snoozed until {formatDateTime(item.snoozedUntil)}</Tag>}
             {item.doneAt && <Tag tone="ok">Done</Tag>}
             {unread && <span className="sr-only">Unread</span>}
-            {subject && (href ? (
+            {subject && (open ? (
+              <button type="button" className="lnk" onClick={() => { if (writable && unread) onRead(item); open(); }}>{lnkText}</button>
+            ) : href ? (
               <Link className="lnk" to={href} onClick={() => writable && unread && onRead(item)}>{lnkText}</Link>
             ) : (
               <span className="lnk off">{lnkText}{item.subjectDeleted ? ', deleted' : !item.subjectAccessible ? ', not yours any more' : ''}</span>
@@ -80,7 +87,10 @@ export function InboxRow({ item, status, writable, linkFor, onRead, onDone, onSn
           {canThread && subject && (
             <button type="button" aria-label="Open thread" title="Open thread" onClick={() => onThread(item)}><MessagesSquare /></button>
           )}
-          {href && (
+          {open && (
+            <button type="button" aria-label="Open" title="Open" onClick={() => { if (unread) onRead(item); open(); }}><ExternalLink /></button>
+          )}
+          {!open && href && (
             <Link to={href} aria-label="Open" title="Open" onClick={() => unread && onRead(item)}><ExternalLink /></Link>
           )}
           {unread && <button type="button" aria-label="Mark read" title="Mark read" onClick={() => onRead(item)}><CheckCheck /></button>}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, Phone, MessageCircle, ChevronRight, ChevronLeft } from 'lucide-react';
+import { Search, Phone, ChevronRight, ChevronLeft } from 'lucide-react';
 import clsx from 'clsx';
 import { repService, type RepOrderRow, type RepOrdersResult } from '../../services/rep.service';
 import { formatOrderNumber } from '../../utils/orderNumber';
@@ -12,35 +12,38 @@ import { STATUS_TONE } from '../orders/model';
 import type { OrderStatus } from '../../types';
 import { RepPageFrame } from './RepPageFrame';
 import { REP_PANEL_BREAKPOINT } from './queueHelpers';
-import { whatsappUrl } from '../../utils/whatsapp';
+import { WhatsAppButton } from '../../components/rep/WhatsAppButton';
 
-const STATUS_FILTER_OPTIONS = [
-  { value: 'all', label: 'All statuses' },
-  { value: 'confirmed,preparing,ready_for_pickup', label: 'Waiting to dispatch' },
-  { value: 'out_for_delivery', label: 'Out for delivery' },
-  { value: 'delivered', label: 'Delivered' },
-  { value: 'failed_delivery,returned', label: 'Failed or returned' },
-  { value: 'cancelled', label: getOrderStatusLabel('cancelled') },
+/**
+ * My orders tabs. Mirrors REP_ORDER_GROUPS in backend/src/services/repService.ts: the API filters
+ * by `group`. pending_confirmation lives in the Queue and shows in neither tab.
+ * Statuses: in_progress = payment_pending, confirmed, preparing, ready_for_pickup, out_for_delivery, payment_failed;
+ * finished = delivered, digital_delivered, cancelled, returned, failed_delivery.
+ */
+type OrdersTab = 'in_progress' | 'finished';
+const TABS: { key: OrdersTab; label: string; empty: string }[] = [
+  { key: 'in_progress', label: 'In progress', empty: 'No orders in progress.' },
+  { key: 'finished', label: 'Finished', empty: 'No finished orders yet.' },
 ];
 
 export const RepOrdersPage: React.FC = () => {
   const [ordersData, setOrdersData] = useState<RepOrdersResult | null>(null);
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [tab, setTab] = useState<OrdersTab>('in_progress');
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchOrders = useCallback(async (q: string, status: string, pageNum: number) => {
+  const fetchOrders = useCallback(async (q: string, group: OrdersTab, pageNum: number) => {
     try {
       setLoading(true);
       setError(null);
       const data = await repService.getOrders({
         q: q.trim() || undefined,
-        status: status === 'all' ? undefined : status,
+        group,
         page: pageNum,
         limit: 25,
       });
@@ -64,8 +67,8 @@ export const RepOrdersPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    void fetchOrders(searchQuery, statusFilter, page);
-  }, [statusFilter, page, fetchOrders]);
+    void fetchOrders(searchQuery, tab, page);
+  }, [tab, page, fetchOrders]);
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
@@ -73,12 +76,13 @@ export const RepOrdersPage: React.FC = () => {
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     searchDebounceRef.current = setTimeout(() => {
       setPage(1);
-      void fetchOrders(val, statusFilter, 1);
+      void fetchOrders(val, tab, 1);
     }, 300);
   };
 
-  const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setStatusFilter(e.target.value);
+  const handleTabChange = (key: OrdersTab) => {
+    if (key === tab) return;
+    setTab(key);
     setPage(1);
   };
 
@@ -90,10 +94,30 @@ export const RepOrdersPage: React.FC = () => {
       id="orders"
       ariaLabel="My orders"
       title="My orders"
-      subtitle="Every order assigned to you, with its status."
+      subtitle="Orders after the call: on the way and finished."
     >
       <div className="work">
         <div className="card" id="ocard">
+          <div className="qtabs" data-testid="orders-tabs" role="tablist">
+            {TABS.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                aria-selected={tab === t.key}
+                data-testid={`orders-tab-${t.key}`}
+                className={clsx('tab', tab === t.key && 'on')}
+                onClick={() => handleTabChange(t.key)}
+              >
+                <span>{t.label}</span>
+                {tab === t.key && pagination && (
+                  <span className="pill" data-testid={`orders-tab-count-${t.key}`}>
+                    {pagination.total}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
           <div className="filter-bar">
             <label className="find" style={{ flex: 1, margin: 0 }}>
               <Search size={16} />
@@ -106,19 +130,6 @@ export const RepOrdersPage: React.FC = () => {
                 onChange={handleSearchChange}
               />
             </label>
-            <select
-              className="status-select"
-              aria-label="Filter orders by status"
-              value={statusFilter}
-              onChange={handleStatusChange}
-              data-testid="orders-status-filter"
-            >
-              {STATUS_FILTER_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
           </div>
 
           <div className="qlist" id="olist">
@@ -133,7 +144,7 @@ export const RepOrdersPage: React.FC = () => {
                   type="button"
                   className="btn"
                   style={{ marginTop: 12 }}
-                  onClick={() => void fetchOrders(searchQuery, statusFilter, page)}
+                  onClick={() => void fetchOrders(searchQuery, tab, page)}
                 >
                   Try again
                 </button>
@@ -142,7 +153,7 @@ export const RepOrdersPage: React.FC = () => {
               <div className="empty" data-testid="orders-empty">
                 <p style={{ fontWeight: 600 }}>Nothing here</p>
                 <p className="sub">
-                  {searchQuery ? 'No orders match your search.' : 'You have no assigned orders yet.'}
+                  {searchQuery ? 'No orders match your search.' : TABS.find((t) => t.key === tab)!.empty}
                 </p>
               </div>
             ) : (
@@ -158,7 +169,6 @@ export const RepOrdersPage: React.FC = () => {
                 const phone = o.customer?.phone;
                 const normalized = phone ? normalizePhone(phone) : null;
                 const telUrl = normalized ? `tel:${normalized}` : undefined;
-                const waUrl = whatsappUrl(normalized) ?? undefined;
 
                 return (
                   <div
@@ -207,15 +217,8 @@ export const RepOrdersPage: React.FC = () => {
                           <Phone size={15} />
                         </a>
                       )}
-                      {waUrl && (
-                        <a
-                          className="ibtn"
-                          href={waUrl}
-                          aria-label={`WhatsApp ${customerName}`}
-                          data-testid={`wa-btn-${o.id}`}
-                        >
-                          <MessageCircle size={15} />
-                        </a>
+                      {normalized && (
+                        <WhatsAppButton orderId={o.id} customerName={customerName} className="ibtn" testId={`wa-btn-${o.id}`} />
                       )}
                       <button
                         type="button"

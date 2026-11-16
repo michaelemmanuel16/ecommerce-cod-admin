@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
-import { Plus, Search, Phone, MessageCircle } from 'lucide-react';
+import { Plus, Search, Phone } from 'lucide-react';
 import { repService, type QueueResult, type QueueItem } from '../../services/rep.service';
 import { useAuthStore } from '../../stores/authStore';
 import { getSocket } from '../../services/socket';
@@ -11,7 +11,7 @@ import { NewOrderSheet } from '../orders/NewOrderSheet';
 import { formatWaitDuration, formatCallbackTime, REP_PANEL_BREAKPOINT } from './queueHelpers';
 import { formatCurrency } from '../../utils/format';
 import { personName } from '../../utils/people';
-import { whatsappUrl } from '../../utils/whatsapp';
+import { WhatsAppButton } from '../../components/rep/WhatsAppButton';
 
 type QueueTab = 'new' | 'call_back' | 'said_no' | 'not_reachable';
 
@@ -275,7 +275,6 @@ export const RepQueuePage: React.FC = () => {
                 // Phone links
                 const normalized = normalizePhone(order.customer.phoneNumber);
                 const telUrl = normalized ? `tel:${normalized}` : undefined;
-                const waUrl = whatsappUrl(normalized) ?? undefined;
 
                 return (
                   <div
@@ -348,16 +347,8 @@ export const RepQueuePage: React.FC = () => {
                         </a>
                       ) : null}
 
-                      {waUrl ? (
-                        <a
-                          href={waUrl}
-                          className="ibtn"
-                          title="WhatsApp customer"
-                          aria-label={`WhatsApp ${order.customer.name}`}
-                          data-testid={`wa-btn-${order.id}`}
-                        >
-                          <MessageCircle size={15} />
-                        </a>
+                      {normalized ? (
+                        <WhatsAppButton orderId={order.id} customerName={order.customer.name} className="ibtn" testId={`wa-btn-${order.id}`} />
                       ) : null}
                     </div>
                   </div>

@@ -71,8 +71,13 @@ export const getRepOrders = handler(async (req: AuthRequest, res: Response) => {
   const page = parsePositiveInt(req.query.page, 'page');
   const limit = parsePositiveInt(req.query.limit, 'limit');
   const sortOrder = req.query.sortOrder === 'asc' ? 'asc' : 'desc';
+  const rawGroup = req.query.group;
+  if (rawGroup !== undefined && !(typeof rawGroup === 'string' && (repService.REP_ORDER_GROUP_KEYS as readonly string[]).includes(rawGroup))) {
+    throw new AppError('group must be in_progress or finished', 400);
+  }
 
   const result = await repService.getOrders(actor, {
+    group: rawGroup as repService.RepOrderGroup | undefined,
     repId,
     q: typeof req.query.q === 'string' ? req.query.q : undefined,
     status: typeof req.query.status === 'string' ? req.query.status : undefined,

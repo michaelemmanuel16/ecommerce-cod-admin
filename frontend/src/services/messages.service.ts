@@ -1,5 +1,5 @@
 import { apiClient } from './api';
-import type { Assignee, ConversationList, Channel, LogPage, LogStatus, MessageTemplate, OptOutPage, Overview, ReplyTemplate, TemplateInput, Thread, TrackedMessages } from '../pages/messages/types';
+import type { Assignee, ConversationList, ConversationRow, Channel, LogPage, LogStatus, MessageTemplate, OptOutPage, Overview, ReplyTemplate, TemplateInput, Thread, TrackedMessages } from '../pages/messages/types';
 
 // Every call is quiet: the page shows the server's sentence itself (a toast or an inline line).
 const quiet = { quiet: true } as const;
@@ -12,6 +12,8 @@ export interface ConversationQuery {
   cursor?: string;
 }
 
+export interface OrderChat { conversationId: number | null; orderId: number; phone: string; customerName: string; windowOpen: boolean }
+
 export interface MessageFilters {
   channel?: Channel;
   from?: string;
@@ -23,6 +25,30 @@ export const messagesService = {
   async listConversations(query: ConversationQuery): Promise<ConversationList> {
     const { data } = await apiClient.get<ConversationList>('/api/conversations', { params: { ...query, unanswered: query.unanswered === undefined ? undefined : String(query.unanswered) }, skipCache: true, ...quiet });
     return data;
+  },
+
+  /** GET /api/conversations/:id: one list row (404 when it is not the person's). */
+  async getConversation(id: number): Promise<ConversationRow> {
+    const { data } = await apiClient.get<ConversationRow>(`/api/conversations/${id}`, { skipCache: true, ...quiet });
+    return data;
+  },
+
+  /** GET /api/conversations/for-order/:orderId: the chat of an order's customer (id null: none yet). */
+  async forOrder(orderId: number): Promise<OrderChat> {
+    const { data } = await apiClient.get<OrderChat>(`/api/conversations/for-order/${orderId}`, { skipCache: true, ...quiet });
+    return data;
+  },
+
+  /** POST /api/conversations/start: the first message of an order's chat; it creates the thread. */
+  async start(orderId: number, payload: { body: string } | { templateId: number; variables: string[] }): Promise<number> {
+    const { data } = await apiClient.post<{ conversationId: number }>('/api/conversations/start', { orderId, ...payload }, quiet);
+    return data.conversationId;
+  },
+
+  /** GET /api/conversations/whatsapp-status: is a WhatsApp connection set up and on? */
+  async whatsappConnected(): Promise<boolean> {
+    const { data } = await apiClient.get<{ connected: boolean }>('/api/conversations/whatsapp-status', { skipCache: true, ...quiet });
+    return data.connected;
   },
 
   async getThread(id: number): Promise<Thread> {

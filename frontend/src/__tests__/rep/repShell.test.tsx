@@ -9,7 +9,6 @@ import { RepComingSoon } from '../../pages/rep/RepComingSoon';
 import { QueueCallPanel } from '../../pages/rep/QueueCallPanel';
 import { useAuthStore } from '../../stores/authStore';
 import { repService } from '../../services/rep.service';
-import { features } from '../../config/features';
 
 vi.mock('../../components/rep/CallCard', () => ({
   CallCard: ({ orderId, onDone }: { orderId: number; onDone: (next: number | null) => void }) => (
@@ -48,7 +47,6 @@ const mockManager = {
 describe('M7-T14: Rep shell and navigation (F-750, F-751)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    features.repApp = true;
     vi.mocked(repService.getSummary).mockResolvedValue({
       queue: 9,
       inbox: 3,
@@ -64,54 +62,8 @@ describe('M7-T14: Rep shell and navigation (F-750, F-751)', () => {
     });
   });
 
-  describe('RepGate feature flag gate (item 1)', () => {
-    it('redirects /rep/today to / when features.repApp is off and does not render rep shell', () => {
-      features.repApp = false;
-      render(
-        <MemoryRouter initialEntries={['/rep/today']}>
-          <Routes>
-            <Route path="/" element={<div data-testid="home-page">Home</div>} />
-            <Route
-              path="/rep/*"
-              element={
-                <RepGate>
-                  <RepShell />
-                </RepGate>
-              }
-            />
-          </Routes>
-        </MemoryRouter>
-      );
-
-      expect(screen.queryByTestId('rep-desktop-rail')).not.toBeInTheDocument();
-      expect(screen.getByTestId('home-page')).toBeInTheDocument();
-    });
-
-    it('redirects manager from /rep/today to / when features.repApp is off', () => {
-      features.repApp = false;
-      useAuthStore.setState({ user: mockManager });
-      render(
-        <MemoryRouter initialEntries={['/rep/today']}>
-          <Routes>
-            <Route path="/" element={<div data-testid="home-page">Home</div>} />
-            <Route
-              path="/rep/*"
-              element={
-                <RepGate>
-                  <RepShell />
-                </RepGate>
-              }
-            />
-          </Routes>
-        </MemoryRouter>
-      );
-
-      expect(screen.queryByTestId('rep-desktop-rail')).not.toBeInTheDocument();
-      expect(screen.getByTestId('home-page')).toBeInTheDocument();
-    });
-
-    it('renders rep shell when features.repApp is on and user is sales_rep', () => {
-      features.repApp = true;
+  describe('RepGate (item 1)', () => {
+    it('renders rep shell for a sales_rep', () => {
       render(
         <MemoryRouter initialEntries={['/rep/today']}>
           <Routes>
@@ -133,7 +85,7 @@ describe('M7-T14: Rep shell and navigation (F-750, F-751)', () => {
   });
 
   describe('Desktop rail and phone tabs navigation', () => {
-    it('renders desktop rail with 5 pages and queue pill count', async () => {
+    it('renders desktop rail with 5 pages and the queue pill, and no Conversations', async () => {
       render(
         <MemoryRouter initialEntries={['/rep/today']}>
           <RepShell />
@@ -148,6 +100,7 @@ describe('M7-T14: Rep shell and navigation (F-750, F-751)', () => {
       expect(rail).toHaveTextContent('Today');
       expect(rail).toHaveTextContent('Queue');
       expect(rail).toHaveTextContent('My orders');
+      expect(rail).not.toHaveTextContent('Conversations');
       expect(rail).toHaveTextContent('Earnings');
       expect(rail).toHaveTextContent('My numbers');
 
@@ -156,6 +109,7 @@ describe('M7-T14: Rep shell and navigation (F-750, F-751)', () => {
         const queuePill = screen.getByTestId('queue-pill');
         expect(queuePill).toHaveTextContent('9');
       });
+      expect(screen.queryByTestId('chats-pill')).not.toBeInTheDocument();
     });
 
     it('renders phone bottom tabs with 5 pages and queue pill count', async () => {
@@ -172,6 +126,7 @@ describe('M7-T14: Rep shell and navigation (F-750, F-751)', () => {
       expect(phoneTabs).toHaveTextContent('Today');
       expect(phoneTabs).toHaveTextContent('Queue');
       expect(phoneTabs).toHaveTextContent('Orders');
+      expect(phoneTabs).not.toHaveTextContent('Chats');
       expect(phoneTabs).toHaveTextContent('Earnings');
       expect(phoneTabs).toHaveTextContent('Numbers');
 
@@ -228,7 +183,7 @@ describe('M7-T14: Rep shell and navigation (F-750, F-751)', () => {
   });
 
   describe('Basic phone support (F-751) and "Check number" tag', () => {
-    it('shows raw phone number as typed, normalizes for tel and whatsapp links, and provides no warning tag for valid number', () => {
+    it('shows raw phone number as typed, normalizes for the tel link, has no wa.me link, and provides no warning tag for valid number', () => {
       render(<PhoneDisplay phone="0245550103" />);
 
       const numberSpan = screen.getByTestId('phone-number');
@@ -238,9 +193,8 @@ describe('M7-T14: Rep shell and navigation (F-750, F-751)', () => {
       const callLink = screen.getByTestId('tel-call-link');
       expect(callLink).toHaveAttribute('href', 'tel:+233245550103');
 
-      // Valid number should have WhatsApp link
-      const waLink = screen.getByTestId('whatsapp-link');
-      expect(waLink).toHaveAttribute('href', 'https://wa.me/233245550103');
+      // WhatsApp is not a link out of the app any more: the buttons open a chat panel (WhatsAppButton)
+      expect(screen.queryByTestId('whatsapp-link')).not.toBeInTheDocument();
 
       // No "Check number" tag
       expect(screen.queryByTestId('check-number-tag')).not.toBeInTheDocument();

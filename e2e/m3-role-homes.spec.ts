@@ -2,11 +2,11 @@ import { test, expect } from '@playwright/test';
 import { BASE_URL, NO_ACCESS, ownerToken, signIn, userFor } from './helpers/m3';
 
 /**
- * M3-T70 (F-102): each role lands on its own home, the redirect flags are off, and a page the role cannot open shows
+ * M3-T70 (F-102): each role lands on its own home, the delivery agent flag is off, and a page the role cannot open shows
  * the "no access" page.
  * Read-only on the pages. It signs in as the dev users e2e-finance, e2e-stock, e2e-rep and e2e-agent (password123);
  * a role whose dev user cannot sign in gets a new E2E user, made through the API with the owner token.
- * Needs the dev stack and the frontend with the repApp and agentApp flags off (the default).
+ * Needs the dev stack and the frontend with the agentApp flag off (the default).
  */
 test.use({ baseURL: BASE_URL });
 
@@ -36,11 +36,10 @@ test.describe('each role lands on its own home', () => {
   });
 });
 
-test.describe('redirect flags off: reps and agents stay on the current pages', () => {
-  test('a call rep stays on the home page, not on /rep or /m', async ({ page }) => {
+test.describe('call reps land in the rep app; agents stay on the current page', () => {
+  test('a call rep lands on /rep/today', async ({ page }) => {
     await signIn(page, email.rep);
-    await expect(page).toHaveURL(/\/$/);
-    await expect(page).not.toHaveURL(/\/(agent|rep|m)\b/);
+    await expect(page).toHaveURL(/\/rep\/today$/);
     await expect(page.getByText(NO_ACCESS)).toHaveCount(0);
   });
 

@@ -5,8 +5,8 @@ import { reportsFixture, withoutCompare } from '../frontend/src/__tests__/fixtur
  * M3-T60 to M3-T62 (F-1050 to F-1054, F-1057, F-1064): the Reports page.
  * The numbers come from frontend/src/__tests__/fixtures/reports*.json (the NUMBERS.md fixture, 1 to 17 Oct 2026, as
  * GET /api/reports/:tab returns it), served through a route, because the dev database does not hold that month.
- * The sign-in uses the real dev API. Needs the dev users (password123) and the frontend with the repApp and agentApp
- * flags off. Point E2E_BASE_URL at the Vite port.
+ * The sign-in uses the real dev API. Needs the dev users (password123) and the frontend with the agentApp
+ * flag off. Point E2E_BASE_URL at the Vite port.
  */
 
 const PASSWORD = 'password123';

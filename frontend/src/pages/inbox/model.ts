@@ -74,7 +74,7 @@ export function adminLink(s: InboxSubject): string | null {
   }
 }
 
-/** The rep app has a screen for an order and nothing else. */
+/** The rep app has a screen for an order (the call card). A conversation opens the chat panel instead of a page. */
 export const repLink = (s: InboxSubject): string | null => (s.type === 'order' ? `/rep/call/${s.id}` : null);
 
 export interface SnoozeChoice { label: string; at: Date }

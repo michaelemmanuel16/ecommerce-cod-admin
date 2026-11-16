@@ -3,6 +3,7 @@ import prisma from '../../utils/prisma';
 import { AppError } from '../../middleware/errorHandler';
 import { customerScope, orderScope, Requester } from '../../utils/authUtils';
 import { isOwnerRole } from './inboxEvents';
+import { repConversationWhere } from '../messaging/conversationScope';
 
 /** Inbox feed (M9-T17): views, status, cursor paging, read, done, snooze, mark all and counts. Every read is from the database. */
 
@@ -53,6 +54,51 @@ async function assignedSubjectFilter(userId: number): Promise<Where> {
       { subjectType: 'conversation', subjectId: { in: conversations.map((c) => c.id) } },
     ],
   };
+}
+
+/**
+ * What a call rep sees in the Inbox (F-763): reminders, mentions, team notes, and news about their own orders, their own
+ * conversations and their own payouts. Every other event (system, connection, workflow, queue, finding, delivery agent
+ * events) is left out. A row about an order that is not the rep's now (`customerRepId` changed) is left out too,
+ * except a reminder the rep set themselves. A row about a customer stays while the customer is in the rep's `customerScope`. A conversation row stays only while the rep may still open that conversation.
+ * Lists, counts, mark all and the live push all use this one filter, so the badge always matches the list.
+ */
+export const REP_ORDER_EVENTS = ['order_assigned', 'late_callback'];
+export const REP_CONVERSATION_EVENTS = ['customer_reply', 'conversation_assigned'];
+
+export async function repVisibleFilter(userId: number): Promise<Where> {
+  const pairs = await prisma.notification.groupBy({
+    by: ['subjectType', 'subjectId'],
+    where: { userId, subjectType: { in: ['order', 'conversation', 'customer'] }, subjectId: { not: null } },
+  });
+  const idsOf = (type: string) => pairs.filter((p) => p.subjectType === type).map((p) => p.subjectId as number);
+  const cScope = customerScope({ id: userId, role: 'sales_rep' } as Requester);
+  const [orders, conversations, customers] = await Promise.all([
+    idsOf('order').length ? prisma.order.findMany({ where: { id: { in: idsOf('order') }, customerRepId: userId }, select: { id: true } }) : [],
+    idsOf('conversation').length ? prisma.conversation.findMany({ where: { id: { in: idsOf('conversation') }, ...repConversationWhere(userId) }, select: { id: true } }) : [],
+    idsOf('customer').length ? prisma.customer.findMany({ where: { id: { in: idsOf('customer') }, AND: [cScope!] }, select: { id: true } }) : [],
+  ]);
+  const ownOrder: Where = { subjectType: 'order', subjectId: { in: orders.map((o) => o.id) } };
+  const ownCustomer: Where = { subjectType: 'customer', subjectId: { in: customers.map((c) => c.id) } };
+  // A row about a customer stays while the customer is in the rep's scope (customerScope); other subjects (product, payout, none) always stay
+  const otherSubject: Where = { OR: [{ subjectType: null }, { subjectType: { notIn: ['order', 'customer'] } }] };
+  const subjectOk: Where[] = [ownOrder, ownCustomer, otherSubject];
+  return {
+    OR: [
+      { type: { in: REP_ORDER_EVENTS }, ...ownOrder },
+      { type: 'reminder_due', OR: [...subjectOk, { data: { path: ['createdById'], equals: userId } }] },
+      { type: { in: REP_CONVERSATION_EVENTS }, subjectType: 'conversation', subjectId: { in: conversations.map((c) => c.id) } },
+      { type: { in: ['mention', 'team_note'] }, OR: subjectOk },
+      { type: 'payout_paid' },
+    ],
+  };
+}
+
+const roleOf = async (userId: number): Promise<string | undefined> => (await prisma.user.findFirst({ where: { id: userId }, select: { role: true } }))?.role;
+
+/** The role's extra rows filter for one person (null: nothing to hide). Only the call rep is filtered. */
+export async function roleFilter(userId: number, role?: string): Promise<Where | null> {
+  return (role ?? await roleOf(userId)) === 'sales_rep' ? repVisibleFilter(userId) : null;
 }
 
 const encodeCursor = (row: { createdAt: Date; id: number }) => Buffer.from(`${row.createdAt.toISOString()}|${row.id}`).toString('base64url');
@@ -167,7 +213,11 @@ export async function listFeed(user: InboxUser, q: FeedQuery, now = new Date()) 
   const limit = Math.min(Math.max(q.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
 
   const and: Where[] = [];
-  if (q.scope === 'mine') and.push({ userId: user.id });
+  if (q.scope === 'mine') {
+    and.push({ userId: user.id });
+    const hide = await roleFilter(user.id, user.role);
+    if (hide) and.push(hide);
+  }
   if (q.view === 'assigned') and.push(await assignedSubjectFilter(user.id));
   else if (q.view !== 'all') and.push({ kind: VIEW_KIND[q.view] });
 
@@ -206,6 +256,8 @@ export async function getCounts(userId: number, now = new Date()): Promise<Inbox
     userId, isRead: false, doneAt: null,
     OR: [{ snoozedUntil: null }, { snoozedUntil: { lte: now } }, { kind: 'alert' }],
   };
+  const hide = await roleFilter(userId);
+  if (hide) unreadOpen.AND = [hide];
   const [byKind, assignedFilter] = await Promise.all([
     prisma.notification.groupBy({ by: ['kind'], where: unreadOpen, _count: { _all: true } }),
     assignedSubjectFilter(userId),
@@ -250,6 +302,8 @@ export async function patchRow(userId: number, id: number, patch: RowPatch, now 
 /** POST /api/inbox/mark-all: marks the person's unread open rows of one view as read. */
 export async function markAll(userId: number, view: InboxView, now = new Date()): Promise<number> {
   const and: Where[] = [{ userId, isRead: false, doneAt: null }];
+  const hide = await roleFilter(userId);
+  if (hide) and.push(hide);
   if (view === 'assigned') and.push(await assignedSubjectFilter(userId));
   else if (view !== 'all') and.push({ kind: VIEW_KIND[view] });
   const { count } = await prisma.notification.updateMany({ where: { AND: and }, data: { isRead: true, readAt: now } });

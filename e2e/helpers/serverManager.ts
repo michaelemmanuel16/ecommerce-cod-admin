@@ -66,7 +66,6 @@ export async function ensureServersRunning(): Promise<void> {
           VITE_API_URL: 'http://localhost:3102',
           VITE_WS_URL: 'http://localhost:3102',
           VITE_PROXY_TARGET: 'http://localhost:3102',
-          VITE_FEATURE_REP_APP: 'true',
         },
         stdio: 'ignore',
         detached: true,

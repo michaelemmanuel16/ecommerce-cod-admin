@@ -7,6 +7,10 @@ import { isOptedOut } from './optOutService';
 import { assertSendable, getTemplate } from './templateService';
 import { DAY_MS } from '../kpi/dates';
 import { isManagerUp } from '../../utils/authUtils';
+import { repConversationWhere } from './conversationScope';
+import { conversationPhone, phoneForms } from '../../utils/phone';
+import { orderScope } from '../../utils/authUtils';
+import { whatsappCloudProvider } from './providers';
 
 export interface Actor {
   id: number;
@@ -25,16 +29,10 @@ const THREAD_LIMIT = 500;
 export const windowOpen = (lastInboundAt: Date | null, now: number = Date.now()): boolean =>
   !!lastInboundAt && now - lastInboundAt.getTime() < WINDOW_MS;
 
-/** Owner, admin and manager see every conversation of the tenant. A rep sees those assigned to them or of a customer with an order of theirs. */
+/** Owner, admin and manager see every conversation of the tenant. A rep sees only (A) conversations of a customer with an order whose customerRepId is the rep, plus (B) conversations assigned to the rep. */
 export function visibilityWhere(actor: Pick<Actor, 'id' | 'role' | 'tenantId'>): Prisma.ConversationWhereInput {
   if (isManagerUp(actor)) return { tenantId: actor.tenantId };
-  return {
-    tenantId: actor.tenantId,
-    OR: [
-      { assignedToId: actor.id },
-      { customer: { orders: { some: { customerRepId: actor.id, deletedAt: null } } } },
-    ],
-  };
+  return { tenantId: actor.tenantId, ...repConversationWhere(actor.id) };
 }
 
 /** The messages of a thread: its own rows, plus outbound messages sent to the same number before it existed. */
@@ -74,6 +72,47 @@ function decodeCursor(cursor: string): { at: Date; id: number } {
 const personName = (p: { firstName: string; lastName: string; displayName?: string | null } | null) =>
   p ? (p.displayName || `${p.firstName} ${p.lastName}`.trim()) : null;
 
+type RowSource = Conversation & {
+  customer: { id: number; firstName: string; lastName: string } | null;
+  assignedTo: { id: number; firstName: string; lastName: string; displayName: string | null } | null;
+};
+
+async function presentRow(c: RowSource) {
+  const last = await prisma.messageLog.findFirst({
+    where: threadWhere(c),
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    select: { messageBody: true, direction: true, createdAt: true },
+  });
+  return {
+    id: c.id,
+    channel: c.channel,
+    phone: c.phone,
+    customerId: c.customerId,
+    customerName: c.customer ? `${c.customer.firstName} ${c.customer.lastName}`.trim() : null,
+    displayName: c.customer ? `${c.customer.firstName} ${c.customer.lastName}`.trim() : c.phone,
+    lastMessagePreview: last ? last.messageBody.slice(0, 140) : null,
+    lastMessageDirection: last?.direction ?? null,
+    lastMessageAt: c.lastMessageAt,
+    unanswered: c.unanswered,
+    status: c.status,
+    assignedTo: c.assignedTo ? { id: c.assignedTo.id, name: personName(c.assignedTo) } : null,
+    windowOpen: windowOpen(c.lastInboundAt),
+    windowExpiresAt: c.lastInboundAt ? new Date(c.lastInboundAt.getTime() + WINDOW_MS) : null,
+  };
+}
+
+const ROW_INCLUDE = {
+  customer: { select: { id: true, firstName: true, lastName: true } },
+  assignedTo: { select: { id: true, firstName: true, lastName: true, displayName: true } },
+} as const;
+
+/** GET /api/conversations/:id: one list row (the deep link of the rep app). 404 when the actor may not see it. */
+export async function getConversation(id: number, actor: Actor) {
+  const c = await prisma.conversation.findFirst({ where: { AND: [{ id }, visibilityWhere(actor)] }, include: ROW_INCLUDE });
+  if (!c) throw new AppError('Conversation not found', 404, 'CONVERSATION_NOT_FOUND');
+  return presentRow(c);
+}
+
 export async function listConversations(actor: Actor, query: ListQuery) {
   const and: Prisma.ConversationWhereInput[] = [visibilityWhere(actor)];
   if (query.status) and.push({ status: query.status });
@@ -102,37 +141,12 @@ export async function listConversations(actor: Actor, query: ListQuery) {
     where: { AND: and },
     orderBy: [{ lastMessageAt: 'desc' }, { id: 'desc' }],
     take: limit + 1,
-    include: {
-      customer: { select: { id: true, firstName: true, lastName: true } },
-      assignedTo: { select: { id: true, firstName: true, lastName: true, displayName: true } },
-    },
+    include: ROW_INCLUDE,
   });
   const hasMore = rows.length > limit;
   const page = rows.slice(0, limit);
 
-  const items = await Promise.all(page.map(async (c) => {
-    const last = await prisma.messageLog.findFirst({
-      where: threadWhere(c),
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      select: { messageBody: true, direction: true, createdAt: true },
-    });
-    return {
-      id: c.id,
-      channel: c.channel,
-      phone: c.phone,
-      customerId: c.customerId,
-      customerName: c.customer ? `${c.customer.firstName} ${c.customer.lastName}`.trim() : null,
-      displayName: c.customer ? `${c.customer.firstName} ${c.customer.lastName}`.trim() : c.phone,
-      lastMessagePreview: last ? last.messageBody.slice(0, 140) : null,
-      lastMessageDirection: last?.direction ?? null,
-      lastMessageAt: c.lastMessageAt,
-      unanswered: c.unanswered,
-      status: c.status,
-      assignedTo: c.assignedTo ? { id: c.assignedTo.id, name: personName(c.assignedTo) } : null,
-      windowOpen: windowOpen(c.lastInboundAt),
-      windowExpiresAt: c.lastInboundAt ? new Date(c.lastInboundAt.getTime() + WINDOW_MS) : null,
-    };
-  }));
+  const items = await Promise.all(page.map(presentRow));
 
   return { items, nextCursor: hasMore ? encodeCursor(page[page.length - 1]) : null };
 }
@@ -239,4 +253,56 @@ export async function updateConversation(id: number, actor: Actor, patch: { assi
     });
   }
   return { id: updated.id, assignedToId: updated.assignedToId, status: updated.status };
+}
+
+/** The order a rep opens a chat from: a rep gets only their own orders (404 otherwise), manager and up get any. */
+async function loadOrderCustomer(orderId: number, actor: Actor) {
+  const order = await prisma.order.findFirst({
+    where: { id: orderId, ...orderScope(actor) },
+    select: { id: true, customer: { select: { id: true, firstName: true, lastName: true, phoneNumber: true } } },
+  });
+  if (!order?.customer?.phoneNumber) throw new AppError('Order not found', 404, 'ORDER_NOT_FOUND');
+  return { orderId: order.id, customer: order.customer, phone: conversationPhone(order.customer.phoneNumber) };
+}
+
+/** The WhatsApp conversation of this phone, found under any stored form of the number. A conversation with no customer is linked to the order's customer, so the rep may open it. */
+async function findOrderConversation(tenantId: string, phone: string, customerId: number) {
+  const found = await prisma.conversation.findFirst({ where: { tenantId, channel: MessageChannel.whatsapp, phone: { in: [phone, ...phoneForms(phone)] } } });
+  if (found && !found.customerId) return prisma.conversation.update({ where: { id: found.id }, data: { customerId } });
+  return found;
+}
+
+/** GET /api/conversations/for-order/:orderId: the conversation to open from a rep's WhatsApp button (null id: none yet, the first send starts it). */
+export async function conversationForOrder(orderId: number, actor: Actor) {
+  const { customer, phone } = await loadOrderCustomer(orderId, actor);
+  const found = await findOrderConversation(actor.tenantId, phone, customer.id);
+  return {
+    conversationId: found?.id ?? null,
+    orderId,
+    phone,
+    customerName: `${customer.firstName} ${customer.lastName}`.trim(),
+    windowOpen: windowOpen(found?.lastInboundAt ?? null),
+  };
+}
+
+/** POST /api/conversations/start: the first message to an order's customer. Creates the thread, then sends like a reply (a new thread has no 24 hour window, so it needs an approved template). */
+export async function startOrderConversation(actor: Actor, input: ReplyInput & { orderId: number }) {
+  const { orderId, ...reply } = input;
+  const { customer, phone } = await loadOrderCustomer(orderId, actor);
+  let conversation = await findOrderConversation(actor.tenantId, phone, customer.id);
+  if (!conversation) {
+    try {
+      conversation = await prisma.conversation.create({ data: { tenantId: actor.tenantId, channel: MessageChannel.whatsapp, phone, customerId: customer.id, lastMessageAt: new Date() } });
+    } catch (err: any) {
+      if (err?.code !== 'P2002') throw err;
+      conversation = await prisma.conversation.findFirstOrThrow({ where: { tenantId: actor.tenantId, channel: MessageChannel.whatsapp, phone } });
+    }
+  }
+  const sent = await replyToConversation(conversation.id, actor, reply);
+  return { conversationId: conversation.id, ...sent };
+}
+
+/** GET /api/conversations/whatsapp-status: is a WhatsApp connection set up and on? Any role that opens Conversations may ask (the rep buttons use it). */
+export async function whatsappStatus(): Promise<{ connected: boolean }> {
+  return { connected: await whatsappCloudProvider.isEnabled('') };
 }

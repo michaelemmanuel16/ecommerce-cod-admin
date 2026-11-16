@@ -49,6 +49,20 @@ import {
 
 const VALID_ORDER_STATUSES = new Set(Object.values(OrderStatus));
 
+/**
+ * My orders tabs. Every OrderStatus lands in exactly one bucket: the Queue (pending_confirmation),
+ * In progress, or Finished. The frontend mirrors this in RepOrdersPage.tsx.
+ * payment_pending and payment_failed are in In progress on purpose: the rep still watches them.
+ */
+export const REP_ORDER_GROUPS = {
+  pending: ['pending_confirmation'],
+  in_progress: ['payment_pending', 'confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery', 'payment_failed'],
+  finished: ['delivered', 'digital_delivered', 'cancelled', 'returned', 'failed_delivery'],
+} as const satisfies Record<string, readonly OrderStatus[]>;
+
+export type RepOrderGroup = 'in_progress' | 'finished';
+export const REP_ORDER_GROUP_KEYS: readonly RepOrderGroup[] = ['in_progress', 'finished'];
+
 export function resolveTargetRepId(actor: Requester, requestedRepId?: number): number {
   if (!isManagerUp(actor)) {
     if (requestedRepId !== undefined && requestedRepId !== actor.id) {
@@ -70,6 +84,7 @@ export interface RepOrdersQuery {
   repId?: number;
   q?: string;
   status?: string;
+  group?: RepOrderGroup;
   page?: number;
   limit?: number;
   sortOrder?: 'asc' | 'desc';
@@ -99,6 +114,10 @@ export async function getOrders(actor: Requester, query: RepOrdersQuery = {}) {
       }
       and.push({ status: { in: rawParts as OrderStatus[] } });
     }
+  }
+
+  if (query.group) {
+    and.push({ status: { in: [...REP_ORDER_GROUPS[query.group]] as OrderStatus[] } });
   }
 
   const rawSearch = query.q?.trim();

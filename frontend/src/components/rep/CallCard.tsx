@@ -24,7 +24,8 @@ import { PhoneDisplay } from './PhoneDisplay';
 import { shortDate, STATUS_TONE } from '../../pages/orders/model';
 import { formatOrderNumber } from '../../utils/orderNumber';
 import { getOrderStatusLabel } from '../../utils/orderStatus';
-import { whatsappUrl } from '../../utils/whatsapp';
+import { WhatsAppButton } from './WhatsAppButton';
+import { useRepChat } from './RepChatPanel';
 import { toCents } from '../../utils/money';
 import { CallOutcome, type DeclineReason, type OrderStatus } from '../../types';
 import '../../styles/callCard.css';
@@ -77,6 +78,7 @@ function computeChipDate(chip: (typeof CB_TIME_CHIPS)[number], baseTime: number)
 }
 
 export function CallCard({ orderId, onDone, onBack, readOnly = false }: CallCardProps) {
+  const { openOrderNotes } = useRepChat();
   const say = useToast();
   const [card, setCard] = useState<CallCardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -380,9 +382,7 @@ export function CallCard({ orderId, onDone, onBack, readOnly = false }: CallCard
             <a className="pri" href={`tel:${e164}`} aria-label={`Call ${card.customer.name}`}>
               <Phone aria-hidden="true" style={{ width: 15, height: 15 }} /> Call
             </a>
-            <a href={whatsappUrl(e164) ?? '#'} aria-label={`WhatsApp ${card.customer.name}`}>
-              <MessageCircle aria-hidden="true" style={{ width: 15, height: 15 }} /> WhatsApp
-            </a>
+            <WhatsAppButton orderId={card.order.id} customerName={card.customer.name} variant="text" />
           </>
         ) : (
           <>
@@ -394,7 +394,7 @@ export function CallCard({ orderId, onDone, onBack, readOnly = false }: CallCard
             </button>
           </>
         )}
-        <button type="button" disabled title="Team notes arrive with Inbox">
+        <button type="button" onClick={() => openOrderNotes(card.order.id)}>
           <MessagesSquare aria-hidden="true" style={{ width: 15, height: 15 }} /> Team notes
         </button>
       </div>

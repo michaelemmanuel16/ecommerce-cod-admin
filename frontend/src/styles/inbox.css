@@ -1,7 +1,7 @@
 /* Inbox (M9-T37, T40). Copied from the style block of docs/mockups/v2/inbox.html, with the `.v2 .inbx` scope added.
    Colours come from tokens.css only. Rules with no mockup counterpart are marked "new". */
 
-.v2 .inbx .inbox{display:grid;grid-template-columns:220px minmax(0,1fr);gap:18px;align-items:start}
+.v2 .inbx .inbox{display:grid;grid-template-columns:220px minmax(0,1fr);gap:18px;align-items:start;align-content:start;height:auto;overflow:visible} /* height and overflow undo the Conversations `.inbox` box (messages.css: 660px, hidden), which clipped the tab strip and the list */
 .v2 .inbx .rail{padding:10px;position:sticky;top:84px}
 .v2 .inbx .rail button{display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;border-radius:10px;color:var(--ink-2);font-weight:600;text-align:left}
 .v2 .inbx .rail button svg{width:16px;height:16px;flex:none}
@@ -109,7 +109,7 @@
 }
 /* the rep app keeps the strip above the list at every width */
 .v2 .inbx.compact .inbox{grid-template-columns:minmax(0,1fr)}
-.v2 .inbx.compact .rail{position:static;display:flex;gap:4px;overflow-x:auto}
+.v2 .inbx.compact .rail{position:static;display:flex;flex-wrap:wrap;gap:4px}
 .v2 .inbx.compact .rail button{width:auto;white-space:nowrap}
 .v2 .inbx.compact .rail hr{display:none}
 

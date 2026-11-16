@@ -9,13 +9,17 @@ interface Props {
   conversationId: number;
   windowOpen: boolean;
   onSent: () => void;
+  /** Sends the message. Left out: a reply to `conversationId`. The rep app passes one that starts a thread from an order. */
+  /** Set: the box is shown disabled with this hint (the rep app, WhatsApp not connected). */
+  disabledHint?: string;
+  send?: (payload: { body: string } | { templateId: number; variables: string[] }) => Promise<void>;
 }
 
 /**
  * The reply box of a WhatsApp thread. With the 24 hour window open it sends free text; once it is closed the API
  * allows only an approved template, so the box says so and offers those (F-454).
  */
-export function ReplyBox({ conversationId, windowOpen, onSent }: Props) {
+export function ReplyBox({ conversationId, windowOpen, onSent, send: sendFn, disabledHint }: Props) {
   const say = useToast();
   const [text, setText] = useState('');
   const [templates, setTemplates] = useState<ReplyTemplate[] | null>(null);
@@ -42,7 +46,8 @@ export function ReplyBox({ conversationId, windowOpen, onSent }: Props) {
   const send = async () => {
     setSending(true);
     try {
-      await messagesService.reply(conversationId, windowOpen ? { body: text.trim() } : { templateId: template!.id, variables: values.map((v) => v.trim()) });
+      const payload = windowOpen ? { body: text.trim() } : { templateId: template!.id, variables: values.map((v) => v.trim()) };
+      await (sendFn ? sendFn(payload) : messagesService.reply(conversationId, payload));
       say('Reply sent');
       setText('');
       setTemplateId('');
@@ -54,6 +59,18 @@ export function ReplyBox({ conversationId, windowOpen, onSent }: Props) {
       setSending(false);
     }
   };
+
+  if (disabledHint) {
+    return (
+      <div className="compose" aria-disabled="true">
+        <div className="row">
+          <textarea className="msgin" aria-label="Reply" rows={2} placeholder="Write a reply" disabled />
+          <button type="button" className="send" aria-label="Send reply" disabled><Send /></button>
+        </div>
+        <p className="hint" role="status">{disabledHint}</p>
+      </div>
+    );
+  }
 
   if (windowOpen) {
     const ready = text.trim().length > 0 && !sending;

@@ -10,6 +10,8 @@ const row = (id: number, subjectType: string | null, subjectId: number | null) =
 beforeEach(() => {
   (prismaMock.order.findMany as any).mockResolvedValue([{ id: 10 }]);
   (prismaMock.customer.findMany as any).mockResolvedValue([]);
+  // the rep Inbox filter (inboxRepFilter.test.ts) finds no own order or conversation rows here, so it adds no reads
+  (prismaMock.notification.groupBy as any).mockResolvedValue([]);
 });
 
 describe('listFeed subject lookups', () => {

@@ -7,7 +7,6 @@ import { repService, type RepOrdersResult } from '../../services/rep.service';
 import { useAuthStore } from '../../stores/authStore';
 import { useConfigStore } from '../../stores/configStore';
 import { ToastProvider } from '../../components/ui-v2';
-import { getOrderStatusLabel } from '../../utils/orderStatus';
 
 vi.mock('../../services/rep.service', () => ({
   repService: {
@@ -230,20 +229,56 @@ describe('M7-T19: My orders page (F-760)', () => {
     });
   });
 
-  it('filters orders by status using the status filter dropdown', async () => {
-    const user = userEvent.setup();
+  it('opens on In progress and requests that group', async () => {
     renderOrders();
-
-    const statusSelect = screen.getByTestId('orders-status-filter');
-    await user.selectOptions(statusSelect, 'delivered');
 
     await waitFor(() => {
       expect(repService.getOrders).toHaveBeenCalledWith(
-        expect.objectContaining({
-          status: 'delivered',
-        })
+        expect.objectContaining({ group: 'in_progress', page: 1, limit: 25 })
       );
     });
+    expect(screen.getByTestId('orders-tab-in_progress')).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('orders-tab-finished')).toHaveAttribute('aria-selected', 'false');
+    expect(screen.queryByTestId('orders-status-filter')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId('orders-tab-count-in_progress')).toHaveTextContent('2');
+    });
+  });
+
+  it('switching to Finished requests that group and resets to page 1', async () => {
+    const user = userEvent.setup();
+    vi.mocked(repService.getOrders).mockResolvedValue({
+      ...mockOrdersResult,
+      pagination: { page: 1, limit: 25, total: 60, totalPages: 3 },
+    });
+    renderOrders();
+
+    await waitFor(() => expect(screen.getByTestId('orders-pagination')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: /Next/ }));
+    await waitFor(() => {
+      expect(repService.getOrders).toHaveBeenCalledWith(expect.objectContaining({ group: 'in_progress', page: 2 }));
+    });
+
+    await user.click(screen.getByTestId('orders-tab-finished'));
+    await waitFor(() => {
+      expect(repService.getOrders).toHaveBeenLastCalledWith(
+        expect.objectContaining({ group: 'finished', page: 1 })
+      );
+    });
+    expect(screen.getByTestId('orders-tab-finished')).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('shows a tab-specific empty state', async () => {
+    const user = userEvent.setup();
+    vi.mocked(repService.getOrders).mockResolvedValue({
+      orders: [],
+      pagination: { page: 1, limit: 25, total: 0, totalPages: 0 },
+    });
+    renderOrders();
+
+    await waitFor(() => expect(screen.getByText('No orders in progress.')).toBeInTheDocument());
+    await user.click(screen.getByTestId('orders-tab-finished'));
+    await waitFor(() => expect(screen.getByText('No finished orders yet.')).toBeInTheDocument());
   });
 
   it('tapping an order opens the read view without upsell panel', async () => {
@@ -280,22 +315,7 @@ describe('M7-T19: My orders page (F-760)', () => {
     });
 
     expect(screen.getByText('Nothing here')).toBeInTheDocument();
-    expect(screen.getByText('You have no assigned orders yet.')).toBeInTheDocument();
-  });
-
-  it('cancelled filter option uses the shared getOrderStatusLabel("cancelled") label', async () => {
-    renderOrders();
-
-    await waitFor(() => {
-      expect(screen.getByTestId('orders-status-filter')).toBeInTheDocument();
-    });
-
-    const statusSelect = screen.getByTestId('orders-status-filter') as HTMLSelectElement;
-    const cancelledOption = statusSelect.querySelector('option[value="cancelled"]');
-    expect(cancelledOption).toBeInTheDocument();
-    expect(cancelledOption?.textContent).toBe(getOrderStatusLabel('cancelled'));
-    expect(cancelledOption?.textContent).toBe('Cancelled');
-    expect(cancelledOption?.textContent).not.toBe('Declined');
+    expect(screen.getByText('No orders in progress.')).toBeInTheDocument();
   });
 
   it('search input has placeholder "Name, phone or order #" and left column shows date not status prefix', async () => {

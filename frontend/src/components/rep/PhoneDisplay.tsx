@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { Phone, MessageCircle, Copy, Check } from 'lucide-react';
+import { Phone, Copy, Check } from 'lucide-react';
 import { normalizePhone } from '../../utils/phone';
-import { whatsappUrl } from '../../utils/whatsapp';
 
 export interface PhoneDisplayProps {
   phone: string | null | undefined;
@@ -32,8 +31,6 @@ export const PhoneDisplay: React.FC<PhoneDisplayProps> = ({
       // Clipboard fallback
     }
   };
-
-  const waUrl = whatsappUrl(normalized);
 
   return (
     <div
@@ -82,29 +79,6 @@ export const PhoneDisplay: React.FC<PhoneDisplayProps> = ({
               }}
             >
               <Phone size={14} />
-            </a>
-          ) : null}
-
-          {isValid && waUrl ? (
-            <a
-              href={waUrl}
-              className="ibtn mini"
-              data-testid="whatsapp-link"
-              title="WhatsApp"
-              aria-label="WhatsApp"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 28,
-                height: 28,
-                borderRadius: 8,
-                textDecoration: 'none',
-                background: 'var(--mint-soft)',
-                color: 'var(--ok-ink)',
-              }}
-            >
-              <MessageCircle size={14} />
             </a>
           ) : null}
 
