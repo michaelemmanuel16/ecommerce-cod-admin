@@ -25,6 +25,19 @@ describe('whatsappService.sendTemplate components structure', () => {
     process.env = originalEnv;
   });
 
+  it('the saved message body fills {{1}} with the param (no "{Manny}" left behind)', async () => {
+    global.fetch = jest.fn(async () => ({ ok: true, json: async () => ({ messages: [{ id: 'wamid.d.1' }] }) })) as any;
+    await whatsappService.sendTemplate({
+      to: '+233241234567',
+      templateName: 'order_auto_confirm',
+      bodyText: 'Hello {{1}}, order {{2}} is ready.',
+      bodyParams: ['Manny', '55'],
+    });
+    const data = (prismaMock.messageLog.create as any).mock.calls[0][0].data;
+    expect(data.messageBody).toBe('Hello Manny, order 55 is ready.');
+    expect(data.messageBody).not.toContain('{Manny}');
+  });
+
   it("sendTemplate with headerParams + bodyParams + buttonPayloads builds components in order header, body, button index '0','1','2' with { type: 'payload', payload }", async () => {
     let capturedPayload: any = null;
     global.fetch = jest.fn(async (_url: any, init: any) => {

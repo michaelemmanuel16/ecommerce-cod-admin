@@ -278,7 +278,8 @@ function buildMessageBody(templateName: string, bodyParams: string[], bodyText?:
 
   let body = bodyText ?? (templates[templateName] || `Template: ${templateName}`);
   bodyParams.forEach((param, i) => {
-    body = body.replace(`{${i + 1}}`, param).replace(`{{${i + 1}}}`, param);
+    // {{n}} and {n} in one pass: replacing {n} first would eat the inner braces of {{n}} and leave '{Manny}'
+    body = body.replace(new RegExp(`\\{\\{${i + 1}\\}\\}|\\{${i + 1}\\}`), () => param);
   });
   return body;
 }
