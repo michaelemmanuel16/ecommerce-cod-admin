@@ -2,7 +2,7 @@ import apiClient from './api';
 
 /** Notification preferences (M9-T16, T39): a person's own channels per event, and the business's defaults per role. */
 
-export const CHANNELS = ['inApp', 'whatsapp', 'email', 'sms'] as const;
+export const CHANNELS = ['inApp', 'email'] as const;
 export type Channel = (typeof CHANNELS)[number];
 export type ChannelSwitch = Record<Channel, boolean>;
 
@@ -19,6 +19,8 @@ export interface PreferenceRow {
   event: string;
   label: string;
   kind: string;
+  /** Heading the row is listed under. */
+  group: string;
   source: 'person' | 'role' | 'default';
   channels: Record<Channel, ChannelView>;
 }

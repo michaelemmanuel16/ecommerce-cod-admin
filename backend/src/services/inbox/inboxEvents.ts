@@ -4,7 +4,7 @@ import { NotificationKind, UserRole } from '@prisma/client';
  * The one list of inbox events (M9-T16). `notify` only accepts names from this file.
  * The stored `Notification.type` is the event name.
  */
-export const CHANNELS = ['inApp', 'email', 'sms', 'whatsapp'] as const;
+export const CHANNELS = ['inApp', 'email'] as const;
 export type InboxChannel = (typeof CHANNELS)[number];
 export type ChannelSet = Record<InboxChannel, boolean>;
 
@@ -13,6 +13,10 @@ export interface InboxEventDef {
   /** Name shown in the preference screens. */
   label: string;
   kind: NotificationKind;
+  /** Heading the settings page lists the event under. */
+  group: string;
+  /** The roles the code can send this event to. The settings screens show the event only to these roles. */
+  roles: readonly UserRole[];
   /** Channels when nobody (person or role default) has chosen. */
   defaults: ChannelSet;
   /** Per-role defaults that replace `defaults` for that role. */
@@ -21,36 +25,44 @@ export interface InboxEventDef {
   ownerInAppRequired?: boolean;
 }
 
-const IN_APP: ChannelSet = { inApp: true, email: false, sms: false, whatsapp: false };
-const IN_APP_EMAIL: ChannelSet = { inApp: true, email: true, sms: false, whatsapp: false };
+const IN_APP: ChannelSet = { inApp: true, email: false };
+const IN_APP_EMAIL: ChannelSet = { inApp: true, email: true };
 
-const def = (name: string, label: string, kind: NotificationKind, rest: Partial<Omit<InboxEventDef, 'name' | 'label' | 'kind'>> = {}): InboxEventDef =>
-  ({ name, label, kind, defaults: IN_APP, ...rest });
+/** Group headings, in the order the settings page shows them. */
+export const EVENT_GROUPS = ['Conversations', 'Orders and calls', 'Delivery and money', 'Team', 'System'] as const;
 
+const ALL_ROLES: readonly UserRole[] = ['super_admin', 'admin', 'manager', 'sales_rep', 'inventory_manager', 'delivery_agent', 'accountant'];
+const OWNERS: readonly UserRole[] = ['admin', 'super_admin'];
+const MANAGEMENT: readonly UserRole[] = ['manager', 'admin', 'super_admin'];
+const REPS_AND_UP: readonly UserRole[] = ['sales_rep', 'manager', 'admin', 'super_admin'];
+
+type Rest = Partial<Pick<InboxEventDef, 'roleDefaults' | 'ownerInAppRequired'>>;
+const def = (group: string, roles: readonly UserRole[], name: string, label: string, kind: NotificationKind, rest: Rest = {}): InboxEventDef =>
+  ({ name, label, kind, group, roles, defaults: IN_APP, ...rest });
+
+// Each `roles` list is what the call sites of `notify` can reach (checked against the code, not the wish list).
 const LIST: InboxEventDef[] = [
-  def('customer_reply', 'A customer replied', 'reply'),
-  def('conversation_assigned', 'A conversation was assigned to you', 'reply'),
-  def('mention', 'Someone mentioned you', 'mention'),
-  def('reminder_due', 'A reminder is due', 'reminder'),
-  def('team_note', 'A team note on your work', 'note'),
-  def('order_assigned', 'An order was assigned to you', 'alert'),
-  def('late_callback', 'A call-back is late', 'alert'),
-  def('overdue_collections', 'Agents have overdue collections', 'alert'),
-  def('queue_wait', 'An order waits too long in the call queue', 'alert'),
-  def('no_assignee_available', 'Nobody is available to take new orders', 'alert'),
-  def('agent_blocked', 'An agent account was blocked', 'alert'),
-  def('agent_unblocked', 'An agent account was unblocked', 'alert'),
-  def('stock_incoming', 'Stock is on its way to you', 'alert'),
-  def('payout_paid', 'A payout was paid', 'alert'),
-  def('delivery_rescheduled', 'A delivery was rescheduled', 'alert'),
-  def('system_problem', 'A connection or job problem', 'system', {
+  def('Conversations', REPS_AND_UP, 'customer_reply', 'A customer replied', 'reply'),
+  def('Conversations', REPS_AND_UP, 'conversation_assigned', 'A conversation was assigned to you', 'reply'),
+  def('Conversations', ALL_ROLES, 'mention', 'Someone mentioned you', 'mention'),
+  def('Conversations', ALL_ROLES, 'team_note', 'A team note on your work', 'note'),
+  def('Orders and calls', ['sales_rep', 'delivery_agent'], 'order_assigned', 'An order was assigned to you', 'alert'),
+  def('Orders and calls', REPS_AND_UP, 'late_callback', 'A call-back is late', 'alert'),
+  def('Orders and calls', ALL_ROLES, 'reminder_due', 'A reminder is due', 'reminder'),
+  def('Orders and calls', MANAGEMENT, 'queue_wait', 'An order waits too long in the call queue', 'alert'),
+  def('Orders and calls', OWNERS, 'no_assignee_available', 'Nobody is available to take new orders', 'alert'),
+  def('Delivery and money', ['delivery_agent'], 'stock_incoming', 'Stock is on its way to you', 'alert'),
+  def('Delivery and money', ['sales_rep', 'delivery_agent'], 'payout_paid', 'A payout was paid', 'alert'),
+  def('Delivery and money', ['delivery_agent'], 'delivery_rescheduled', 'A delivery was rescheduled', 'alert'),
+  def('Delivery and money', OWNERS, 'overdue_collections', 'Agents have overdue collections', 'alert'),
+  // The name stays `agent_blocked` (stored preferences use it); the unblock notice is sent under the same name.
+  def('Team', ['delivery_agent'], 'agent_blocked', 'An agent account was blocked or unblocked', 'alert'),
+  def('Team', ALL_ROLES, 'finding_assigned', 'A Finding was assigned to you', 'alert'),
+  def('Team', MANAGEMENT, 'target_returned', 'A target went back to the role pool', 'alert'),
+  def('System', OWNERS, 'system_problem', 'A connection or job problem', 'system', {
     roleDefaults: { admin: IN_APP_EMAIL, super_admin: IN_APP_EMAIL },
     ownerInAppRequired: true,
   }),
-  def('workflow_failed', 'A workflow failed', 'alert'),
-  def('connection_error', 'A connection stopped working', 'system'),
-  def('finding_assigned', 'A Finding was assigned to you', 'alert'),
-  def('target_returned', 'A target went back to the role pool', 'alert'),
 ];
 
 export const INBOX_EVENTS: Readonly<Record<string, InboxEventDef>> = Object.freeze(
@@ -74,3 +86,6 @@ export function eventDefaultFor(event: InboxEventDef, role: UserRole): ChannelSe
 }
 
 export const isOwnerRole = (role: UserRole): boolean => OWNER_ROLES.includes(role);
+
+/** Does the event reach this role? The settings screens list only these. */
+export const eventReachesRole = (event: InboxEventDef, role: UserRole): boolean => event.roles.includes(role);

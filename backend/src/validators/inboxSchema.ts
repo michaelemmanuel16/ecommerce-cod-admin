@@ -7,8 +7,6 @@ const channelItem = z.object({
   event: z.string().min(1),
   inApp: z.boolean().optional(),
   email: z.boolean().optional(),
-  sms: z.boolean().optional(),
-  whatsapp: z.boolean().optional(),
 });
 
 /** PUT /api/notifications/preferences */

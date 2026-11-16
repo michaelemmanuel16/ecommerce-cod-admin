@@ -6,8 +6,6 @@ import { getSocketInstance } from '../../utils/socketInstance';
 import { emitNotification } from '../../sockets';
 import { HUMAN_USERS_WHERE } from '../systemUserService';
 import { sendEmail } from '../emailService';
-import { smsService } from '../smsService';
-import { whatsappService } from '../whatsappService';
 import { ChannelSet, getEventDef, isOwnerRole } from './inboxEvents';
 import { getTenantChannels } from './inboxChannels';
 import { pushInboxNew } from './inboxRealtime';
@@ -60,16 +58,9 @@ const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
 
 /** Send the external copies. Each failure is logged and never reaches the caller. */
 async function sendExternal(person: Person, channels: ChannelSet, input: NotifyInput, available: Awaited<ReturnType<typeof getTenantChannels>>): Promise<void> {
-  const text = `${input.title}: ${input.message}`;
   const jobs: Array<[string, () => Promise<unknown>]> = [];
   if (channels.email && available.email.available && person.email) {
     jobs.push(['email', () => sendEmail({ to: person.email, subject: input.title, html: `<p>${escapeHtml(input.message)}</p>` })]);
-  }
-  if (channels.sms && available.sms.available && person.phoneNumber) {
-    jobs.push(['sms', () => smsService.sendSms({ to: person.phoneNumber!, body: text })]);
-  }
-  if (channels.whatsapp && available.whatsapp.available && person.phoneNumber) {
-    jobs.push(['whatsapp', () => whatsappService.sendText({ to: person.phoneNumber!, body: text })]);
   }
   await Promise.all(jobs.map(async ([channel, send]) => {
     try {
@@ -117,7 +108,7 @@ async function writeRow(person: Person, input: NotifyInput, kind: Notification['
 
 /**
  * The one way to tell a person something (M9-T16). The in-app row is written first and is never undone by an
- * external failure. Email, SMS and WhatsApp follow each person's choice: person, else role default, else event default.
+ * external failure. Email follows each person's choice: person, else role default, else event default.
  * Returns the in-app rows written.
  */
 export async function notify(input: NotifyInput): Promise<Notification[]> {
@@ -139,7 +130,7 @@ export async function notify(input: NotifyInput): Promise<Notification[]> {
     const rows = written.filter((r): r is Notification => r !== null);
     const external = people.filter((p) => {
       const c = resolved.get(p.id)!.channels;
-      return c.email || c.sms || c.whatsapp;
+      return c.email;
     });
 
     if (external.length > 0) {

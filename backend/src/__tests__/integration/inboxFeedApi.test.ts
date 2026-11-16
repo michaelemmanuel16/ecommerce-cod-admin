@@ -105,6 +105,18 @@ describe('GET /api/inbox', () => {
     expect(await ids('notes')).toEqual([n1.id]);
   });
 
+  it('still lists rows stored under event names that were removed (agent_unblocked, workflow_failed, connection_error)', async () => {
+    const made = [];
+    for (const type of ['agent_unblocked', 'workflow_failed', 'connection_error']) {
+      made.push(await row(pair.a.id, rep().id, 'alert', { type }));
+    }
+    const res = await get(rep().token, '/api/inbox');
+    expect(res.status).toBe(200);
+    expect(res.body.items.map((i: any) => i.id)).toEqual([...made].reverse().map((m) => m.id));
+    const read = await request(app).patch(`/api/inbox/${made[0].id}`).set(auth(rep().token)).send({ read: true });
+    expect(read.status).toBe(200);
+  });
+
   it('pages with a cursor, newest first, with no gap and no repeat', async () => {
     const made = [];
     for (let i = 0; i < 7; i++) made.push((await row(pair.a.id, rep().id, 'alert')).id);
