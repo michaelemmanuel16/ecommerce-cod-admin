@@ -197,6 +197,9 @@ export async function selectPhoneNumber(req: AuthRequest, res: Response): Promis
 
     const existingProvider = (config.whatsappProvider as any) || {};
 
+    // The WABA of the picked phone (carried in the pending list); the body value and the old config are fallbacks
+    const effectiveWabaId = selectedPhone.wabaId || wabaId || existingProvider.wabaId;
+
     // Build new provider config — OAuth writes accessToken directly
     const newProvider = {
       ...existingProvider,
@@ -204,7 +207,7 @@ export async function selectPhoneNumber(req: AuthRequest, res: Response): Promis
       phoneNumberId,
       isEnabled: true,
       authMode: 'oauth' as const,
-      wabaId: wabaId || existingProvider.wabaId,
+      wabaId: effectiveWabaId,
       oauthTokenExpiry: pending.oauthTokenExpiry,
       oauthConnectedAt: new Date().toISOString(),
       oauthVerifiedName: selectedPhone.verified_name,
@@ -223,7 +226,6 @@ export async function selectPhoneNumber(req: AuthRequest, res: Response): Promis
     await whatsappOAuthStore().deletePending(loginTenantId, userId);
 
     // Subscribe WABA to this app so Meta sends webhook events (delivery receipts)
-    const effectiveWabaId = wabaId || existingProvider.wabaId;
     if (effectiveWabaId) {
       const subscribed = await subscribeWABAToApp(effectiveWabaId, pending.accessToken);
       if (!subscribed) {

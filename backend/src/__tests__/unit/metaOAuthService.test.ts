@@ -7,6 +7,7 @@ import {
   getAdsRedirectUri,
   debugToken,
   fetchAdAccounts,
+  fetchWABAPhoneNumbers,
 } from '../../services/metaOAuthService';
 
 // T04 (COD-71): the WhatsApp login URL is pinned; the ads URL and the new Graph helpers are checked with Meta mocked.
@@ -97,5 +98,16 @@ describe('metaOAuthService (T04)', () => {
     expect(url2).not.toContain('LEAK');
     expect(url1).not.toContain('tok');
     expect(opts1.headers.Authorization).toBe('Bearer tok');
+  });
+  it('fetchWABAPhoneNumbers carries the WABA id with each phone (T51)', async () => {
+    (global as any).fetch = jest.fn(async (url: string) => {
+      if (url.includes('/debug_token')) {
+        return { ok: true, json: async () => ({ data: { granular_scopes: [{ scope: 'whatsapp_business_management', target_ids: ['111', '222'] }] } }) };
+      }
+      const waba = url.includes('/111/') ? '111' : '222';
+      return { ok: true, json: async () => ({ data: [{ id: `p-${waba}`, display_phone_number: '+233', verified_name: `Shop ${waba}` }] }) };
+    });
+    const phones = await fetchWABAPhoneNumbers('u1', 'tok');
+    expect(phones.map((p) => [p.id, p.wabaId])).toEqual([['p-111', '111'], ['p-222', '222']]);
   });
 });
