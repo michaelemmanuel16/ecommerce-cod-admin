@@ -16,7 +16,7 @@ export function Inbox() {
   const user = useAuthStore((s) => s.user);
   if (params.get('view') === 'settings' && user) {
     return (
-      <section className="inbx">
+      <section className="inbx compact">
         <Link to="/inbox" className="back"><ArrowLeft aria-hidden="true" /> Inbox</Link>
         <div className="head"><div><h1>Notification settings</h1><p>Choose what reaches you, and on which channel.</p></div></div>
         <NotificationSettings user={user} />
