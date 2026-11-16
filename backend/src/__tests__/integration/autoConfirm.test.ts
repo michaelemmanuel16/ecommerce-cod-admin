@@ -258,7 +258,7 @@ describe('M7-T08: Auto-confirm send and public confirmation API', () => {
     smsSpy.mockRestore();
   });
 
-  it('when WhatsApp and SMS both fail, the send throws and the order can be tried again', async () => {
+  it('when WhatsApp fails, the send throws, no SMS is sent, and the order can be tried again', async () => {
     const order = await makeOrder({
       tenantId,
       customerId,
@@ -267,10 +267,11 @@ describe('M7-T08: Auto-confirm send and public confirmation API', () => {
       orderType: 'physical',
     });
     const waSpy = jest.spyOn(whatsappService, 'sendTemplate').mockRejectedValue(new Error('WhatsApp down'));
-    const smsSpy = jest.spyOn(smsService, 'sendSms').mockRejectedValue(new Error('SMS down'));
+    const smsSpy = jest.spyOn(smsService, 'sendSms').mockResolvedValue({ messageLogId: 1, providerMessageId: 'x', sent: true } as any);
 
     await expect(sendAutoConfirmForOrder(order.id, tenantId)).rejects.toThrow(/could not be sent/);
 
+    expect(smsSpy).not.toHaveBeenCalled();
     const after = await prismaBase.order.findUnique({ where: { id: order.id } });
     expect(after!.autoConfirmSentAt).toBeNull();
     expect(await prismaBase.confirmToken.count({ where: { orderId: order.id } })).toBe(0);
@@ -278,7 +279,7 @@ describe('M7-T08: Auto-confirm send and public confirmation API', () => {
     smsSpy.mockRestore();
   });
 
-  it('releases the claim when neither channel is set up (send only logged)', async () => {
+  it('releases the claim when WhatsApp is not set up (send only logged, no SMS)', async () => {
     const order = await makeOrder({
       tenantId,
       customerId,
@@ -301,35 +302,8 @@ describe('M7-T08: Auto-confirm send and public confirmation API', () => {
     expect(after!.autoConfirmSentAt).toBeNull();
     expect(await prismaBase.confirmToken.count({ where: { orderId: order.id } })).toBe(0);
     const logs = await prismaBase.messageLog.findMany({ where: { orderId: order.id }, select: { channel: true, status: true } });
-    expect(logs.map((l) => l.channel).sort()).toEqual(['sms', 'whatsapp']);
+    expect(logs.map((l) => l.channel)).toEqual(['whatsapp']);
     expect(logs.every((l) => l.status === 'skipped')).toBe(true);
-  });
-
-  it('WhatsApp failure falls back to SMS', async () => {
-    const order = await makeOrder({
-      tenantId,
-      customerId,
-      status: 'pending_confirmation',
-      paymentMethod: 'cod',
-      orderType: 'physical',
-    });
-
-    const sendWhatsAppSpy = jest.spyOn(whatsappService, 'sendTemplate').mockRejectedValue(new Error('WhatsApp connection error'));
-    const sendSmsSpy = jest.spyOn(smsService, 'sendSms').mockResolvedValue({ messageLogId: 1, providerMessageId: 'sms-fallback-id', sent: true } as any);
-
-    const result = await sendAutoConfirmForOrder(order.id, tenantId);
-
-    expect(result).not.toBeNull();
-    expect(sendWhatsAppSpy).toHaveBeenCalledTimes(1);
-    expect(sendSmsSpy).toHaveBeenCalledTimes(1);
-    expect(sendSmsSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        body: expect.stringMatching(/please confirm order #\d+, .+, GHS \d+\.\d{2} on delivery\. Reply YES to confirm or NO to change or cancel\./),
-      })
-    );
-
-    sendWhatsAppSpy.mockRestore();
-    sendSmsSpy.mockRestore();
   });
 
   describe('send_auto_confirm workflow action (COD-193 M7-R2)', () => {

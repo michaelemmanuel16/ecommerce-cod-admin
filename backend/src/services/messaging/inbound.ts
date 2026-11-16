@@ -174,6 +174,7 @@ export async function processInboundMessage(tenantId: string, msg: ParsedInbound
   const isStop = STOP_WORDS.has(cleanText);
   const isStart = START_WORDS.has(cleanText);
   let handledByAutoConfirm = false;
+  let needsPerson = false;
 
   if (isStop || isStart) {
     await setOptOut({
@@ -181,13 +182,14 @@ export async function processInboundMessage(tenantId: string, msg: ParsedInbound
       optedOut: isStop, reason: isStop ? 'stop_reply' : 'resubscribe',
     });
   } else {
-    handledByAutoConfirm = await runAutoConfirm(tenantId, {
+    ({ acted: handledByAutoConfirm, needsPerson } = await runAutoConfirm(tenantId, {
       responseKind, fromPhone, customer: customerRecord, contextMessage, logId: createdLog.id,
-    });
+    }));
   }
 
   const lastMessageAt = conversation.lastMessageAt > msg.occurredAt ? conversation.lastMessageAt : msg.occurredAt;
-  const needsAnswer = !isStop && !isStart && !handledByAutoConfirm;
+  // A NO / change / cancel on an order with no rep reaches nobody's rep queue: it needs a person (the owner is told)
+  const needsAnswer = !isStop && !isStart && (!handledByAutoConfirm || needsPerson);
   const updated = await prisma.conversation.update({
     where: { id: conversation.id },
     data: {
@@ -213,11 +215,14 @@ export async function processInboundMessage(tenantId: string, msg: ParsedInbound
   }
 }
 
-/** The M7 auto-confirm step, as it was in the controller. Returns true when it acted on an open auto-confirm. */
+/**
+ * The M7 auto-confirm step, as it was in the controller. `acted` is true when it acted on an open auto-confirm.
+ * `needsPerson` is true when that was a NO / change / cancel on an order with no rep: nobody's rep queue shows it.
+ */
 async function runAutoConfirm(
   tenantId: string,
   ctx: { responseKind: 'yes' | 'change' | 'cancel' | 'no' | null; fromPhone: string; customer: any; contextMessage: any; logId: number },
-): Promise<boolean> {
+): Promise<{ acted: boolean; needsPerson: boolean }> {
   const { responseKind, fromPhone, customer, contextMessage, logId } = ctx;
   let targetOrder: any = null;
   if (contextMessage?.orderId) {
@@ -242,6 +247,7 @@ async function runAutoConfirm(
   }
 
   let acted = false;
+  let needsPerson = false;
   // Acts only on an open auto-confirm: status pending_confirmation and autoConfirmSentAt not null.
   if (targetOrder && targetOrder.status === 'pending_confirmation' && targetOrder.autoConfirmSentAt !== null && responseKind) {
     acted = true;
@@ -250,6 +256,7 @@ async function runAutoConfirm(
     if (responseKind === 'yes') {
       await orderService.confirmByCustomer(targetOrder.id);
     } else {
+      needsPerson = !targetOrder.customerRepId;
       await prisma.order.update({
         where: { id: targetOrder.id },
         data: { saidNo: true, requiresManualCall: true, customerResponse: responseKind },
@@ -283,7 +290,7 @@ async function runAutoConfirm(
   if (resolvedOrderId) {
     await prisma.messageLog.update({ where: { id: logId }, data: { orderId: resolvedOrderId } });
   }
-  return acted;
+  return { acted, needsPerson };
 }
 
 /** Process the inbound messages of one verified webhook change. The caller has checked the signature. */

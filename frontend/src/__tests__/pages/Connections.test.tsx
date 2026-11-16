@@ -9,7 +9,7 @@ import { WebhooksRedirect } from '../../pages/connections/WebhooksRedirect';
 const svc = vi.hoisted(() => ({
   getCards: vi.fn(), getPaymentConnections: vi.fn(), savePaymentConnection: vi.fn(), testPaymentConnection: vi.fn(),
   getSmsReportUrl: vi.fn(), testSmtp: vi.fn(), getCsvTemplate: vi.fn(), sendSmsTest: vi.fn(), sendEmailTest: vi.fn(),
-  getActivity: vi.fn(),
+  getActivity: vi.fn(), disconnectSms: vi.fn(),
 }));
 vi.mock('../../services/connections.service', () => ({ connectionsService: svc }));
 
@@ -228,6 +228,25 @@ describe('Connections page (M9-T44)', () => {
     await userEvent.type(sender, 'NewName');
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(admin.updateSystemConfig).toHaveBeenCalledWith({ smsProvider: expect.objectContaining({ provider: 'arkesel', senderId: 'NewName' }) }));
+  });
+
+  it('SMS Disconnect calls the API, says so, and reloads the cards (T51)', async () => {
+    svc.disconnectSms.mockResolvedValue(undefined);
+    renderPage();
+    await userEvent.click(within(await openCard('Arkesel SMS')).getByRole('button', { name: 'Edit' }));
+    const before = svc.getCards.mock.calls.length;
+    await userEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
+    await waitFor(() => expect(svc.disconnectSms).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('SMS disconnected')).toBeInTheDocument();
+    await waitFor(() => expect(svc.getCards.mock.calls.length).toBeGreaterThan(before));
+  });
+
+  it('SMS Disconnect shows the error text when it fails, and the Disconnect button is hidden when SMS is not set up (T51)', async () => {
+    svc.disconnectSms.mockRejectedValue({ response: { data: { error: 'Nope' } } });
+    renderPage();
+    await userEvent.click(within(await openCard('Arkesel SMS')).getByRole('button', { name: 'Edit' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
   });
 
   it('an admin edits SMS, WhatsApp, Email and Paystack like the owner, but has no AI keys card', async () => {

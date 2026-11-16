@@ -21,6 +21,8 @@ export interface WABAPhoneNumber {
   verified_name: string;
   quality_rating: string;
   code_verification_status?: string;
+  /** The WABA this phone belongs to. Saved as wabaId when the phone is picked. */
+  wabaId?: string;
 }
 
 interface TokenExchangeResult {
@@ -190,13 +192,14 @@ export async function fetchUserIdFromToken(token: string): Promise<string> {
   return data.id;
 }
 
-function mapPhone(phone: any): WABAPhoneNumber {
+function mapPhone(phone: any, wabaId?: string): WABAPhoneNumber {
   return {
     id: phone.id,
     display_phone_number: phone.display_phone_number,
     verified_name: phone.verified_name,
     quality_rating: phone.quality_rating || 'UNKNOWN',
     code_verification_status: phone.code_verification_status,
+    wabaId,
   };
 }
 
@@ -209,7 +212,7 @@ async function fetchPhonesForWabas(wabas: any[], token: string): Promise<WABAPho
         return [];
       }
       const data = await res.json() as any;
-      return (data.data || []).map(mapPhone);
+      return (data.data || []).map((p: any) => mapPhone(p, String(waba.id)));
     })
   );
   return results.flat();

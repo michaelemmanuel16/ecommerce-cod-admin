@@ -58,6 +58,13 @@ describe('Messages page: Conversations', () => {
     expect(svc.listConversations).toHaveBeenCalledWith({ status: 'open', unanswered: true });
   });
 
+  it('shows *text* in a bubble as bold (T51)', async () => {
+    svc.getThread.mockResolvedValue(thread([message({ id: 1, status: 'delivered', messageBody: 'Order *#55* is ready' })]));
+    await openFirst();
+    const strong = await screen.findByText('#55');
+    expect(strong.tagName).toBe('STRONG');
+  });
+
   it('the Mine and All filters change the request', async () => {
     const user = userEvent.setup();
     renderPage();

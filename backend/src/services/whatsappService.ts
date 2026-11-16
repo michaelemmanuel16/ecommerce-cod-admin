@@ -172,30 +172,13 @@ export async function sendWhatsAppForOrder(
     bodyParams.push(customLink);
   }
 
-  try {
-    return await whatsappService.sendTemplate({
-      to: orderContext.customerPhone,
-      templateName: templateConfig.templateName,
-      bodyParams,
-      orderId: order.id,
-      customerId: orderContext.customerId,
-    });
-  } catch (error: any) {
-    // Auto-fallback to SMS when WhatsApp fails
-    logger.warn('WhatsApp send failed, attempting SMS fallback', {
-      orderId, templateKey, error: error.message,
-    });
-
-    try {
-      const { sendSmsForOrder } = await import('./smsService');
-      const smsResult = await sendSmsForOrder(templateKey, orderId, error.messageLogId);
-      logger.info('SMS fallback succeeded', { orderId, messageLogId: smsResult.messageLogId });
-      return smsResult;
-    } catch (smsError: any) {
-      logger.error('SMS fallback also failed', { orderId, error: smsError.message });
-      throw error; // throw original WhatsApp error
-    }
-  }
+  return whatsappService.sendTemplate({
+    to: orderContext.customerPhone,
+    templateName: templateConfig.templateName,
+    bodyParams,
+    orderId: order.id,
+    customerId: orderContext.customerId,
+  });
 }
 
 interface SendTemplateOptions {
@@ -278,7 +261,8 @@ function buildMessageBody(templateName: string, bodyParams: string[], bodyText?:
 
   let body = bodyText ?? (templates[templateName] || `Template: ${templateName}`);
   bodyParams.forEach((param, i) => {
-    body = body.replace(`{${i + 1}}`, param).replace(`{{${i + 1}}}`, param);
+    // {{n}} and {n} in one pass: replacing {n} first would eat the inner braces of {{n}} and leave '{Manny}'
+    body = body.replace(new RegExp(`\\{\\{${i + 1}\\}\\}|\\{${i + 1}\\}`), () => param);
   });
   return body;
 }
