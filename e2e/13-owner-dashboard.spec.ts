@@ -6,8 +6,8 @@ import path from 'node:path';
  * M3-T39, T40, T41 (F-200 to F-210): the owner Dashboard.
  * The numbers come from frontend/src/__tests__/fixtures/ownerDashboard.json (the NUMBERS.md fixture as the endpoint
  * returns it), served through a route on GET /api/dashboard/owner, because the dev database has no targets.
- * The role tests use the real dev API. Needs the dev users (password123) and the frontend with the repApp and agentApp
- * flags off. Point E2E_BASE_URL at the Vite port.
+ * The role tests use the real dev API. Needs the dev users (password123) and the frontend with the agentApp
+ * flag off. Point E2E_BASE_URL at the Vite port.
  */
 
 const PASSWORD = 'password123';
@@ -97,11 +97,10 @@ test.describe('T41 role homes (real dev API)', () => {
     await expect(page).toHaveURL(/\/inventory$/);
   });
 
-  test('flags off: call rep and delivery agent keep the old dashboard, not the owner one', async ({ page }) => {
+  test('call rep lands in the rep app; delivery agent keeps the old dashboard, not the owner one', async ({ page }) => {
     await signIn(page, 'e2e-rep@codadmin.com');
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/rep\/today$/);
     await expect(page.getByText('Delivered revenue vs target')).toHaveCount(0);
-    await expect(page.getByText('Dashboard Not Available')).toHaveCount(0);
     await page.evaluate(() => localStorage.clear());
     await signIn(page, 'e2e-agent@codadmin.com');
     await expect(page).toHaveURL(/\/$/);

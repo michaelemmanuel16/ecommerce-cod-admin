@@ -62,7 +62,7 @@ Decisions that apply:
 - Acceptance criteria:
   - [ ] The customer phone and alternate phone show in large type with a "Copy" button. They are written in the local form (for example 024 123 4567) and in the international form for WhatsApp.
   - [ ] The Call button is a `tel:` link. On a device that cannot dial it still shows the number. No call is placed or timed by the app.
-  - [ ] The WhatsApp button opens `wa.me/<number>` with an optional draft text. A rep sends it themselves.
+  - [ ] The WhatsApp button (Queue rows, call card, My orders) opens the customer's chat in a side panel over the current page, so the rep stays on the order (full screen on a phone). The panel shows the whole chat, sent from the business WhatsApp number. Inside the 24-hour window the rep types freely; outside it the compose row offers an approved template. The button always opens. If the business has no WhatsApp connection, the panel shows the history and the reply box is disabled with the hint "WhatsApp is not connected". A conversation row in the Inbox opens the same panel. There is no Conversations page. The app never opens `wa.me` or the rep's own WhatsApp (owner decision 2026-11-16).
   - [ ] Call length is typed by the rep and optional (seconds or minutes). It is never required to save.
   - [ ] Pages load with no heavy chart library on Queue and Call card (the numbers page may draw small bars with plain CSS).
   - [ ] The text size is 16 px or larger on forms. Touch targets are 44 px or larger.
@@ -161,7 +161,7 @@ Decisions that apply:
 - Mockup: `rep.html#queue` (call card).
 - Acceptance criteria:
   - [ ] Header: name, order id, area, status tag, Order value (live, changes with upsell).
-  - [ ] Buttons: Call, WhatsApp, Team notes (opens the Inbox thread for the order).
+  - [ ] Buttons: Call, WhatsApp, Team notes (opens the order's team-notes panel).
   - [ ] Customer block: phone, alternate phone, email, address, payment ("Cash on delivery, unpaid"), assigned rep, assigned delivery agent. The rep can edit address and phone on the call (the audit of order edits: Orders, file 03).
   - [ ] Order block: package line, add-on lines, "Cash to collect".
   - [ ] Previous orders: date, amount, Delivered or Failed. If none: "First order from this customer."
@@ -249,12 +249,11 @@ Decisions that apply:
 - Current app: Orders list.
 - Mockup: `rep.html#orders`.
 - Acceptance criteria:
-  - [ ] List of orders the rep confirmed, declined or called, newest first. Search by name, phone, area, order number.
-  - [ ] Status labels are views of the one order status (fix #10): Waiting to dispatch, Out for delivery, Delivered, Failed, Declined. They map to real statuses (confirmed/preparing/ready_for_pickup, out_for_delivery, delivered, failed_delivery or returned, cancelled).
+  - [ ] Two tabs replace the status select (owner decision 2026-11-16). "In progress" (default): orders after the call and before the end (`payment_pending`, `confirmed`, `preparing`, `ready_for_pickup`, `out_for_delivery`, `payment_failed`). "Finished": end states (`delivered`, `digital_delivered`, `cancelled`, `returned`, `failed_delivery`). `pending_confirmation` shows in neither tab; it lives in the Queue. Every `OrderStatus` value is in exactly one bucket (Queue, In progress or Finished). The active tab shows its order count. Newest first. Search by name, phone, order number. Empty states: "No orders in progress." / "No finished orders yet."
+  - [ ] Status labels are views of the one order status (fix #10), shown with the canonical labels.
   - [ ] The call card shows history, previous orders and a note field. No package editing.
-  - [ ] Filters: status, date range.
   - [ ] Pagination 25 per page.
-- Data: none. API: `GET /api/rep/me/orders?status=&q=&page=`.
+- Data: none. API: `GET /api/rep/orders?group=in_progress|finished&q=&page=` (`status=` still works).
 - Permissions: rep sees own.
 - Edge cases and errors: none new.
 - Tests: integration (list limited to own orders).

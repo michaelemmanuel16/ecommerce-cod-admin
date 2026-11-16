@@ -1,14 +1,35 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
+import { resetWhatsappConnected } from '../../hooks/useWhatsappConnected';
 import { CallCard } from '../../components/rep/CallCard';
+import { RepChatProvider } from '../../components/rep/RepChatPanel';
 import { ToastProvider } from '../../components/ui-v2';
 import { repService, type CallCardData } from '../../services/rep.service';
 import { callsService } from '../../services/calls.service';
+import { inboxService } from '../../services/inbox.service';
 import { useConfigStore } from '../../stores/configStore';
 
 const mockGetCallCard = vi.fn();
 const mockCreateCall = vi.fn();
+const mockWhatsappConnected = vi.fn();
+
+vi.mock('../../services/messages.service', () => ({
+  messagesService: {
+    whatsappConnected: (...args: unknown[]) => mockWhatsappConnected(...args),
+    forOrder: vi.fn(async () => ({ conversationId: null, orderId: 24041, phone: '+233245083317', customerName: 'Efua Mensah', windowOpen: false })),
+    approvedTemplates: vi.fn(async () => []),
+  },
+}));
+
+vi.mock('../../services/inbox.service', () => ({
+  inboxService: {
+    getThread: vi.fn(async () => ({ id: 1, subjectType: 'order', subjectId: 24041, archived: false, unreadCount: 0, comments: [] })),
+    mentionable: vi.fn(async () => []),
+    addComment: vi.fn(),
+  },
+}));
 
 vi.mock('../../services/rep.service', () => ({
   repService: {
@@ -111,9 +132,11 @@ function renderCallCard(props: { orderId?: number; onDone?: (nextId: number | nu
   return {
     onDone,
     ...render(
-      <ToastProvider>
-        <CallCard orderId={props.orderId ?? 24041} onDone={onDone} />
-      </ToastProvider>,
+      <MemoryRouter>
+        <ToastProvider>
+          <RepChatProvider><CallCard orderId={props.orderId ?? 24041} onDone={onDone} /></RepChatProvider>
+        </ToastProvider>
+      </MemoryRouter>,
     ),
   };
 }
@@ -123,6 +146,8 @@ describe('CallCard (M7-T17)', () => {
     vi.clearAllMocks();
     useConfigStore.setState({ currency: 'GHS', loaded: true });
     mockGetCallCard.mockResolvedValue(MOCK_CARD);
+    resetWhatsappConnected();
+    mockWhatsappConnected.mockResolvedValue(true);
   });
 
   it('renders header, customer, order and history from call card endpoint', async () => {
@@ -143,7 +168,9 @@ describe('CallCard (M7-T17)', () => {
     mockGetCallCard.mockResolvedValue({ ...MOCK_CARD, customer: { ...MOCK_CARD.customer, phoneNumber: '024 508 3317' } });
     const { unmount } = renderCallCard();
     expect(await screen.findByRole('link', { name: 'Call Efua Mensah' })).toHaveAttribute('href', 'tel:+233245083317');
-    expect(screen.getByRole('link', { name: 'WhatsApp Efua Mensah' })).toHaveAttribute('href', 'https://wa.me/233245083317');
+    // WhatsApp opens a chat panel over the card, never wa.me (owner decision 2026-11-16)
+    expect(screen.getByRole('button', { name: 'WhatsApp Efua Mensah' })).toBeEnabled();
+    expect(document.querySelector('a[href*="wa.me"]')).toBeNull();
     expect(screen.getByTestId('phone-number')).toHaveTextContent('024 508 3317');
     unmount();
 
@@ -151,8 +178,31 @@ describe('CallCard (M7-T17)', () => {
     renderCallCard();
     expect(await screen.findByRole('button', { name: /^Call$/ })).toBeDisabled();
     expect(screen.getByRole('button', { name: /^WhatsApp$/ })).toBeDisabled();
-    expect(screen.queryByRole('link', { name: /WhatsApp/ })).toBeNull();
     expect(screen.getByTestId('check-number-tag')).toBeInTheDocument();
+  });
+
+  it('the WhatsApp button stays clickable with no WhatsApp connected: the panel opens, its reply box is disabled with the hint', async () => {
+    mockWhatsappConnected.mockResolvedValue(false);
+    renderCallCard();
+    const button = await screen.findByRole('button', { name: /WhatsApp Efua Mensah/ });
+    expect(button).toBeEnabled();
+    await userEvent.click(button);
+    const panel = await screen.findByTestId('rep-chat-panel');
+    expect(await within(panel).findByText('WhatsApp is not connected')).toBeInTheDocument();
+    expect(within(panel).getByLabelText('Reply')).toBeDisabled();
+    expect(document.querySelector('a[href*="wa.me"]')).toBeNull();
+  });
+
+  it('the Team notes button is enabled and opens the order\'s team-notes panel', async () => {
+    renderCallCard();
+    const button = await screen.findByRole('button', { name: /Team notes/ });
+    expect(button).toBeEnabled();
+    expect(button).not.toHaveAttribute('title');
+    await userEvent.click(button);
+    const panel = await screen.findByTestId('rep-notes-panel');
+    expect(within(panel).getByText(/Team notes ·/)).toBeInTheDocument();
+    await waitFor(() => expect(vi.mocked(inboxService.getThread)).toHaveBeenCalledWith('order', 24041));
+    expect(await within(panel).findByText('No notes yet. Start the thread below.')).toBeInTheDocument();
   });
 
   it('updates save button text per outcome', async () => {

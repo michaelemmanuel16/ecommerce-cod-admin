@@ -309,6 +309,36 @@ describe('1. /api/rep/orders (my orders, search by id, phone, name; real status 
     expect(resBoth.body.orders).toHaveLength(2);
   });
 
+  it('group filter splits In progress and Finished; pending stays in neither', async () => {
+    const pending = await prismaBase.order.create({
+      data: {
+        tenantId, customerId: customer1Id, customerRepId: rep1Id,
+        status: 'pending_confirmation', subtotal: 100, totalAmount: 100,
+      },
+    });
+    const inProgress = await request(app)
+      .get('/api/rep/orders?group=in_progress')
+      .set('Authorization', bearer(rep1Token));
+    expect(inProgress.status).toBe(200);
+    expect(inProgress.body.orders.map((o: any) => o.id)).toEqual([order2.id]);
+    expect(inProgress.body.pagination.total).toBe(1);
+
+    const finished = await request(app)
+      .get('/api/rep/orders?group=finished')
+      .set('Authorization', bearer(rep1Token));
+    expect(finished.status).toBe(200);
+    expect(finished.body.orders.map((o: any) => o.id)).toEqual([order1.id]);
+
+    const ids = [...inProgress.body.orders, ...finished.body.orders].map((o: any) => o.id);
+    expect(ids).not.toContain(pending.id);
+
+    const bad = await request(app)
+      .get('/api/rep/orders?group=everything')
+      .set('Authorization', bearer(rep1Token));
+    expect(bad.status).toBe(400);
+    await prismaBase.order.delete({ where: { id: pending.id } });
+  });
+
   it('bad status filter returns 400', async () => {
     const resInvalid = await request(app)
       .get('/api/rep/orders?status=invalid_status')

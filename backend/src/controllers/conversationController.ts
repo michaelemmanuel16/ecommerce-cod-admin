@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../types';
 import { AppError } from '../middleware/errorHandler';
 import { formatIssues } from '../tools/shared';
-import { conversationListSchema, conversationPatchSchema, conversationReplySchema } from '../validators/conversationSchema';
+import { conversationListSchema, conversationPatchSchema, conversationReplySchema, conversationStartSchema } from '../validators/conversationSchema';
 import * as conversations from '../services/messaging/conversationService';
 
 const actorOf = (req: AuthRequest): conversations.Actor => {
@@ -39,4 +39,29 @@ export const patch = async (req: AuthRequest, res: Response): Promise<void> => {
   const parsed = conversationPatchSchema.safeParse(req.body ?? {});
   if (!parsed.success) throw new AppError(formatIssues(parsed.error), 400);
   res.json(await conversations.updateConversation(idOf(req), actorOf(req), parsed.data));
+};
+
+/** GET /api/conversations/for-order/:orderId */
+export const forOrder = async (req: AuthRequest, res: Response): Promise<void> => {
+  const orderId = Number(req.params.orderId);
+  if (!Number.isInteger(orderId) || orderId <= 0) throw new AppError('Order not found', 404, 'ORDER_NOT_FOUND');
+  res.json(await conversations.conversationForOrder(orderId, actorOf(req)));
+};
+
+/** POST /api/conversations/start */
+export const start = async (req: AuthRequest, res: Response): Promise<void> => {
+  const parsed = conversationStartSchema.safeParse(req.body ?? {});
+  if (!parsed.success) throw new AppError(formatIssues(parsed.error), 400);
+  res.status(201).json(await conversations.startOrderConversation(actorOf(req), parsed.data));
+};
+
+/** GET /api/conversations/whatsapp-status */
+export const whatsappStatus = async (req: AuthRequest, res: Response): Promise<void> => {
+  actorOf(req);
+  res.json(await conversations.whatsappStatus());
+};
+
+/** GET /api/conversations/:id */
+export const one = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.json(await conversations.getConversation(idOf(req), actorOf(req)));
 };

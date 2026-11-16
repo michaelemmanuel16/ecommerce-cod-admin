@@ -13,7 +13,6 @@ import { useConfigStore } from './stores/configStore';
 import { isPlatformDomain, platformLoginPath } from './utils/platformDomain';
 import { SaasRoute } from './components/auth/SaasRoute';
 import { NotFound } from './pages/NotFound';
-import { features } from './config/features';
 
 // Eager load authentication pages (critical path)
 import { Login } from './pages/Login';
@@ -111,13 +110,10 @@ const MobileGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return <>{children}</>;
 };
 
-// Rep app gate: sales_rep and manager-up roles may open the rep app when features.repApp is on (F-750)
+// Rep app gate: sales_rep and manager-up roles may open the rep app (F-750)
 export const RepGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuthStore();
   if (!user) return null;
-  if (!features.repApp) {
-    return <Navigate to="/" replace />;
-  }
   const allowed = user.role === 'sales_rep' || isManagerUp(user.role);
   if (!allowed) {
     return <Navigate to="/" replace />;
@@ -150,11 +146,18 @@ const PlatformGuard: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 // Platform admins have no tenant store — land them on the platform tree instead of
 // the tenant dashboard. On the platform subdomain this never fires (separate router);
 // on the main domain it keeps their landing consistent with their (platform-only) menu.
+// F-750: a sales_rep never sees the staff shell.
+const StaffShell: React.FC = () => {
+  const { user } = useAuthStore();
+  if (user?.role === 'sales_rep') return <Navigate to="/rep/today" replace />;
+  return <Shell />;
+};
+
 const DashboardIndex: React.FC = () => {
   const { user } = useAuthStore();
   if (user?.isPlatformAdmin) return <Navigate to="/platform" replace />;
   if (user && isManagerUp(user.role)) return <Dashboard />;
-  if (user?.role === 'sales_rep' && features.repApp) return <Navigate to="/rep/today" replace />;
+  if (user?.role === 'sales_rep') return <Navigate to="/rep/today" replace />;
   return <DynamicDashboard />;
 };
 
@@ -162,13 +165,13 @@ const DashboardIndex: React.FC = () => {
 const MobileIndex: React.FC = () => {
   const { user } = useAuthStore();
   if (user && isManagerUp(user.role)) return <Navigate to="/" replace />;
-  if (user?.role === 'sales_rep' && features.repApp) return <Navigate to="/rep/today" replace />;
+  if (user?.role === 'sales_rep') return <Navigate to="/rep/today" replace />;
   return <DynamicDashboard />;
 };
 
 const EarningsHistoryRoute: React.FC = () => {
   const { user } = useAuthStore();
-  if (user?.role === 'sales_rep' && features.repApp) {
+  if (user?.role === 'sales_rep') {
     return <Navigate to="/rep/today" replace />;
   }
   return <EarningsHistory />;
@@ -325,6 +328,8 @@ function App() {
             <Route path="earnings" element={<Suspense fallback={<Loading />}><RepEarningsPage /></Suspense>} />
             <Route path="numbers" element={<Suspense fallback={<Loading />}><RepNumbersPage /></Suspense>} />
             <Route path="inbox" element={<Suspense fallback={<Loading />}><RepInboxPage /></Suspense>} />
+            {/* The chat is a panel now: old Conversations links land on the Inbox. */}
+            <Route path="conversations/*" element={<Navigate to="/rep/inbox" replace />} />
             <Route path="call/:orderId" element={<Suspense fallback={<Loading />}><RepCallPage /></Suspense>} />
           </Route>
 
@@ -333,7 +338,7 @@ function App() {
             path="/"
             element={
               <ProtectedRoute>
-                <Shell />
+                <StaffShell />
               </ProtectedRoute>
             }
           >

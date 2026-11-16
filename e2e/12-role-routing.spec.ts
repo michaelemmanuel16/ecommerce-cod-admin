@@ -3,7 +3,7 @@ import { test, expect, Page } from '@playwright/test';
 /**
  * M3-T33 (F-102, F-103): role home, route guards and the "no access" page.
  * Needs dev-DB users e2e-finance / e2e-stock / e2e-manager / e2e-rep / e2e-agent (password123) and the
- * frontend with the repApp and agentApp flags off (default). Point E2E_BASE_URL at the Vite port.
+ * frontend with the agentApp flag off (default). Point E2E_BASE_URL at the Vite port.
  */
 test.use({ baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:5173' });
 
@@ -45,15 +45,15 @@ test.describe('role home and route guards', () => {
     await expect(page.getByRole('link', { name: 'Go to Inventory & stock' })).toBeVisible();
   });
 
-  test('flags off: a call rep stays on the current page and cannot open Finance', async ({ page }) => {
+  test('a call rep lands on /rep/today and cannot open Finance', async ({ page }) => {
     await signIn(page, 'e2e-rep@codadmin.com');
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/rep\/today$/);
     await expect(page.getByText(NO_ACCESS)).toHaveCount(0);
     await page.goto('/finance');
     await expect(page.getByText(NO_ACCESS)).toBeVisible();
   });
 
-  test('flags off: a delivery agent stays on the current page', async ({ page }) => {
+  test('flag off: a delivery agent stays on the current page', async ({ page }) => {
     await signIn(page, 'e2e-agent@codadmin.com');
     await expect(page).toHaveURL(/\/$/);
     await expect(page.getByText(NO_ACCESS)).toHaveCount(0);

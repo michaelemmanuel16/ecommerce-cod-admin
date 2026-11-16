@@ -331,6 +331,7 @@ export interface RepOrdersQuery {
   repId?: number;
   q?: string;
   status?: string;
+  group?: 'in_progress' | 'finished';
   page?: number;
   limit?: number;
   sortOrder?: 'asc' | 'desc';

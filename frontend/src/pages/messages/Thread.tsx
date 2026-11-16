@@ -23,9 +23,15 @@ interface Props {
   canPickPeople: boolean;
   /** The list reloads after a write (reply, assign, done). */
   onChanged: (patch?: Partial<ConversationRow>) => void;
+  /** Where "Order #n" under a bubble goes: the order drawer for staff, the call card in the rep app. */
+  orderLink?: (orderId: number) => string;
+  /** false in the rep app: a rep cannot reassign, so the Assign select is hidden. Default true. */
+  canAssign?: boolean;
+  /** Set: the reply box is shown disabled with this hint (WhatsApp not connected). */
+  replyDisabledHint?: string;
 }
 
-function Bubble({ m, quoted }: { m: ThreadMessage; quoted: ThreadMessage | undefined }) {
+function Bubble({ m, quoted, orderLink }: { m: ThreadMessage; quoted: ThreadMessage | undefined; orderLink: (orderId: number) => string }) {
   const out = m.direction === 'outbound';
   const Icon = STATUS_ICON[m.status];
   return (
@@ -35,7 +41,7 @@ function Bubble({ m, quoted }: { m: ThreadMessage; quoted: ThreadMessage | undef
       <div className="mst-row">
         <span className="mst-time">{formatStamp(m.createdAt)}</span>
         {out && <span className={`mst ${m.status}`}><Icon />{STATUS_LABEL[m.status]}</span>}
-        {m.orderId && <Link className="lnk" to={`/orders/${m.orderId}`}>Order #{m.orderId}</Link>}
+        {m.orderId && <Link className="lnk" to={orderLink(m.orderId)}>Order #{m.orderId}</Link>}
       </div>
       {out && m.status === 'failed' && m.errorMessage && <div className="failnote"><AlertCircle />{m.errorMessage}</div>}
     </div>
@@ -43,7 +49,7 @@ function Bubble({ m, quoted }: { m: ThreadMessage; quoted: ThreadMessage | undef
 }
 
 /** The right pane: header with Assign and Mark done, the messages in order, and the reply box. */
-export function Thread({ row, meId, canWrite, canPickPeople, onChanged }: Props) {
+export function Thread({ row, meId, canWrite, canPickPeople, onChanged, orderLink = (id) => `/orders/${id}`, canAssign = true, replyDisabledHint }: Props) {
   const say = useToast();
   const thread = useLoad(() => messagesService.getThread(row.id), String(row.id));
   const people = useLoad(() => messagesService.assignees(), 'people', canWrite && canPickPeople);
@@ -89,7 +95,7 @@ export function Thread({ row, meId, canWrite, canPickPeople, onChanged }: Props)
           {isDone && <Tag tone="n">Done</Tag>}
           {canWrite && (
             <>
-              <Select
+              {canAssign && <Select
                 compact label="Assign to" value={row.assignedTo ? String(row.assignedTo.id) : ''} disabled={saving}
                 onChange={(e) => {
                   const id = e.target.value ? Number(e.target.value) : null;
@@ -99,7 +105,7 @@ export function Thread({ row, meId, canWrite, canPickPeople, onChanged }: Props)
               >
                 <option value="">Unassigned</option>
                 {options.map((o) => <option key={o.id} value={o.id}>{o.id === meId && o.name !== 'Me' ? `${o.name} (me)` : o.name}</option>)}
-              </Select>
+              </Select>}
               <Button disabled={saving} onClick={() => void write(() => messagesService.update(row.id, { status: isDone ? 'open' : 'done' }), isDone ? 'Conversation reopened' : 'Marked as done', { status: isDone ? 'open' : 'done' })}>
                 <Check style={{ width: 15, height: 15 }} />{isDone ? 'Reopen' : 'Mark done'}
               </Button>
@@ -115,12 +121,12 @@ export function Thread({ row, meId, canWrite, canPickPeople, onChanged }: Props)
           <EmptyState icon={<MessageCircle />} title="The messages did not load" action={<Button onClick={() => void thread.reload()}>Try again</Button>} />
         )}
         {messages?.length === 0 && <EmptyState icon={<MessageCircle />} title="No messages in this conversation" />}
-        {messages?.map((m) => <Bubble key={m.id} m={m} quoted={m.inReplyToId ? byId.get(m.inReplyToId) : undefined} />)}
+        {messages?.map((m) => <Bubble key={m.id} m={m} quoted={m.inReplyToId ? byId.get(m.inReplyToId) : undefined} orderLink={orderLink} />)}
       </div>
 
       {canWrite && row.channel === 'whatsapp' && thread.data && (
         <ReplyBox
-          conversationId={row.id} windowOpen={thread.data.conversation.windowOpen}
+          conversationId={row.id} windowOpen={thread.data.conversation.windowOpen} disabledHint={replyDisabledHint}
           onSent={() => { onChanged({ unanswered: false }); void thread.reload(); }}
         />
       )}

@@ -49,7 +49,6 @@ function renderAt(path: string) {
 }
 
 beforeEach(() => {
-  features.repApp = false;
   features.agentApp = false;
 });
 
@@ -118,17 +117,16 @@ describe('AccessGate', () => {
     renderAt('/orders');
     expect(screen.getByLabelText('Loading')).toBeInTheDocument();
   });
-  it('flags off: call rep and delivery agent stay on the current page at "/"', () => {
+  it('agent flag off: call rep goes to /rep, delivery agent stays on the current page at "/"', () => {
     signIn('sales_rep', '/');
     const rep = renderAt('/');
-    expect(screen.getByText('DASHBOARD PAGE')).toBeInTheDocument();
+    expect(screen.getByText('REP APP')).toBeInTheDocument();
     rep.unmount();
     signIn('delivery_agent', '/');
     renderAt('/');
     expect(screen.getByText('DASHBOARD PAGE')).toBeInTheDocument();
   });
-  it('flags on: call rep goes to /rep and delivery agent to /agent', () => {
-    features.repApp = true;
+  it('agent flag on: delivery agent goes to /agent', () => {
     features.agentApp = true;
     signIn('sales_rep', '/');
     const rep = renderAt('/');
@@ -138,10 +136,10 @@ describe('AccessGate', () => {
     renderAt('/');
     expect(screen.getByText('AGENT APP')).toBeInTheDocument();
   });
-  it('rep keeps Earnings history and cannot open Finance', () => {
+  it('rep has no staff Earnings history (the rep app has Earnings) and cannot open Finance', () => {
     signIn('sales_rep', '/');
     const a = renderAt('/earnings-history');
-    expect(screen.getByText('EARNINGS PAGE')).toBeInTheDocument();
+    expect(screen.getByText('You do not have access to this page')).toBeInTheDocument();
     a.unmount();
     renderAt('/finance');
     expect(screen.getByText('You do not have access to this page')).toBeInTheDocument();

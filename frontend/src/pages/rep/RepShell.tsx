@@ -21,6 +21,7 @@ import { ToastProvider } from '../../components/ui-v2';
 import { useInboxStore } from '../../stores/inboxStore';
 import { useRepSummary } from './useRepSummary';
 import { personName } from '../../utils/people';
+import { RepChatProvider } from '../../components/rep/RepChatPanel';
 
 export const RepShell: React.FC = () => {
   const user = useAuthStore((s) => s.user);
@@ -45,6 +46,7 @@ export const RepShell: React.FC = () => {
     <ToastProvider>
       <div className="v2">
         <div className="rep-shell">
+          <RepChatProvider>
           <div className="app-layout">
             {/* Desktop left rail */}
             <aside className="side" aria-label="Main" data-testid="rep-desktop-rail">
@@ -168,6 +170,7 @@ export const RepShell: React.FC = () => {
               );
             })}
           </nav>
+          </RepChatProvider>
         </div>
       </div>
     </ToastProvider>

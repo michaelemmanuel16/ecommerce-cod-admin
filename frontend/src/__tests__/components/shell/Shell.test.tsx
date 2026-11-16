@@ -215,13 +215,6 @@ describe('Shell', () => {
       expect(screen.queryByRole('link', { name: 'Webhooks' })).not.toBeInTheDocument();
     });
 
-    it('a call rep sees Earnings history only', async () => {
-      signIn({ ...owner, role: 'sales_rep' }, ['orders']);
-      renderShell();
-      expect(await screen.findByRole('link', { name: 'Earnings history' })).toHaveAttribute('href', '/earnings-history');
-      expect(screen.queryByRole('link', { name: 'Agent stock' })).not.toBeInTheDocument();
-      expect(screen.queryByRole('link', { name: 'Customer reps' })).not.toBeInTheDocument();
-    });
   });
 
   describe('dark mode and old pages', () => {

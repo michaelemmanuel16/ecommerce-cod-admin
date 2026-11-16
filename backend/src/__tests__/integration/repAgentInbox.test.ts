@@ -23,7 +23,8 @@ const agent = () => pair.a.users.deliveryAgent;
 const owner = () => pair.a.users.admin;
 
 const KINDS = ['alert', 'reply', 'mention', 'reminder', 'note'] as const;
-const TYPE = { alert: 'late_callback', reply: 'customer_reply', mention: 'mention', reminder: 'reminder_due', note: 'team_note' } as const;
+// `reply` rows here use `mention`: a customer_reply row needs a real conversation to show for a rep (inboxRepFilter.test.ts)
+const TYPE = { alert: 'late_callback', reply: 'mention', mention: 'mention', reminder: 'reminder_due', note: 'team_note' } as const;
 let seq = 0;
 const row = (userId: number, kind: (typeof KINDS)[number], extra: Record<string, unknown> = {}) => prismaBase.notification.create({
   data: { tenantId: pair.a.id, userId, kind, type: TYPE[kind], title: `T${++seq}`, message: `M${seq}`, ...extra },
@@ -71,7 +72,7 @@ describe('scope: a person sees only their own rows, in every view', () => {
     expect((await feed(rep().token)).items.map((i: any) => i.id).sort()).toEqual([...mine].sort());
     // the other person's counts are theirs
     expect((await get(rep().token, '/api/inbox/counts')).body.counts.all).toBe(5);
-    expect((await get(rep2.token, '/api/inbox/counts')).body.counts.all).toBe(5); // their five open rows; the done alert and the snoozed note are not counted
+    expect((await get(rep2.token, '/api/inbox/counts')).body.counts.all).toBe(0); // rep2 owns no order, so their order rows are hidden (F-763); the done alert and the snoozed note never counted
   });
 
   it('a rep cannot change another person row, and mark-all leaves it alone', async () => {
@@ -108,24 +109,20 @@ describe('view=assigned and the moved order', () => {
     expect((await get(rep().token, '/api/inbox/counts')).body.counts.assigned).toBe(1);
   });
 
-  it('an order that moved to another rep: the row stays in the old rep list with subjectAccessible=false, leaves Assigned, and the order API refuses the old rep', async () => {
+  it('an order that moved to another rep: the row leaves the old rep list and counts, and the order API refuses the old rep', async () => {
     const subject = { subjectType: 'order', subjectId: pair.a.ids.order };
     const oldRow = await row(rep().id, 'alert', subject);
     let item = (await feed(rep().token)).items.find((i: any) => i.id === oldRow.id);
     expect(item).toMatchObject({ subject: { type: 'order', id: pair.a.ids.order }, subjectDeleted: false, subjectAccessible: true });
     expect((await get(rep().token, `/api/orders/${pair.a.ids.order}`)).status).toBe(200);
+    expect((await get(rep().token, '/api/inbox/counts')).body.counts.all).toBe(1);
 
     await prismaBase.order.update({ where: { id: pair.a.ids.order }, data: { customerRepId: rep2.id } });
 
-    const body = await feed(rep().token);
-    item = body.items.find((i: any) => i.id === oldRow.id);
-    expect(item).toBeTruthy(); // still in the list
-    expect(item).toMatchObject({ subjectDeleted: false, subjectAccessible: false });
+    expect((await feed(rep().token)).items.find((i: any) => i.id === oldRow.id)).toBeUndefined(); // F-763: not yours any more, not shown
+    expect((await get(rep().token, '/api/inbox/counts')).body.counts.all).toBe(0); // the badge matches the list
     expect((await feed(rep().token, '?view=assigned')).items).toEqual([]);
     expect((await get(rep().token, `/api/orders/${pair.a.ids.order}`)).status).toBe(404); // the order API refuses: the link does not open
-    // patching the row (read) keeps the flag
-    const patched = await request(app).patch(`/api/inbox/${oldRow.id}`).set(auth(rep().token)).send({ read: true });
-    expect(patched.body.item).toMatchObject({ isRead: true, subjectAccessible: false });
     // the new rep has their own rows and opens the order
     const newRow = await row(rep2.id, 'alert', subject);
     expect((await feed(rep2.token, '?view=assigned')).items.map((i: any) => i.id)).toEqual([newRow.id]);
@@ -142,11 +139,11 @@ describe('view=assigned and the moved order', () => {
     expect((await feed(owner().token)).items.find((i: any) => i.id === ownerRow.id)).toMatchObject({ subjectDeleted: true, subjectAccessible: false });
   });
 
-  it('a customer who left the rep scope is greyed too', async () => {
+  it('a customer who left the rep scope drops out of the rep Inbox too (F-763)', async () => {
     const mineRow = await row(rep().id, 'note', { subjectType: 'customer', subjectId: pair.a.ids.customer });
     expect((await feed(rep().token)).items.find((i: any) => i.id === mineRow.id)).toMatchObject({ subjectAccessible: true });
     await prismaBase.order.update({ where: { id: pair.a.ids.order }, data: { customerRepId: rep2.id } });
-    expect((await feed(rep().token)).items.find((i: any) => i.id === mineRow.id)).toMatchObject({ subjectAccessible: false });
+    expect((await feed(rep().token)).items.find((i: any) => i.id === mineRow.id)).toBeUndefined();
   });
 });
 
