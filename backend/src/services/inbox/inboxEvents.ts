@@ -56,7 +56,7 @@ const LIST: InboxEventDef[] = [
   def('Delivery and money', ['delivery_agent'], 'delivery_rescheduled', 'A delivery was rescheduled', 'alert'),
   def('Delivery and money', OWNERS, 'overdue_collections', 'Agents have overdue collections', 'alert'),
   // The name stays `agent_blocked` (stored preferences use it); the unblock notice is sent under the same name.
-  def('Team', ['delivery_agent'], 'agent_blocked', 'An agent account was blocked or unblocked', 'alert'),
+  def('Team', ['delivery_agent'], 'agent_blocked', 'Your account was blocked or unblocked', 'alert'),
   def('Team', ALL_ROLES, 'finding_assigned', 'A Finding was assigned to you', 'alert'),
   def('Team', MANAGEMENT, 'target_returned', 'A target went back to the role pool', 'alert'),
   def('System', OWNERS, 'system_problem', 'A connection or job problem', 'system', {

@@ -43,7 +43,7 @@ describe('event list', () => {
   });
   it('no longer lists the events that are never sent, or the separate unblock event', () => {
     for (const name of ['workflow_failed', 'connection_error', 'agent_unblocked']) expect(INBOX_EVENT_NAMES).not.toContain(name);
-    expect(getEventDef('agent_blocked').label).toBe('An agent account was blocked or unblocked');
+    expect(getEventDef('agent_blocked').label).toBe('Your account was blocked or unblocked');
   });
   it('offers staff only the In-app and Email channels', () => {
     expect([...CHANNELS]).toEqual(['inApp', 'email']);
