@@ -48,9 +48,10 @@ export function Thread({ row, meId, canWrite, canPickPeople, onChanged }: Props)
   const thread = useLoad(() => messagesService.getThread(row.id), String(row.id));
   const people = useLoad(() => messagesService.assignees(), 'people', canWrite && canPickPeople);
   const [saving, setSaving] = useState(false);
-  const end = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLDivElement>(null);
   const messages = thread.data?.messages;
-  useEffect(() => { end.current?.scrollIntoView?.({ block: 'end' }); }, [messages?.length, row.id]);
+  // Scroll the message box itself: scrollIntoView would scroll the whole page
+  useEffect(() => { if (box.current) box.current.scrollTop = box.current.scrollHeight; }, [messages?.length, row.id]);
 
   const byId = useMemo(() => new Map((messages ?? []).map((m) => [m.id, m])), [messages]);
 
@@ -108,14 +109,13 @@ export function Thread({ row, meId, canWrite, canPickPeople, onChanged }: Props)
         </div>
       </div>
 
-      <div className="msgs" aria-label="Conversation messages" aria-busy={thread.loading}>
+      <div className="msgs" ref={box} aria-label="Conversation messages" aria-busy={thread.loading}>
         {thread.data === null && thread.loading && <Skeleton height={120} />}
         {thread.failed && thread.data === null && (
           <EmptyState icon={<MessageCircle />} title="The messages did not load" action={<Button onClick={() => void thread.reload()}>Try again</Button>} />
         )}
         {messages?.length === 0 && <EmptyState icon={<MessageCircle />} title="No messages in this conversation" />}
         {messages?.map((m) => <Bubble key={m.id} m={m} quoted={m.inReplyToId ? byId.get(m.inReplyToId) : undefined} />)}
-        <div ref={end} />
       </div>
 
       {canWrite && row.channel === 'whatsapp' && thread.data && (
