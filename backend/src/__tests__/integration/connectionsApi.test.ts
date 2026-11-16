@@ -95,6 +95,26 @@ describe('GET /api/connections', () => {
     expect((await request(app).get('/api/connections').set(bearer(adminBare.token))).status).toBe(200);
   });
 
+  it('DELETE /api/sms/disconnect clears the SMS connection: the card goes to not connected; manager and rep get 403 (T51)', async () => {
+    const t = (await createTenant('Con Sms Off')).id;
+    try {
+      const owner = await mkUser(t, 'owner', 'super_admin');
+      const manager = await mkUser(t, 'mgr', 'manager');
+      await saveConfig(t, { smsProvider: encryptProviderSecrets('smsProvider', { authToken: 'k', senderId: 'Shop', isEnabled: true }) });
+      expect((await request(app).get('/api/connections').set(bearer(owner.token))).body.sms.status).toBe('connected');
+
+      expect((await request(app).delete('/api/sms/disconnect').set(bearer(manager.token))).status).toBe(403);
+      expect((await request(app).get('/api/connections').set(bearer(owner.token))).body.sms.status).toBe('connected');
+
+      const res = await request(app).delete('/api/sms/disconnect').set(bearer(owner.token));
+      expect(res.status).toBe(200);
+      expect((await prismaBase.systemConfig.findUniqueOrThrow({ where: { tenantId: t } })).smsProvider).toBeNull();
+      expect((await request(app).get('/api/connections').set(bearer(owner.token))).body.sms.status).toBe('not_connected');
+    } finally {
+      await deleteTenantRows([t]);
+    }
+  });
+
   it('the csv card links to the template and the preview route', async () => {
     const res = await request(app).get('/api/connections').set(bearer(ownerBare.token));
     expect(res.body.csv).toMatchObject({ status: 'connected', templateUrl: '/api/connections/csv/template', previewRoute: '/api/delivery-partners/:id/csv/preview' });

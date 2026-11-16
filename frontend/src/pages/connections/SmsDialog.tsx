@@ -19,6 +19,7 @@ export function SmsDialog({ open, config, onClose, onSaved }: Props) {
   const [senderId, setSenderId] = useState('');
   const [isEnabled, setIsEnabled] = useState(true);
   const [phone, setPhone] = useState('');
+  const [disconnecting, setDisconnecting] = useState(false);
   const { saving, setSaving, testing, setTesting, error, setError, testNote, setTestNote } = useDialogForm(open, config);
 
   useEffect(() => {
@@ -43,6 +44,21 @@ export function SmsDialog({ open, config, onClose, onSaved }: Props) {
       setError(apiErrorMessage(e, 'The SMS settings could not be saved.'));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const disconnect = async () => {
+    setDisconnecting(true);
+    setError(null);
+    try {
+      await connectionsService.disconnectSms();
+      say('SMS disconnected');
+      onSaved();
+      onClose();
+    } catch (e) {
+      setError(apiErrorMessage(e, 'SMS could not be disconnected.'));
+    } finally {
+      setDisconnecting(false);
     }
   };
 
@@ -73,6 +89,12 @@ export function SmsDialog({ open, config, onClose, onSaved }: Props) {
           <div><b>Send SMS</b><small>Turn this off to stop all text messages.</small></div>
           <input type="checkbox" style={{ marginLeft: 'auto' }} checked={isEnabled} onChange={(e) => setIsEnabled(e.target.checked)} aria-label="Send SMS" />
         </label>
+        {config?.smsProvider?.authToken && (
+          <div>
+            <Button onClick={disconnect} disabled={disconnecting}>{disconnecting ? 'Disconnecting...' : 'Disconnect'}</Button>
+            <p className="hint" style={{ marginTop: 5 }}>Removes the API key. No text messages go out until you connect again.</p>
+          </div>
+        )}
         <div>
           <div className="rowf">
             <Input label="Send a test to" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="024 555 0100" />

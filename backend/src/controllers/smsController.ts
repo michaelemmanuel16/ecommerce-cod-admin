@@ -1,5 +1,9 @@
 import { Request, Response } from 'express';
-import { smsService, getDbSmsConfig } from '../services/smsService';
+import { Prisma } from '@prisma/client';
+import { AuthRequest } from '../types';
+import prisma from '../utils/prisma';
+import { adminService } from '../services/adminService';
+import { smsService, getDbSmsConfig, clearSmsConfigCache } from '../services/smsService';
 import { arkeselSmsProvider } from '../services/messaging/providers';
 import { messageStatus } from '../services/messaging/messageStatus';
 import logger from '../utils/logger';
@@ -107,5 +111,33 @@ export async function testSend(req: Request, res: Response): Promise<void> {
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+}
+
+/**
+ * DELETE /api/sms/disconnect: clear the tenant's SMS (Arkesel) connection. Owner and admin only.
+ * The card then shows "Not connected". Sent messages and their logs stay.
+ */
+export async function disconnectSms(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const config = await prisma.systemConfig.findFirst();
+    if (!config) {
+      res.status(500).json({ error: 'System config not found' });
+      return;
+    }
+
+    await prisma.systemConfig.update({
+      where: { id: config.id },
+      data: { smsProvider: Prisma.DbNull },
+    });
+    clearSmsConfigCache();
+
+    logger.info('SMS disconnected', { userId: req.user!.id });
+    await adminService.createAuditLog(req.user!, 'disconnect', 'sms_provider', config.id.toString());
+
+    res.json({ success: true });
+  } catch (error: any) {
+    logger.error('Failed to disconnect SMS', { error: error.message });
+    res.status(500).json({ error: 'Failed to disconnect' });
   }
 }

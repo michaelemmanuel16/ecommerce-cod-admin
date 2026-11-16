@@ -102,6 +102,10 @@ export const connectionsService = {
     await apiClient.post('/api/sms/test', { phoneNumber });
   },
 
+  async disconnectSms(): Promise<void> {
+    await apiClient.delete('/api/sms/disconnect');
+  },
+
   async sendEmailTest(email: string): Promise<void> {
     await apiClient.post('/api/email/test', { email });
   },
